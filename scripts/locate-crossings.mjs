@@ -1,0 +1,5 @@
+import fs from 'node:fs/promises';import {flatten,dist,evaluate} from '../public/geometry.mjs';
+const p=JSON.parse(await fs.readFile(new URL('../public/character-example.bezier.json',import.meta.url),'utf8'));
+const ccw=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);function cross(a,b,c,d){return ccw(a,b,c)*ccw(a,b,d)<-1e-6&&ccw(c,d,a)*ccw(c,d,b)<-1e-6}
+let total=0;for(const path of p.paths){let gaps=0;for(let i=1;i<path.curves.length;i++)if(dist(path.curves[i-1][3],path.curves[i][0])>1e-7)gaps++;if(path.closed&&dist(path.start,path.curves.at(-1)[3])>1e-7)gaps++;const pts=flatten(path.curves,.08);let crossings=0;for(let i=0;i<pts.length-1;i++)for(let j=i+2;j<pts.length-1;j++){if(i===0&&j===pts.length-2)continue;if(cross(pts[i],pts[i+1],pts[j],pts[j+1])){crossings++;console.log("  crossing",pts[i],pts[j])}}if(gaps||crossings)console.log(path.name,{gaps,crossings});total+=crossings}console.log('Paths',p.paths.length,'segments',p.paths.reduce((a,p)=>a+p.curves.length,0),'crossings',total);
+
