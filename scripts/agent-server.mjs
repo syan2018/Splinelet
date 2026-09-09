@@ -78,6 +78,8 @@ const server = http.createServer(async (req, res) => {
       'set_node_mode',
       'manage_group',
       'move_path',
+      'select_paths',
+      'move_paths',
       'merge_paths',
       'straighten_span',
       'select_node',

@@ -37,12 +37,7 @@ async (page) => {
       { x: 150, y: 360 },
     ],
   });
-  await page
-    .getByRole('button', {
-      name: 'Storage autosave check 开放 · 1 段',
-      exact: true,
-    })
-    .waitFor();
+  await page.locator('[data-path-id="'+created.id+'"]').waitFor();
   await page
     .locator('.project-name i')
     .filter({ hasText: '已保存到 stable-save-test.json' })

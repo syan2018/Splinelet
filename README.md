@@ -1,6 +1,6 @@
 # 描迹 · 贝塞尔工作台
 
-可在浏览器中运行的交互描线应用。图像在浏览器中处理，无图像上传服务。启动后会展示本次角色的描线工程；当前浏览器的工程优先自动恢复。
+用于沿参考图交互描线，输出可编辑的三次贝塞尔曲线。底图在浏览器内处理，支持 SVG、Blender Python 和包含底图的工程文件。当前浏览器有工程时优先恢复。
 
 ## 启动
 
@@ -11,164 +11,100 @@ npm ci
 npm run dev
 ```
 
-打开 http://localhost:3000/ 。Agent 配套服务可在另一个终端启动：
+打开 http://localhost:3000/ 。可选 Agent 配套服务：
 
 ```powershell
 node scripts/agent-server.mjs
 ```
 
-服务只监听 127.0.0.1:4318，仅允许 http://localhost:3000 的浏览器 Origin；部署版本不会连接本机服务。不要将该端口开放到公网。同一时间使用一个本地工作台标签页。
+配套服务监听 127.0.0.1:4318，仅接受 localhost:3000 的浏览器 Origin。当前工作台使用一个标签页；云端页面不会连接本机服务。
 
-## 交互
+## 编辑器的层级
 
-- 导入或拖入 PNG、JPG、WebP。最大 30 MB，超过 4096 像素的底图会缩小；分析分辨率最长边 900 像素，曲线仍使用底图坐标。
-- P 描线：第一次点击创建锚点，移动显示白色虚线预览，下次点击确认沿边缘的一段三次贝塞尔；不会生成额外中间锚点。
-- 深色线条偏好局部暗谷；颜色边缘偏好梯度。纯黑大区域不会仅因颜色黑而获得最低代价。
-- 分岔、尖角处增加锚点。错误路线用 Ctrl Z 撤销，缩短两点间距或减小搜索范围。
-- Enter / 右键结束，C 或点击起点闭合。选择路径后可以续画。
-- V 编辑：方点为锚点，圆点为控制柄；拖动锚点同时更新相邻段端点，双击曲线精确插入节点。
-- H 或按住空格拖动画布；滚轮缩放。
-- Ctrl S 保存包含底图的完整工程到绑定文件。左下文件夹打开工程。导入底图或示例可撤销。
-- SVG 保留三次贝塞尔及毫米宽高。毫米尺寸按整张底图计算，不是紧包围盒。
-- Blender .py 在 Scripting 工作区打开并运行，生成新集合，保留已有场景。闭合曲线填充并按设定厚度挤出；开放曲线保留可编辑路径。
+右侧上半部固定显示路径树，下半部是工程、描线、路径和节点属性。切换属性页不隐藏路径树。只有工具决定画布操作；查看属性不会偷偷改变工具。
 
-## 单段约束（1.1 更新）
+| 工具 | 点击 | 拖动 | 双击 |
+| --- | --- | --- | --- |
+| 选择 V | 选择整条路径；Shift / Ctrl 增减 | 空白框选相交曲线；已选曲线整体移动 | 曲线进入节点编辑 |
+| 节点 A | 选择当前路径的节点；Shift / Ctrl 增减 | 空白框选节点；选中节点一起移动；单个控制柄调形 | 曲线主动插入一个节点 |
+| 描线 P | 沿底图落点 | 移动鼠标预览下一段 | 使用单击确认落点 |
+| 平移 H | — | 拖动画布 | — |
 
-开放路径 N 个落点对应 N−1 段曲线；闭合对应 N 段。每段仅有两个必要的贝塞尔控制柄。拟合误差较大时仍保留单段，建议手动补点。双击插点是用户主动操作。旧示例是上一版多段拟合结果，不会自动覆盖；选中路径后点击“按原落点重拟合”可转换，支持撤销。
+节点模式编辑一条路径中的多个节点；多条路径一起移动使用选择模式。隐藏路径可以在路径树中管理，但不会被画布框选。
 
-API 新增 refit_path({id})，与按钮相同；create_path 返回 fitError 与 needsAnchor。tolerance 现为提示阈值，不再控制分段数量。
+- Ctrl+A：画布选择模式全选可见路径；节点模式全选当前路径节点；路径树中全选路径。
+- 框选遇到的曲线会入选，不要求整条曲线完全在框内。Shift / Ctrl 框选追加。
+- 移动超过 4 个屏幕像素才视为拖动。拖动开始后按 Shift 限制水平 / 垂直方向。
+- 单次拖动只产生一次撤销记录。Esc、指针取消或窗口失焦恢复原位置。拖动中暂停自动保存，松手后保存最终结果。
+- 空白单击清除当前层级选择；节点模式保留正在编辑的路径。Esc 依次取消当前操作、节点选择、路径选择。
+- Delete / Backspace 根据当前层级删除路径或节点；未选节点时不会顺带删除整条路径。
+- Ctrl+Z 撤销，Ctrl+Shift+Z 重做。滚轮围绕鼠标缩放；空格拖动或中键平移。
 
-## 节点编辑（1.2 更新）
+## 路径树
 
-- V 进入编辑，点击路径，再点击方形节点。金色框表示当前选中；右侧显示节点序号和坐标。
-- Delete / Backspace 或右侧“删除节点”删除单个节点。未选中节点、选中圆形控制柄时不会删除路径；整条路径通过单独的垃圾桶按钮删除。
-- 删除中间节点时，将相邻两段近似拟合成一段三次贝塞尔；两侧锚点不动，不增加中间节点。状态栏显示形状变化估计。其他段保持原样。
-- 删除开放路径端点时移除相邻段。闭合接缝只算一个节点；剩余一个节点时变为开放路径，删除最后一个节点会移除空路径。
-- 只显示选中节点相邻的控制柄；锚点和控制柄点击区域扩大。点击空白或 Esc 取消选中。单击选择不产生撤销记录，拖动超过 3 屏幕像素后才记录修改。
-- Ctrl+Z 撤销、Ctrl+Shift+Z 重做。删除后更新落点记录，后续重拟合不会重新出现已删除节点。
+- 单击名称选择，Ctrl 增减，Shift 按当前可见列表连续选择；上下方向键移动选择。
+- 仅左侧箭头展开 / 折叠。分组名称选择组内路径，复选框增减整组选择。
+- 分组和路径名称双击修改。路径也可按 F2。Enter / 失焦提交，Esc 取消；改名是一次撤销操作。
+- 拖动任一选中路径会带上整个选择集。组标题是移入组尾；行上半部插入前面，下半部插入后面。拖动提示显示数量和目标线；折叠组在悬停后展开，放入后保持展开。
+- 批量移动保留路径树的相对顺序。Ctrl+G 将所选路径编组；Ctrl+Shift+G 移到未分组。没有选择时新建分组创建空组。
+- 显示控制和解散分组位于右侧。解散只移出组内路径，不删除曲线。隐藏路径时取消它的选择。
+- 选中路径后 Enter 进入节点编辑。重拟合在路径属性底部的“高级操作”中，必须确认替换后才执行。
 
-API（浏览器、WebMCP、HTTP 配套服务均支持）：
+## 描线与节点
 
-```javascript
-await window.traceStudio.call('select_node', {pathId: '路径 ID', nodeIndex: 2});
-await window.traceStudio.call('delete_node', {pathId: '路径 ID', nodeIndex: 2});
-```
+导入或拖入 PNG、JPG、WebP，最大 30 MB；超过 4096 像素的底图缩小。算法分析最长边 900 像素，曲线坐标仍使用底图坐标。
 
-nodeIndex 从 0 开始，表示路径的实际锚点序号；开放路径为曲线数 + 1，闭合路径为曲线数。单节点路径为 1。删除返回 nodes、segments、merged、shapeError（相对删除前两段的像素变化估计）。state.selection 返回 curve、point、nodeIndex；选中控制柄时 nodeIndex 为 null。
+P 描线，深色线条跟随描边，颜色边缘跟随色块边界。每两个落点只生成一段三次贝塞尔，两个控制柄负责弯曲，不添加中间锚点。开放路径 N 个落点对应 N−1 段，闭合对应 N 段。旧工程已有的多段拟合结果不会被自动重写。
 
-验证：node scripts/test-node-edit.mjs 覆盖开放首尾与中间、闭合接缝、退化到单节点、连接连续性、保留锚点和其他曲线、不修改原对象、单段合并。另有浏览器鼠标/键盘交互验证和单段拟合回归测试。
+Shift 落点暂停吸附；Alt 落点不吸附、不拟合，用直连。L 把最后一段或单选节点对应段改为直连。复杂分岔可撤销后主动补点；容差只决定偏差提示，不决定自动分段。
 
-## 落点快捷键与样条合并（1.3 更新）
+Enter / 右键结束，C 或点击起点闭合。选择开放路径后点“续画”。节点模式可批量设为尖角、平滑（共线）或对称（等长共线，C1 连续）。开放端点只有一侧曲线，不能设置连续模式。只单选一个节点时显示它的控制柄，多选移动保持各节点与柄的相对位置。
 
-- 按住 **Shift** 落点：暂时不吸附，锚点落在鼠标位置，仍然沿底图拟合。松开恢复设置。
-- 按住 **Alt** 落点：不吸附、不进行图像拟合，使用默认直连三次贝塞尔。两端之间仍只有一段，之后可拖动控制柄调整。
-- 按 **L**：描线时将最后一段改为直连；编辑时将当前节点/控制柄所属的那一段改为直连，端点保持原位。中间节点选中时对应出发段，末端节点对应最后一段。支持 Ctrl+Z 撤销。
-- 按下/松开修饰键会刷新当前预览，不必移动鼠标。Alt 优先于 Shift。关闭路径的 C 快捷键和闭合按钮也遵循这些临时设置。
-- **合并两条样条**：按 V 编辑，选中第一条开放样条的起点或终点，按 M（或侧栏“连接另一条样条”），再点击另一条样条的蓝色起点/终点。Esc 取消。
-- 合并保留所有已有段的形状，必要时反转方向及控制柄顺序；端点不同则补一段直连，精确重合则直接接合。不会增加中间锚点。合并后使用第一条路径的 ID、颜色和样式，两条路径名称合并；Ctrl+Z 恢复两条原路径。闭合路径需要先成为开放路径才可参与合并，目前没有自动剪开闭合轮廓的操作。
+删除中间节点会将相邻两段近似合并成一段，不新增中间节点，其他未受影响的段保持原样。删除开放端点移除相邻段。闭合接缝只算一个节点；删到最后一个节点时移除路径。节点模式中单选开放端点后按 M，再选另一条样条蓝色端点合并。合并保持原段形状，必要时反向；不重合端点间加一段直连，精确重合则焊接。
 
-新增 API：
+## 保存与导出
 
-```javascript
-await window.traceStudio.call('straighten_span', {pathId: '路径 ID', curve: 0});
-await window.traceStudio.call('merge_paths', {
-  firstId: '第一条 ID', firstEnd: 'end',
-  secondId: '第二条 ID', secondEnd: 'start'
-});
-```
+Ctrl+S 首次选择并绑定工程文件，之后写回同一文件；约 800ms 自动写入，Ctrl+Shift+S 另存为。浏览器不支持文件选择 API 时仍更新同一份浏览器备份，导出面板可下载副本。
 
-端点枚举为 start/end。straighten_span 的 curve 从 0 开始，可省略，此时使用当前选中段或最后一段。merge_paths 返回保留的 id、移除的 removedId、段数 segments、是否新增连接段 bridge。WebMCP 使用 bezier_ 前缀，HTTP 服务同步支持。create_path 的 snap:false 等价于关闭落点吸附，mode:'manual' 等价于默认直连。
+浏览器备份约 200ms 提交，事务完成后才显示成功。文件写入串行，失败中止，不将旧写入覆盖新内容。刷新后恢复工程和文件关联；首次重新保存授权后恢复文件自动写入。导入新底图 / API 载入工程解除旧文件绑定，避免覆盖旧工程文件。
 
-验证：四种端点方向、精确重合接合、原曲线采样保持不变、连接连续性和单段约束均有几何测试；独立浏览器已测试 Shift/Alt 按住落点与松开恢复、L 替换与撤销、M 选端点合并与撤销、Esc 取消。
+SVG 和 Blender 导出所有可见路径及分组。毫米尺寸按整张底图计算。Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景；闭合曲线填充和挤出，开放路径保持曲线。二维描线不会自动生成角色完整立体模型，导出曲线可用于后续建模和加工。
 
-## 稳定保存（1.4 更新）
+## Agent API 2.0
 
-“保存工程”现在绑定并更新同一个工程文件。首次点击保存选择位置，之后修改停顿约 800ms 自动写回，Ctrl+S 立即保存，Ctrl+Shift+S / 另存为创建并切换新文件。导出面板的“下载工程副本”才会新增下载文件。
-
-打开工程优先使用文件选择 API 并关联原文件。导入新底图或通过 API 载入工程会解除旧绑定，避免覆盖旧文件。工程和文件句柄一起保存到 IndexedDB，兼容旧浏览器备份；约 200ms 保存一次编辑后的备份，事务提交成功后才显示成功。切换到后台时补写备份；仍有待保存内容时关闭页面会触发浏览器离开提醒。
-
-刷新后恢复最新浏览器备份和文件名称，但需点击保存一次重新连接文件（浏览器也可能要求再次授权）。恢复时不直接覆盖磁盘内容。文件写入按顺序执行，写入失败会尝试终止当前写入并允许重试，不会把仅完成备份标为文件保存成功。
-
-不支持文件选择/写入 API 的浏览器仍会更新同一份浏览器备份，保存按钮不会反复下载 JSON。使用支持 File System Access 的 Chrome/Edge 或当前支持此 API 的工作台绑定文件。浏览器备份属于当前浏览器和站点，清理站点数据会删除它，因此文件保存仍有独立价值。
-
-已验证：浏览器私有文件系统的真实文件写入/自动更新、Ctrl+S 不再次选择位置、刷新恢复工程和句柄、另存为切换、导入解除绑定。测试仅替代操作系统的文件选择对话框；写入/读取与 IndexedDB 使用浏览器真实实现。另有串行写入、失败终止和失败后重试测试。
-
-## 分组、连续节点与危险操作确认（1.5 更新）
-
-- 原重拟合按钮收进默认折叠的“高级操作”。选择“重新拟合当前路径…”后，确认框列出路径名称、受影响段数，以及手动控制柄和节点模式会被替换的说明。默认焦点在取消。取消不修改工程；确认后仍可撤销。如果打开确认框后工程改变，需重新确认。
-- refit_path API 现在仅打开确认框并返回 pendingConfirmation:true，不会直接改变曲线。没有可跳过确认的 API 参数；一次确认只影响指定的一条路径。
-- 新建分组后，拖拽路径到分组中移动。仅点击左侧箭头折叠，点击名称不会展开或折叠。分组和路径名称均双击修改，Enter 或失焦提交，Esc 取消；分组可整组显示/隐藏；解散只移到未分组，不删除曲线。分组结构随工程自动保存，SVG 输出 g 分组，Blender 输出子集合。
-- V 编辑并选择内部节点，在“节点连接”选择：尖角（两侧手柄独立）、平滑（共线，长度独立）、对称（共线且等长，即相邻三次段的 C1 连续）。拖动任一控制柄都会按所选规则联动另一侧。开放端点只有一侧曲线，不能设置连续模式。
-- 节点模式随工程保存，删除和合并会同步节点序号。双击拆分保持原形状，受影响的对称节点改为平滑模式；L 直连会将该段两端改为尖角。重拟合确认后重置连续模式。SVG/Blender 保留最终几何；Blender 对象额外记录 node_modes，应用内的对称联动约束不会变成 Blender 的自定义实时约束。
-
-API 新增 set_node_mode({pathId,nodeIndex,mode})，mode 为 corner/smooth/symmetric。manage_group({action,id?,name?,pathIds?,visible?}) 支持 create、rename、assign、visibility、delete；assign 接收多条 pathIds，id 为空字符串表示未分组。state 返回 groups，路径摘要含 groupId 和 nodeModes。
-
-验证覆盖确认/取消/撤销、分组创建/移动/改名/可见性/解散/撤销、鼠标拖动 C1 联动、刷新恢复、平滑手柄长度、闭合接缝、删除及反向合并的模式映射，以及 Blender 分组脚本实际运行。
-
-## 属性页签、拖拽和侧栏（1.5 交互更新）
-
-右侧分成工程、描线、路径、节点四个页签。选中节点会打开节点页签；描线工具打开参数页签。工程页显示底图信息和保存状态，路径页管理分组和对象，节点页管理控制柄与连续模式。
-
-路径行左侧带拖动标记：拖到分组标题/空白区域加入该组，拖到另一条路径行前面可排序并进入该路径的组。拖到“未分组”移出原组。分组控制按钮在标题右侧；双击标题重命名，Enter 或失焦提交，Esc 取消。移动、排序、改名都可撤销并随工程保存。
-
-编辑时点击画布空白或按 Esc 取消路径和节点选择。合并过程中 Esc 先取消合并。右侧栏左边分隔条可左右拖动，宽度会记住；双击恢复 320px，聚焦分隔条后左右方向键也可调节。窄屏自动使用底部属性面板。
-
-新增 move_path({pathId,groupId?,beforeId?}) API；传 beforeId 会放到目标路径前面并采用目标路径分组，否则移到指定组末尾。groupId 为空表示未分组。
-
-## Agent API
-
-使用与界面相同的状态、Worker 和导出函数，无额外拟合实现。
+浏览器调用 `window.traceStudio.call(action,args)`；主要操作也通过 WebMCP 暴露。HTTP 配套接口为 POST /command，body 为 `{action,args}`；GET /state 读取连接状态。所有坐标均为原图像素。
 
 ```javascript
-await window.traceStudio.call('detect_candidates', {
-  region: {x:300, y:250, width:510, height:440}, limit:25, spacing:35
-});
-await window.traceStudio.call('create_path', {
-  name:'刘海', points:['C03', {x:550,y:397}, 'C22'],
-  mode:'ink', tolerance:2, corridor:50, preview:true
-});
+await window.traceStudio.call('state'); // tool、active、selectedPaths、selectedNodes、view、gesturing、paths、groups
+await window.traceStudio.call('detect_candidates', {limit:48,spacing:30});
+await window.traceStudio.call('create_path', {name:'轮廓',points:[{x:20,y:30},{x:80,y:50}],mode:'ink',preview:true});
 await window.traceStudio.call('commit_preview');
-await window.traceStudio.call('inspect_geometry');
-const {content} = await window.traceStudio.call('export',{format:'svg'});
+await window.traceStudio.call('select_paths', {pathIds:['a','b']}); // 空数组取消选择
+await window.traceStudio.call('move_paths', {pathIds:['a','b'],groupId:'g',targetId:'c',after:true});
+await window.traceStudio.call('select_node', {pathId:'a',nodeIndex:2});
+await window.traceStudio.call('set_node_mode', {pathId:'a',nodeIndex:2,mode:'symmetric'});
+await window.traceStudio.call('set_point', {pathId:'a',curve:1,point:1,position:{x:50,y:60}});
+await window.traceStudio.call('export', {format:'svg'});
 ```
 
-候选点由图像角点响应及非极大值抑制生成。它们是视觉选择的建议，不能自动保证是正确的语义拐点。每次生成重新编号，先读取当前 candidates 再使用编号。原点在左上，x 向右，y 向下，单位为原图像素。
-
-| 操作 | 参数 / 结果 |
-| --- | --- |
-| state | 底图尺寸、就绪状态、路径摘要、候选点、当前设置 |
-| detect_candidates | region、limit 1–120、spacing 8–500；显示并返回带编号候选点 |
-| create_path | points 2–200（坐标或候选编号）、name、closed、mode ink/edge/manual、tolerance .3–12、corridor 10–400、snap、preview；返回路径 ID、段数和边缘支持分数 |
-| commit_preview / discard_preview | 接受 / 丢弃当前候选路径 |
-| get_project / load_project | 读取 / 载入完整工程；load_project 参数 {project} |
-| select_path | {id} 选中并进入编辑模式 |
-| set_point | {pathId,curve,point:1或2,position:{x,y}}；编辑三次曲线控制柄 |
-| set_view | {fit:true} 或 {x,y,scale}；x/y 是画布内平移，scale .05–12 |
-| set_candidates_visible | {visible} |
-| undo | 撤销上一次工程变更 |
-| inspect_geometry | 返回可见路径的端点缺口及抽样自交位置；不检查不同路径之间的重叠 |
-| export | {format:'svg'/'blender'/'json'}，返回 filename、content，不触发下载 |
-
-WebMCP 以 `bezier_` 前缀注册 state、detect_candidates、create_path、commit_preview、get_project、set_point、inspect_geometry、export。浏览器不支持 WebMCP 时普通编辑功能不受影响。
-
-本机 HTTP 服务：GET /state 读取连接和状态；POST /command，JSON 为 `{action,args}`，等待当前工作台执行并返回。最长等待 60 秒；超时后先读 state，不应盲目重复写操作。`scripts/client.mjs` 包装了这个协议。/next 和 /result 是界面内部轮询端点。
-
-## 算法与限制
-
-多尺度局部暗谷与 Sobel 梯度形成像素代价。A* 在两锚点扩张的边界框中搜索，并加入偏离引导线的代价；每两个用户落点固定拟合一段三次贝塞尔，固定端点，以最小二乘和迭代参数优化求解两个控制柄；不自动添加中间锚点。偏差超过 tolerance 时仅提示用户补点。使用 Worker 避免阻塞 UI；预览最多保留一个待计算请求。手动模式直接连接，之后编辑控制柄。
-
-参考方法：[Intelligent Scissors](https://www.cs.cornell.edu/courses/cs4670/2012fa/readings/mort-sigg95.pdf)；[Graphics Gems 曲线拟合](https://github.com/erich666/GraphicsGems/blob/master/gems/FitCurves.c)。实现为本项目独立代码，不是论文算法的完整复现。
-
-本次示例由 Agent 视觉选择引导点，通过同一 API 逐条描线，再做几何检查和局部自交修复。它是可继续加工的主要轮廓与细节描线，不是图像所有阴影、高光、颜色的精确复刻。弱边缘和密集分岔仍需要补点或人工调整。
-
-二维轮廓无法恢复角色的真实三维体积。不同闭合区域可能重叠；本项目不会自动完成实体布尔合并、开孔或打印壁厚检查。Blender 导入脚本和 .blend 保存的是可编辑曲线，可用于后续浮雕或建模，不应直接视为已验证的可打印 STL。
+`create_path` 接受候选编号或点坐标，返回 fitError / needsAnchor。`manage_group` 支持 create / rename / assign / visibility / delete。`move_path` 保留单条移动兼容入口；`select_path` 现在进入路径选择模式，节点编辑使用 `select_node`。`delete_node`、`merge_paths`、`straighten_span`、`get_project`、`inspect_geometry`、`undo`、`set_view`、`load_project` 保持可用。`refit_path` 仅打开确认框，不能绕过用户确认。拖动期间拒绝 API 修改工程。
 
 ## 验证
 
-- `node scripts/test-geometry.mjs`：黑线圆弧必须绕行而非走直弦；空白图无边缘支持；拟合端点连续；de Casteljau 拆分保持原曲线。
-- `node scripts/check-project.mjs`：示例端点闭合和抽样自交。
-- `npx tsc --noEmit`、`npm run build`。
-- 实际浏览器点击两点拟合、撤销、拖动控制柄、控制柄撤销、候选点预览与提交、SVG 下载、工程恢复、WebMCP 正常和无效参数调用。
-- Blender 4.5.3 LTS 后台实际导入，核对每个对象、控制柄、闭合标记、填充网格和毫米比例。
+```powershell
+node scripts/test-selection.mjs
+node scripts/test-continuity.mjs
+node scripts/test-node-edit.mjs
+node scripts/test-connect.mjs
+node scripts/test-single-curve.mjs
+node scripts/test-persistence.mjs
+npx tsc --noEmit
+npm run build
+```
 
-本次结果：44 条路径，23 条闭合，693 段三次贝塞尔。示例抽样检查未发现自交或连接缺口。Blender 参数映射误差为浮点精度量级。
+浏览器调试脚本供 Playwright CLI `run-code --filename` 使用，必须在隔离的测试浏览器中运行，会替换测试工程：
+
+- test-properties-layout.js：选择集、批量编组 / 拖动、框选、节点批量删除及撤销。
+- test-interaction-edges.js：折叠组、插入位置、改名、隐藏、连续模式、视图保持、拟合确认。
+- test-interaction-storage.js：拖动中不保存、提交后保存、刷新恢复、F2 和导出；接上一脚本的测试工程。
+- test-saving-browser.js：用实际浏览器私有文件系统测试同文件自动保存、授权恢复与另存为，仅替换 OS 文件选择器。

@@ -54,7 +54,7 @@ async (page) => {
   await page.getByRole('button', { name: '新建分组', exact: true }).click();
   await page.getByRole('button', { name: '解散分组 分组 1' }).waitFor();
   const group = (await call('state')).groups[0];
-  await page.getByRole('combobox', { name: '所属分组' }).selectOption(group.id);
+  // Creating a group now assigns the current path selection in one transaction.
   check(
     (await call('get_project')).paths.find((p) => p.id === a.id).groupId ===
       group.id,

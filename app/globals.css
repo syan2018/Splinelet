@@ -1078,3 +1078,350 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
   border: 1px solid #78bca4;
   border-radius: 4px;
 }
+/* Editor hierarchy: persistent outliner above independently scrolling properties. */
+.inspector {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #20262b;
+}
+.inspector .outliner {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 46%;
+  min-height: 160px;
+  max-height: 60%;
+  border-bottom: 1px solid #4b555e;
+}
+.outliner-heading,
+.outliner-selection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  flex-shrink: 0;
+}
+.outliner-heading {
+  border-bottom: 1px solid #343e46;
+  height: 39px;
+}
+.outliner-heading b {
+  font-size: 12px;
+  letter-spacing: 0.4px;
+}
+.outliner-heading > span {
+  margin-right: auto;
+  font-size: 11px;
+  color: #81929e;
+}
+.outliner button {
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  border-radius: 3px;
+  color: #9dabb6;
+}
+.outliner button:hover {
+  background: #ffffff12;
+  color: #dce6eb;
+}
+.outliner-selection {
+  font-size: 11px;
+  background: #1b2227;
+  color: #94a4b0;
+  min-height: 32px;
+}
+.outliner-selection > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outliner input[type='checkbox'] {
+  accent-color: #b8ef62;
+  appearance: auto;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.outliner-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 5px 25px;
+}
+.outliner .path-group {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.outliner .path-group > summary {
+  padding: 2px 3px;
+  gap: 5px;
+  font-size: 12px;
+  min-height: 31px;
+  border-radius: 3px;
+}
+.outliner .group-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  cursor: default;
+}
+.outliner .group-title {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outliner .group-controls {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.outliner .path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 3px 5px 24px;
+  margin: 1px 0;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #b3c0ca;
+}
+.outliner .path-row.selected {
+  background: #354431;
+}
+.outliner .path-row.active {
+  border-color: #839e61;
+  background: #354431;
+}
+.outliner .path-row.is-hidden {
+  opacity: 0.48;
+}
+.outliner .path-row:hover {
+  background: #303b40;
+}
+.outliner .path-select {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  display: block;
+  padding: 0;
+}
+.outliner .path-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+  font-size: 12px;
+}
+.outliner .path-select small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #83959e;
+}
+.outliner .path-swatch {
+  width: 6px;
+  height: 16px;
+  border-radius: 2px;
+  flex: 0 0 6px;
+}
+.outliner .drag-grip {
+  flex-shrink: 0;
+  margin: 0;
+}
+.outliner input:not([type='checkbox']) {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #b8ef62;
+  background: #182024;
+  color: #f2f6ed;
+  padding: 3px;
+  border-radius: 2px;
+  outline: 0;
+  font-size: 12px;
+}
+.outliner .group-empty {
+  padding: 8px 25px;
+  font-size: 11px;
+  color: #667c8a;
+}
+.outliner .drop-before {
+  border-top: 2px solid #b8ef62;
+}
+.outliner .drop-after {
+  border-bottom: 2px solid #b8ef62;
+}
+.outliner .drop-target > summary {
+  background: #365142;
+  outline: 1px solid #b8ef62;
+}
+.properties-area {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.property-tabs {
+  padding: 6px;
+  background: #252e34;
+}
+.properties-area section {
+  padding: 16px;
+}
+.properties-area h3 {
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.properties-area p {
+  font-size: 12px;
+  line-height: 1.65;
+  color: #95a5af;
+}
+.batch-actions {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.batch-actions button {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.stage {
+  touch-action: none;
+  user-select: none;
+}
+.tool-select {
+  cursor: default;
+}
+.toolrail {
+  gap: 6px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  width: 66px;
+}
+.toolrail button {
+  padding: 7px;
+}
+.toolrail button[aria-pressed='true'] {
+  color: #b8ef62;
+}
+.canvas-hint {
+  max-width: calc(100% - 210px);
+  font-size: 11px;
+  pointer-events: none;
+}
+.stage-top {
+  top: 12px;
+  left: 14px;
+  right: 14px;
+}
+.studio button:focus-visible,
+.outliner [tabindex]:focus-visible {
+  outline: 2px solid #b8ef62;
+  outline-offset: 1px;
+}
+@media (max-width: 1100px) {
+  .brand span,
+  .project-name i {
+    display: none;
+  }
+  .header-actions {
+    gap: 5px;
+  }
+  .canvas-hint {
+    max-width: calc(100% - 170px);
+  }
+  .canvas-hint > svg {
+    display: none;
+  }
+}
+@media (max-width: 750px) {
+  .inspector {
+    display: flex;
+    flex-direction: row;
+    height: 290px;
+  }
+  .inspector .outliner {
+    flex: 1;
+    max-height: none;
+    min-width: 0;
+    height: 100%;
+    border-right: 1px solid #3e4951;
+  }
+  .properties-area {
+    flex: 1;
+    height: 100%;
+  }
+  .stage {
+    height: calc(100% - 290px);
+  }
+  .canvas-hint {
+    display: none;
+  }
+  .outliner-selection > span {
+    font-size: 10px;
+  }
+}
+.node-segment-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #3d4851;
+}
+.node-inspector .batch-actions button {
+  flex: 1;
+  white-space: nowrap;
+}
+.stage:focus {
+  outline: none;
+}
+.compact-menu {
+  display: none;
+  position: relative;
+}
+@media (max-width: 750px) {
+  .compact-menu {
+    display: block;
+  }
+  .compact-menu > summary {
+    list-style: none;
+    border: 1px solid #3b464e;
+    border-radius: 5px;
+    padding: 8px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .compact-menu > div {
+    position: absolute;
+    z-index: 30;
+    right: 0;
+    top: calc(100% + 8px);
+    width: 150px;
+    padding: 5px;
+    background: #252e35;
+    border: 1px solid #58666e;
+    box-shadow: 0 8px 30px #0008;
+    border-radius: 6px;
+  }
+  .compact-menu > div button {
+    display: flex;
+    width: 100%;
+    justify-content: flex-start;
+    padding: 10px;
+    background: transparent;
+    border: 0;
+  }
+}
