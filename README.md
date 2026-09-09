@@ -38,6 +38,26 @@ node scripts/agent-server.mjs
 
 API 新增 refit_path({id})，与按钮相同；create_path 返回 fitError 与 needsAnchor。tolerance 现为提示阈值，不再控制分段数量。
 
+## 节点编辑（1.2 更新）
+
+- V 进入编辑，点击路径，再点击方形节点。金色框表示当前选中；右侧显示节点序号和坐标。
+- Delete / Backspace 或右侧“删除节点”删除单个节点。未选中节点、选中圆形控制柄时不会删除路径；整条路径通过单独的垃圾桶按钮删除。
+- 删除中间节点时，将相邻两段近似拟合成一段三次贝塞尔；两侧锚点不动，不增加中间节点。状态栏显示形状变化估计。其他段保持原样。
+- 删除开放路径端点时移除相邻段。闭合接缝只算一个节点；剩余一个节点时变为开放路径，删除最后一个节点会移除空路径。
+- 只显示选中节点相邻的控制柄；锚点和控制柄点击区域扩大。点击空白或 Esc 取消选中。单击选择不产生撤销记录，拖动超过 3 屏幕像素后才记录修改。
+- Ctrl+Z 撤销、Ctrl+Shift+Z 重做。删除后更新落点记录，后续重拟合不会重新出现已删除节点。
+
+API（浏览器、WebMCP、HTTP 配套服务均支持）：
+
+```javascript
+await window.traceStudio.call('select_node', {pathId: '路径 ID', nodeIndex: 2});
+await window.traceStudio.call('delete_node', {pathId: '路径 ID', nodeIndex: 2});
+```
+
+nodeIndex 从 0 开始，表示路径的实际锚点序号；开放路径为曲线数 + 1，闭合路径为曲线数。单节点路径为 1。删除返回 nodes、segments、merged、shapeError（相对删除前两段的像素变化估计）。state.selection 返回 curve、point、nodeIndex；选中控制柄时 nodeIndex 为 null。
+
+验证：node scripts/test-node-edit.mjs 覆盖开放首尾与中间、闭合接缝、退化到单节点、连接连续性、保留锚点和其他曲线、不修改原对象、单段合并。另有浏览器鼠标/键盘交互验证和单段拟合回归测试。
+
 ## Agent API
 
 使用与界面相同的状态、Worker 和导出函数，无额外拟合实现。

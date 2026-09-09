@@ -53,6 +53,13 @@ import {
   dist,
   inspectGeometry,
 } from '../public/geometry.mjs';
+// @ts-ignore Shared geometry editor, also tested directly in Node.
+import {
+  pathNodes,
+  nodeSelection,
+  selectedNode,
+  removeNode,
+} from '../public/node-edit.mjs';
 const initial: Project = {
   version: 1,
   image: '/reference.png',
@@ -150,6 +157,7 @@ export default function Home() {
     setDoc(p);
   };
   const setActiveNow = (id: string | null) => {
+    if (ar.current !== id) setSelection(null);
     ar.current = id;
     setActive(id);
   };
@@ -291,6 +299,7 @@ export default function Home() {
       setActiveNow(p.paths.at(-1)?.id || null);
       setDrawing(false);
     }
+    setSelection(null);
     setStatus('已撤销');
   };
   const redo = () => {
@@ -299,6 +308,7 @@ export default function Home() {
     if (!p) return;
     history.current.push(copy(pr.current));
     setDoc(p, false);
+    setSelection(null);
     setStatus('已重做');
   };
   const finish = () => {
@@ -470,6 +480,65 @@ export default function Home() {
     finish();
     setStatus('已删除路径 · 可撤销');
   };
+  const selectNode = (pathId: string, nodeIndex: number) => {
+    if (busyRef.current) throw Error('请等待拟合完成');
+    const path = pr.current.paths.find((p) => p.id === pathId);
+    if (!path) throw Error('路径不存在');
+    const selected = nodeSelection(path, nodeIndex);
+    finish();
+    setActiveNow(pathId);
+    setTool('edit');
+    setSelection(selected);
+    setStatus('已选中节点 ' + (nodeIndex + 1) + ' · Delete 删除 · 拖动调整');
+    return { pathId, nodeIndex, position: pathNodes(path)[nodeIndex] };
+  };
+  const deleteNode = (pathId: string, nodeIndex: number) => {
+    if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+    const original = pr.current.paths.find((p) => p.id === pathId);
+    if (!original) throw Error('路径不存在');
+    const result = removeNode(original, nodeIndex, sr.current.tolerance);
+    transact((p) => {
+      const index = p.paths.findIndex((q) => q.id === pathId);
+      if (result.path) p.paths[index] = result.path;
+      else p.paths.splice(index, 1);
+    });
+    finish();
+    setActiveNow(result.path ? pathId : null);
+    setTool('edit');
+    setSelection(null);
+    setStatus(
+      !result.path
+        ? '最后一个节点已删除 · 空路径已移除 · Ctrl+Z 撤销'
+        : result.merged
+          ? '节点已删除 · 相邻两段合成一段 · 形状变化约 ' +
+            result.fitError.toFixed(1) +
+            ' px · Ctrl+Z 撤销'
+          : '端点已删除 · 其余节点保持不变 · Ctrl+Z 撤销',
+    );
+    return {
+      pathId,
+      removedNode: nodeIndex,
+      nodes: result.path ? pathNodes(result.path).length : 0,
+      segments: result.path?.curves.length || 0,
+      merged: result.merged,
+      shapeError: result.fitError,
+    };
+  };
+  const deleteSelection = () => {
+    const path = pr.current.paths.find((p) => p.id === ar.current);
+    const index = selectedNode(path, selection);
+    if (tool !== 'edit' || !path || index === null) {
+      setStatus(
+        '请先在编辑模式点击方形节点，再按 Delete · 圆形控制柄不能单独删除',
+      );
+      return;
+    }
+    try {
+      deleteNode(path.id, index);
+    } catch (e: any) {
+      setStatus(e.message);
+    }
+  };
   const coordinate = (event: { clientX: number; clientY: number }) => {
     const r = stage.current!.getBoundingClientRect(),
       v = vr.current;
@@ -494,6 +563,7 @@ export default function Home() {
       stage.current?.setPointerCapture(e.pointerId);
       return;
     }
+    if (tool === 'edit') setSelection(null);
     if (tool === 'trace' && ready && !busyRef.current && inside(p))
       report(addAnchor(p));
   };
@@ -510,14 +580,23 @@ export default function Home() {
         });
         return;
       }
+      if (!g.moved) {
+        if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < 3) return;
+        history.current.push(copy(pr.current));
+        if (history.current.length > 80) history.current.shift();
+        future.current = [];
+        g.moved = true;
+      }
       const q = copy(pr.current),
-        path = q.paths.find((x) => x.id === g.path)!;
+        path = q.paths.find((x) => x.id === g.path);
+      if (!path) return;
       const c = path.curves[g.curve];
       const target = {
         x: Math.max(0, Math.min(q.width - 1, p.x)),
         y: Math.max(0, Math.min(q.height - 1, p.y)),
       };
-      if (g.point === 1 || g.point === 2) c[g.point] = target;
+      if (!path.curves.length) path.start = target;
+      else if (g.point === 1 || g.point === 2) c[g.point] = target;
       else {
         const old = c[g.point],
           delta = { x: target.x - old.x, y: target.y - old.y },
@@ -583,7 +662,7 @@ export default function Home() {
       });
   };
   const pointerUp = () => {
-    if (drag.current?.kind === 'point') {
+    if (drag.current?.kind === 'point' && drag.current.moved) {
       setHistoryTick((t) => t + 1);
       setStatus('控制点已调整 · 相邻曲线保持连接');
     }
@@ -594,17 +673,30 @@ export default function Home() {
     curve: number,
     point: number,
   ) => {
+    if (space.current || e.button === 1 || tool === 'pan') return;
     e.stopPropagation();
-    if (tool !== 'edit' || busyRef.current) return;
-    history.current.push(copy(pr.current));
-    future.current = [];
-    drag.current = { kind: 'point', path: ar.current, curve, point };
+    if (tool !== 'edit' || busyRef.current || e.button !== 0) return;
+    e.preventDefault();
+    drag.current = {
+      kind: 'point',
+      path: ar.current,
+      curve,
+      point,
+      x: e.clientX,
+      y: e.clientY,
+      moved: false,
+    };
+    setStatus(
+      point === 1 || point === 2
+        ? '已选中控制柄 · 拖动调整弯曲'
+        : '已选中节点 · Delete 删除 · 拖动调整',
+    );
     setSelection({ curve, point });
     stage.current?.setPointerCapture(e.pointerId);
   };
   const splitAt = (e: React.MouseEvent, pathId: string) => {
     e.stopPropagation();
-    if (tool !== 'edit') return;
+    if (tool !== 'edit' || busyRef.current) return;
     const p = coordinate(e),
       path = pr.current.paths.find((x) => x.id === pathId)!;
     let best = { distance: Infinity, i: 0, t: 0.5 };
@@ -657,7 +749,9 @@ export default function Home() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (
-        (e.target as HTMLElement).closest('input,textarea,[role="slider"]') ||
+        (e.target as HTMLElement).closest(
+          'input,textarea,[role="slider"],[contenteditable="true"]',
+        ) ||
         dialog
       )
         return;
@@ -676,13 +770,17 @@ export default function Home() {
       } else if (e.key === 'Escape') {
         finish();
         setProposed(null);
+        setSelection(null);
       } else if (e.key.toLowerCase() === 'p') setTool('trace');
       else if (e.key.toLowerCase() === 'v') {
         finish();
         setTool('edit');
       } else if (e.key.toLowerCase() === 'h') setTool('pan');
       else if (e.key.toLowerCase() === 'c') report(closePath());
-      else if (e.key === 'Delete') deletePath();
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        deleteSelection();
+      }
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') space.current = false;
@@ -936,6 +1034,7 @@ export default function Home() {
       finish();
       setTool('edit');
       setActiveNow(path.id);
+      setSelection(null);
       setStatus(
         '已按原落点重拟合：' +
           points.length +
@@ -971,6 +1070,15 @@ export default function Home() {
       widthMM: pr.current.widthMM,
       depthMM: pr.current.depthMM,
       active: ar.current,
+      selection: selection
+        ? {
+            ...selection,
+            nodeIndex: selectedNode(
+              pr.current.paths.find((p) => p.id === ar.current),
+              selection,
+            ),
+          }
+        : null,
       settings: sr.current,
       paths: pr.current.paths.map(
         ({
@@ -1000,6 +1108,8 @@ export default function Home() {
     detect_candidates: detect,
     create_path: createPath,
     refit_path: refitPath,
+    select_node: (a: any) => selectNode(a.pathId, a.nodeIndex),
+    delete_node: (a: any) => deleteNode(a.pathId, a.nodeIndex),
     commit_preview: acceptPreview,
     discard_preview: () => {
       setProposed(null);
@@ -1079,7 +1189,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '1.1',
+      version: '1.2',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -1094,6 +1204,8 @@ export default function Home() {
       'create_path',
       'commit_preview',
       'refit_path',
+      'select_node',
+      'delete_node',
       'get_project',
       'set_point',
       'inspect_geometry',
@@ -1129,6 +1241,14 @@ export default function Home() {
       },
       commit_preview: {},
       refit_path: { id: { type: 'string' } },
+      select_node: {
+        pathId: { type: 'string' },
+        nodeIndex: { type: 'integer' },
+      },
+      delete_node: {
+        pathId: { type: 'string' },
+        nodeIndex: { type: 'integer' },
+      },
       get_project: {},
       inspect_geometry: {},
       set_point: {
@@ -1154,6 +1274,10 @@ export default function Home() {
                     'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
                   refit_path:
                     'Refit an existing path using its recorded user anchors, exactly one cubic per pair. Undoable; does not insert extra anchors.',
+                  select_node:
+                    'Select a unique anchor by zero-based nodeIndex. Closed seam counts once. Highlight on canvas.',
+                  delete_node:
+                    'Delete one anchor by zero-based nodeIndex. Merge affected spans into exactly one cubic, preserve other spans. Undoable. Last node removes empty path.',
                   commit_preview: 'Commit the staged path to the project.',
                   inspect_geometry:
                     'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
@@ -1171,11 +1295,13 @@ export default function Home() {
                 required:
                   name === 'create_path'
                     ? ['points']
-                    : name === 'set_point'
-                      ? ['pathId', 'curve', 'point', 'position']
-                      : name === 'export'
-                        ? ['format']
-                        : [],
+                    : ['select_node', 'delete_node'].includes(name)
+                      ? ['pathId', 'nodeIndex']
+                      : name === 'set_point'
+                        ? ['pathId', 'curve', 'point', 'position']
+                        : name === 'export'
+                          ? ['format']
+                          : [],
                 additionalProperties: false,
               },
               annotations: {
@@ -1468,7 +1594,11 @@ export default function Home() {
                         pointerEvents: tool === 'edit' ? 'stroke' : 'none',
                       }}
                       onPointerDown={(e) => {
-                        if (tool === 'edit') {
+                        if (
+                          tool === 'edit' &&
+                          !space.current &&
+                          e.button === 0
+                        ) {
                           e.stopPropagation();
                           setActiveNow(path.id);
                           setSelection(null);
@@ -1481,51 +1611,108 @@ export default function Home() {
               {current?.visible && (
                 <g>
                   {tool === 'edit' ? (
-                    current.curves.map((c, i) => (
-                      <g key={i}>
-                        {[1, 2].map((k) => (
-                          <g key={k}>
-                            <line
-                              x1={c[k === 1 ? 0 : 3].x}
-                              y1={c[k === 1 ? 0 : 3].y}
-                              x2={c[k].x}
-                              y2={c[k].y}
-                              stroke={current.color}
-                              opacity=".6"
-                              strokeWidth={1 / view.s}
-                            />
+                    <>
+                      {' '}
+                      {current.curves.map((c, i) => (
+                        <g key={i}>
+                          {[1, 2]
+                            .filter((k) => {
+                              const node = selectedNode(current, selection);
+                              return node !== null
+                                ? (k === 1
+                                    ? i
+                                    : current.closed
+                                      ? (i + 1) % current.curves.length
+                                      : i + 1) === node
+                                : selection?.curve === i;
+                            })
+                            .map((k) => (
+                              <g
+                                key={k}
+                                data-control-handle={i + ':' + k}
+                                onPointerDown={(e) => startPointDrag(e, i, k)}
+                                style={{ cursor: 'grab' }}
+                              >
+                                <line
+                                  x1={c[k === 1 ? 0 : 3].x}
+                                  y1={c[k === 1 ? 0 : 3].y}
+                                  x2={c[k].x}
+                                  y2={c[k].y}
+                                  stroke={current.color}
+                                  opacity=".6"
+                                  strokeWidth={1 / view.s}
+                                />
+                                <circle
+                                  cx={c[k].x}
+                                  cy={c[k].y}
+                                  r={9 / view.s}
+                                  fill="transparent"
+                                />
+                                <circle
+                                  cx={c[k].x}
+                                  cy={c[k].y}
+                                  r={4 / view.s}
+                                  stroke={current.color}
+                                  strokeWidth={1 / view.s}
+                                  fill={
+                                    selection?.curve === i &&
+                                    selection.point === k
+                                      ? current.color
+                                      : '#20272c'
+                                  }
+                                  pointerEvents="none"
+                                />
+                              </g>
+                            ))}
+                        </g>
+                      ))}
+                      {pathNodes(current).map((p: Point, index: number) => {
+                        const selected =
+                          selectedNode(current, selection) === index;
+                        const item = nodeSelection(current, index);
+                        return (
+                          <g
+                            key={'node-' + index}
+                            role="button"
+                            aria-label={'节点 ' + (index + 1)}
+                            aria-pressed={selected}
+                            data-node-index={index}
+                            onPointerDown={(e) =>
+                              startPointDrag(e, item.curve, item.point)
+                            }
+                            style={{ cursor: 'move' }}
+                          >
                             <circle
-                              cx={c[k].x}
-                              cy={c[k].y}
-                              r={4 / view.s}
-                              stroke={current.color}
-                              strokeWidth={1 / view.s}
-                              fill={
-                                selection?.curve === i && selection.point === k
-                                  ? current.color
-                                  : '#20272c'
-                              }
-                              onPointerDown={(e) => startPointDrag(e, i, k)}
-                              style={{ cursor: 'grab' }}
+                              cx={p.x}
+                              cy={p.y}
+                              r={11 / view.s}
+                              fill="transparent"
+                            />
+                            {selected && (
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={9 / view.s}
+                                fill="#ffbe5530"
+                                stroke="#ffbe55"
+                                strokeWidth={1 / view.s}
+                                pointerEvents="none"
+                              />
+                            )}
+                            <rect
+                              x={p.x - (selected ? 5 : 4) / view.s}
+                              y={p.y - (selected ? 5 : 4) / view.s}
+                              width={(selected ? 10 : 8) / view.s}
+                              height={(selected ? 10 : 8) / view.s}
+                              fill={selected ? '#ffbe55' : current.color}
+                              stroke={selected ? '#fff5db' : '#102015'}
+                              strokeWidth={1.5 / view.s}
+                              pointerEvents="none"
                             />
                           </g>
-                        ))}
-                        {(i === 0 ? [0, 3] : [3]).map((k) => (
-                          <rect
-                            key={k}
-                            x={c[k].x - 4 / view.s}
-                            y={c[k].y - 4 / view.s}
-                            width={8 / view.s}
-                            height={8 / view.s}
-                            fill={current.color}
-                            stroke="#102015"
-                            strokeWidth={1 / view.s}
-                            onPointerDown={(e) => startPointDrag(e, i, k)}
-                            style={{ cursor: 'move' }}
-                          />
-                        ))}
-                      </g>
-                    ))
+                        );
+                      })}
+                    </>
                   ) : (
                     <>
                       {current.anchors.map((p, i) => (
@@ -1617,7 +1804,7 @@ export default function Home() {
                 : drawing
                   ? '移动预览，点击固定；走错时撤销并补点'
                   : tool === 'edit'
-                    ? '拖动方点和圆形控制柄 · 双击曲线插入节点'
+                    ? '点选方点 · Delete 删除 · 拖动调整 · 双击曲线加点'
                     : '点击轮廓起点，再点击下一个位置'}
             </span>
             {drawing && (
@@ -1806,6 +1993,53 @@ export default function Home() {
             )}
             {current && (
               <>
+                {tool === 'edit' && (
+                  <div className="node-inspector">
+                    <div>
+                      <strong>
+                        {selectedNode(current, selection) !== null
+                          ? '节点 ' +
+                            (selectedNode(current, selection) + 1) +
+                            ' / ' +
+                            pathNodes(current).length
+                          : selection
+                            ? '控制柄'
+                            : '节点编辑'}
+                      </strong>
+                      <span>{pathNodes(current).length} 个节点</span>
+                    </div>
+                    <p>
+                      {selectedNode(current, selection) !== null
+                        ? (() => {
+                            const p =
+                              pathNodes(current)[
+                                selectedNode(current, selection)
+                              ];
+                            return (
+                              'X ' +
+                              p.x.toFixed(1) +
+                              ' · Y ' +
+                              p.y.toFixed(1) +
+                              ' px'
+                            );
+                          })()
+                        : selection
+                          ? '拖动圆形手柄调整弯曲。删除请选方点。'
+                          : '点击方点选中，显示相邻控制柄；拖动可调整位置。'}
+                    </p>
+                    <button
+                      disabled={
+                        busy || selectedNode(current, selection) === null
+                      }
+                      onClick={deleteSelection}
+                    >
+                      <Trash2 size={14} />
+                      删除节点 <kbd>Del</kbd>
+                    </button>
+                    <small>中间节点删除后合为一段 · Ctrl+Z 撤销</small>
+                  </div>
+                )}
+
                 <button
                   className="example-button"
                   disabled={busy || !ready || current.anchors.length < 2}
@@ -2045,7 +2279,7 @@ export default function Home() {
             <>
               <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
               <p>
-                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、set_point、set_view、undo、inspect_geometry、export、load_project。
+                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、refit_path、set_point、set_view、undo、inspect_geometry、export、load_project。
               </p>
               <p>
                 支持 WebMCP 的浏览器会注册 bezier_ 前缀工具。本地配套 HTTP
@@ -2078,8 +2312,10 @@ export default function Home() {
                 闭合。新路径用右侧 ＋。选中开放路径可续画。
               </p>
               <p>
-                <b>4. 精修控制点</b>　V
-                切换编辑。方点移动节点，圆点调整控制柄；双击曲线插入节点。手动模式先连接，再编辑控制柄。
+                <b>4. 精修控制点</b>　V 切换编辑。点击方点选中，Delete /
+                Backspace
+                删除单个节点；拖动方点移动，圆点调整控制柄。双击曲线插入节点，Esc
+                取消选中。所有修改可用 Ctrl+Z 撤销。
               </p>
               <p>
                 <b>5. 保存与导出</b>　工程在当前浏览器自动保存；Ctrl S

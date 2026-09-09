@@ -75,6 +75,8 @@ const server = http.createServer(async (req, res) => {
       'detect_candidates',
       'create_path',
       'refit_path',
+      'select_node',
+      'delete_node',
       'commit_preview',
       'discard_preview',
       'get_project',

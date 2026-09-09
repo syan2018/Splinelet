@@ -734,3 +734,60 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
   border-color: #b8ef6244;
   color: #c5e49e;
 }
+.node-inspector {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #665339;
+  border-radius: 8px;
+  background: #29271f;
+}
+.node-inspector > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.node-inspector strong {
+  color: #ffd590;
+  font-size: 12px;
+}
+.node-inspector span,
+.node-inspector p,
+.node-inspector small {
+  font-size: 11px;
+  color: #bab8ae;
+  line-height: 1.6;
+}
+.node-inspector p {
+  margin: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+.node-inspector button {
+  width: 100%;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid #665339;
+  border-radius: 5px;
+  color: #ffd590;
+  background: #343023;
+  cursor: pointer;
+}
+.node-inspector button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.node-inspector button:not(:disabled):hover {
+  background: #4b3a28;
+}
+.node-inspector kbd {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.7;
+}
+.node-inspector small {
+  display: block;
+  margin-top: 8px;
+  font-size: 10px;
+}
