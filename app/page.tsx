@@ -60,6 +60,12 @@ import {
   selectedNode,
   removeNode,
 } from '../public/node-edit.mjs';
+// @ts-ignore Shared connection operations.
+import {
+  connectionSettings,
+  straightCubic,
+  mergeSplines,
+} from '../public/connect.mjs';
 const initial: Project = {
   version: 1,
   image: '/reference.png',
@@ -141,6 +147,24 @@ export default function Home() {
       point: number;
     } | null>(null),
     [coords, setCoords] = useState<Point | null>(null);
+  const [modifiers, setModifiers] = useState({
+    shiftKey: false,
+    altKey: false,
+  });
+  const modifierRef = useRef(modifiers);
+  const lastPointer = useRef<Point | null>(null);
+  const [mergeSource, setMergeSource] = useState<{
+    pathId: string;
+    end: 'start' | 'end';
+  } | null>(null);
+  const updateModifiers = (e: { shiftKey: boolean; altKey: boolean }) => {
+    const old = modifierRef.current;
+    if (old.shiftKey !== e.shiftKey || old.altKey !== e.altKey) {
+      const next = { shiftKey: e.shiftKey, altKey: e.altKey };
+      modifierRef.current = next;
+      setModifiers(next);
+    }
+  };
   const setDoc = (p: Project, record = true) => {
     if (record) {
       history.current.push(copy(pr.current));
@@ -157,7 +181,10 @@ export default function Home() {
     setDoc(p);
   };
   const setActiveNow = (id: string | null) => {
-    if (ar.current !== id) setSelection(null);
+    if (ar.current !== id) {
+      setSelection(null);
+      setMergeSource(null);
+    }
     ar.current = id;
     setActive(id);
   };
@@ -300,6 +327,7 @@ export default function Home() {
       setDrawing(false);
     }
     setSelection(null);
+    setMergeSource(null);
     setStatus('已撤销');
   };
   const redo = () => {
@@ -309,9 +337,11 @@ export default function Home() {
     history.current.push(copy(pr.current));
     setDoc(p, false);
     setSelection(null);
+    setMergeSource(null);
     setStatus('已重做');
   };
   const finish = () => {
+    setMergeSource(null);
     setDrawing(false);
     drawingRef.current = false;
     setPreview([]);
@@ -360,14 +390,7 @@ export default function Home() {
     if (cfg.mode === 'manual') {
       return {
         end: b,
-        curves: [
-          [
-            a,
-            { x: a.x + (b.x - a.x) / 3, y: a.y + (b.y - a.y) / 3 },
-            { x: a.x + (2 * (b.x - a.x)) / 3, y: a.y + (2 * (b.y - a.y)) / 3 },
-            b,
-          ],
-        ] as Cubic[],
+        curves: [straightCubic(a, b)] as Cubic[],
         quality: 1,
         fitError: 0,
         fitting: 'single',
@@ -406,12 +429,13 @@ export default function Home() {
       setBusy(false);
     }
   };
-  const addAnchor = async (p: Point) =>
+  const addAnchor = async (p: Point, options: Partial<Settings> = {}) =>
     lock(async () => {
       validPoint(p);
+      const config = { ...sr.current, ...options };
       const current = pr.current.paths.find((p) => p.id === ar.current);
       if (!drawingRef.current || !current || current.closed) {
-        const start = await snapped(p);
+        const start = await snapped(p, config);
         const path: TracePath = {
           id: crypto.randomUUID(),
           name: `路径 ${pr.current.paths.length + 1}`,
@@ -434,7 +458,7 @@ export default function Home() {
       }
       const a = current.curves.at(-1)?.[3] || current.start;
       if (dist(a, p) < 2) return a;
-      const r = await traceSpan(a, p);
+      const r = await traceSpan(a, p, config);
       transact((p) => {
         const path = p.paths.find((v) => v.id === current.id)!;
         path.curves.push(...r.curves);
@@ -443,20 +467,27 @@ export default function Home() {
         path.fitError = Math.max(path.fitError || 0, r.fitError);
       });
       setStatus(
-        r.fitError > sr.current.tolerance
-          ? `单段拟合偏差约 ${r.fitError.toFixed(1)} px · 建议撤销并手动补一个锚点`
-          : r.quality < 0.35
-            ? '边缘较弱，请检查路线；走错时撤销并在分岔前补点'
-            : `已连接 1 段贝塞尔 · 未添加中间锚点`,
+        config.mode === 'manual'
+          ? '已直连 · 未吸附、未拟合 · 可拖动控制柄调整'
+          : r.fitError > sr.current.tolerance
+            ? `单段拟合偏差约 ${r.fitError.toFixed(1)} px · 按 L 改为直连，或撤销补点`
+            : r.quality < 0.35
+              ? '边缘较弱，请检查路线 · L 改为直连，或撤销补点'
+              : `已连接 1 段贝塞尔 · 未添加中间锚点`,
       );
       return r.end;
     });
-  const closePath = async () =>
+  const closePath = async (options: Partial<Settings> = {}) =>
     lock(async () => {
       const path = pr.current.paths.find((p) => p.id === ar.current);
       if (!path || path.curves.length < 1) throw Error('至少先绘制一段曲线');
       if (path.closed) return;
-      const r = await traceSpan(path.curves.at(-1)![3], path.start, {}, false);
+      const r = await traceSpan(
+        path.curves.at(-1)![3],
+        path.start,
+        options,
+        false,
+      );
       transact((p) => {
         const q = p.paths.find((x) => x.id === path.id)!;
         q.curves.push(...r.curves);
@@ -539,6 +570,82 @@ export default function Home() {
       setStatus(e.message);
     }
   };
+  const straightenSpan = (pathId: string, curve?: number) => {
+    if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+    const path = pr.current.paths.find((p) => p.id === pathId);
+    const index =
+      curve ??
+      (tool === 'edit' && ar.current === pathId && selection
+        ? selection.curve
+        : (path?.curves.length || 0) - 1);
+    if (!path || !Number.isInteger(index) || !path.curves[index])
+      throw Error('请先绘制一段曲线，或选中要调整的节点/控制柄');
+    transact((p) => {
+      const q = p.paths.find((p) => p.id === pathId)!;
+      const c = q.curves[index];
+      q.curves[index] = straightCubic(c[0], c[3]) as Cubic;
+      delete q.fitError;
+    });
+    setPreview([]);
+    previewToken.current++;
+    setStatus('第 ' + (index + 1) + ' 段已改为直连 · 端点不动 · Ctrl+Z 撤销');
+    return { pathId, curve: index };
+  };
+  const startMerge = () => {
+    const path = pr.current.paths.find((p) => p.id === ar.current);
+    const node = selectedNode(path, selection);
+    if (
+      !path ||
+      path.closed ||
+      !path.curves.length ||
+      node === null ||
+      ![0, path.curves.length].includes(node)
+    ) {
+      setStatus('请在编辑模式选中开放样条的起点或终点，再按 M 合并');
+      return;
+    }
+    if (
+      !pr.current.paths.some(
+        (p) => p.id !== path.id && p.visible && !p.closed && p.curves.length,
+      )
+    ) {
+      setStatus('需要另一条可见的开放样条才能合并');
+      return;
+    }
+    setMergeSource({ pathId: path.id, end: node === 0 ? 'start' : 'end' });
+    setStatus('点击另一条样条的蓝色端点完成合并 · Esc 取消');
+  };
+  const mergePaths = (args: {
+    firstId: string;
+    firstEnd: 'start' | 'end';
+    secondId: string;
+    secondEnd: 'start' | 'end';
+  }) => {
+    if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+    const a = pr.current.paths.find((p) => p.id === args.firstId),
+      b = pr.current.paths.find((p) => p.id === args.secondId);
+    const result = mergeSplines(a, args.firstEnd, b, args.secondEnd);
+    transact((p) => {
+      p.paths = p.paths
+        .filter((p) => p.id !== args.secondId)
+        .map((p) => (p.id === args.firstId ? result.path : p));
+    });
+    finish();
+    setTool('edit');
+    setActiveNow(result.path.id);
+    setSelection(nodeSelection(result.path, result.joinNode));
+    setStatus(
+      result.bridge
+        ? '两条样条已合并 · 端点之间补一段直连，无额外节点 · Ctrl+Z 撤销'
+        : '重合端点已接合 · 原曲线保持不变 · Ctrl+Z 撤销',
+    );
+    return {
+      id: result.path.id,
+      removedId: args.secondId,
+      segments: result.path.curves.length,
+      bridge: result.bridge,
+    };
+  };
   const coordinate = (event: { clientX: number; clientY: number }) => {
     const r = stage.current!.getBoundingClientRect(),
       v = vr.current;
@@ -551,6 +658,7 @@ export default function Home() {
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
   const pointerDown = (e: React.PointerEvent) => {
     if (e.button === 2) return;
+    updateModifiers(e);
     const p = coordinate(e);
     if (tool === 'pan' || space.current || e.button === 1) {
       e.preventDefault();
@@ -565,11 +673,13 @@ export default function Home() {
     }
     if (tool === 'edit') setSelection(null);
     if (tool === 'trace' && ready && !busyRef.current && inside(p))
-      report(addAnchor(p));
+      report(addAnchor(p, connectionSettings(sr.current, e)));
   };
   const pointerMove = (e: React.PointerEvent) => {
     const p = coordinate(e);
     setCoords(p);
+    lastPointer.current = p;
+    updateModifiers(e);
     if (drag.current) {
       const g = drag.current;
       if (g.kind === 'pan') {
@@ -651,7 +761,7 @@ export default function Home() {
     const token = ++previewToken.current;
     previewBusy.current = true;
     const a = path.curves.at(-1)?.[3] || path.start;
-    traceSpan(a, p)
+    traceSpan(a, p, connectionSettings(sr.current, e))
       .then((r) => {
         if (token === previewToken.current && !busyRef.current)
           setPreview(r.curves);
@@ -661,6 +771,36 @@ export default function Home() {
         previewBusy.current = false;
       });
   };
+  useEffect(() => {
+    const p = lastPointer.current,
+      path = pr.current.paths.find((p) => p.id === ar.current);
+    const token = ++previewToken.current;
+    setPreview([]);
+    if (
+      !p ||
+      !ready ||
+      tool !== 'trace' ||
+      !drawingRef.current ||
+      busyRef.current ||
+      !path ||
+      path.closed ||
+      !inside(p)
+    )
+      return;
+    traceSpan(
+      path.curves.at(-1)?.[3] || path.start,
+      p,
+      connectionSettings(sr.current, modifiers),
+    )
+      .then((r) => {
+        if (previewToken.current === token && !busyRef.current)
+          setPreview(r.curves);
+      })
+      .catch(() => {});
+  }, [modifiers.shiftKey, modifiers.altKey]);
+  useEffect(() => {
+    if (tool !== 'edit') setMergeSource(null);
+  }, [tool]);
   const pointerUp = () => {
     if (drag.current?.kind === 'point' && drag.current.moved) {
       setHistoryTick((t) => t + 1);
@@ -748,6 +888,7 @@ export default function Home() {
   }, []);
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      updateModifiers(e);
       if (
         (e.target as HTMLElement).closest(
           'input,textarea,[role="slider"],[contenteditable="true"]',
@@ -776,19 +917,36 @@ export default function Home() {
         finish();
         setTool('edit');
       } else if (e.key.toLowerCase() === 'h') setTool('pan');
-      else if (e.key.toLowerCase() === 'c') report(closePath());
-      else if (e.key === 'Delete' || e.key === 'Backspace') {
+      else if (e.key.toLowerCase() === 'c')
+        report(closePath(connectionSettings(sr.current, e)));
+      else if (
+        e.key.toLowerCase() === 'm' &&
+        tool === 'edit' &&
+        !e.ctrlKey &&
+        !e.metaKey
+      )
+        startMerge();
+      else if (e.key.toLowerCase() === 'l' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        try {
+          straightenSpan(ar.current || '');
+        } catch (e: any) {
+          setStatus(e.message);
+        }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelection();
       }
     };
     const up = (e: KeyboardEvent) => {
+      updateModifiers(e);
       if (e.code === 'Space') space.current = false;
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     const blur = () => {
       space.current = false;
+      updateModifiers({ shiftKey: false, altKey: false });
       drag.current = null;
     };
     window.addEventListener('blur', blur);
@@ -1070,6 +1228,8 @@ export default function Home() {
       widthMM: pr.current.widthMM,
       depthMM: pr.current.depthMM,
       active: ar.current,
+      modifiers: modifierRef.current,
+      mergeSource,
       selection: selection
         ? {
             ...selection,
@@ -1108,6 +1268,8 @@ export default function Home() {
     detect_candidates: detect,
     create_path: createPath,
     refit_path: refitPath,
+    merge_paths: mergePaths,
+    straighten_span: (a: any) => straightenSpan(a.pathId, a.curve),
     select_node: (a: any) => selectNode(a.pathId, a.nodeIndex),
     delete_node: (a: any) => deleteNode(a.pathId, a.nodeIndex),
     commit_preview: acceptPreview,
@@ -1189,7 +1351,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '1.2',
+      version: '1.3',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -1204,6 +1366,8 @@ export default function Home() {
       'create_path',
       'commit_preview',
       'refit_path',
+      'merge_paths',
+      'straighten_span',
       'select_node',
       'delete_node',
       'get_project',
@@ -1238,9 +1402,20 @@ export default function Home() {
         mode: { enum: ['ink', 'edge', 'manual'] },
         tolerance: { type: 'number' },
         corridor: { type: 'number' },
+        snap: { type: 'boolean' },
       },
       commit_preview: {},
       refit_path: { id: { type: 'string' } },
+      merge_paths: {
+        firstId: { type: 'string' },
+        firstEnd: { enum: ['start', 'end'] },
+        secondId: { type: 'string' },
+        secondEnd: { enum: ['start', 'end'] },
+      },
+      straighten_span: {
+        pathId: { type: 'string' },
+        curve: { type: 'integer' },
+      },
       select_node: {
         pathId: { type: 'string' },
         nodeIndex: { type: 'integer' },
@@ -1274,6 +1449,10 @@ export default function Home() {
                     'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
                   refit_path:
                     'Refit an existing path using its recorded user anchors, exactly one cubic per pair. Undoable; does not insert extra anchors.',
+                  merge_paths:
+                    'Join two distinct open splines at chosen endpoints. Preserve curve shapes by reversing directions when needed; insert one straight cubic only when endpoints differ. Undoable; keep first path ID.',
+                  straighten_span:
+                    'Replace one existing cubic with a straight cubic at the same endpoints; keep all anchors. curve defaults to selection or last span. Undoable.',
                   select_node:
                     'Select a unique anchor by zero-based nodeIndex. Closed seam counts once. Highlight on canvas.',
                   delete_node:
@@ -1293,15 +1472,19 @@ export default function Home() {
                 type: 'object',
                 properties: properties[name],
                 required:
-                  name === 'create_path'
-                    ? ['points']
-                    : ['select_node', 'delete_node'].includes(name)
-                      ? ['pathId', 'nodeIndex']
-                      : name === 'set_point'
-                        ? ['pathId', 'curve', 'point', 'position']
-                        : name === 'export'
-                          ? ['format']
-                          : [],
+                  name === 'merge_paths'
+                    ? ['firstId', 'firstEnd', 'secondId', 'secondEnd']
+                    : name === 'straighten_span'
+                      ? ['pathId']
+                      : name === 'create_path'
+                        ? ['points']
+                        : ['select_node', 'delete_node'].includes(name)
+                          ? ['pathId', 'nodeIndex']
+                          : name === 'set_point'
+                            ? ['pathId', 'curve', 'point', 'position']
+                            : name === 'export'
+                              ? ['format']
+                              : [],
                 additionalProperties: false,
               },
               annotations: {
@@ -1727,13 +1910,118 @@ export default function Home() {
                           onPointerDown={(e) => {
                             if (i === 0 && drawing && current.curves.length) {
                               e.stopPropagation();
-                              report(closePath());
+                              report(
+                                closePath(
+                                  connectionSettings(
+                                    sr.current,
+                                    modifierRef.current,
+                                  ),
+                                ),
+                              );
                             }
                           }}
                         />
                       ))}
                     </>
                   )}
+                </g>
+              )}
+              {mergeSource && (
+                <g>
+                  {coords &&
+                    (() => {
+                      const source = project.paths.find(
+                        (p) => p.id === mergeSource.pathId,
+                      );
+                      if (!source) return null;
+                      const a =
+                        mergeSource.end === 'start'
+                          ? source.start
+                          : source.curves.at(-1)![3];
+                      return (
+                        <line
+                          x1={a.x}
+                          y1={a.y}
+                          x2={coords.x}
+                          y2={coords.y}
+                          stroke="#6cdef6"
+                          strokeDasharray={6 / view.s}
+                          strokeWidth={1.5 / view.s}
+                          pointerEvents="none"
+                        />
+                      );
+                    })()}
+                  {project.paths
+                    .filter(
+                      (p) =>
+                        p.id !== mergeSource.pathId &&
+                        p.visible &&
+                        !p.closed &&
+                        p.curves.length,
+                    )
+                    .flatMap((path) =>
+                      (['start', 'end'] as const).map((end) => {
+                        const p =
+                          end === 'start' ? path.start : path.curves.at(-1)![3];
+                        return (
+                          <g
+                            key={path.id + end}
+                            role="button"
+                            aria-label={
+                              '合并到 ' +
+                              path.name +
+                              ' ' +
+                              (end === 'start' ? '起点' : '终点')
+                            }
+                            data-merge-endpoint={path.id + ':' + end}
+                            onPointerDown={(e) => {
+                              if (e.button !== 0 || space.current) return;
+                              e.stopPropagation();
+                              e.preventDefault();
+                              try {
+                                mergePaths({
+                                  firstId: mergeSource.pathId,
+                                  firstEnd: mergeSource.end,
+                                  secondId: path.id,
+                                  secondEnd: end,
+                                });
+                              } catch (e: any) {
+                                setStatus(e.message);
+                              }
+                            }}
+                            style={{ cursor: 'crosshair' }}
+                          >
+                            <circle
+                              cx={p.x}
+                              cy={p.y}
+                              r={12 / view.s}
+                              fill="transparent"
+                            />
+                            <circle
+                              cx={p.x}
+                              cy={p.y}
+                              r={6 / view.s}
+                              fill="#102a35"
+                              stroke="#6cdef6"
+                              strokeWidth={2 / view.s}
+                              pointerEvents="none"
+                            />
+                            <text
+                              x={p.x + 10 / view.s}
+                              y={p.y - 10 / view.s}
+                              fontSize={11 / view.s}
+                              fill="#9becff"
+                              paintOrder="stroke"
+                              stroke="#102a35"
+                              strokeWidth={3 / view.s}
+                              pointerEvents="none"
+                            >
+                              {end === 'start' ? '起' : '终'}
+                            </text>
+                          </g>
+                        );
+                      }),
+                    )}
                 </g>
               )}
               {preview.length > 0 && (
@@ -1764,7 +2052,8 @@ export default function Home() {
                     className="candidate"
                     onPointerDown={(e) => {
                       e.stopPropagation();
-                      if (ready && !busy) report(addAnchor(c));
+                      if (ready && !busy)
+                        report(addAnchor(c, connectionSettings(sr.current, e)));
                     }}
                   >
                     <circle
@@ -1802,10 +2091,20 @@ export default function Home() {
               {!ready
                 ? '正在准备图像…'
                 : drawing
-                  ? '移动预览，点击固定；走错时撤销并补点'
+                  ? modifiers.altKey
+                    ? 'Alt：默认直连 · 不吸附、不拟合'
+                    : modifiers.shiftKey
+                      ? 'Shift：精确落点 · 暂停吸附，仍沿图像拟合'
+                      : 'Shift 不吸附 · Alt 直连 · L 修正上一段'
                   : tool === 'edit'
-                    ? '点选方点 · Delete 删除 · 拖动调整 · 双击曲线加点'
-                    : '点击轮廓起点，再点击下一个位置'}
+                    ? mergeSource
+                      ? '点击蓝色端点合并 · Esc 取消'
+                      : '点选方点 · Delete 删除 · 端点 M 合并 · L 直连'
+                    : modifiers.altKey
+                      ? 'Alt：默认直连 · 不吸附、不拟合'
+                      : modifiers.shiftKey
+                        ? 'Shift：精确落点 · 暂停吸附'
+                        : '点击落点 · Shift 不吸附 · Alt 直连 · L 修正上一段'}
             </span>
             {drawing && (
               <>
@@ -1921,7 +2220,9 @@ export default function Home() {
               </button>
               <button
                 disabled={!current?.curves.length || current.closed || busy}
-                onClick={() => report(closePath())}
+                onClick={(e) =>
+                  report(closePath(connectionSettings(sr.current, e)))
+                }
               >
                 <Link size={15} />
                 闭合
@@ -2036,6 +2337,47 @@ export default function Home() {
                       <Trash2 size={14} />
                       删除节点 <kbd>Del</kbd>
                     </button>
+                    <button
+                      style={{ marginTop: 8 }}
+                      disabled={busy || !selection || !current.curves.length}
+                      onClick={() => {
+                        try {
+                          straightenSpan(current.id);
+                        } catch (e: any) {
+                          setStatus(e.message);
+                        }
+                      }}
+                    >
+                      此段改为直连 <kbd>L</kbd>
+                    </button>
+                    <button
+                      style={{ marginTop: 8 }}
+                      disabled={
+                        busy ||
+                        current.closed ||
+                        !current.curves.length ||
+                        ![0, current.curves.length].includes(
+                          selectedNode(current, selection) ?? -1,
+                        )
+                      }
+                      onClick={startMerge}
+                    >
+                      <Link size={14} />
+                      连接另一条样条 <kbd>M</kbd>
+                    </button>
+                    {mergeSource && (
+                      <p>
+                        点击画布中另一条样条的蓝色端点。
+                        <button
+                          onClick={() => {
+                            setMergeSource(null);
+                            setStatus('已取消合并');
+                          }}
+                        >
+                          取消合并 · Esc
+                        </button>
+                      </p>
+                    )}
                     <small>中间节点删除后合为一段 · Ctrl+Z 撤销</small>
                   </div>
                 )}
@@ -2279,7 +2621,7 @@ export default function Home() {
             <>
               <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
               <p>
-                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、refit_path、set_point、set_view、undo、inspect_geometry、export、load_project。
+                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_point、set_view、undo、inspect_geometry、export、load_project。
               </p>
               <p>
                 支持 WebMCP 的浏览器会注册 bezier_ 前缀工具。本地配套 HTTP
@@ -2300,7 +2642,8 @@ export default function Home() {
             <div className="help-content">
               <p>
                 <b>1. 点击起点</b>
-                　选“深色线条”跟随描边；选“颜色边缘”跟随色块交界。底图可拖入。
+                　选“深色线条”跟随描边；选“颜色边缘”跟随色块交界。底图可拖入。按住
+                Shift 落点不吸附；Alt 落点跳过拟合并直接连接，松开恢复原设置。
               </p>
               <p>
                 <b>2. 看预览再落点</b>
@@ -2315,7 +2658,9 @@ export default function Home() {
                 <b>4. 精修控制点</b>　V 切换编辑。点击方点选中，Delete /
                 Backspace
                 删除单个节点；拖动方点移动，圆点调整控制柄。双击曲线插入节点，Esc
-                取消选中。所有修改可用 Ctrl+Z 撤销。
+                取消选中。所有修改可用 Ctrl+Z 撤销。选开放端点后按
+                M，再点击另一条样条的蓝色端点可合并。L
+                将选中节点对应的段（或描线时的最后一段）改为直连。
               </p>
               <p>
                 <b>5. 保存与导出</b>　工程在当前浏览器自动保存；Ctrl S
