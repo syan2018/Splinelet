@@ -10,6 +10,8 @@ export type TracePath = {
   visible: boolean;
   quality: number;
   anchors: Point[];
+  fitting?: 'single';
+  fitError?: number;
 };
 export type Project = {
   version: 1;

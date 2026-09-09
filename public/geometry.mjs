@@ -484,3 +484,114 @@ export function inspectGeometry(paths) {
       };
     });
 }
+// Exactly one cubic per pair of user anchors. Never inserts endpoints.
+export function fitSingleCurve(input, tolerance = 1.5) {
+  const points = input.filter((p, i) => !i || dist(p, input[i - 1]) > 1e-8);
+  if (!points.length) return { curves: [], fitError: 0, needsAnchor: false };
+  const a = points[0],
+    b = points.at(-1);
+  const straight = [
+    a,
+    add(a, mul(sub(b, a), 1 / 3)),
+    add(a, mul(sub(b, a), 2 / 3)),
+    b,
+  ];
+  if (points.length <= 2)
+    return { curves: [straight], fitError: 0, needsAnchor: false };
+  const u = [0];
+  for (let i = 1; i < points.length; i++)
+    u.push(u.at(-1) + dist(points[i - 1], points[i]));
+  const length = u.at(-1) || 1;
+  for (let i = 0; i < u.length; i++) u[i] /= length;
+  function solve(params) {
+    let aa = 0,
+      ab = 0,
+      bb = 0,
+      ax = 0,
+      ay = 0,
+      bx = 0,
+      by = 0;
+    for (let i = 0; i < points.length; i++) {
+      const t = params[i],
+        s = 1 - t,
+        w1 = 3 * s * s * t,
+        w2 = 3 * s * t * t;
+      const r = sub(points[i], add(mul(a, s * s * s), mul(b, t * t * t)));
+      aa += w1 * w1;
+      ab += w1 * w2;
+      bb += w2 * w2;
+      ax += w1 * r.x;
+      ay += w1 * r.y;
+      bx += w2 * r.x;
+      by += w2 * r.y;
+    }
+    const det = aa * bb - ab * ab;
+    if (Math.abs(det) < 1e-12) return straight;
+    const c = [
+      a,
+      { x: (ax * bb - bx * ab) / det, y: (ay * bb - by * ab) / det },
+      { x: (bx * aa - ax * ab) / det, y: (by * aa - ay * ab) / det },
+      b,
+    ];
+    return c.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)) &&
+      dist(c[1], a) < length * 3 &&
+      dist(c[2], b) < length * 3
+      ? c
+      : straight;
+  }
+  const error = (c, params) =>
+    params.reduce((sum, t, i) => sum + dist(evaluate(c, t), points[i]) ** 2, 0);
+  let params = u,
+    curve = solve(params),
+    bestError = error(curve, params);
+  for (let iteration = 0; iteration < 10; iteration++) {
+    const next = params.map((t, i) => {
+      if (!i || i === points.length - 1) return t;
+      const s = 1 - t,
+        q = evaluate(curve, t),
+        delta = sub(q, points[i]);
+      const first = add(
+        add(
+          mul(sub(curve[1], curve[0]), 3 * s * s),
+          mul(sub(curve[2], curve[1]), 6 * s * t),
+        ),
+        mul(sub(curve[3], curve[2]), 3 * t * t),
+      );
+      const second = add(
+        mul(add(sub(curve[2], mul(curve[1], 2)), curve[0]), 6 * s),
+        mul(add(sub(curve[3], mul(curve[2], 2)), curve[1]), 6 * t),
+      );
+      const denominator = dot(first, first) + dot(delta, second);
+      const value =
+        Math.abs(denominator) > 1e-12 ? t - dot(delta, first) / denominator : t;
+      return Math.max(
+        (params[i - 1] + t) / 2,
+        Math.min((t + params[i + 1]) / 2, value),
+      );
+    });
+    const candidate = solve(next),
+      candidateError = error(candidate, next);
+    if (candidateError >= bestError - 1e-10) break;
+    params = next;
+    curve = candidate;
+    bestError = candidateError;
+  }
+  // Nearest-point sample error, conservative at the curve's sampling resolution.
+  const samples = Array.from({ length: 257 }, (_, i) =>
+    evaluate(curve, i / 256),
+  );
+  let max = 0;
+  for (const p of points) {
+    let nearest = Infinity;
+    for (let i = 0; i < samples.length - 1; i++) {
+      const v = sub(samples[i + 1], samples[i]),
+        t = Math.max(
+          0,
+          Math.min(1, dot(sub(p, samples[i]), v) / (dot(v, v) || 1)),
+        );
+      nearest = Math.min(nearest, dist(p, add(samples[i], mul(v, t))));
+    }
+    max = Math.max(max, nearest);
+  }
+  return { curves: [curve], fitError: max, needsAnchor: max > tolerance };
+}

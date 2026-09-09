@@ -1,4 +1,10 @@
-import { buildField, snap, trace, fitCurve, corners } from './geometry.mjs';
+import {
+  buildField,
+  snap,
+  trace,
+  fitSingleCurve,
+  corners,
+} from './geometry.mjs';
 let field;
 self.onmessage = ({ data: d }) => {
   try {
@@ -24,7 +30,7 @@ self.onmessage = ({ data: d }) => {
     self.postMessage({
       id: d.id,
       end,
-      curves: fitCurve(r.points, d.tolerance),
+      ...fitSingleCurve(r.points, d.tolerance),
       ...r,
     });
   } catch (e) {

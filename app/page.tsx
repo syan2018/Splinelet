@@ -359,6 +359,8 @@ export default function Home() {
           ],
         ] as Cubic[],
         quality: 1,
+        fitError: 0,
+        fitting: 'single',
       };
     }
     const r = await rpc({
@@ -377,6 +379,7 @@ export default function Home() {
         c.map((p: any) => ({ x: p.x / s, y: p.y / s })),
       ) as Cubic[],
       quality: r.quality,
+      fitError: r.fitError / s,
     };
   };
   const lock = async <T,>(fn: () => Promise<T>) => {
@@ -409,6 +412,8 @@ export default function Home() {
           closed: false,
           visible: true,
           quality: 1,
+          fitError: 0,
+          fitting: 'single',
         };
         transact((p) => p.paths.push(path));
         setActiveNow(path.id);
@@ -425,11 +430,14 @@ export default function Home() {
         path.curves.push(...r.curves);
         path.anchors.push(r.end);
         path.quality = Math.min(path.quality, r.quality);
+        path.fitError = Math.max(path.fitError || 0, r.fitError);
       });
       setStatus(
-        r.quality < 0.35
-          ? '边缘较弱，请检查路线；走错时撤销并在分岔前补点'
-          : `已拟合 ${r.curves.length} 段贝塞尔 · 继续点击或 Enter 结束`,
+        r.fitError > sr.current.tolerance
+          ? `单段拟合偏差约 ${r.fitError.toFixed(1)} px · 建议撤销并手动补一个锚点`
+          : r.quality < 0.35
+            ? '边缘较弱，请检查路线；走错时撤销并在分岔前补点'
+            : `已连接 1 段贝塞尔 · 未添加中间锚点`,
       );
       return r.end;
     });
@@ -444,9 +452,14 @@ export default function Home() {
         q.curves.push(...r.curves);
         q.closed = true;
         q.quality = Math.min(q.quality, r.quality);
+        q.fitError = Math.max(q.fitError || 0, r.fitError);
       });
       finish();
-      setStatus('轮廓已闭合 · 可导出到 Blender 进行挤出');
+      setStatus(
+        r.fitError > sr.current.tolerance
+          ? `已用一段曲线闭合 · 偏差约 ${r.fitError.toFixed(1)} px，建议手动补点`
+          : '已用一段曲线闭合 · 未添加中间锚点',
+      );
     });
   const report = (promise: Promise<any>) =>
     promise.catch((e: any) => setStatus(e.message));
@@ -538,6 +551,8 @@ export default function Home() {
           }
         }
       }
+      if (path.fitting === 'single')
+        path.anchors = [path.start, ...path.curves.map((c) => c[3])];
       pr.current = q;
       setProject(q);
       return;
@@ -607,6 +622,8 @@ export default function Home() {
         1,
         ...(splitCubic(a.curves[best.i], best.t) as Cubic[]),
       );
+      if (a.fitting === 'single')
+        a.anchors = [a.start, ...a.curves.map((c) => c[3])];
     });
     setSelection({ curve: best.i, point: 3 });
     setStatus('已精确拆分曲线，形状保持不变');
@@ -829,6 +846,8 @@ export default function Home() {
         closed: !!args.closed,
         visible: true,
         quality: 1,
+        fitError: 0,
+        fitting: 'single',
       };
       const targets = path.closed ? [...pts.slice(1), a] : pts.slice(1);
       for (let i = 0; i < targets.length; i++) {
@@ -842,25 +861,93 @@ export default function Home() {
         path.curves.push(...r.curves);
         path.anchors.push(r.end);
         path.quality = Math.min(path.quality, r.quality);
+        path.fitError = Math.max(path.fitError || 0, r.fitError);
         a = r.end;
       }
       if (!path.curves.length) throw Error('锚点不能全部重合');
       if (args.preview) {
         setProposed(path);
-        setStatus(`候选路径已生成 · ${path.curves.length} 段曲线，检查后接受`);
+        setStatus(
+          `候选路径已生成 · ${path.curves.length} 段曲线` +
+            ((path.fitError || 0) > config.tolerance
+              ? ` · 偏差约 ${path.fitError!.toFixed(1)} px，建议手动补点`
+              : '，检查后接受'),
+        );
       } else {
         transact((p) => p.paths.push(path));
         setActiveNow(path.id);
         finish();
-        setStatus(`已创建「${path.name}」· ${path.curves.length} 段曲线`);
+        setStatus(
+          `已创建「${path.name}」· ${path.curves.length} 段曲线` +
+            ((path.fitError || 0) > config.tolerance
+              ? ` · 偏差约 ${path.fitError!.toFixed(1)} px，建议手动补点`
+              : ''),
+        );
       }
       return {
         id: path.id,
         name: path.name,
         segments: path.curves.length,
         quality: path.quality,
+        fitError: path.fitError,
+        needsAnchor: (path.fitError || 0) > config.tolerance,
         closed: path.closed,
         preview: !!args.preview,
+      };
+    });
+  const refitPath = async (args: { id?: string } = {}) =>
+    lock(async () => {
+      const original = pr.current.paths.find(
+        (p) => p.id === (args.id || ar.current),
+      );
+      if (!original) throw Error('请先选中路径');
+      const points = original.anchors.filter(
+        (p, i, all) => !i || dist(p, all[i - 1]) > 0.1,
+      );
+      if (
+        original.closed &&
+        points.length > 1 &&
+        dist(points[0], points.at(-1)) < 0.1
+      )
+        points.pop();
+      if (points.length < 2) throw Error('这条旧路径没有足够的原落点记录');
+      const path = copy(original);
+      path.curves = [];
+      path.quality = 1;
+      path.fitError = 0;
+      path.fitting = 'single';
+      path.start = points[0];
+      path.anchors = [points[0]];
+      const targets = original.closed
+        ? [...points.slice(1), points[0]]
+        : points.slice(1);
+      let a = points[0];
+      for (const b of targets) {
+        const r = await traceSpan(a, b, {}, false);
+        path.curves.push(...r.curves);
+        path.anchors.push(b);
+        path.quality = Math.min(path.quality, r.quality);
+        path.fitError = Math.max(path.fitError, r.fitError);
+        a = b;
+      }
+      transact((p) => {
+        p.paths[p.paths.findIndex((q) => q.id === original.id)] = path;
+      });
+      finish();
+      setTool('edit');
+      setActiveNow(path.id);
+      setStatus(
+        '已按原落点重拟合：' +
+          points.length +
+          ' 个锚点、' +
+          path.curves.length +
+          ' 段曲线 · 可撤销',
+      );
+      return {
+        id: path.id,
+        anchors: points.length,
+        segments: path.curves.length,
+        fitError: path.fitError,
       };
     });
   const acceptPreview = () => {
@@ -886,13 +973,25 @@ export default function Home() {
       active: ar.current,
       settings: sr.current,
       paths: pr.current.paths.map(
-        ({ id, name, curves, closed, visible, quality, anchors }) => ({
+        ({
+          id,
+          name,
+          curves,
+          closed,
+          visible,
+          quality,
+          anchors,
+          fitting,
+          fitError,
+        }) => ({
           id,
           name,
           segments: curves.length,
           closed,
           visible,
           quality,
+          fitting,
+          fitError,
           anchors,
         }),
       ),
@@ -900,6 +999,7 @@ export default function Home() {
     }),
     detect_candidates: detect,
     create_path: createPath,
+    refit_path: refitPath,
     commit_preview: acceptPreview,
     discard_preview: () => {
       setProposed(null);
@@ -979,7 +1079,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '1.0',
+      version: '1.1',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -993,6 +1093,7 @@ export default function Home() {
       'detect_candidates',
       'create_path',
       'commit_preview',
+      'refit_path',
       'get_project',
       'set_point',
       'inspect_geometry',
@@ -1027,6 +1128,7 @@ export default function Home() {
         corridor: { type: 'number' },
       },
       commit_preview: {},
+      refit_path: { id: { type: 'string' } },
       get_project: {},
       inspect_geometry: {},
       set_point: {
@@ -1049,7 +1151,9 @@ export default function Home() {
                   detect_candidates:
                     'Generate numbered image corner candidates and display on canvas. Original image pixel coordinates.',
                   create_path:
-                    'Trace ordered coordinates or candidate IDs along image edges and fit editable cubic Beziers. preview=true stages for visual review.',
+                    'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
+                  refit_path:
+                    'Refit an existing path using its recorded user anchors, exactly one cubic per pair. Undoable; does not insert extra anchors.',
                   commit_preview: 'Commit the staged path to the project.',
                   inspect_geometry:
                     'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
@@ -1547,7 +1651,12 @@ export default function Home() {
               className="preview-actions"
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <span>候选路径 · {proposed.curves.length} 段</span>
+              <span>
+                候选路径 · {proposed.curves.length} 段
+                {(proposed.fitError || 0) > settings.tolerance
+                  ? ' · 建议手动补点'
+                  : ''}
+              </span>
               <button className="primary" onClick={acceptPreview}>
                 <Check size={15} />
                 接受
@@ -1560,7 +1669,9 @@ export default function Home() {
           <section>
             <div className="eyebrow">TRACE SETTINGS</div>
             <h2>让曲线跟随轮廓</h2>
-            <p>用少量锚点确定路线，在分岔和尖角处补点。</p>
+            <p>
+              每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
+            </p>
             <label>识别目标</label>
             <Tabs
               value={settings.mode}
@@ -1576,10 +1687,10 @@ export default function Home() {
               </TabsList>
             </Tabs>
             <label>
-              拟合容差 <span>{settings.tolerance.toFixed(1)} px</span>
+              补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
             </label>
             <Slider
-              aria-label="拟合容差"
+              aria-label="补点提示阈值"
               min={0.5}
               max={6}
               step={0.5}
@@ -1591,7 +1702,7 @@ export default function Home() {
                 }))
               }
             />
-            <p className="note">像素路径拟合容差；不是对真实轮廓的精度保证。</p>
+            <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
             <label>
               搜索范围 <span>{settings.corridor} px</span>
             </label>
@@ -1695,6 +1806,13 @@ export default function Home() {
             )}
             {current && (
               <>
+                <button
+                  className="example-button"
+                  disabled={busy || !ready || current.anchors.length < 2}
+                  onClick={() => report(refitPath())}
+                >
+                  按原落点重拟合
+                </button>
                 <input
                   className="path-name-input"
                   aria-label="路径名称"
@@ -1897,7 +2015,10 @@ export default function Home() {
               </div>
               <p className="export-note">
                 抽样几何检查：
-                {geometryReport.reduce((n: number, p: any) => n + p.gaps, 0)}{' '}
+                {geometryReport.reduce(
+                  (n: number, p: any) => n + p.gaps,
+                  0,
+                )}{' '}
                 处缺口，
                 {geometryReport.reduce(
                   (n: number, p: any) => n + p.selfIntersections.length,
