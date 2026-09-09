@@ -128,4 +128,4 @@ async (page) => {
   console.log(
     'PASS: file creation, autosave same file, Ctrl+S without picker, refresh recovery, handle persistence, Save As, import detachment. File handles use actual browser-private filesystem; OS picker is substituted only in this isolated test.',
   );
-};
+}

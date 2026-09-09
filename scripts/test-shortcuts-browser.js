@@ -221,4 +221,4 @@ async (page) => {
       escapeCancels: true,
     }),
   );
-};
+}

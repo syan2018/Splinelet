@@ -67,6 +67,14 @@ import {
 } from '../public/connect.mjs';
 // @ts-ignore Browser persistence and serialized file writes.
 import { workspaceDB, FileWriter } from '../public/persistence.mjs';
+// @ts-ignore Shared node continuity constraints.
+import {
+  nodeModes,
+  nodeSides,
+  setContinuity,
+  moveHandle,
+  enforceContinuity,
+} from '../public/continuity.mjs';
 const initial: Project = {
   version: 1,
   image: '/reference.png',
@@ -166,6 +174,42 @@ export default function Home() {
       setModifiers(next);
     }
   };
+  const [pendingRefit, setPendingRefit] = useState<{
+    id: string;
+    name: string;
+    segments: number;
+    snapshot: Project;
+  } | null>(null);
+  const [propertyTab, setPropertyTab] = useState('paths');
+  const [inspectorWidth, setInspectorWidth] = useState(320);
+  const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
+  const draggedPath = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [renamingGroup, setRenamingGroup] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const clampInspector = (width: number) =>
+    Math.max(240, Math.min(600, window.innerWidth - 280, width));
+  useEffect(() => {
+    try {
+      const w = Number(localStorage.getItem('bezier-inspector-width'));
+      if (w >= 240) setInspectorWidth(clampInspector(w));
+    } catch {}
+  }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem('bezier-inspector-width', String(inspectorWidth));
+      } catch {}
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [inspectorWidth]);
+  useEffect(() => {
+    const resize = () => setInspectorWidth((w) => clampInspector(w));
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
   const fileHandle = useRef<any>(null);
   const allowAutoWrite = useRef(false);
   const writer = useRef(new FileWriter());
@@ -561,6 +605,7 @@ export default function Home() {
     finish();
     setActiveNow(null);
     setTool('trace');
+    setPropertyTab('trace');
     setSelection(null);
     setStatus('点击新的轮廓起点');
   };
@@ -672,6 +717,7 @@ export default function Home() {
         const path = p.paths.find((v) => v.id === current.id)!;
         path.curves.push(...r.curves);
         path.anchors.push(r.end);
+        if (path.nodeModes) path.nodeModes.push('corner');
         path.quality = Math.min(path.quality, r.quality);
         path.fitError = Math.max(path.fitError || 0, r.fitError);
       });
@@ -729,6 +775,7 @@ export default function Home() {
     setActiveNow(pathId);
     setTool('edit');
     setSelection(selected);
+    setPropertyTab('node');
     setStatus('已选中节点 ' + (nodeIndex + 1) + ' · Delete 删除 · 拖动调整');
     return { pathId, nodeIndex, position: pathNodes(path)[nodeIndex] };
   };
@@ -793,6 +840,10 @@ export default function Home() {
       const q = p.paths.find((p) => p.id === pathId)!;
       const c = q.curves[index];
       q.curves[index] = straightCubic(c[0], c[3]) as Cubic;
+      q.nodeModes = nodeModes(q);
+      q.nodeModes![index] = 'corner';
+      q.nodeModes![q.closed ? (index + 1) % q.curves.length : index + 1] =
+        'corner';
       delete q.fitError;
     });
     setPreview([]);
@@ -880,7 +931,12 @@ export default function Home() {
       stage.current?.setPointerCapture(e.pointerId);
       return;
     }
-    if (tool === 'edit') setSelection(null);
+    if (tool === 'edit') {
+      setSelection(null);
+      setActiveNow(null);
+      setMergeSource(null);
+      setStatus('已取消选择');
+    }
     if (tool === 'trace' && ready && !busyRef.current && inside(p))
       report(addAnchor(p, connectionSettings(sr.current, e)));
   };
@@ -915,7 +971,8 @@ export default function Home() {
         y: Math.max(0, Math.min(q.height - 1, p.y)),
       };
       if (!path.curves.length) path.start = target;
-      else if (g.point === 1 || g.point === 2) c[g.point] = target;
+      else if (g.point === 1 || g.point === 2)
+        moveHandle(path, g.curve, g.point, target);
       else {
         const old = c[g.point],
           delta = { x: target.x - old.x, y: target.y - old.y },
@@ -1041,6 +1098,7 @@ export default function Home() {
         : '已选中节点 · Delete 删除 · 拖动调整',
     );
     setSelection({ curve, point });
+    setPropertyTab('node');
     stage.current?.setPointerCapture(e.pointerId);
   };
   const splitAt = (e: React.MouseEvent, pathId: string) => {
@@ -1058,16 +1116,23 @@ export default function Home() {
     });
     transact((q) => {
       const a = q.paths.find((x) => x.id === pathId)!;
+      const modes = nodeModes(a);
+      if (modes[best.i] === 'symmetric') modes[best.i] = 'smooth';
+      const nextNode = a.closed ? (best.i + 1) % a.curves.length : best.i + 1;
+      if (modes[nextNode] === 'symmetric') modes[nextNode] = 'smooth';
+      modes.splice(best.i + 1, 0, 'smooth');
       a.curves.splice(
         best.i,
         1,
         ...(splitCubic(a.curves[best.i], best.t) as Cubic[]),
       );
+      a.nodeModes = modes;
+      enforceContinuity(a);
       if (a.fitting === 'single')
         a.anchors = [a.start, ...a.curves.map((c) => c[3])];
     });
     setSelection({ curve: best.i, point: 3 });
-    setStatus('已精确拆分曲线，形状保持不变');
+    setStatus('已精确拆分，形状保持不变；受影响的对称节点改为平滑连接');
   };
   const zoom = (factor: number, center?: Point) => {
     const r = stage.current!.getBoundingClientRect(),
@@ -1102,7 +1167,8 @@ export default function Home() {
         (e.target as HTMLElement).closest(
           'input,textarea,[role="slider"],[contenteditable="true"]',
         ) ||
-        dialog
+        dialog ||
+        pendingRefit
       )
         return;
       if (e.code === 'Space') {
@@ -1121,6 +1187,8 @@ export default function Home() {
         finish();
         setProposed(null);
         setSelection(null);
+        if (!mergeSource) setActiveNow(null);
+        setStatus(mergeSource ? '已取消合并' : '已取消选择');
       } else if (e.key.toLowerCase() === 'p') setTool('trace');
       else if (e.key.toLowerCase() === 'v') {
         finish();
@@ -1362,6 +1430,156 @@ export default function Home() {
         preview: !!args.preview,
       };
     });
+  const requestRefit = (args: { id?: string } = {}) => {
+    const p = pr.current.paths.find((p) => p.id === (args.id || ar.current));
+    if (!p) throw Error('请先选择路径');
+    setPendingRefit({
+      id: p.id,
+      name: p.name,
+      segments: p.curves.length,
+      snapshot: pr.current,
+    });
+    return { pendingConfirmation: true, id: p.id, segments: p.curves.length };
+  };
+  const changeNodeMode = (args: {
+    pathId: string;
+    nodeIndex: number;
+    mode: string;
+  }) => {
+    if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+    const original = pr.current.paths.find((p) => p.id === args.pathId);
+    if (!original) throw Error('路径不存在');
+    const changed = copy(original);
+    setContinuity(changed, args.nodeIndex, args.mode);
+    delete changed.fitError;
+    transact((p) => {
+      p.paths[p.paths.findIndex((p) => p.id === args.pathId)] = changed;
+    });
+    setStatus(
+      args.mode === 'corner'
+        ? '节点已设为尖角 · 控制柄独立'
+        : args.mode === 'smooth'
+          ? '节点已设为平滑 · 两侧手柄共线联动'
+          : '节点已设为对称连续 · 两侧手柄共线且等长',
+    );
+    return { pathId: args.pathId, nodeIndex: args.nodeIndex, mode: args.mode };
+  };
+  const movePath = (a: {
+    pathId: string;
+    groupId?: string;
+    beforeId?: string;
+  }) => {
+    if (busyRef.current) throw Error('请等待拟合完成');
+    const original = pr.current.paths.find((p) => p.id === a.pathId);
+    if (!original) throw Error('路径不存在');
+    const before = a.beforeId
+      ? pr.current.paths.find((p) => p.id === a.beforeId)
+      : null;
+    if (a.beforeId && !before) throw Error('目标路径不存在');
+    const groupId = before ? before.groupId || '' : a.groupId || '';
+    if (groupId && !pr.current.groups?.some((g) => g.id === groupId))
+      throw Error('目标分组不存在');
+    if (a.pathId === a.beforeId) return { moved: false };
+    transact((p) => {
+      const index = p.paths.findIndex((p) => p.id === a.pathId);
+      const [path] = p.paths.splice(index, 1);
+      if (groupId) path.groupId = groupId;
+      else delete path.groupId;
+      let target = before
+        ? p.paths.findIndex((p) => p.id === before.id)
+        : p.paths.reduce(
+            (last, p, i) => ((p.groupId || '') === groupId ? i + 1 : last),
+            p.paths.length,
+          );
+      p.paths.splice(target, 0, path);
+    });
+    setStatus('路径已移动 · 拖到行前可排序 · Ctrl+Z 撤销');
+    return { moved: true, pathId: a.pathId, groupId };
+  };
+  const dropPath = (e: React.DragEvent, groupId: string, beforeId?: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const id =
+      e.dataTransfer.getData('application/x-bezier-path') ||
+      draggedPath.current;
+    setDropTarget(null);
+    draggedPath.current = null;
+    if (!id) return;
+    try {
+      movePath({ pathId: id, groupId, beforeId });
+    } catch (e: any) {
+      setStatus(e.message);
+    }
+  };
+  const finishGroupRename = () => {
+    if (!renamingGroup) return;
+    const next = renamingGroup;
+    setRenamingGroup(null);
+    if (next.name.trim())
+      manageGroup({ action: 'rename', id: next.id, name: next.name.trim() });
+  };
+  const manageGroup = (a: any) => {
+    if (busyRef.current) throw Error('请等待当前拟合完成');
+    const action = a.action,
+      groups = pr.current.groups || [];
+    if (
+      !['create', 'rename', 'assign', 'visibility', 'delete'].includes(action)
+    )
+      throw Error('无效分组操作');
+    if (
+      ['rename', 'delete', 'visibility'].includes(action) &&
+      !groups.some((g) => g.id === a.id)
+    )
+      throw Error('分组不存在');
+    if (action === 'assign' && a.id && !groups.some((g) => g.id === a.id))
+      throw Error('分组不存在');
+    if (
+      ['create', 'rename'].includes(action) &&
+      (typeof a.name !== 'string' || !a.name.trim() || a.name.length > 80)
+    )
+      throw Error('分组名称需要 1–80 个字符');
+    if (
+      action === 'assign' &&
+      (!Array.isArray(a.pathIds) ||
+        !a.pathIds.length ||
+        a.pathIds.some(
+          (id: string) => !pr.current.paths.some((p) => p.id === id),
+        ))
+    )
+      throw Error('请选择存在的路径');
+    if (action === 'visibility' && typeof a.visible !== 'boolean')
+      throw Error('visible 必须为布尔值');
+    const id = action === 'create' ? crypto.randomUUID() : a.id;
+    transact((p) => {
+      p.groups = p.groups || [];
+      if (action === 'create') p.groups.push({ id, name: a.name.trim() });
+      if (action === 'rename')
+        p.groups.find((g) => g.id === id)!.name = a.name.trim();
+      if (action === 'assign')
+        p.paths
+          .filter((p) => a.pathIds.includes(p.id))
+          .forEach((p) => {
+            if (id) p.groupId = id;
+            else delete p.groupId;
+          });
+      if (action === 'visibility')
+        p.paths
+          .filter((p) => p.groupId === id)
+          .forEach((p) => (p.visible = a.visible));
+      if (action === 'delete') {
+        p.groups = p.groups.filter((g) => g.id !== id);
+        p.paths
+          .filter((p) => p.groupId === id)
+          .forEach((p) => delete p.groupId);
+      }
+    });
+    setStatus(
+      action === 'delete'
+        ? '已解散分组，曲线已移至未分组 · 可撤销'
+        : '分组已更新 · 自动保存 · 可撤销',
+    );
+    return { id, action };
+  };
   const refitPath = async (args: { id?: string } = {}) =>
     lock(async () => {
       const original = pr.current.paths.find(
@@ -1383,6 +1601,7 @@ export default function Home() {
       path.quality = 1;
       path.fitError = 0;
       path.fitting = 'single';
+      delete path.nodeModes;
       path.start = points[0];
       path.anchors = [points[0]];
       const targets = original.closed
@@ -1468,9 +1687,13 @@ export default function Home() {
           anchors,
           fitting,
           fitError,
+          groupId,
+          nodeModes,
         }) => ({
           id,
           name,
+          groupId,
+          nodeModes,
           segments: curves.length,
           closed,
           visible,
@@ -1480,11 +1703,15 @@ export default function Home() {
           anchors,
         }),
       ),
+      groups: pr.current.groups || [],
       candidates: cr.current,
     }),
     detect_candidates: detect,
     create_path: createPath,
-    refit_path: refitPath,
+    refit_path: requestRefit,
+    set_node_mode: changeNodeMode,
+    manage_group: manageGroup,
+    move_path: movePath,
     merge_paths: mergePaths,
     straighten_span: (a: any) => straightenSpan(a.pathId, a.curve),
     select_node: (a: any) => selectNode(a.pathId, a.nodeIndex),
@@ -1523,6 +1750,7 @@ export default function Home() {
       return { id: a.id };
     },
     set_point: (a: any) => {
+      if (busyRef.current || drag.current) throw Error('请先完成当前操作');
       const path = pr.current.paths.find((p) => p.id === a.pathId);
       if (
         !path ||
@@ -1533,8 +1761,12 @@ export default function Home() {
         throw Error('set_point 支持现有曲线的控制柄 1 或 2');
       const point = validPoint(a.position);
       transact((p) => {
-        p.paths.find((q) => q.id === a.pathId)!.curves[a.curve][a.point] =
-          point;
+        moveHandle(
+          p.paths.find((q) => q.id === a.pathId)!,
+          a.curve,
+          a.point,
+          point,
+        );
       });
       return { updated: true };
     },
@@ -1570,7 +1802,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '1.4',
+      version: '1.5',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -1585,6 +1817,9 @@ export default function Home() {
       'create_path',
       'commit_preview',
       'refit_path',
+      'set_node_mode',
+      'manage_group',
+      'move_path',
       'merge_paths',
       'straighten_span',
       'select_node',
@@ -1625,6 +1860,25 @@ export default function Home() {
       },
       commit_preview: {},
       refit_path: { id: { type: 'string' } },
+      set_node_mode: {
+        pathId: { type: 'string' },
+        nodeIndex: { type: 'integer' },
+        mode: { enum: ['corner', 'smooth', 'symmetric'] },
+      },
+      move_path: {
+        pathId: { type: 'string' },
+        groupId: { type: 'string' },
+        beforeId: { type: 'string' },
+      },
+      manage_group: {
+        action: {
+          enum: ['create', 'rename', 'assign', 'visibility', 'delete'],
+        },
+        id: { type: 'string' },
+        name: { type: 'string' },
+        pathIds: { type: 'array', items: { type: 'string' } },
+        visible: { type: 'boolean' },
+      },
       merge_paths: {
         firstId: { type: 'string' },
         firstEnd: { enum: ['start', 'end'] },
@@ -1667,7 +1921,13 @@ export default function Home() {
                   create_path:
                     'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
                   refit_path:
-                    'Refit an existing path using its recorded user anchors, exactly one cubic per pair. Undoable; does not insert extra anchors.',
+                    'Request a refit confirmation dialog. No geometry changes until the user explicitly confirms in the UI. Refitting replaces manual handle edits and continuity modes.',
+                  set_node_mode:
+                    'Set corner, smooth (collinear), or symmetric (equal opposite handles, C1) for one internal node. Undoable.',
+                  move_path:
+                    'Move a path into a group, or before another path (also adopting its group). Undoable.',
+                  manage_group:
+                    'Create, rename, assign paths, toggle group visibility, or dissolve a group without deleting paths. Undoable.',
                   merge_paths:
                     'Join two distinct open splines at chosen endpoints. Preserve curve shapes by reversing directions when needed; insert one straight cubic only when endpoints differ. Undoable; keep first path ID.',
                   straighten_span:
@@ -1691,19 +1951,25 @@ export default function Home() {
                 type: 'object',
                 properties: properties[name],
                 required:
-                  name === 'merge_paths'
-                    ? ['firstId', 'firstEnd', 'secondId', 'secondEnd']
-                    : name === 'straighten_span'
-                      ? ['pathId']
-                      : name === 'create_path'
-                        ? ['points']
-                        : ['select_node', 'delete_node'].includes(name)
-                          ? ['pathId', 'nodeIndex']
-                          : name === 'set_point'
-                            ? ['pathId', 'curve', 'point', 'position']
-                            : name === 'export'
-                              ? ['format']
-                              : [],
+                  name === 'move_path'
+                    ? ['pathId']
+                    : name === 'set_node_mode'
+                      ? ['pathId', 'nodeIndex', 'mode']
+                      : name === 'manage_group'
+                        ? ['action']
+                        : name === 'merge_paths'
+                          ? ['firstId', 'firstEnd', 'secondId', 'secondEnd']
+                          : name === 'straighten_span'
+                            ? ['pathId']
+                            : name === 'create_path'
+                              ? ['points']
+                              : ['select_node', 'delete_node'].includes(name)
+                                ? ['pathId', 'nodeIndex']
+                                : name === 'set_point'
+                                  ? ['pathId', 'curve', 'point', 'position']
+                                  : name === 'export'
+                                    ? ['format']
+                                    : [],
                 additionalProperties: false,
               },
               annotations: {
@@ -1862,6 +2128,9 @@ export default function Home() {
               className={tool === value ? 'selected' : ''}
               onClick={() => {
                 setTool(value);
+                if (value === 'trace') setPropertyTab('trace');
+                else if (value === 'edit')
+                  setPropertyTab(selection ? 'node' : 'paths');
                 if (value !== 'trace') finish();
               }}
             >
@@ -2091,6 +2360,7 @@ export default function Home() {
                             aria-label={'节点 ' + (index + 1)}
                             aria-pressed={selected}
                             data-node-index={index}
+                            data-node-mode={nodeModes(current)[index]}
                             onPointerDown={(e) =>
                               startPointDrag(e, item.curve, item.point)
                             }
@@ -2116,6 +2386,11 @@ export default function Home() {
                             <rect
                               x={p.x - (selected ? 5 : 4) / view.s}
                               y={p.y - (selected ? 5 : 4) / view.s}
+                              rx={
+                                nodeModes(current)[index] === 'corner'
+                                  ? 0
+                                  : 3 / view.s
+                              }
                               width={(selected ? 10 : 8) / view.s}
                               height={(selected ? 10 : 8) / view.s}
                               fill={selected ? '#ffbe55' : current.color}
@@ -2382,341 +2657,695 @@ export default function Home() {
             </div>
           )}
         </section>
-        <aside className="inspector">
-          <section>
-            <div className="eyebrow">TRACE SETTINGS</div>
-            <h2>让曲线跟随轮廓</h2>
-            <p>
-              每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
-            </p>
-            <label>识别目标</label>
-            <Tabs
-              value={settings.mode}
-              onValueChange={(v) => {
-                setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
-                setPreview([]);
-              }}
-            >
-              <TabsList className="mode-tabs">
-                <TabsTrigger value="ink">深色线条</TabsTrigger>
-                <TabsTrigger value="edge">颜色边缘</TabsTrigger>
-                <TabsTrigger value="manual">手动</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <label>
-              补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
-            </label>
-            <Slider
-              aria-label="补点提示阈值"
-              min={0.5}
-              max={6}
-              step={0.5}
-              value={[settings.tolerance]}
-              onValueChange={(v) =>
-                setSettings((s) => ({
-                  ...s,
-                  tolerance: Array.isArray(v) ? v[0] : v,
-                }))
-              }
-            />
-            <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
-            <label>
-              搜索范围 <span>{settings.corridor} px</span>
-            </label>
-            <Slider
-              aria-label="搜索范围"
-              min={20}
-              max={250}
-              step={10}
-              value={[settings.corridor]}
-              onValueChange={(v) =>
-                setSettings((s) => ({
-                  ...s,
-                  corridor: Array.isArray(v) ? v[0] : v,
-                }))
-              }
-            />
-            <label className="switch-label">
-              锚点吸附{' '}
-              <Switch
-                aria-label="锚点吸附"
-                checked={settings.snap}
-                onCheckedChange={(v) => setSettings((s) => ({ ...s, snap: v }))}
+        <div
+          className="inspector-resizer"
+          role="separator"
+          aria-label="调整右侧栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={240}
+          aria-valuemax={600}
+          aria-valuenow={inspectorWidth}
+          tabIndex={0}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            sidebarDrag.current = { x: e.clientX, width: inspectorWidth };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (sidebarDrag.current)
+              setInspectorWidth(
+                clampInspector(
+                  sidebarDrag.current.width + sidebarDrag.current.x - e.clientX,
+                ),
+              );
+          }}
+          onPointerUp={() => {
+            sidebarDrag.current = null;
+          }}
+          onPointerCancel={() => {
+            sidebarDrag.current = null;
+          }}
+          onDoubleClick={() => setInspectorWidth(320)}
+          onKeyDown={(e) => {
+            if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+              e.preventDefault();
+              setInspectorWidth((w) =>
+                clampInspector(w + (e.key === 'ArrowLeft' ? 20 : -20)),
+              );
+            }
+          }}
+        />
+        <aside
+          className="inspector"
+          style={
+            {
+              '--inspector-width': inspectorWidth + 'px',
+            } as React.CSSProperties
+          }
+        >
+          <Tabs
+            value={propertyTab}
+            onValueChange={(v) => setPropertyTab(v as string)}
+            className="property-tabs"
+          >
+            <TabsList aria-label="属性页签">
+              <TabsTrigger value="scene">工程</TabsTrigger>
+              <TabsTrigger value="trace">描线</TabsTrigger>
+              <TabsTrigger value="paths">路径</TabsTrigger>
+              <TabsTrigger value="node">节点</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div
+            role="tabpanel"
+            aria-label="节点属性"
+            hidden={propertyTab !== 'node'}
+          >
+            <section>
+              <h3>选中节点</h3>
+              <p>{current?.name || '未选中对象'}</p>{' '}
+              {current && tool === 'edit' ? (
+                <div className="node-inspector">
+                  <div>
+                    <strong>
+                      {selectedNode(current, selection) !== null
+                        ? '节点 ' +
+                          (selectedNode(current, selection) + 1) +
+                          ' / ' +
+                          pathNodes(current).length
+                        : selection
+                          ? '控制柄'
+                          : '节点编辑'}
+                    </strong>
+                    <span>{pathNodes(current).length} 个节点</span>
+                  </div>
+                  <p>
+                    {selectedNode(current, selection) !== null
+                      ? (() => {
+                          const p =
+                            pathNodes(current)[
+                              selectedNode(current, selection)
+                            ];
+                          return (
+                            'X ' +
+                            p.x.toFixed(1) +
+                            ' · Y ' +
+                            p.y.toFixed(1) +
+                            ' px'
+                          );
+                        })()
+                      : selection
+                        ? '拖动圆形手柄调整弯曲。删除请选方点。'
+                        : '点击方点选中，显示相邻控制柄；拖动可调整位置。'}
+                  </p>
+                  <button
+                    disabled={busy || selectedNode(current, selection) === null}
+                    onClick={deleteSelection}
+                  >
+                    <Trash2 size={14} />
+                    删除节点 <kbd>Del</kbd>
+                  </button>
+                  <button
+                    style={{ marginTop: 8 }}
+                    disabled={busy || !selection || !current.curves.length}
+                    onClick={() => {
+                      try {
+                        straightenSpan(current.id);
+                      } catch (e: any) {
+                        setStatus(e.message);
+                      }
+                    }}
+                  >
+                    此段改为直连 <kbd>L</kbd>
+                  </button>
+                  <button
+                    style={{ marginTop: 8 }}
+                    disabled={
+                      busy ||
+                      current.closed ||
+                      !current.curves.length ||
+                      ![0, current.curves.length].includes(
+                        selectedNode(current, selection) ?? -1,
+                      )
+                    }
+                    onClick={startMerge}
+                  >
+                    <Link size={14} />
+                    连接另一条样条 <kbd>M</kbd>
+                  </button>
+                  {mergeSource && (
+                    <p>
+                      点击画布中另一条样条的蓝色端点。
+                      <button
+                        onClick={() => {
+                          setMergeSource(null);
+                          setStatus('已取消合并');
+                        }}
+                      >
+                        取消合并 · Esc
+                      </button>
+                    </p>
+                  )}
+                  {selectedNode(current, selection) !== null && (
+                    <label className="node-mode">
+                      节点连接
+                      <select
+                        aria-label="节点连接模式"
+                        value={
+                          nodeModes(current)[selectedNode(current, selection)]
+                        }
+                        onChange={(e) => {
+                          try {
+                            changeNodeMode({
+                              pathId: current.id,
+                              nodeIndex: selectedNode(current, selection),
+                              mode: e.target.value,
+                            });
+                          } catch (e: any) {
+                            setStatus(e.message);
+                          }
+                        }}
+                      >
+                        <option value="corner">尖角 · 独立控制柄</option>
+                        <option
+                          value="smooth"
+                          disabled={
+                            !current.closed &&
+                            [0, current.curves.length].includes(
+                              selectedNode(current, selection),
+                            )
+                          }
+                        >
+                          平滑 · 共线
+                        </option>
+                        <option
+                          value="symmetric"
+                          disabled={
+                            !current.closed &&
+                            [0, current.curves.length].includes(
+                              selectedNode(current, selection),
+                            )
+                          }
+                        >
+                          对称 · C1 连续
+                        </option>
+                      </select>
+                    </label>
+                  )}
+                  <small>中间节点删除后合为一段 · Ctrl+Z 撤销</small>
+                </div>
+              ) : (
+                <p className="empty-properties">
+                  在画布中选择节点，查看连接模式与控制柄。
+                  <button
+                    onClick={() => {
+                      setTool('edit');
+                      setPropertyTab('paths');
+                    }}
+                  >
+                    选择路径
+                  </button>
+                </p>
+              )}
+            </section>
+          </div>
+          <div
+            role="tabpanel"
+            aria-label="描线参数"
+            hidden={propertyTab !== 'trace'}
+          >
+            <section>
+              <div className="eyebrow">TRACE SETTINGS</div>
+              <h2>让曲线跟随轮廓</h2>
+              <p>
+                每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
+              </p>
+              <label>识别目标</label>
+              <Tabs
+                value={settings.mode}
+                onValueChange={(v) => {
+                  setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
+                  setPreview([]);
+                }}
+              >
+                <TabsList className="mode-tabs">
+                  <TabsTrigger value="ink">深色线条</TabsTrigger>
+                  <TabsTrigger value="edge">颜色边缘</TabsTrigger>
+                  <TabsTrigger value="manual">手动</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <label>
+                补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
+              </label>
+              <Slider
+                aria-label="补点提示阈值"
+                min={0.5}
+                max={6}
+                step={0.5}
+                value={[settings.tolerance]}
+                onValueChange={(v) =>
+                  setSettings((s) => ({
+                    ...s,
+                    tolerance: Array.isArray(v) ? v[0] : v,
+                  }))
+                }
               />
-            </label>
-            <div className="path-actions">
-              <button disabled={!drawing || busy} onClick={finish}>
-                <Check size={15} />
-                结束
-              </button>
+              <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
+              <label>
+                搜索范围 <span>{settings.corridor} px</span>
+              </label>
+              <Slider
+                aria-label="搜索范围"
+                min={20}
+                max={250}
+                step={10}
+                value={[settings.corridor]}
+                onValueChange={(v) =>
+                  setSettings((s) => ({
+                    ...s,
+                    corridor: Array.isArray(v) ? v[0] : v,
+                  }))
+                }
+              />
+              <label className="switch-label">
+                锚点吸附{' '}
+                <Switch
+                  aria-label="锚点吸附"
+                  checked={settings.snap}
+                  onCheckedChange={(v) =>
+                    setSettings((s) => ({ ...s, snap: v }))
+                  }
+                />
+              </label>
+              <div className="path-actions">
+                <button disabled={!drawing || busy} onClick={finish}>
+                  <Check size={15} />
+                  结束
+                </button>
+                <button
+                  disabled={!current?.curves.length || current.closed || busy}
+                  onClick={(e) =>
+                    report(closePath(connectionSettings(sr.current, e)))
+                  }
+                >
+                  <Link size={15} />
+                  闭合
+                </button>
+              </div>
+            </section>
+          </div>
+          <div
+            role="tabpanel"
+            aria-label="路径与分组"
+            hidden={propertyTab !== 'paths'}
+          >
+            <section className="paths-section">
+              <div className="section-title">
+                <h3>
+                  曲线路径{' '}
+                  <span className="counter">{project.paths.length}</span>
+                </h3>
+                <button
+                  aria-label="新建路径"
+                  title="新建路径"
+                  onClick={begin}
+                  disabled={busy}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
               <button
-                disabled={!current?.curves.length || current.closed || busy}
-                onClick={(e) =>
-                  report(closePath(connectionSettings(sr.current, e)))
+                className="group-new"
+                onClick={() =>
+                  manageGroup({
+                    action: 'create',
+                    name: '分组 ' + ((project.groups?.length || 0) + 1),
+                  })
                 }
               >
-                <Link size={15} />
-                闭合
+                <Plus size={13} />
+                新建分组
               </button>
-            </div>
-          </section>
-          <section className="paths-section">
-            <div className="section-title">
-              <h3>
-                曲线路径 <span className="counter">{project.paths.length}</span>
-              </h3>
-              <button
-                aria-label="新建路径"
-                title="新建路径"
-                onClick={begin}
-                disabled={busy}
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-            {!project.paths.length ? (
-              <div className="empty-path">
-                <Spline size={25} />
-                <p>从一个锚点开始</p>
-                <small>每条路径可独立编辑和导出</small>
-              </div>
-            ) : (
-              <div className="path-list">
-                {project.paths.map((path) => (
-                  <div
-                    key={path.id}
-                    className={`path-row ${path.id === active ? 'active' : ''}`}
-                  >
-                    <button
-                      className="path-select"
-                      onClick={() => {
-                        setActiveNow(path.id);
-                        finish();
-                        setSelection(null);
-                      }}
-                    >
-                      <span
-                        className="path-swatch"
-                        style={{ background: path.color }}
-                      />
-                      <span>
-                        {path.name}
-                        <small>
-                          {path.closed ? '闭合' : '开放'} · {path.curves.length}{' '}
-                          段{path.quality < 0.35 ? ' · 待检查' : ''}
-                        </small>
-                      </span>
-                    </button>
-                    <button
-                      aria-label={`切换可见性 ${path.name}`}
-                      title="切换可见性"
-                      onClick={() =>
-                        transact((p) => {
-                          const q = p.paths.find((x) => x.id === path.id)!;
-                          q.visible = !q.visible;
+              {!project.paths.length && !project.groups?.length ? (
+                <div className="empty-path">
+                  <Spline size={25} />
+                  <p>从一个锚点开始</p>
+                  <small>每条路径可独立编辑和导出</small>
+                </div>
+              ) : (
+                <div className="path-list">
+                  {[...(project.groups || []), { id: '', name: '未分组' }].map(
+                    (group) => {
+                      const members = project.paths.filter(
+                        (p) => (p.groupId || '') === group.id,
+                      );
+                      if (
+                        !group.id &&
+                        !members.length &&
+                        !project.groups?.length
+                      )
+                        return null;
+                      return (
+                        <details
+                          className={
+                            'path-group ' +
+                            (dropTarget === 'g:' + group.id
+                              ? 'drop-target'
+                              : '')
+                          }
+                          key={group.id}
+                          open
+                          data-group-id={group.id}
+                          onDragOver={(e) => {
+                            if (draggedPath.current) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.dataTransfer.dropEffect = 'move';
+                              setDropTarget('g:' + group.id);
+                            }
+                          }}
+                          onDrop={(e) => dropPath(e, group.id)}
+                        >
+                          <summary>
+                            {renamingGroup?.id === group.id ? (
+                              <input
+                                aria-label="重命名分组"
+                                autoFocus
+                                value={renamingGroup.name}
+                                ref={(el) => {
+                                  el?.focus();
+                                }}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) =>
+                                  setRenamingGroup({
+                                    ...renamingGroup,
+                                    name: e.target.value,
+                                  })
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={finishGroupRename}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    finishGroupRename();
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    setRenamingGroup(null);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span
+                                className="group-title"
+                                title={
+                                  group.id
+                                    ? '双击重命名 · 拖入路径加入分组'
+                                    : '拖入路径移出分组'
+                                }
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (group.id)
+                                    setRenamingGroup({
+                                      id: group.id,
+                                      name: group.name,
+                                    });
+                                }}
+                              >
+                                {group.name}
+                              </span>
+                            )}
+                            <div className="group-controls">
+                              <small>{members.length}</small>
+                              {group.id && (
+                                <>
+                                  <button
+                                    aria-label={'显示隐藏分组 ' + group.name}
+                                    title="整组显示 / 隐藏"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      manageGroup({
+                                        action: 'visibility',
+                                        id: group.id,
+                                        visible: !members.some(
+                                          (p) => p.visible,
+                                        ),
+                                      });
+                                    }}
+                                  >
+                                    {members.some((p) => p.visible) ? (
+                                      <Eye size={14} />
+                                    ) : (
+                                      <EyeOff size={14} />
+                                    )}
+                                  </button>
+                                  <button
+                                    aria-label={'解散分组 ' + group.name}
+                                    title="解散分组，保留路径"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      manageGroup({
+                                        action: 'delete',
+                                        id: group.id,
+                                      });
+                                    }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </summary>
+                          {members.map((path) => (
+                            <div
+                              key={path.id}
+                              draggable={!busy}
+                              data-path-id={path.id}
+                              onDragStart={(e) => {
+                                draggedPath.current = path.id;
+                                e.dataTransfer.setData(
+                                  'application/x-bezier-path',
+                                  path.id,
+                                );
+                                e.dataTransfer.effectAllowed = 'move';
+                              }}
+                              onDragEnd={() => {
+                                draggedPath.current = null;
+                                setDropTarget(null);
+                              }}
+                              onDragOver={(e) => {
+                                if (draggedPath.current) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setDropTarget('p:' + path.id);
+                                }
+                              }}
+                              onDrop={(e) => dropPath(e, group.id, path.id)}
+                              className={`path-row ${dropTarget === 'p:' + path.id ? 'drop-before' : ''}  ${path.id === active ? 'active' : ''}`}
+                            >
+                              <button
+                                className="path-select"
+                                onClick={() => {
+                                  setActiveNow(path.id);
+                                  finish();
+                                  setSelection(null);
+                                }}
+                              >
+                                <span className="drag-grip" aria-hidden="true">
+                                  ⠿
+                                </span>
+                                <span
+                                  className="path-swatch"
+                                  style={{ background: path.color }}
+                                />
+                                <span>
+                                  {path.name}
+                                  <small>
+                                    {path.closed ? '闭合' : '开放'} ·{' '}
+                                    {path.curves.length} 段
+                                    {path.quality < 0.35 ? ' · 待检查' : ''}
+                                  </small>
+                                </span>
+                              </button>
+                              <button
+                                aria-label={`切换可见性 ${path.name}`}
+                                title="切换可见性"
+                                onClick={() =>
+                                  transact((p) => {
+                                    const q = p.paths.find(
+                                      (x) => x.id === path.id,
+                                    )!;
+                                    q.visible = !q.visible;
+                                  })
+                                }
+                              >
+                                {path.visible ? (
+                                  <Eye size={15} />
+                                ) : (
+                                  <EyeOff size={15} />
+                                )}
+                              </button>
+                            </div>
+                          ))}
+                          {!members.length && (
+                            <small className="group-empty">
+                              将路径拖到这里，或使用“所属分组”移入。
+                            </small>
+                          )}
+                        </details>
+                      );
+                    },
+                  )}
+                </div>
+              )}
+              {current && (
+                <>
+                  <label className="group-assignment">
+                    所属分组
+                    <select
+                      aria-label="所属分组"
+                      value={current.groupId || ''}
+                      onChange={(e) =>
+                        manageGroup({
+                          action: 'assign',
+                          id: e.target.value,
+                          pathIds: [current.id],
                         })
                       }
                     >
-                      {path.visible ? <Eye size={15} /> : <EyeOff size={15} />}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {current && (
-              <>
-                {tool === 'edit' && (
-                  <div className="node-inspector">
-                    <div>
-                      <strong>
-                        {selectedNode(current, selection) !== null
-                          ? '节点 ' +
-                            (selectedNode(current, selection) + 1) +
-                            ' / ' +
-                            pathNodes(current).length
-                          : selection
-                            ? '控制柄'
-                            : '节点编辑'}
-                      </strong>
-                      <span>{pathNodes(current).length} 个节点</span>
-                    </div>
-                    <p>
-                      {selectedNode(current, selection) !== null
-                        ? (() => {
-                            const p =
-                              pathNodes(current)[
-                                selectedNode(current, selection)
-                              ];
-                            return (
-                              'X ' +
-                              p.x.toFixed(1) +
-                              ' · Y ' +
-                              p.y.toFixed(1) +
-                              ' px'
-                            );
-                          })()
-                        : selection
-                          ? '拖动圆形手柄调整弯曲。删除请选方点。'
-                          : '点击方点选中，显示相邻控制柄；拖动可调整位置。'}
-                    </p>
+                      <option value="">未分组</option>
+                      {project.groups?.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <details className="advanced-actions">
+                    <summary>高级操作</summary>
+                    <p>会替换当前路径的手动调整。</p>
                     <button
-                      disabled={
-                        busy || selectedNode(current, selection) === null
-                      }
-                      onClick={deleteSelection}
+                      disabled={busy || !ready || current.anchors.length < 2}
+                      onClick={() => requestRefit()}
                     >
-                      <Trash2 size={14} />
-                      删除节点 <kbd>Del</kbd>
+                      重新拟合当前路径…
                     </button>
+                  </details>
+                  <input
+                    className="path-name-input"
+                    aria-label="路径名称"
+                    value={current.name}
+                    onChange={(e) =>
+                      transact((p) => {
+                        p.paths.find((x) => x.id === active)!.name =
+                          e.target.value;
+                      })
+                    }
+                  />
+                  <div className="path-actions">
                     <button
-                      style={{ marginTop: 8 }}
-                      disabled={busy || !selection || !current.curves.length}
                       onClick={() => {
-                        try {
-                          straightenSpan(current.id);
-                        } catch (e: any) {
-                          setStatus(e.message);
-                        }
+                        finish();
+                        setTool('edit');
                       }}
                     >
-                      此段改为直连 <kbd>L</kbd>
+                      <MousePointer2 size={14} />
+                      编辑
                     </button>
                     <button
-                      style={{ marginTop: 8 }}
-                      disabled={
-                        busy ||
-                        current.closed ||
-                        !current.curves.length ||
-                        ![0, current.curves.length].includes(
-                          selectedNode(current, selection) ?? -1,
-                        )
-                      }
-                      onClick={startMerge}
+                      disabled={current.closed}
+                      onClick={() => {
+                        setTool('trace');
+                        setDrawing(true);
+                        drawingRef.current = true;
+                      }}
                     >
-                      <Link size={14} />
-                      连接另一条样条 <kbd>M</kbd>
+                      <CornerDownLeft size={14} />
+                      续画
                     </button>
-                    {mergeSource && (
-                      <p>
-                        点击画布中另一条样条的蓝色端点。
-                        <button
-                          onClick={() => {
-                            setMergeSource(null);
-                            setStatus('已取消合并');
-                          }}
-                        >
-                          取消合并 · Esc
-                        </button>
-                      </p>
-                    )}
-                    <small>中间节点删除后合为一段 · Ctrl+Z 撤销</small>
+                    <button
+                      aria-label="删除当前路径"
+                      onClick={deletePath}
+                      disabled={busy}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                )}
-
-                <button
-                  className="example-button"
-                  disabled={busy || !ready || current.anchors.length < 2}
-                  onClick={() => report(refitPath())}
-                >
-                  按原落点重拟合
-                </button>
-                <input
-                  className="path-name-input"
-                  aria-label="路径名称"
-                  value={current.name}
-                  onChange={(e) =>
-                    transact((p) => {
-                      p.paths.find((x) => x.id === active)!.name =
-                        e.target.value;
-                    })
-                  }
+                </>
+              )}
+            </section>
+          </div>
+          <div
+            role="tabpanel"
+            aria-label="工程设置"
+            hidden={propertyTab !== 'scene'}
+          >
+            <section>
+              <h3>当前工程</h3>
+              <p>
+                {project.imageName} · {project.width} × {project.height}
+              </p>
+              <p>{saved}</p>
+            </section>
+            <section>
+              <h3>底图与预览</h3>
+              <label>
+                底图不透明度 <span>{opacity}%</span>
+              </label>
+              <Slider
+                aria-label="底图不透明度"
+                min={0}
+                max={100}
+                value={[opacity]}
+                onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
+              />
+              <label className="switch-label">
+                仅看曲线{' '}
+                <Switch
+                  aria-label="仅看曲线"
+                  checked={vectorsOnly}
+                  onCheckedChange={setVectorsOnly}
                 />
-                <div className="path-actions">
-                  <button
-                    onClick={() => {
-                      finish();
-                      setTool('edit');
-                    }}
-                  >
-                    <MousePointer2 size={14} />
-                    编辑
-                  </button>
-                  <button
-                    disabled={current.closed}
-                    onClick={() => {
-                      setTool('trace');
-                      setDrawing(true);
-                      drawingRef.current = true;
-                    }}
-                  >
-                    <CornerDownLeft size={14} />
-                    续画
-                  </button>
-                  <button
-                    aria-label="删除当前路径"
-                    onClick={deletePath}
-                    disabled={busy}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
-          <section>
-            <h3>底图与预览</h3>
-            <label>
-              底图不透明度 <span>{opacity}%</span>
-            </label>
-            <Slider
-              aria-label="底图不透明度"
-              min={0}
-              max={100}
-              value={[opacity]}
-              onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
-            />
-            <label className="switch-label">
-              仅看曲线{' '}
-              <Switch
-                aria-label="仅看曲线"
-                checked={vectorsOnly}
-                onCheckedChange={setVectorsOnly}
-              />
-            </label>
-            <label className="switch-label">
-              闭合区域填充{' '}
-              <Switch
-                aria-label="闭合区域填充"
-                checked={fill}
-                onCheckedChange={setFill}
-              />
-            </label>
-          </section>
-          <section className="workflow">
-            <b>为建模准备干净的曲线</b>
-            <p>
-              闭合外轮廓 → 设置毫米尺寸 → 导入 Blender →
-              检查后挤出。二维描线不会自动恢复立体角色。
-            </p>
-            <button
-              className="example-button"
-              disabled={busy}
-              onClick={() =>
-                report(
-                  fetch('/character-example.bezier.json')
-                    .then((r) => {
-                      if (!r.ok) throw Error('示例读取失败');
-                      return r.json();
-                    })
-                    .then((p) => apiRef.current.load_project({ project: p })),
-                )
-              }
-            >
-              <FolderOpen size={15} />
-              载入角色描线示例
-            </button>
-            <p>44 条路径 · 可编辑、可撤销载入</p>
-          </section>
+              </label>
+              <label className="switch-label">
+                闭合区域填充{' '}
+                <Switch
+                  aria-label="闭合区域填充"
+                  checked={fill}
+                  onCheckedChange={setFill}
+                />
+              </label>
+            </section>
+            <section className="workflow">
+              <b>为建模准备干净的曲线</b>
+              <p>
+                闭合外轮廓 → 设置毫米尺寸 → 导入 Blender →
+                检查后挤出。二维描线不会自动恢复立体角色。
+              </p>
+              <button
+                className="example-button"
+                disabled={busy}
+                onClick={() =>
+                  report(
+                    fetch('/character-example.bezier.json')
+                      .then((r) => {
+                        if (!r.ok) throw Error('示例读取失败');
+                        return r.json();
+                      })
+                      .then((p) => apiRef.current.load_project({ project: p })),
+                  )
+                }
+              >
+                <FolderOpen size={15} />
+                载入角色描线示例
+              </button>
+              <p>44 条路径 · 可编辑、可撤销载入</p>
+            </section>
+          </div>
         </aside>
       </div>
       <footer>
@@ -2735,6 +3364,42 @@ export default function Home() {
           · 滚轮缩放 · 空格平移
         </span>
       </footer>
+      <Dialog
+        open={!!pendingRefit}
+        onOpenChange={(open) => {
+          if (!open) setPendingRefit(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>确认重新拟合当前路径？</DialogTitle>
+          <DialogDescription>
+            将重新计算「{pendingRefit?.name}」的全部 {pendingRefit?.segments}{' '}
+            段曲线，仅影响这一条路径。手动控制柄调整和节点连续模式会被替换，其他路径不变。完成后可用
+            Ctrl+Z 撤销。
+          </DialogDescription>
+          <div className="confirm-actions">
+            <button autoFocus onClick={() => setPendingRefit(null)}>
+              取消，保留现有曲线
+            </button>
+            <button
+              className="danger-action"
+              disabled={busy}
+              onClick={() => {
+                const request = pendingRefit;
+                if (!request) return;
+                setPendingRefit(null);
+                if (pr.current !== request.snapshot) {
+                  setStatus('工程已改变，请重新打开确认操作');
+                  return;
+                }
+                report(refitPath({ id: request.id }));
+              }}
+            >
+              确认替换并重拟合
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={dialog !== null}
         onOpenChange={(v) => {
@@ -2855,7 +3520,7 @@ export default function Home() {
             <>
               <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
               <p>
-                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_point、set_view、undo、inspect_geometry、export、load_project。
+                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
               </p>
               <p>
                 支持 WebMCP 的浏览器会注册 bezier_ 前缀工具。本地配套 HTTP

@@ -1,3 +1,4 @@
+import { nodeModes } from './continuity.mjs';
 import { pathNodes } from './node-edit.mjs';
 
 export function connectionSettings(settings, keys = {}) {
@@ -36,8 +37,16 @@ export function mergeSplines(first, firstEnd, second, secondEnd) {
       .slice()
       .reverse()
       .map((c) => c.slice().reverse());
-  if (firstEnd === 'start') a.curves = reverse(a.curves);
-  if (secondEnd === 'end') b.curves = reverse(b.curves);
+  const am = nodeModes(a),
+    bm = nodeModes(b);
+  if (firstEnd === 'start') {
+    a.curves = reverse(a.curves);
+    am.reverse();
+  }
+  if (secondEnd === 'end') {
+    b.curves = reverse(b.curves);
+    bm.reverse();
+  }
   const from = a.curves.at(-1)[3],
     to = b.curves[0][0];
   const bridge = from.x !== to.x || from.y !== to.y;
@@ -46,6 +55,9 @@ export function mergeSplines(first, firstEnd, second, secondEnd) {
     ...(bridge ? [straightCubic(from, to)] : []),
     ...b.curves,
   ];
+  am[am.length - 1] = 'corner';
+  bm[0] = 'corner';
+  a.nodeModes = bridge ? [...am, ...bm] : [...am.slice(0, -1), ...bm];
   a.start = a.curves[0][0];
   a.anchors = pathNodes(a);
   a.name = first.name + ' + ' + second.name;
