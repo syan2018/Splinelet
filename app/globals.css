@@ -1049,3 +1049,32 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
   color: #cef09c;
   border-color: #70874c;
 }
+
+.path-group > summary::before {
+  display: none;
+}
+.path-group > summary .group-toggle {
+  flex: 0 0 18px;
+  width: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.path-group[open] > summary .group-toggle {
+  transform: rotate(90deg);
+}
+.path-name-edit {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.path-name-edit input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px;
+  background: #252b23;
+  color: inherit;
+  border: 1px solid #78bca4;
+  border-radius: 4px;
+}

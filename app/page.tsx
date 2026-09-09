@@ -185,6 +185,13 @@ export default function Home() {
   const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
   const draggedPath = useRef<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<
+    Record<string, boolean>
+  >({});
+  const [renamingPath, setRenamingPath] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<{
     id: string;
     name: string;
@@ -1510,6 +1517,18 @@ export default function Home() {
     } catch (e: any) {
       setStatus(e.message);
     }
+  };
+  const finishPathRename = () => {
+    if (!renamingPath) return;
+    const { id, name } = renamingPath;
+    setRenamingPath(null);
+    const trimmed = name.trim();
+    if (!trimmed || pr.current.paths.find((p) => p.id === id)?.name === trimmed)
+      return;
+    transact((p) => {
+      const path = p.paths.find((p) => p.id === id);
+      if (path) path.name = trimmed;
+    });
   };
   const finishGroupRename = () => {
     if (!renamingGroup) return;
@@ -3014,7 +3033,7 @@ export default function Home() {
                               : '')
                           }
                           key={group.id}
-                          open
+                          open={!collapsedGroups[group.id]}
                           data-group-id={group.id}
                           onDragOver={(e) => {
                             if (draggedPath.current) {
@@ -3026,7 +3045,26 @@ export default function Home() {
                           }}
                           onDrop={(e) => dropPath(e, group.id)}
                         >
-                          <summary>
+                          <summary onClick={(e) => e.preventDefault()}>
+                            <button
+                              className="group-toggle"
+                              aria-label={
+                                (collapsedGroups[group.id]
+                                  ? '展开分组 '
+                                  : '折叠分组 ') + group.name
+                              }
+                              aria-expanded={!collapsedGroups[group.id]}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setCollapsedGroups((v) => ({
+                                  ...v,
+                                  [group.id]: !v[group.id],
+                                }));
+                              }}
+                            >
+                              ▸
+                            </button>
                             {renamingGroup?.id === group.id ? (
                               <input
                                 aria-label="重命名分组"
@@ -3122,7 +3160,7 @@ export default function Home() {
                           {members.map((path) => (
                             <div
                               key={path.id}
-                              draggable={!busy}
+                              draggable={!busy && renamingPath?.id !== path.id}
                               data-path-id={path.id}
                               onDragStart={(e) => {
                                 draggedPath.current = path.id;
@@ -3146,30 +3184,80 @@ export default function Home() {
                               onDrop={(e) => dropPath(e, group.id, path.id)}
                               className={`path-row ${dropTarget === 'p:' + path.id ? 'drop-before' : ''}  ${path.id === active ? 'active' : ''}`}
                             >
-                              <button
-                                className="path-select"
-                                onClick={() => {
-                                  setActiveNow(path.id);
-                                  finish();
-                                  setSelection(null);
-                                }}
-                              >
-                                <span className="drag-grip" aria-hidden="true">
-                                  ⠿
-                                </span>
-                                <span
-                                  className="path-swatch"
-                                  style={{ background: path.color }}
-                                />
-                                <span>
-                                  {path.name}
-                                  <small>
-                                    {path.closed ? '闭合' : '开放'} ·{' '}
-                                    {path.curves.length} 段
-                                    {path.quality < 0.35 ? ' · 待检查' : ''}
-                                  </small>
-                                </span>
-                              </button>
+                              {renamingPath?.id === path.id ? (
+                                <div className="path-select path-name-edit">
+                                  <span
+                                    className="path-swatch"
+                                    style={{ background: path.color }}
+                                  />
+                                  <input
+                                    aria-label="重命名路径"
+                                    autoFocus
+                                    maxLength={120}
+                                    value={renamingPath.name}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) =>
+                                      setRenamingPath({
+                                        ...renamingPath,
+                                        name: e.target.value,
+                                      })
+                                    }
+                                    onBlur={finishPathRename}
+                                    onKeyDown={(e) => {
+                                      e.stopPropagation();
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        finishPathRename();
+                                      }
+                                      if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        setRenamingPath(null);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <button
+                                  className="path-select"
+                                  onClick={() => {
+                                    setActiveNow(path.id);
+                                    finish();
+                                    setSelection(null);
+                                  }}
+                                >
+                                  <span
+                                    className="drag-grip"
+                                    aria-hidden="true"
+                                  >
+                                    ⠿
+                                  </span>
+                                  <span
+                                    className="path-swatch"
+                                    style={{ background: path.color }}
+                                  />
+                                  <span>
+                                    <span
+                                      className="path-title"
+                                      title="双击重命名"
+                                      onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setRenamingPath({
+                                          id: path.id,
+                                          name: path.name,
+                                        });
+                                      }}
+                                    >
+                                      {path.name}
+                                    </span>
+                                    <small>
+                                      {path.closed ? '闭合' : '开放'} ·{' '}
+                                      {path.curves.length} 段
+                                      {path.quality < 0.35 ? ' · 待检查' : ''}
+                                    </small>
+                                  </span>
+                                </button>
+                              )}
                               <button
                                 aria-label={`切换可见性 ${path.name}`}
                                 title="切换可见性"
@@ -3192,7 +3280,7 @@ export default function Home() {
                           ))}
                           {!members.length && (
                             <small className="group-empty">
-                              将路径拖到这里，或使用“所属分组”移入。
+                              将路径拖到这里移入分组。
                             </small>
                           )}
                         </details>
@@ -3203,28 +3291,6 @@ export default function Home() {
               )}
               {current && (
                 <>
-                  <label className="group-assignment">
-                    所属分组
-                    <select
-                      aria-label="所属分组"
-                      value={current.groupId || ''}
-                      onChange={(e) =>
-                        manageGroup({
-                          action: 'assign',
-                          id: e.target.value,
-                          pathIds: [current.id],
-                        })
-                      }
-                    >
-                      <option value="">未分组</option>
-                      {project.groups?.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
                   <details className="advanced-actions">
                     <summary>高级操作</summary>
                     <p>会替换当前路径的手动调整。</p>
@@ -3235,17 +3301,6 @@ export default function Home() {
                       重新拟合当前路径…
                     </button>
                   </details>
-                  <input
-                    className="path-name-input"
-                    aria-label="路径名称"
-                    value={current.name}
-                    onChange={(e) =>
-                      transact((p) => {
-                        p.paths.find((x) => x.id === active)!.name =
-                          e.target.value;
-                      })
-                    }
-                  />
                   <div className="path-actions">
                     <button
                       onClick={() => {
