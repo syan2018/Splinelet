@@ -44,7 +44,6 @@ import {
   svg,
   blender,
   validateProject,
-  db,
 } from '@/lib/project';
 // @ts-ignore Shared pure JS geometry module.
 import {
@@ -66,6 +65,8 @@ import {
   straightCubic,
   mergeSplines,
 } from '../public/connect.mjs';
+// @ts-ignore Browser persistence and serialized file writes.
+import { workspaceDB, FileWriter } from '../public/persistence.mjs';
 const initial: Project = {
   version: 1,
   image: '/reference.png',
@@ -133,7 +134,7 @@ export default function Home() {
     future = useRef<Project[]>([]),
     [, setHistoryTick] = useState(0),
     [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null),
-    [saved, setSaved] = useState('本地自动保存'),
+    [saved, setSaved] = useState('正在恢复工程…'),
     [initialized, setInitialized] = useState(false);
   const file = useRef<HTMLInputElement>(null),
     projectFile = useRef<HTMLInputElement>(null),
@@ -163,6 +164,129 @@ export default function Home() {
       const next = { shiftKey: e.shiftKey, altKey: e.altKey };
       modifierRef.current = next;
       setModifiers(next);
+    }
+  };
+  const fileHandle = useRef<any>(null);
+  const allowAutoWrite = useRef(false);
+  const writer = useRef(new FileWriter());
+  const backupQueue = useRef(Promise.resolve());
+  const backupSaved = useRef<Project | null>(null);
+  const backupBinding = useRef<any>(null);
+  const fileSaved = useRef<{ handle: any; project: Project } | null>(null);
+  const [fileName, setFileName] = useState('');
+  const [fileBusy, setFileBusy] = useState(false);
+  const fileBusyRef = useRef(false);
+  const [bindingVersion, setBindingVersion] = useState(0);
+  const bindFile = (handle: any) => {
+    fileHandle.current = handle;
+    allowAutoWrite.current = false;
+    fileSaved.current = null;
+    setFileName(handle?.name || '');
+    setBindingVersion((v) => v + 1);
+  };
+  const backupProject = (snapshot: Project, handle = fileHandle.current) => {
+    const task = backupQueue.current
+      .catch(() => {})
+      .then(() => workspaceDB('put', { project: snapshot, handle }));
+    backupQueue.current = task;
+    return task.then(() => {
+      backupSaved.current = snapshot;
+      backupBinding.current = handle;
+    });
+  };
+  const writeProjectFile = async (snapshot: Project, handle: any) => {
+    await writer.current.write(handle, JSON.stringify(snapshot, null, 2));
+    fileSaved.current = { handle, project: snapshot };
+    if (pr.current === snapshot && fileHandle.current === handle)
+      setSaved('已保存到 ' + handle.name);
+  };
+  const saveProject = async (saveAs = false) => {
+    if (fileBusyRef.current) return;
+    fileBusyRef.current = true;
+    setFileBusy(true);
+    try {
+      let handle = saveAs ? null : fileHandle.current;
+      if (!handle) {
+        if (!(window as any).showSaveFilePicker) {
+          await backupProject(pr.current);
+          setSaved('已保存到此浏览器 · 当前浏览器不支持直接写文件');
+          setStatus(
+            '工程已更新到同一份浏览器备份；可在导出面板下载副本，或用 Chrome / Edge 绑定文件',
+          );
+          return;
+        }
+        handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName || '描迹工程.bezier.json',
+          types: [
+            {
+              description: '描迹工程',
+              accept: { 'application/json': ['.json'] },
+            },
+          ],
+        });
+      } else if (
+        (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+      ) {
+        if (
+          (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted'
+        )
+          throw Error('未获得文件写入权限；请重新保存授权或另存为');
+      }
+      const snapshot = pr.current;
+      setSaved('正在写入工程文件…');
+      await writeProjectFile(snapshot, handle);
+      if (fileHandle.current !== handle) bindFile(handle);
+      allowAutoWrite.current = true;
+      fileSaved.current = { handle, project: snapshot };
+      await backupProject(pr.current, handle);
+      setSaved(
+        pr.current === snapshot
+          ? '已保存到 ' + handle.name
+          : '有新修改 · 等待自动保存',
+      );
+      setStatus(
+        '已绑定 ' + handle.name + ' · 后续修改自动写回，Ctrl+S 立即保存',
+      );
+      navigator.storage?.persist?.().catch(() => {});
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        setStatus('已取消选择保存位置');
+        return;
+      }
+      setSaved('文件保存失败 · ' + e.message);
+      setStatus('文件未写入成功；浏览器备份仍独立保存。可重试保存或另存为。');
+    } finally {
+      fileBusyRef.current = false;
+      setFileBusy(false);
+    }
+  };
+  const openProjectFile = async () => {
+    if (busyRef.current || fileBusyRef.current) return;
+    if (!(window as any).showOpenFilePicker) {
+      projectFile.current?.click();
+      return;
+    }
+    try {
+      const [handle] = await (window as any).showOpenFilePicker({
+        multiple: false,
+        types: [
+          {
+            description: '描迹工程',
+            accept: { 'application/json': ['.json'] },
+          },
+        ],
+      });
+      const file = await handle.getFile();
+      const parsed = validateProject(JSON.parse(await file.text()));
+      apiRef.current.load_project({ project: parsed });
+      bindFile(handle);
+      allowAutoWrite.current = true;
+      fileSaved.current = { handle, project: pr.current };
+      await backupProject(pr.current, handle);
+      setSaved('已打开 ' + handle.name + ' · 修改后自动保存');
+      setStatus('已打开原文件 · Ctrl+S 保存到同一文件，首次写入可能需要授权');
+    } catch (e: any) {
+      if (e.name !== 'AbortError') setStatus('打开工程失败：' + e.message);
     }
   };
   const setDoc = (p: Project, record = true) => {
@@ -211,8 +335,9 @@ export default function Home() {
     });
   useEffect(() => {
     let alive = true;
-    db('get')
-      .then(async (v) => {
+    workspaceDB('get')
+      .then(async (session: any) => {
+        let v = session?.project;
         if (!v) {
           try {
             const r = await fetch('/character-example.bezier.json');
@@ -222,6 +347,10 @@ export default function Home() {
         if (v && alive) {
           try {
             setDoc(validateProject(v), false);
+            if (session?.handle) {
+              bindFile(session.handle);
+              fileSaved.current = null;
+            }
             setStatus('已恢复本地工程');
           } catch {
             setStatus('本地工程不可用，已载入参考图');
@@ -238,13 +367,93 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!initialized) return;
-    const timer = setTimeout(() => {
-      db('put', project)
-        .then(() => setSaved('已保存到此浏览器'))
-        .catch(() => setSaved('保存失败，请下载工程'));
-    }, 700);
-    return () => clearTimeout(timer);
-  }, [project, initialized]);
+    const handle = fileHandle.current;
+    setSaved(
+      handle
+        ? fileSaved.current?.handle === handle &&
+          fileSaved.current?.project === project
+          ? '已保存到 ' + handle.name
+          : '有修改 · 等待写入 ' + handle.name
+        : '正在保存浏览器备份…',
+    );
+    const backupTimer = setTimeout(() => {
+      backupProject(project, handle)
+        .then(() => {
+          if (pr.current === project && !fileHandle.current)
+            setSaved('已保存到此浏览器 · 可绑定工程文件');
+        })
+        .catch((e: any) => {
+          setSaved('浏览器备份失败');
+          setStatus('浏览器备份失败：' + e.message + '；请保存到工程文件');
+        });
+    }, 200);
+    const fileTimer = setTimeout(async () => {
+      if (
+        !handle ||
+        (fileSaved.current?.handle === handle &&
+          fileSaved.current?.project === project)
+      )
+        return;
+      try {
+        if (!allowAutoWrite.current) {
+          setSaved('浏览器备份已恢复 · 点击保存重新连接 ' + handle.name);
+          return;
+        }
+        if (
+          (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+        ) {
+          if (fileHandle.current === handle)
+            setSaved('文件尚未写入 · 点击保存以授权 ' + handle.name);
+          return;
+        }
+        if (fileHandle.current !== handle || pr.current !== project) return;
+        setSaved('正在保存 ' + handle.name + '…');
+        await writeProjectFile(project, handle);
+      } catch (e: any) {
+        if (fileHandle.current === handle)
+          setSaved('文件自动保存失败 · 点击保存重试');
+      }
+    }, 800);
+    return () => {
+      clearTimeout(backupTimer);
+      clearTimeout(fileTimer);
+    };
+  }, [project, initialized, bindingVersion]);
+  useEffect(() => {
+    const flush = () => {
+      if (
+        initialized &&
+        (backupSaved.current !== pr.current ||
+          backupBinding.current !== fileHandle.current)
+      )
+        backupProject(pr.current).catch(() => {});
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    const leave = (e: BeforeUnloadEvent) => {
+      if (
+        initialized &&
+        (backupSaved.current !== pr.current ||
+          backupBinding.current !== fileHandle.current ||
+          (fileHandle.current &&
+            (fileSaved.current?.handle !== fileHandle.current ||
+              fileSaved.current?.project !== pr.current)))
+      ) {
+        flush();
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', leave);
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', leave);
+    };
+  }, [initialized]);
   useEffect(() => {
     if (!initialized) return;
     let alive = true;
@@ -905,7 +1114,7 @@ export default function Home() {
         e.shiftKey ? redo() : undo();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        exportFile('json');
+        void saveProject(e.shiftKey);
       } else if (e.key === 'Enter') {
         finish();
       } else if (e.key === 'Escape') {
@@ -957,7 +1166,8 @@ export default function Home() {
     };
   });
   const importImage = async (f: File) => {
-    if (busyRef.current) throw Error('请等待当前拟合完成');
+    if (busyRef.current || fileBusyRef.current)
+      throw Error('请等待当前拟合或保存完成');
     if (!/^image\/(png|jpeg|webp)$/.test(f.type))
       throw Error('请导入 PNG、JPG 或 WebP 图片');
     if (f.size > 30 * 1024 * 1024) throw Error('图片不能超过 30 MB');
@@ -988,6 +1198,7 @@ export default function Home() {
     }
     finish();
     setActiveNow(null);
+    bindFile(null);
     setDoc({ ...initial, image: src, imageName: f.name, width: w, height: h });
     setStatus('正在分析新底图…');
   };
@@ -1227,6 +1438,12 @@ export default function Home() {
       },
       widthMM: pr.current.widthMM,
       depthMM: pr.current.depthMM,
+      storage: {
+        fileName: fileHandle.current?.name || null,
+        status: saved,
+        fileSystemSupported:
+          typeof window !== 'undefined' && !!(window as any).showSaveFilePicker,
+      },
       active: ar.current,
       modifiers: modifierRef.current,
       mergeSource,
@@ -1337,8 +1554,10 @@ export default function Home() {
       throw Error('format 必须是 svg、blender 或 json');
     },
     load_project: (a: any) => {
-      if (busyRef.current) throw Error('请等待拟合完成');
+      if (busyRef.current || fileBusyRef.current)
+        throw Error('请等待拟合或保存完成');
       const p = validateProject(a.project);
+      bindFile(null);
       finish();
       setActiveNow(null);
       setDoc(p);
@@ -1351,7 +1570,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '1.3',
+      version: '1.4',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -1568,15 +1787,27 @@ export default function Home() {
           <span>BÉZIER STUDIO</span>
         </div>
         <span className="project-name">
-          角色轮廓研究 <i>{saved}</i>
+          <span title={fileName || '未绑定文件'}>
+            {fileName || '角色轮廓研究'}
+          </span>{' '}
+          <i title={saved}>{saved}</i>
         </span>
         <div className="header-actions">
           <button
-            title="保存完整工程 Ctrl S"
-            onClick={() => exportFile('json')}
+            aria-label="保存工程"
+            title={saved + ' · Ctrl S 保存到同一文件'}
+            disabled={fileBusy}
+            onClick={() => void saveProject()}
           >
             <Save size={16} />
             <span className="wide-label">保存工程</span>
+          </button>
+          <button
+            title="另存为 Ctrl Shift S"
+            disabled={fileBusy}
+            onClick={() => void saveProject(true)}
+          >
+            另存为
           </button>
           <button onClick={() => file.current?.click()} disabled={busy}>
             <Upload size={16} />
@@ -1678,7 +1909,7 @@ export default function Home() {
             <button
               title="打开工程"
               aria-label="打开工程"
-              onClick={() => projectFile.current?.click()}
+              onClick={() => void openProjectFile()}
             >
               <FolderOpen size={19} />
             </button>
@@ -2493,6 +2724,9 @@ export default function Home() {
           <span className="live-dot" />
           {status}
         </span>
+        <span className="storage-status" aria-live="polite" title={saved}>
+          {saved}
+        </span>
         <span>
           {count} 段
           {coords && inside(coords)
@@ -2587,7 +2821,7 @@ export default function Home() {
                   <b>可继续编辑的完整工程</b>
                   <p>底图、路径、尺寸与控制点 · JSON</p>
                 </div>
-                <button onClick={() => exportFile('json')}>保存工程</button>
+                <button onClick={() => exportFile('json')}>下载工程副本</button>
               </div>
               <p className="export-note">
                 抽样几何检查：
@@ -2663,8 +2897,10 @@ export default function Home() {
                 将选中节点对应的段（或描线时的最后一段）改为直连。
               </p>
               <p>
-                <b>5. 保存与导出</b>　工程在当前浏览器自动保存；Ctrl S
-                下载完整工程。导出 SVG 或 Blender 脚本时按整张底图设置毫米尺寸。
+                <b>5. 保存与导出</b>　工程自动备份到浏览器；Ctrl S
+                首次绑定文件，之后直接写回。Ctrl Shift S
+                另存为。打开工程会绑定所选文件。导出 SVG 或 Blender
+                脚本时按整张底图设置毫米尺寸。
               </p>
               <p>
                 <kbd>P</kbd> 描线　<kbd>V</kbd> 编辑　<kbd>H</kbd> 平移　

@@ -791,3 +791,19 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
   margin-top: 8px;
   font-size: 10px;
 }
+
+.project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.storage-status {
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 10px;
+  font-size: 11px;
+}
