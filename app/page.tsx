@@ -25,6 +25,8 @@ import {
   CornerDownLeft,
 } from 'lucide-react';
 import { Outliner } from '@/components/outliner';
+import { modelTools } from '@/lib/model-api';
+import ModelWorkspace from '@/components/model-workspace';
 import {
   pickSelection,
   movePaths,
@@ -104,6 +106,8 @@ type Settings = {
 };
 const copy = <T,>(v: T): T => structuredClone(v);
 export default function Home() {
+  const [workspace, setWorkspace] = useState('trace');
+  const modelApi = useRef<any>(null);
   const [project, setProject] = useState<Project>(initial),
     pr = useRef(project);
   const [active, setActive] = useState<string | null>(null),
@@ -1493,6 +1497,11 @@ export default function Home() {
   }, []);
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      if (
+        workspace !== 'trace' &&
+        !((e.ctrlKey || e.metaKey) && ['z', 's'].includes(e.key.toLowerCase()))
+      )
+        return;
       updateModifiers(e);
       if (
         (e.target as HTMLElement).closest(
@@ -2032,6 +2041,8 @@ export default function Home() {
       active: ar.current,
       tool,
       selectedPaths: pathsRef.current,
+      workspace,
+      model: modelApi.current?.state(),
       selectedNodes: nodesRef.current,
       gesturing: !!drag.current,
       view: vr.current,
@@ -2078,6 +2089,37 @@ export default function Home() {
       candidates: cr.current,
     }),
     detect_candidates: detect,
+    set_workspace: (a: any) => {
+      if (!['trace', 'faces', 'relief'].includes(a.mode))
+        throw Error('mode 必须为 trace、faces 或 relief');
+      finish();
+      setWorkspace(a.mode);
+      return { workspace: a.mode };
+    },
+    ...Object.fromEntries(
+      [
+        'inspect_model',
+        'preview_region',
+        'commit_region_preview',
+        'discard_region_preview',
+        'select_regions',
+        'create_relief',
+        'set_relief',
+        'set_model_options',
+        'create_part',
+        'select_part',
+        'delete_model_object',
+        'validate_part',
+        'get_relief_mesh',
+        'export_model',
+      ].map((name) => [
+        name,
+        (a: any) => {
+          if (!modelApi.current) throw Error('建模工作空间未准备好');
+          return modelApi.current[name](a);
+        },
+      ]),
+    ),
     create_path: createPath,
     refit_path: requestRefit,
     set_node_mode: changeNodeMode,
@@ -2186,7 +2228,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '2.0',
+      version: '3.0',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -2203,6 +2245,7 @@ export default function Home() {
     const context = (document as any).modelContext,
       controller = new AbortController();
     const names = [
+      ...Object.keys(modelTools),
       'state',
       'detect_candidates',
       'create_path',
@@ -2223,6 +2266,9 @@ export default function Home() {
       'export',
     ];
     const properties: any = {
+      ...Object.fromEntries(
+        Object.entries(modelTools).map(([name, t]) => [name, t.properties]),
+      ),
       state: {},
       select_paths: { pathIds: { type: 'array', items: { type: 'string' } } },
       move_paths: {
@@ -2313,78 +2359,84 @@ export default function Home() {
           context?.registerTool(
             {
               name: 'bezier_' + name,
-              description: (
-                {
-                  state:
-                    'Read image dimensions, paths, tool, selection sets and fit quality.',
-                  select_paths:
-                    'Select multiple paths by ID and enter object selection mode; empty list deselects.',
-                  move_paths:
-                    'Move multiple paths to a group or before/after a target path, preserving tree order. One undo step.',
-                  detect_candidates:
-                    'Generate numbered image corner candidates and display on canvas. Original image pixel coordinates.',
-                  create_path:
-                    'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
-                  refit_path:
-                    'Request a refit confirmation dialog. No geometry changes until the user explicitly confirms in the UI. Refitting replaces manual handle edits and continuity modes.',
-                  set_node_mode:
-                    'Set corner, smooth (collinear), or symmetric (equal opposite handles, C1) for one internal node. Undoable.',
-                  move_path:
-                    'Move a path into a group, or before another path (also adopting its group). Undoable.',
-                  manage_group:
-                    'Create, rename, assign paths, toggle group visibility, or dissolve a group without deleting paths. Undoable.',
-                  merge_paths:
-                    'Join two distinct open splines at chosen endpoints. Preserve curve shapes by reversing directions when needed; insert one straight cubic only when endpoints differ. Undoable; keep first path ID.',
-                  straighten_span:
-                    'Replace one existing cubic with a straight cubic at the same endpoints; keep all anchors. curve defaults to selection or last span. Undoable.',
-                  select_node:
-                    'Select a unique anchor by zero-based nodeIndex. Closed seam counts once. Highlight on canvas.',
-                  delete_node:
-                    'Delete one anchor by zero-based nodeIndex. Merge affected spans into exactly one cubic, preserve other spans. Undoable. Last node removes empty path.',
-                  commit_preview: 'Commit the staged path to the project.',
-                  inspect_geometry:
-                    'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
-                  get_project:
-                    'Read complete image and editable Bezier geometry.',
-                  set_point:
-                    'Edit a cubic control handle by path, curve index, and handle index.',
-                  export:
-                    'Return SVG, Blender Python, or project JSON without downloading.',
-                } as any
-              )[name],
+              description:
+                modelTools[name]?.description ||
+                (
+                  {
+                    state:
+                      'Read image dimensions, paths, tool, selection sets and fit quality.',
+                    select_paths:
+                      'Select multiple paths by ID and enter object selection mode; empty list deselects.',
+                    move_paths:
+                      'Move multiple paths to a group or before/after a target path, preserving tree order. One undo step.',
+                    detect_candidates:
+                      'Generate numbered image corner candidates and display on canvas. Original image pixel coordinates.',
+                    create_path:
+                      'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
+                    refit_path:
+                      'Request a refit confirmation dialog. No geometry changes until the user explicitly confirms in the UI. Refitting replaces manual handle edits and continuity modes.',
+                    set_node_mode:
+                      'Set corner, smooth (collinear), or symmetric (equal opposite handles, C1) for one internal node. Undoable.',
+                    move_path:
+                      'Move a path into a group, or before another path (also adopting its group). Undoable.',
+                    manage_group:
+                      'Create, rename, assign paths, toggle group visibility, or dissolve a group without deleting paths. Undoable.',
+                    merge_paths:
+                      'Join two distinct open splines at chosen endpoints. Preserve curve shapes by reversing directions when needed; insert one straight cubic only when endpoints differ. Undoable; keep first path ID.',
+                    straighten_span:
+                      'Replace one existing cubic with a straight cubic at the same endpoints; keep all anchors. curve defaults to selection or last span. Undoable.',
+                    select_node:
+                      'Select a unique anchor by zero-based nodeIndex. Closed seam counts once. Highlight on canvas.',
+                    delete_node:
+                      'Delete one anchor by zero-based nodeIndex. Merge affected spans into exactly one cubic, preserve other spans. Undoable. Last node removes empty path.',
+                    commit_preview: 'Commit the staged path to the project.',
+                    inspect_geometry:
+                      'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
+                    get_project:
+                      'Read complete image and editable Bezier geometry.',
+                    set_point:
+                      'Edit a cubic control handle by path, curve index, and handle index.',
+                    export:
+                      'Return SVG, Blender Python, or project JSON without downloading.',
+                  } as any
+                )[name],
               inputSchema: {
                 type: 'object',
                 properties: properties[name],
-                required: ['select_paths', 'move_paths'].includes(name)
-                  ? ['pathIds']
-                  : name === 'move_path'
-                    ? ['pathId']
-                    : name === 'set_node_mode'
-                      ? ['pathId', 'nodeIndex', 'mode']
-                      : name === 'manage_group'
-                        ? ['action']
-                        : name === 'merge_paths'
-                          ? ['firstId', 'firstEnd', 'secondId', 'secondEnd']
-                          : name === 'straighten_span'
-                            ? ['pathId']
-                            : name === 'create_path'
-                              ? ['points']
-                              : ['select_node', 'delete_node'].includes(name)
-                                ? ['pathId', 'nodeIndex']
-                                : name === 'set_point'
-                                  ? ['pathId', 'curve', 'point', 'position']
-                                  : name === 'export'
-                                    ? ['format']
-                                    : [],
+                required:
+                  modelTools[name]?.required ||
+                  (['select_paths', 'move_paths'].includes(name)
+                    ? ['pathIds']
+                    : name === 'move_path'
+                      ? ['pathId']
+                      : name === 'set_node_mode'
+                        ? ['pathId', 'nodeIndex', 'mode']
+                        : name === 'manage_group'
+                          ? ['action']
+                          : name === 'merge_paths'
+                            ? ['firstId', 'firstEnd', 'secondId', 'secondEnd']
+                            : name === 'straighten_span'
+                              ? ['pathId']
+                              : name === 'create_path'
+                                ? ['points']
+                                : ['select_node', 'delete_node'].includes(name)
+                                  ? ['pathId', 'nodeIndex']
+                                  : name === 'set_point'
+                                    ? ['pathId', 'curve', 'point', 'position']
+                                    : name === 'export'
+                                      ? ['format']
+                                      : []),
                 additionalProperties: false,
               },
               annotations: {
-                readOnlyHint: [
-                  'state',
-                  'get_project',
-                  'inspect_geometry',
-                  'export',
-                ].includes(name),
+                readOnlyHint:
+                  modelTools[name]?.readOnly ||
+                  [
+                    'state',
+                    'get_project',
+                    'inspect_geometry',
+                    'export',
+                  ].includes(name),
                 untrustedContentHint: true,
               },
               execute: (args: any) =>
@@ -2517,7 +2569,14 @@ export default function Home() {
               </button>
             </div>
           </details>
-          <button className="primary" onClick={() => setDialog('export')}>
+          <button
+            className="primary"
+            onClick={() =>
+              workspace === 'trace'
+                ? setDialog('export')
+                : modelApi.current?.show_output()
+            }
+          >
             <Download size={16} />
             导出
           </button>
@@ -2552,7 +2611,36 @@ export default function Home() {
           }}
         />
       </header>
-      <div className="workspace">
+      <nav className="workspace-switch" aria-label="工作空间">
+        {[
+          ['trace', '描线'],
+          ['faces', '构面'],
+          ['relief', '浮雕'],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            aria-pressed={workspace === id}
+            onClick={() => {
+              if (drag.current) cancelGesture();
+              finish();
+              setWorkspace(id);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+        <span>
+          {workspace === 'trace'
+            ? '编辑源贝塞尔样条'
+            : workspace === 'faces'
+              ? '用边界构造区域，保留来源关联'
+              : '为区域赋高，生成可打印实体'}
+        </span>
+      </nav>
+      <div
+        className="workspace"
+        style={{ display: workspace === 'trace' ? 'flex' : 'none' }}
+      >
         <nav className="toolrail" aria-label="绘图工具">
           {[
             [MousePointer2, 'select', '选择', 'V'],
@@ -3628,6 +3716,29 @@ export default function Home() {
           </div>
         </aside>
       </div>
+      <ModelWorkspace
+        project={project}
+        mode={workspace}
+        initialPaths={selectedPaths}
+        onModel={(model) =>
+          transact((p) => {
+            p.version = 2;
+            p.model = model;
+          })
+        }
+        onEditSource={(id) => {
+          setWorkspace('trace');
+          setActiveNow(id);
+          chooseTool('edit');
+        }}
+        onApi={(api) => {
+          modelApi.current = api;
+        }}
+        onMode={setWorkspace}
+        onUndo={undo}
+        onRedo={redo}
+        status={setStatus}
+      />
       <footer>
         <span role="status">
           <span className="live-dot" />
@@ -3800,10 +3911,12 @@ export default function Home() {
             <>
               <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
               <p>
-                可用操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
+                描线操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
               </p>
               <p>
-                支持 WebMCP 的浏览器会注册 bezier_ 前缀工具。本地配套 HTTP
+                构面 /
+                浮雕操作：preview_region、commit_region_preview、inspect_model、select_regions、create_relief、set_relief、set_model_options、create_part、select_part、validate_part、get_relief_mesh、export_model。几何坐标以毫米为单位，源路径仍是图像像素。支持
+                WebMCP 的浏览器会注册 bezier_ 前缀工具。本地配套 HTTP
                 服务可连接同一工作台，供 Agent 批量调用与读回验证。
               </p>
               <button
@@ -3819,6 +3932,16 @@ export default function Home() {
             </>
           ) : (
             <div className="help-content">
+              <p>
+                <b>构面 → 浮雕</b>
+                　构面选择来源和操作，先预览，再点击候选区域并确认。闭合路径可建面，开放样条可分区、围面或加宽；区域支持并集、相减和交集。橙色连接只用于派生区域。
+              </p>
+              <p>
+                <b>体块与零件</b>
+                　选择面后添加体块，设置厚度和高度基准。凸起先合并，凹槽和贯穿随后切除；不同零件独立计算。制造
+                / 导出提供实体检查、STL、Blender 和面
+                SVG。所有来源和建模操作一起保存，可撤销。
+              </p>
               <p>
                 <b>选择路径 · V</b>　单击曲线选择，Shift / Ctrl
                 单击增减选择；空白拖动框选相交曲线，按住 Shift

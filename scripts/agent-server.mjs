@@ -71,6 +71,21 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const allowed = [
+      'set_workspace',
+      'inspect_model',
+      'preview_region',
+      'commit_region_preview',
+      'discard_region_preview',
+      'select_regions',
+      'create_relief',
+      'set_relief',
+      'set_model_options',
+      'create_part',
+      'select_part',
+      'delete_model_object',
+      'validate_part',
+      'get_relief_mesh',
+      'export_model',
       'state',
       'detect_candidates',
       'create_path',
