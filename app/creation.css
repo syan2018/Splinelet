@@ -148,6 +148,36 @@
 .creation-canvas-bar input[type='range'] {
   width: 65px;
 }
+.creation-display-switch {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #132023;
+}
+.creation-display-switch button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+}
+.creation-display-switch button[aria-pressed='true'] {
+  background: #45594a;
+  color: #e1f7be;
+}
+.creation-source-note {
+  padding: 10px 12px;
+  color: #bac8cb;
+  background: #19262b;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.creation-stage[data-creation-display='color'] .drawing-canvas image {
+  visibility: hidden;
+}
 .creation-cell {
   transition:
     fill 140ms ease,
@@ -164,16 +194,13 @@
 .creation-stage .source-path-layer > path:not([stroke='transparent']) {
   opacity: 0.35;
 }
-.creation-stage.tool-trace .source-path-layer > path,
-.creation-stage.tool-edit .source-path-layer > path {
+.creation-stage[data-creation-lines='hidden']
+  .source-path-layer:not(.selected) {
+  display: none;
+}
+.creation-stage .source-path-layer.selected > path:not([stroke='transparent']) {
   opacity: 1;
-}
-.creation-hide-lines:not(.tool-trace):not(.tool-edit) .source-path-layer {
-  display: none;
-}
-.creation-stage[data-creation-lines='hidden']:not(.tool-trace):not(.tool-edit)
-  .source-path-layer {
-  display: none;
+  filter: drop-shadow(0 0 2px #10181c);
 }
 .creation-palette {
   position: absolute;

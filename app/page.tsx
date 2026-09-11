@@ -3363,7 +3363,14 @@ export default function Home() {
                       )),
                 )
                 .map((path) => (
-                  <g key={path.id} className="source-path-layer">
+                  <g
+                    key={path.id}
+                    data-source-id={path.id}
+                    className={
+                      'source-path-layer' +
+                      (selectedPaths.includes(path.id) ? ' selected' : '')
+                    }
+                  >
                     {!path.curves.length && (
                       <circle
                         cx={path.start.x}

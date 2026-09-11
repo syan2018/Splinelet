@@ -184,7 +184,8 @@ export default function CreationWorkspace(p: Props) {
     [joinMM, setJoinMM] = useState(0.15),
     [report, setReport] = useState<any>(null),
     [exporting, setExporting] = useState(false),
-    [showLines, setShowLines] = useState(false);
+    [showLines, setShowLines] = useState(true),
+    [displayMode, setDisplayMode] = useState('reference');
   const space = useRef(false),
     treeAnchor = useRef(''),
     moving = useRef<any>(null),
@@ -198,6 +199,20 @@ export default function CreationWorkspace(p: Props) {
   const current = doc.objects.find((o: any) => o.id === objects.at(-1)),
     cell = scene?.cells.find((c: any) => c.key === cellKeys.at(-1)),
     swatch = doc.swatches.find((s: any) => s.id === brush) || doc.swatches[0];
+  const sourceOnly =
+    current &&
+    scene &&
+    !calculating &&
+    !scene.cells.some((c: any) => objects.includes(c.objectId));
+  useEffect(() => {
+    if (['trace', 'edit'].includes(p.tool)) chooseDisplay('reference');
+    else if (p.tool === 'paint') chooseDisplay('overlay');
+    else if (p.tool === 'height') chooseDisplay('color');
+  }, [p.tool]);
+  function chooseDisplay(mode: string) {
+    setDisplayMode(mode);
+    setShowLines(mode !== 'color');
+  }
   useEffect(() => {
     p.stage?.setAttribute(
       'data-creation-lines',
@@ -207,6 +222,12 @@ export default function CreationWorkspace(p: Props) {
       p.stage?.removeAttribute('data-creation-lines');
     };
   }, [p.stage, p.enabled, showLines]);
+  useEffect(() => {
+    if (p.enabled) p.stage?.setAttribute('data-creation-display', displayMode);
+    return () => {
+      p.stage?.removeAttribute('data-creation-display');
+    };
+  }, [p.stage, p.enabled, displayMode]);
   const call = (
     action: string,
     args: any = {},
@@ -601,6 +622,7 @@ export default function CreationWorkspace(p: Props) {
           scene?.cells.filter((c: any) => c.conflict).map((c: any) => c.key) ||
           [],
         view: p.viewMode,
+        displayMode,
       }),
       inspect: async () => {
         const snapshot = ref.current.project;
@@ -676,6 +698,9 @@ export default function CreationWorkspace(p: Props) {
       : effectiveScene;
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
+  // Display choices affect only the canvas; saved colours and exports stay intact.
+  const showFills = displayMode !== 'reference' || !!basePreview;
+  const fillAlpha = displayMode === 'color' ? 1 : 0.24;
   return (
     <>
       {p.layer &&
@@ -732,13 +757,16 @@ export default function CreationWorkspace(p: Props) {
                         : c.color
                   }
                   fillRule="evenodd"
-                  fillOpacity={candidate && !painting ? 0.12 : 1}
+                  fillOpacity={
+                    (showFills || painting ? fillAlpha : 0) *
+                    (candidate && !painting ? 0.12 : 1)
+                  }
                   stroke={
-                    active
+                    active && showFills
                       ? '#d4fa99'
                       : c.conflict
                         ? '#ffcd8a'
-                        : candidate
+                        : candidate && showFills
                           ? '#b5cfb3'
                           : 'none'
                   }
@@ -749,6 +777,7 @@ export default function CreationWorkspace(p: Props) {
                   style={{
                     pointerEvents:
                       !basePreview &&
+                      (showFills || p.tool === 'paint') &&
                       ['select', 'paint', 'height'].includes(p.tool)
                         ? 'all'
                         : 'none',
@@ -849,31 +878,53 @@ export default function CreationWorkspace(p: Props) {
                 {current?.name || '选择一个部件，开始创作'}
                 {scope === 'local' && cell ? ' / 局部区域' : ''}
               </span>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={showLines}
-                  onChange={(e) => {
-                    setShowLines(e.target.checked);
-                    p.stage?.classList.toggle(
-                      'creation-hide-lines',
-                      !e.target.checked,
-                    );
-                  }}
-                />
-                边界线
-              </label>
-              <label>
-                底图
-                <input
-                  aria-label="创作底图透明度"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={p.opacity}
-                  onChange={(e) => p.onOpacity(+e.target.value)}
-                />
-              </label>
+              {p.viewMode === 'flat' && (
+                <div
+                  className="creation-display-switch"
+                  role="group"
+                  aria-label="平面显示"
+                >
+                  {[
+                    ['reference', '底图', '显示底图与源线，隐藏区域填色'],
+                    ['overlay', '叠色', '以透明填色对照底图'],
+                    ['color', '分色', '显示完整的区域颜色'],
+                  ].map(([value, label, title]) => (
+                    <button
+                      key={value}
+                      title={title}
+                      aria-pressed={displayMode === value}
+                      onClick={() => chooseDisplay(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {p.viewMode === 'flat' && (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showLines}
+                    onChange={(e) => {
+                      setShowLines(e.target.checked);
+                    }}
+                  />
+                  全部线条
+                </label>
+              )}
+              {p.viewMode === 'flat' && (
+                <label>
+                  底图
+                  <input
+                    aria-label="创作底图透明度"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={p.opacity}
+                    onChange={(e) => p.onOpacity(+e.target.value)}
+                  />
+                </label>
+              )}
             </div>
             {(objects.length > 0 || cellKeys.length > 0) &&
               p.tool === 'height' && (
@@ -1177,7 +1228,9 @@ export default function CreationWorkspace(p: Props) {
                         )
                       }
                     />
-                    <small>{count || paths.length}</small>
+                    <small title={count ? '已填色的区域' : '源样条，尚未填色'}>
+                      {count ? `${count} 区` : `${paths.length} 线`}
+                    </small>
                     <button
                       aria-label={(o.visible ? '隐藏' : '显示') + o.name}
                       onClick={(e) => {
@@ -1204,6 +1257,7 @@ export default function CreationWorkspace(p: Props) {
                               ? 'selected'
                               : '')
                           }
+                          title={`${path.closed ? '闭合' : '开放'}样条 · ${path.curves.length + (path.closed ? 0 : 1)} 个节点 · ${path.curves.length} 段贝塞尔`}
                           draggable
                           onDragStart={(e) => {
                             e.stopPropagation();
@@ -1452,6 +1506,12 @@ export default function CreationWorkspace(p: Props) {
                       画挖洞轮廓
                     </button>
                   </div>
+                  {sourceOnly && (
+                    <p className="creation-source-note">
+                      仅有线条 · 尚未构面。开放样条不会单独产生色块；
+                      可以继续闭合轮廓，或移入已有部件作分区、参考。
+                    </p>
+                  )}
                   {objects.length > 1 && (
                     <button
                       onClick={() =>
@@ -1490,7 +1550,10 @@ export default function CreationWorkspace(p: Props) {
                       }
                     >
                       <i style={{ background: swatch.color }} />
-                      <span>涂成 {swatch.name}</span>
+                      <span>
+                        {sourceOnly ? '默认色 · ' : '涂成 '}
+                        {swatch.name}
+                      </span>
                       <PaintBucket size={17} />
                     </button>
                     <small>底部选画笔色；上色工具可按住扫过多块区域。</small>

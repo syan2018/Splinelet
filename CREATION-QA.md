@@ -2,6 +2,10 @@
 
 Functional and visual checks use an isolated Playwright context. Original Sandrone files are read only.
 
+Reference display inventory: default reference image without region fills; trace/node tools return to reference; explicit overlay/full colour controls; selected source remains visible when other lines are hidden; reference mode does not intercept source editing; palette/selection alone never paint. Verify Path 69 (3 anchors, 2 open cubic spans at the upper-right ornament), unchanged project across display switches, and drawing over a filled part with only explicit new anchors. Explore return from 3D to source editing and compact-window display controls.
+
+Reference fix verified by `scripts/test-creation-reference.cjs`: explicit three-mode display, original image visible during source editing, selected open Path 69 visible even with other lines hidden, no incidental painting on palette/selection, two real Alt-clicks over the cup produce exactly one cubic, full undo restores original project. Path 69 remains the original upper-right ornament inner edge, not deleted or converted to a face.
+
 Camera regression inventory: real right-drag pan, left-drag orbit, middle-drag and wheel zoom, Space-drag pan, release outside the canvas, repeated gestures after remount, palette clicks and region selection. Check rendered pixel changes, stationary frames after release, and unchanged source project / flat view. Visually inspect Sandrone at desktop and narrow widths.
 
 Camera fix: reproduced unchanged rendered pixels on right drag; the canvas received pointer movement but document did not. Removed the wrapper's move/up propagation stop so Three's document listeners receive both dragging and release. `scripts/test-creation-camera.cjs` passes 17 rendered-view and interaction checks on the Sandrone copy, including project and flat-view nonmutation.
