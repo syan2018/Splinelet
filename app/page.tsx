@@ -1240,6 +1240,7 @@ export default function Home() {
       report(addAnchor(p, connectionSettings(sr.current, e)));
   };
   const pointerMove = (e: React.PointerEvent) => {
+    if (unified && creationView === '3d') return;
     const p = coordinate(e);
     setCoords(p);
     lastPointer.current = p;
@@ -1365,6 +1366,7 @@ export default function Home() {
     if (tool !== 'edit') setMergeSource(null);
   }, [tool]);
   const pointerUp = () => {
+    if (unified && creationView === '3d') return;
     const g = drag.current;
     if (!g) return;
     drag.current = null;

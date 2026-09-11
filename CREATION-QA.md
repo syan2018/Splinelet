@@ -2,6 +2,10 @@
 
 Functional and visual checks use an isolated Playwright context. Original Sandrone files are read only.
 
+Camera regression inventory: real right-drag pan, left-drag orbit, middle-drag and wheel zoom, Space-drag pan, release outside the canvas, repeated gestures after remount, palette clicks and region selection. Check rendered pixel changes, stationary frames after release, and unchanged source project / flat view. Visually inspect Sandrone at desktop and narrow widths.
+
+Camera fix: reproduced unchanged rendered pixels on right drag; the canvas received pointer movement but document did not. Removed the wrapper's move/up propagation stop so Three's document listeners receive both dragging and release. `scripts/test-creation-camera.cjs` passes 17 rendered-view and interaction checks on the Sandrone copy, including project and flat-view nonmutation.
+
 | User workflow                             | Check / evidence                                                                                                                                         |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Draw a closed source and click to fill    | Real pointer drawing, source anchor count unchanged, candidate hover, filled state                                                                       |

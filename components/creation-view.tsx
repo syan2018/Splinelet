@@ -241,12 +241,16 @@ export default function CreationView({
       );
     s.controls.update();
   }
+  // OrbitControls receives captured drag and release events on document.
+  // Only isolate pointer-down; movement and pointer-up must keep bubbling.
   return (
     <div
       className="creation-3d"
       onPointerDown={(e) => e.stopPropagation()}
-      onPointerMove={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
       <div ref={host} className="creation-webgl" />
       <div className="creation-view-tools">
