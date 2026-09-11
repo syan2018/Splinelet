@@ -23,10 +23,15 @@ import {
   Code2,
   Minus,
   CornerDownLeft,
+  PaintBucket,
+  ArrowUpFromLine,
+  Box,
 } from 'lucide-react';
 import { Outliner } from '@/components/outliner';
 import { modelTools } from '@/lib/model-api';
 import ModelWorkspace from '@/components/model-workspace';
+import CreationWorkspace from '@/components/creation-workspace';
+import { creationTools } from '@/lib/creation-api';
 import {
   pickSelection,
   movePaths,
@@ -108,6 +113,14 @@ const copy = <T,>(v: T): T => structuredClone(v);
 export default function Home() {
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<any>(null);
+  const creationApi = useRef<any>(null);
+  const [unified, setUnified] = useState(true);
+  const [creationView, setCreationView] = useState('flat');
+  const creationViewRef = useRef('flat'),
+    unifiedRef = useRef(true);
+  creationViewRef.current = creationView;
+  unifiedRef.current = unified;
+  const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
   const [project, setProject] = useState<Project>(initial),
     pr = useRef(project);
   const [active, setActive] = useState<string | null>(null),
@@ -230,6 +243,7 @@ export default function Home() {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
+    if (unified && ['trace', 'edit'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
     if (next !== 'trace') finish();
     setTool(next);
@@ -251,10 +265,15 @@ export default function Home() {
           ? '编辑节点 · Shift 多选 · 空白拖动框选'
           : next === 'trace'
             ? '点击轮廓落点 · Shift 不吸附 · Alt 直连'
-            : '拖动画布平移',
+            : next === 'paint'
+              ? '点击上色 · 平面中按住扫过多个区域 · 一笔一次撤销'
+              : next === 'height'
+                ? '选择局部或整个部件 · 拖动高度柄或输入毫米数值'
+                : '拖动画布平移',
     );
   };
   const clearSelection = () => {
+    if (unified) creationApi.current?.clear();
     rangeAnchor.current = null;
     finish();
     setSelection(null);
@@ -515,7 +534,10 @@ export default function Home() {
     if (!stage.current) return;
     const r = stage.current.getBoundingClientRect(),
       p = pr.current,
-      s = Math.min((r.width - 80) / p.width, (r.height - 110) / p.height);
+      s = Math.min(
+        (r.width - 80) / p.width,
+        (r.height - (unified ? 180 : 110)) / p.height,
+      );
     setView({
       s: Math.max(0.05, s),
       x: (r.width - p.width * s) / 2,
@@ -534,6 +556,7 @@ export default function Home() {
     });
   useEffect(() => {
     let alive = true;
+    const startingProject = pr.current;
     workspaceDB('get')
       .then(async (session: any) => {
         let v = session?.project;
@@ -543,7 +566,8 @@ export default function Home() {
             if (r.ok) v = await r.json();
           } catch {}
         }
-        if (v && alive) {
+        // A late restore must never replace an import or edit made meanwhile.
+        if (v && alive && pr.current === startingProject) {
           try {
             setDoc(validateProject(v), false);
             if (session?.handle) {
@@ -874,7 +898,14 @@ export default function Home() {
           fitError: 0,
           fitting: 'single',
         };
-        transact((p) => p.paths.push(path));
+        const creation = unified ? creationApi.current?.new_path(path) : null;
+        transact((p) => {
+          p.paths.push(path);
+          if (creation) {
+            p.creation = creation;
+            p.version = 3;
+          }
+        });
         setActiveNow(path.id);
         setDrawing(true);
         drawingRef.current = true;
@@ -1184,6 +1215,10 @@ export default function Home() {
       return;
     }
     if (busyRef.current || e.button !== 0 || mergeSource) return;
+    if (unified && ['paint', 'height'].includes(tool)) {
+      creationApi.current?.clear();
+      return;
+    }
     if (tool === 'select' || tool === 'edit') {
       e.preventDefault();
       drag.current = {
@@ -1343,6 +1378,7 @@ export default function Home() {
               .map((p) => p.id)
           : [];
         selectPathsNow(g.add ? [...g.oldPaths, ...hits] : hits);
+        if (unified && !g.add && !hits.length) creationApi.current?.clear();
         setSelection(null);
         setStatus(
           hits.length ? '框选 ' + hits.length + ' 条路径' : '已取消路径选择',
@@ -1485,6 +1521,7 @@ export default function Home() {
     const el = stage.current;
     if (!el) return;
     const wheel = (e: WheelEvent) => {
+      if (unifiedRef.current && creationViewRef.current === '3d') return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       zoom(Math.exp(-e.deltaY * 0.0015), {
@@ -1502,6 +1539,7 @@ export default function Home() {
         !((e.ctrlKey || e.metaKey) && ['z', 's'].includes(e.key.toLowerCase()))
       )
         return;
+      if (e.defaultPrevented) return;
       updateModifiers(e);
       if (
         (e.target as HTMLElement).closest(
@@ -2043,6 +2081,7 @@ export default function Home() {
       selectedPaths: pathsRef.current,
       workspace,
       model: modelApi.current?.state(),
+      creation: creationApi.current?.state(),
       selectedNodes: nodesRef.current,
       gesturing: !!drag.current,
       view: vr.current,
@@ -2094,6 +2133,7 @@ export default function Home() {
         throw Error('mode 必须为 trace、faces 或 relief');
       finish();
       setWorkspace(a.mode);
+      if (a.mode !== 'trace') setUnified(false);
       return { workspace: a.mode };
     },
     ...Object.fromEntries(
@@ -2120,6 +2160,19 @@ export default function Home() {
         },
       ]),
     ),
+    creation_inspect: () => creationApi.current.inspect(),
+    creation_focus: (a: any) => creationApi.current.focus(a.objectId),
+    creation_select: (a: any) => creationApi.current.select_cells(a.cellKeys),
+    creation_command: (a: any) =>
+      creationApi.current.command(a.action, a.args, a.revision),
+    creation_view: (a: any) => {
+      if (!['flat', '3d'].includes(a.view))
+        throw Error('view 必须为 flat 或 3d');
+      setUnified(true);
+      setWorkspace('trace');
+      setCreationView(a.view);
+    },
+    creation_export: (a: any) => creationApi.current.export(a.format, false),
     create_path: createPath,
     refit_path: requestRefit,
     set_node_mode: changeNodeMode,
@@ -2228,7 +2281,7 @@ export default function Home() {
   };
   useEffect(() => {
     (window as any).traceStudio = {
-      version: '3.0',
+      version: '4.0',
       call: async (action: string, args: any = {}) => {
         const fn = apiRef.current[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -2246,6 +2299,7 @@ export default function Home() {
       controller = new AbortController();
     const names = [
       ...Object.keys(modelTools),
+      ...Object.keys(creationTools),
       'state',
       'detect_candidates',
       'create_path',
@@ -2267,7 +2321,10 @@ export default function Home() {
     ];
     const properties: any = {
       ...Object.fromEntries(
-        Object.entries(modelTools).map(([name, t]) => [name, t.properties]),
+        Object.entries({ ...modelTools, ...creationTools }).map(([name, t]) => [
+          name,
+          t.properties,
+        ]),
       ),
       state: {},
       select_paths: { pathIds: { type: 'array', items: { type: 'string' } } },
@@ -2360,7 +2417,7 @@ export default function Home() {
             {
               name: 'bezier_' + name,
               description:
-                modelTools[name]?.description ||
+                { ...modelTools, ...creationTools }[name]?.description ||
                 (
                   {
                     state:
@@ -2404,7 +2461,7 @@ export default function Home() {
                 type: 'object',
                 properties: properties[name],
                 required:
-                  modelTools[name]?.required ||
+                  { ...modelTools, ...creationTools }[name]?.required ||
                   (['select_paths', 'move_paths'].includes(name)
                     ? ['pathIds']
                     : name === 'move_path'
@@ -2430,7 +2487,7 @@ export default function Home() {
               },
               annotations: {
                 readOnlyHint:
-                  modelTools[name]?.readOnly ||
+                  { ...modelTools, ...creationTools }[name]?.readOnly ||
                   [
                     'state',
                     'get_project',
@@ -2494,9 +2551,459 @@ export default function Home() {
     dialog === 'export' ? inspectGeometry(project.paths) : [];
   const current = project.paths.find((p) => p.id === active),
     count = project.paths.reduce((s, p) => s + p.curves.length, 0);
+  const legacyInspector = (
+    <aside
+      className="inspector"
+      style={
+        {
+          '--inspector-width': inspectorWidth + 'px',
+        } as React.CSSProperties
+      }
+    >
+      <Outliner
+        project={project}
+        selected={selectedPaths}
+        active={active}
+        busy={busy || gesturing}
+        onSelect={choosePath}
+        onGroupSelect={chooseGroup}
+        onClear={clearSelection}
+        onNew={begin}
+        onGroup={groupSelection}
+        onRename={renameItem}
+        onMove={(...args) => {
+          try {
+            movePathBatch(...args);
+          } catch (e: any) {
+            setStatus(e.message);
+          }
+        }}
+        onVisibility={setVisible}
+        onDissolve={(id) => manageGroup({ action: 'delete', id })}
+        onDelete={deletePaths}
+        onEdit={() => chooseTool('edit')}
+      />
+      <div className="properties-area">
+        <Tabs
+          value={propertyTab}
+          onValueChange={(v) => setPropertyTab(v as string)}
+          className="property-tabs"
+        >
+          <TabsList aria-label="属性页签">
+            <TabsTrigger value="scene">工程</TabsTrigger>
+            <TabsTrigger value="trace">描线</TabsTrigger>
+            <TabsTrigger value="paths">路径</TabsTrigger>
+            <TabsTrigger value="node">节点</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div
+          role="tabpanel"
+          aria-label="节点属性"
+          hidden={propertyTab !== 'node'}
+        >
+          <section>
+            <h3>
+              {selectedNodes.length
+                ? '已选 ' + selectedNodes.length + ' 个节点'
+                : '节点属性'}
+            </h3>
+            <p>{current?.name || '选择一条路径后进入节点编辑'}</p>
+            {current && current.visible && tool === 'edit' ? (
+              <div className="node-inspector">
+                <p>
+                  {selectedNodes.length === 1
+                    ? (() => {
+                        const p = pathNodes(current)[selectedNodes[0]];
+                        return (
+                          '节点 ' +
+                          (selectedNodes[0] + 1) +
+                          ' · X ' +
+                          p.x.toFixed(1) +
+                          ' / Y ' +
+                          p.y.toFixed(1) +
+                          ' px'
+                        );
+                      })()
+                    : selectedNodes.length
+                      ? '拖动任一选中节点可整体移动，控制柄随节点保持相对位置。'
+                      : selection
+                        ? '拖动圆形控制柄调整弯曲。'
+                        : '点击节点选择 · Shift 多选 · 空白拖动框选'}
+                </p>
+                {!!selectedNodes.length && (
+                  <label className="node-mode">
+                    连接方式
+                    <select
+                      aria-label="节点连接模式"
+                      disabled={busy || gesturing}
+                      value={
+                        new Set(selectedNodes.map((i) => nodeModes(current)[i]))
+                          .size > 1
+                          ? 'mixed'
+                          : nodeModes(current)[selectedNodes[0]]
+                      }
+                      onChange={(e) => {
+                        try {
+                          transact((p) => {
+                            const path = p.paths.find(
+                              (p) => p.id === current.id,
+                            )!;
+                            selectedNodes.forEach((i) =>
+                              setContinuity(path, i, e.target.value),
+                            );
+                          });
+                          setStatus(
+                            '已更新 ' +
+                              selectedNodes.length +
+                              ' 个节点的连接方式 · 可撤销',
+                          );
+                        } catch (e: any) {
+                          setStatus(e.message);
+                        }
+                      }}
+                    >
+                      <option value="mixed" disabled>
+                        混合
+                      </option>
+                      <option value="corner">尖角 · 独立控制柄</option>
+                      <option
+                        value="smooth"
+                        disabled={
+                          !current.closed &&
+                          selectedNodes.some(
+                            (i) => i === 0 || i === current.curves.length,
+                          )
+                        }
+                      >
+                        平滑 · 共线
+                      </option>
+                      <option
+                        value="symmetric"
+                        disabled={
+                          !current.closed &&
+                          selectedNodes.some(
+                            (i) => i === 0 || i === current.curves.length,
+                          )
+                        }
+                      >
+                        对称 · C1 连续
+                      </option>
+                    </select>
+                  </label>
+                )}
+                {!current.closed &&
+                  selectedNodes.some(
+                    (i) => i === 0 || i === current.curves.length,
+                  ) && (
+                    <p className="note">
+                      开放端点只有单侧曲线；连续模式适用于中间节点。
+                    </p>
+                  )}
+                <div className="batch-actions">
+                  <button
+                    disabled={busy || !selectedNodes.length}
+                    onClick={deleteSelection}
+                  >
+                    <Trash2 size={14} />
+                    删除节点 <kbd>Del</kbd>
+                  </button>
+                  <button
+                    disabled={!selection && !selectedNodes.length}
+                    onClick={() => setSelection(null)}
+                  >
+                    取消选择
+                  </button>
+                </div>
+                {selectedNodes.length <= 1 && (
+                  <div className="node-segment-actions">
+                    <button
+                      disabled={busy || !selection || !current.curves.length}
+                      onClick={() => {
+                        try {
+                          straightenSpan(current.id);
+                        } catch (e: any) {
+                          setStatus(e.message);
+                        }
+                      }}
+                    >
+                      此段改为直连 <kbd>L</kbd>
+                    </button>
+                    <button
+                      disabled={
+                        busy ||
+                        current.closed ||
+                        !current.curves.length ||
+                        selectedNodes.length !== 1 ||
+                        ![0, current.curves.length].includes(selectedNodes[0])
+                      }
+                      onClick={startMerge}
+                    >
+                      <Link size={14} />
+                      连接另一条样条 <kbd>M</kbd>
+                    </button>
+                  </div>
+                )}
+                {mergeSource && (
+                  <button onClick={() => setMergeSource(null)}>
+                    取消合并 · Esc
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="empty-properties">
+                <p>
+                  {current && !current.visible
+                    ? '当前路径已隐藏，显示后可编辑节点。'
+                    : '先选择路径，再编辑它的节点与控制柄。'}
+                </p>
+                <button
+                  onClick={() => {
+                    if (current && !current.visible)
+                      setVisible([current.id], true);
+                    chooseTool(current ? 'edit' : 'select');
+                  }}
+                >
+                  {current && !current.visible
+                    ? '显示并编辑节点'
+                    : current
+                      ? '编辑当前路径节点'
+                      : '选择路径'}
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+        <div
+          role="tabpanel"
+          aria-label="描线参数"
+          hidden={propertyTab !== 'trace'}
+        >
+          <section>
+            <h3>描线参数</h3>
+            <p>
+              每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
+            </p>
+            <label>识别目标</label>
+            <Tabs
+              value={settings.mode}
+              onValueChange={(v) => {
+                setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
+                setPreview([]);
+              }}
+            >
+              <TabsList className="mode-tabs">
+                <TabsTrigger value="ink">深色线条</TabsTrigger>
+                <TabsTrigger value="edge">颜色边缘</TabsTrigger>
+                <TabsTrigger value="manual">手动</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <label>
+              补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
+            </label>
+            <Slider
+              aria-label="补点提示阈值"
+              min={0.5}
+              max={6}
+              step={0.5}
+              value={[settings.tolerance]}
+              onValueChange={(v) =>
+                setSettings((s) => ({
+                  ...s,
+                  tolerance: Array.isArray(v) ? v[0] : v,
+                }))
+              }
+            />
+            <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
+            <label>
+              搜索范围 <span>{settings.corridor} px</span>
+            </label>
+            <Slider
+              aria-label="搜索范围"
+              min={20}
+              max={250}
+              step={10}
+              value={[settings.corridor]}
+              onValueChange={(v) =>
+                setSettings((s) => ({
+                  ...s,
+                  corridor: Array.isArray(v) ? v[0] : v,
+                }))
+              }
+            />
+            <label className="switch-label">
+              锚点吸附{' '}
+              <Switch
+                aria-label="锚点吸附"
+                checked={settings.snap}
+                onCheckedChange={(v) => setSettings((s) => ({ ...s, snap: v }))}
+              />
+            </label>
+            <div className="path-actions">
+              <button disabled={!drawing || busy} onClick={finish}>
+                <Check size={15} />
+                结束
+              </button>
+              <button
+                disabled={
+                  selectedPaths.length !== 1 ||
+                  !current?.curves.length ||
+                  current.closed ||
+                  busy
+                }
+                onClick={(e) =>
+                  report(closePath(connectionSettings(sr.current, e)))
+                }
+              >
+                <Link size={15} />
+                闭合
+              </button>
+            </div>
+          </section>
+        </div>
+        <div
+          role="tabpanel"
+          aria-label="路径与分组"
+          hidden={propertyTab !== 'paths'}
+        >
+          <section className="paths-section">
+            <h3>
+              {selectedPaths.length > 1
+                ? '已选 ' + selectedPaths.length + ' 条路径'
+                : current?.name || '未选择路径'}
+            </h3>
+            <p>
+              {selectedPaths.length > 1
+                ? '拖动画布中已选曲线可整体移动；在路径树拖动可批量排序和移组。'
+                : 'V 选择路径 · A 编辑节点 · 双击名称改名'}
+            </p>
+            {!!selectedPaths.length && (
+              <div className="batch-actions">
+                <button onClick={groupSelection} disabled={busy}>
+                  编组 <kbd>Ctrl G</kbd>
+                </button>
+                <button onClick={deletePaths} disabled={busy}>
+                  删除所选 <kbd>Del</kbd>
+                </button>
+              </div>
+            )}
+            {current && selectedPaths.length === 1 && (
+              <>
+                <div className="path-actions">
+                  <button
+                    onClick={() => {
+                      finish();
+                      chooseTool('edit');
+                    }}
+                  >
+                    <MousePointer2 size={14} />
+                    编辑节点
+                  </button>
+                  <button
+                    disabled={current.closed}
+                    onClick={() => {
+                      chooseTool('trace');
+                      setDrawing(true);
+                      drawingRef.current = true;
+                    }}
+                  >
+                    <CornerDownLeft size={14} />
+                    续画
+                  </button>
+                  <button
+                    aria-label="删除当前路径"
+                    onClick={deletePath}
+                    disabled={busy}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <details className="advanced-actions">
+                  <summary>高级操作</summary>
+                  <p>会替换当前路径的手动调整。</p>
+                  <button
+                    disabled={busy || !ready || current.anchors.length < 2}
+                    onClick={() => requestRefit()}
+                  >
+                    重新拟合当前路径…
+                  </button>
+                </details>
+              </>
+            )}
+          </section>
+        </div>
+        <div
+          role="tabpanel"
+          aria-label="工程设置"
+          hidden={propertyTab !== 'scene'}
+        >
+          <section>
+            <h3>当前工程</h3>
+            <p>
+              {project.imageName} · {project.width} × {project.height}
+            </p>
+            <p>{saved}</p>
+          </section>
+          <section>
+            <h3>底图与预览</h3>
+            <label>
+              底图不透明度 <span>{opacity}%</span>
+            </label>
+            <Slider
+              aria-label="底图不透明度"
+              min={0}
+              max={100}
+              value={[opacity]}
+              onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
+            />
+            <label className="switch-label">
+              仅看曲线{' '}
+              <Switch
+                aria-label="仅看曲线"
+                checked={vectorsOnly}
+                onCheckedChange={setVectorsOnly}
+              />
+            </label>
+            <label className="switch-label">
+              闭合区域填充{' '}
+              <Switch
+                aria-label="闭合区域填充"
+                checked={fill}
+                onCheckedChange={setFill}
+              />
+            </label>
+          </section>
+          <section className="workflow">
+            <b>为建模准备干净的曲线</b>
+            <p>
+              闭合外轮廓 → 设置毫米尺寸 → 导入 Blender →
+              检查后挤出。二维描线不会自动恢复立体角色。
+            </p>
+            <button
+              className="example-button"
+              disabled={busy}
+              onClick={() =>
+                report(
+                  fetch('/character-example.bezier.json')
+                    .then((r) => {
+                      if (!r.ok) throw Error('示例读取失败');
+                      return r.json();
+                    })
+                    .then((p) => apiRef.current.load_project({ project: p })),
+                )
+              }
+            >
+              <FolderOpen size={15} />
+              载入角色描线示例
+            </button>
+            <p>44 条路径 · 可编辑、可撤销载入</p>
+          </section>
+        </div>
+      </div>
+    </aside>
+  );
   return (
     <main
-      className="studio"
+      className={'studio ' + (unified ? 'creation-studio' : '')}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -2573,7 +3080,9 @@ export default function Home() {
             className="primary"
             onClick={() =>
               workspace === 'trace'
-                ? setDialog('export')
+                ? unified
+                  ? creationApi.current?.show_output()
+                  : setDialog('export')
                 : modelApi.current?.show_output()
             }
           >
@@ -2611,31 +3120,81 @@ export default function Home() {
           }}
         />
       </header>
-      <nav className="workspace-switch" aria-label="工作空间">
-        {[
-          ['trace', '描线'],
-          ['faces', '构面'],
-          ['relief', '浮雕'],
-        ].map(([id, label]) => (
+      <nav
+        className="workspace-switch creation-workspace-switch"
+        aria-label="工作空间"
+      >
+        <button
+          aria-pressed={workspace === 'trace' && creationView === 'flat'}
+          onClick={() => {
+            finish();
+            setWorkspace('trace');
+            setUnified(true);
+            setCreationView('flat');
+          }}
+        >
+          平面创作
+        </button>
+        <button
+          aria-pressed={workspace === 'trace' && creationView === '3d'}
+          onClick={() => {
+            finish();
+            setWorkspace('trace');
+            setUnified(true);
+            setCreationView('3d');
+            chooseTool('select');
+          }}
+        >
+          <Box size={16} />
+          立体预览
+        </button>
+        <span>
+          {workspace !== 'trace'
+            ? '高级构造记录 · 保留来源与依赖'
+            : creationView === '3d'
+              ? '同一个部件 · 直接选择区域调整颜色和高低'
+              : '描边界 · 填颜色 · 调高低'}
+        </span>
+        {workspace !== 'trace' && (
           <button
-            key={id}
-            aria-pressed={workspace === id}
             onClick={() => {
-              if (drag.current) cancelGesture();
-              finish();
-              setWorkspace(id);
+              setWorkspace('trace');
+              setUnified(true);
             }}
           >
-            {label}
+            返回创作
           </button>
-        ))}
-        <span>
-          {workspace === 'trace'
-            ? '编辑源贝塞尔样条'
-            : workspace === 'faces'
-              ? '用边界构造区域，保留来源关联'
-              : '为区域赋高，生成可打印实体'}
-        </span>
+        )}
+        <details className="creation-mode-menu">
+          <summary>更多</summary>
+          <div>
+            <button
+              onClick={() => {
+                finish();
+                setUnified(false);
+                setWorkspace('trace');
+              }}
+            >
+              源线工作台
+            </button>
+            <button
+              onClick={() => {
+                finish();
+                setWorkspace('faces');
+              }}
+            >
+              构面
+            </button>
+            <button
+              onClick={() => {
+                finish();
+                setWorkspace('relief');
+              }}
+            >
+              浮雕
+            </button>
+          </div>
+        </details>
       </nav>
       <div
         className="workspace"
@@ -2646,12 +3205,18 @@ export default function Home() {
             [MousePointer2, 'select', '选择', 'V'],
             [Spline, 'edit', '节点', 'A'],
             [PenTool, 'trace', '描线', 'P'],
+            ...(unified
+              ? [
+                  [PaintBucket, 'paint', '上色', ''],
+                  [ArrowUpFromLine, 'height', '高低', ''],
+                ]
+              : []),
             [Hand, 'pan', '平移', 'H'],
           ].map(([Icon, value, label, key]: any) => (
             <button
               key={value}
-              title={`${label} (${key})`}
-              aria-label={`${label} (${key})`}
+              title={key ? `${label} (${key})` : label}
+              aria-label={key ? `${label} (${key})` : label}
               className={tool === value ? 'selected' : ''}
               aria-pressed={tool === value}
               onClick={() => chooseTool(value)}
@@ -2724,7 +3289,7 @@ export default function Home() {
           ref={stage}
           tabIndex={0}
           aria-label="编辑画布"
-          className={`stage tool-${tool}`}
+          className={`stage tool-${tool} ${unified ? 'creation-stage' : ''} ${creationView === '3d' && unified ? 'creation-is-3d' : ''}`}
           onPointerDown={pointerDown}
           onPointerMove={pointerMove}
           onPointerUp={pointerUp}
@@ -2785,10 +3350,18 @@ export default function Home() {
                   opacity={opacity / 100}
                 />
               )}
+              <g ref={setCreationLayer} />
               {project.paths
-                .filter((p) => p.visible)
+                .filter(
+                  (p) =>
+                    p.visible &&
+                    (!unified ||
+                      !project.creation?.objects.some(
+                        (o: any) => o.pathIds.includes(p.id) && !o.visible,
+                      )),
+                )
                 .map((path) => (
-                  <g key={path.id}>
+                  <g key={path.id} className="source-path-layer">
                     {!path.curves.length && (
                       <circle
                         cx={path.start.x}
@@ -3258,463 +3831,38 @@ export default function Home() {
             }
           }}
         />
-        <aside
-          className="inspector"
-          style={
-            {
-              '--inspector-width': inspectorWidth + 'px',
-            } as React.CSSProperties
-          }
-        >
-          <Outliner
+        <>
+          <CreationWorkspace
             project={project}
-            selected={selectedPaths}
-            active={active}
-            busy={busy || gesturing}
-            onSelect={choosePath}
-            onGroupSelect={chooseGroup}
-            onClear={clearSelection}
-            onNew={begin}
-            onGroup={groupSelection}
-            onRename={renameItem}
-            onMove={(...args) => {
-              try {
-                movePathBatch(...args);
-              } catch (e: any) {
-                setStatus(e.message);
-              }
+            enabled={unified && workspace === 'trace'}
+            viewMode={creationView}
+            tool={tool}
+            onTool={chooseTool}
+            onView={setCreationView}
+            onProject={setDoc}
+            onStatus={setStatus}
+            onApi={(api) => {
+              creationApi.current = api;
             }}
-            onVisibility={setVisible}
-            onDissolve={(id) => manageGroup({ action: 'delete', id })}
-            onDelete={deletePaths}
-            onEdit={() => chooseTool('edit')}
+            layer={creationLayer}
+            stage={stage.current}
+            scale={view.s}
+            width={inspectorWidth}
+            selectedPaths={selectedPaths}
+            onSelectPaths={(ids) => selectPathsNow(ids)}
+            onStartDrag={startPathDrag}
+            sourceInspector={legacyInspector}
+            onAdvanced={(mode) => {
+              finish();
+              setWorkspace(mode);
+            }}
+            onNewPath={begin}
+            busy={busy || gesturing}
+            opacity={opacity}
+            onOpacity={setOpacity}
           />
-          <div className="properties-area">
-            <Tabs
-              value={propertyTab}
-              onValueChange={(v) => setPropertyTab(v as string)}
-              className="property-tabs"
-            >
-              <TabsList aria-label="属性页签">
-                <TabsTrigger value="scene">工程</TabsTrigger>
-                <TabsTrigger value="trace">描线</TabsTrigger>
-                <TabsTrigger value="paths">路径</TabsTrigger>
-                <TabsTrigger value="node">节点</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <div
-              role="tabpanel"
-              aria-label="节点属性"
-              hidden={propertyTab !== 'node'}
-            >
-              <section>
-                <h3>
-                  {selectedNodes.length
-                    ? '已选 ' + selectedNodes.length + ' 个节点'
-                    : '节点属性'}
-                </h3>
-                <p>{current?.name || '选择一条路径后进入节点编辑'}</p>
-                {current && current.visible && tool === 'edit' ? (
-                  <div className="node-inspector">
-                    <p>
-                      {selectedNodes.length === 1
-                        ? (() => {
-                            const p = pathNodes(current)[selectedNodes[0]];
-                            return (
-                              '节点 ' +
-                              (selectedNodes[0] + 1) +
-                              ' · X ' +
-                              p.x.toFixed(1) +
-                              ' / Y ' +
-                              p.y.toFixed(1) +
-                              ' px'
-                            );
-                          })()
-                        : selectedNodes.length
-                          ? '拖动任一选中节点可整体移动，控制柄随节点保持相对位置。'
-                          : selection
-                            ? '拖动圆形控制柄调整弯曲。'
-                            : '点击节点选择 · Shift 多选 · 空白拖动框选'}
-                    </p>
-                    {!!selectedNodes.length && (
-                      <label className="node-mode">
-                        连接方式
-                        <select
-                          aria-label="节点连接模式"
-                          disabled={busy || gesturing}
-                          value={
-                            new Set(
-                              selectedNodes.map((i) => nodeModes(current)[i]),
-                            ).size > 1
-                              ? 'mixed'
-                              : nodeModes(current)[selectedNodes[0]]
-                          }
-                          onChange={(e) => {
-                            try {
-                              transact((p) => {
-                                const path = p.paths.find(
-                                  (p) => p.id === current.id,
-                                )!;
-                                selectedNodes.forEach((i) =>
-                                  setContinuity(path, i, e.target.value),
-                                );
-                              });
-                              setStatus(
-                                '已更新 ' +
-                                  selectedNodes.length +
-                                  ' 个节点的连接方式 · 可撤销',
-                              );
-                            } catch (e: any) {
-                              setStatus(e.message);
-                            }
-                          }}
-                        >
-                          <option value="mixed" disabled>
-                            混合
-                          </option>
-                          <option value="corner">尖角 · 独立控制柄</option>
-                          <option
-                            value="smooth"
-                            disabled={
-                              !current.closed &&
-                              selectedNodes.some(
-                                (i) => i === 0 || i === current.curves.length,
-                              )
-                            }
-                          >
-                            平滑 · 共线
-                          </option>
-                          <option
-                            value="symmetric"
-                            disabled={
-                              !current.closed &&
-                              selectedNodes.some(
-                                (i) => i === 0 || i === current.curves.length,
-                              )
-                            }
-                          >
-                            对称 · C1 连续
-                          </option>
-                        </select>
-                      </label>
-                    )}
-                    {!current.closed &&
-                      selectedNodes.some(
-                        (i) => i === 0 || i === current.curves.length,
-                      ) && (
-                        <p className="note">
-                          开放端点只有单侧曲线；连续模式适用于中间节点。
-                        </p>
-                      )}
-                    <div className="batch-actions">
-                      <button
-                        disabled={busy || !selectedNodes.length}
-                        onClick={deleteSelection}
-                      >
-                        <Trash2 size={14} />
-                        删除节点 <kbd>Del</kbd>
-                      </button>
-                      <button
-                        disabled={!selection && !selectedNodes.length}
-                        onClick={() => setSelection(null)}
-                      >
-                        取消选择
-                      </button>
-                    </div>
-                    {selectedNodes.length <= 1 && (
-                      <div className="node-segment-actions">
-                        <button
-                          disabled={
-                            busy || !selection || !current.curves.length
-                          }
-                          onClick={() => {
-                            try {
-                              straightenSpan(current.id);
-                            } catch (e: any) {
-                              setStatus(e.message);
-                            }
-                          }}
-                        >
-                          此段改为直连 <kbd>L</kbd>
-                        </button>
-                        <button
-                          disabled={
-                            busy ||
-                            current.closed ||
-                            !current.curves.length ||
-                            selectedNodes.length !== 1 ||
-                            ![0, current.curves.length].includes(
-                              selectedNodes[0],
-                            )
-                          }
-                          onClick={startMerge}
-                        >
-                          <Link size={14} />
-                          连接另一条样条 <kbd>M</kbd>
-                        </button>
-                      </div>
-                    )}
-                    {mergeSource && (
-                      <button onClick={() => setMergeSource(null)}>
-                        取消合并 · Esc
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="empty-properties">
-                    <p>
-                      {current && !current.visible
-                        ? '当前路径已隐藏，显示后可编辑节点。'
-                        : '先选择路径，再编辑它的节点与控制柄。'}
-                    </p>
-                    <button
-                      onClick={() => {
-                        if (current && !current.visible)
-                          setVisible([current.id], true);
-                        chooseTool(current ? 'edit' : 'select');
-                      }}
-                    >
-                      {current && !current.visible
-                        ? '显示并编辑节点'
-                        : current
-                          ? '编辑当前路径节点'
-                          : '选择路径'}
-                    </button>
-                  </div>
-                )}
-              </section>
-            </div>
-            <div
-              role="tabpanel"
-              aria-label="描线参数"
-              hidden={propertyTab !== 'trace'}
-            >
-              <section>
-                <h3>描线参数</h3>
-                <p>
-                  每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
-                </p>
-                <label>识别目标</label>
-                <Tabs
-                  value={settings.mode}
-                  onValueChange={(v) => {
-                    setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
-                    setPreview([]);
-                  }}
-                >
-                  <TabsList className="mode-tabs">
-                    <TabsTrigger value="ink">深色线条</TabsTrigger>
-                    <TabsTrigger value="edge">颜色边缘</TabsTrigger>
-                    <TabsTrigger value="manual">手动</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <label>
-                  补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
-                </label>
-                <Slider
-                  aria-label="补点提示阈值"
-                  min={0.5}
-                  max={6}
-                  step={0.5}
-                  value={[settings.tolerance]}
-                  onValueChange={(v) =>
-                    setSettings((s) => ({
-                      ...s,
-                      tolerance: Array.isArray(v) ? v[0] : v,
-                    }))
-                  }
-                />
-                <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
-                <label>
-                  搜索范围 <span>{settings.corridor} px</span>
-                </label>
-                <Slider
-                  aria-label="搜索范围"
-                  min={20}
-                  max={250}
-                  step={10}
-                  value={[settings.corridor]}
-                  onValueChange={(v) =>
-                    setSettings((s) => ({
-                      ...s,
-                      corridor: Array.isArray(v) ? v[0] : v,
-                    }))
-                  }
-                />
-                <label className="switch-label">
-                  锚点吸附{' '}
-                  <Switch
-                    aria-label="锚点吸附"
-                    checked={settings.snap}
-                    onCheckedChange={(v) =>
-                      setSettings((s) => ({ ...s, snap: v }))
-                    }
-                  />
-                </label>
-                <div className="path-actions">
-                  <button disabled={!drawing || busy} onClick={finish}>
-                    <Check size={15} />
-                    结束
-                  </button>
-                  <button
-                    disabled={
-                      selectedPaths.length !== 1 ||
-                      !current?.curves.length ||
-                      current.closed ||
-                      busy
-                    }
-                    onClick={(e) =>
-                      report(closePath(connectionSettings(sr.current, e)))
-                    }
-                  >
-                    <Link size={15} />
-                    闭合
-                  </button>
-                </div>
-              </section>
-            </div>
-            <div
-              role="tabpanel"
-              aria-label="路径与分组"
-              hidden={propertyTab !== 'paths'}
-            >
-              <section className="paths-section">
-                <h3>
-                  {selectedPaths.length > 1
-                    ? '已选 ' + selectedPaths.length + ' 条路径'
-                    : current?.name || '未选择路径'}
-                </h3>
-                <p>
-                  {selectedPaths.length > 1
-                    ? '拖动画布中已选曲线可整体移动；在路径树拖动可批量排序和移组。'
-                    : 'V 选择路径 · A 编辑节点 · 双击名称改名'}
-                </p>
-                {!!selectedPaths.length && (
-                  <div className="batch-actions">
-                    <button onClick={groupSelection} disabled={busy}>
-                      编组 <kbd>Ctrl G</kbd>
-                    </button>
-                    <button onClick={deletePaths} disabled={busy}>
-                      删除所选 <kbd>Del</kbd>
-                    </button>
-                  </div>
-                )}
-                {current && selectedPaths.length === 1 && (
-                  <>
-                    <div className="path-actions">
-                      <button
-                        onClick={() => {
-                          finish();
-                          chooseTool('edit');
-                        }}
-                      >
-                        <MousePointer2 size={14} />
-                        编辑节点
-                      </button>
-                      <button
-                        disabled={current.closed}
-                        onClick={() => {
-                          chooseTool('trace');
-                          setDrawing(true);
-                          drawingRef.current = true;
-                        }}
-                      >
-                        <CornerDownLeft size={14} />
-                        续画
-                      </button>
-                      <button
-                        aria-label="删除当前路径"
-                        onClick={deletePath}
-                        disabled={busy}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <details className="advanced-actions">
-                      <summary>高级操作</summary>
-                      <p>会替换当前路径的手动调整。</p>
-                      <button
-                        disabled={busy || !ready || current.anchors.length < 2}
-                        onClick={() => requestRefit()}
-                      >
-                        重新拟合当前路径…
-                      </button>
-                    </details>
-                  </>
-                )}
-              </section>
-            </div>
-            <div
-              role="tabpanel"
-              aria-label="工程设置"
-              hidden={propertyTab !== 'scene'}
-            >
-              <section>
-                <h3>当前工程</h3>
-                <p>
-                  {project.imageName} · {project.width} × {project.height}
-                </p>
-                <p>{saved}</p>
-              </section>
-              <section>
-                <h3>底图与预览</h3>
-                <label>
-                  底图不透明度 <span>{opacity}%</span>
-                </label>
-                <Slider
-                  aria-label="底图不透明度"
-                  min={0}
-                  max={100}
-                  value={[opacity]}
-                  onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
-                />
-                <label className="switch-label">
-                  仅看曲线{' '}
-                  <Switch
-                    aria-label="仅看曲线"
-                    checked={vectorsOnly}
-                    onCheckedChange={setVectorsOnly}
-                  />
-                </label>
-                <label className="switch-label">
-                  闭合区域填充{' '}
-                  <Switch
-                    aria-label="闭合区域填充"
-                    checked={fill}
-                    onCheckedChange={setFill}
-                  />
-                </label>
-              </section>
-              <section className="workflow">
-                <b>为建模准备干净的曲线</b>
-                <p>
-                  闭合外轮廓 → 设置毫米尺寸 → 导入 Blender →
-                  检查后挤出。二维描线不会自动恢复立体角色。
-                </p>
-                <button
-                  className="example-button"
-                  disabled={busy}
-                  onClick={() =>
-                    report(
-                      fetch('/character-example.bezier.json')
-                        .then((r) => {
-                          if (!r.ok) throw Error('示例读取失败');
-                          return r.json();
-                        })
-                        .then((p) =>
-                          apiRef.current.load_project({ project: p }),
-                        ),
-                    )
-                  }
-                >
-                  <FolderOpen size={15} />
-                  载入角色描线示例
-                </button>
-                <p>44 条路径 · 可编辑、可撤销载入</p>
-              </section>
-            </div>
-          </div>
-        </aside>
+          {!unified && legacyInspector}
+        </>
       </div>
       <ModelWorkspace
         project={project}
@@ -3722,7 +3870,7 @@ export default function Home() {
         initialPaths={selectedPaths}
         onModel={(model) =>
           transact((p) => {
-            p.version = 2;
+            p.version = p.creation ? 3 : 2;
             p.model = model;
           })
         }
@@ -3911,6 +4059,10 @@ export default function Home() {
             <>
               <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
               <p>
+                统一创作：creation_inspect、creation_focus、creation_select、creation_command、creation_view、creation_export。
+                填色和厚度命令须带最新 creation_inspect 返回的 revision。
+              </p>
+              <p>
                 描线操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
               </p>
               <p>
@@ -3954,7 +4106,18 @@ export default function Home() {
                 删除所选节点。
               </p>
               <p>
-                <b>路径树</b>　单击名称选择，Ctrl 增减，Shift
+                <b>作品树</b>　单击选择，Ctrl 增减，Shift 连选，仅箭头展开。
+                双击部件或线条名称改名。拖动部件调整列表顺序，拖动线条移入部件；
+                物理高度在“位置与叠放”中设置。
+              </p>
+              <p>
+                <b>填色与高低</b>　选中部件后画轮廓、分区线或挖洞线。
+                底部选色，上色工具点击或按住扫过区域；右侧切换局部与整个对象，输入厚度或拖动调高。
+                平面与立体保留同一选择。项目色可双击编辑，引用它的区域一起改变。
+                制作标签中预览底板、检查实体并导出。
+              </p>
+              <p>
+                <b>高级源线路径树</b>　单击名称选择，Ctrl 增减，Shift
                 连续选择；上下键移动选择，F2 或双击名称改名。Enter
                 编辑节点。拖动所选路径批量移组；行上半部插到前面，下半部插到后面，拖到组名移到组尾。仅箭头控制折叠。Ctrl+G
                 编组，Ctrl+Shift+G 移出分组。
@@ -3979,8 +4142,9 @@ export default function Home() {
               <p>
                 <b>视图与保存</b>
                 　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。工程自动备份，Ctrl+S
-                绑定并写回同一文件，Ctrl+Shift+S 另存为。SVG 和 Blender
-                导出全部可见路径。
+                绑定并写回同一文件，Ctrl+Shift+S 另存为。制作标签导出分色 SVG、
+                打印 STL 和 Blender 实体与源线；精确贝塞尔 SVG
+                在源线工作台导出。
               </p>
             </div>
           )}

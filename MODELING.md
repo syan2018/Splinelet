@@ -1,6 +1,6 @@
 # 构面与浮雕
 
-顶部三个工作空间依次是 **描线 → 构面 → 浮雕**。源样条、派生面、实体特征分开保存；后两步不会增加或改动源贝塞尔节点。右侧对象树按面 / 体块切换和搜索，属性按构面 / 对象 / 制造导出分栏。
+这里介绍顶部“更多”中的高级构面与浮雕工具。默认的统一创作已将日常描线、分区、填色与厚度放到同一部件内，见 [CREATION.md](CREATION.md)。高级工具仍将源样条、派生面、实体特征分开保存；后两步不会增加或改动源贝塞尔节点。右侧对象树按面 / 体块切换和搜索，属性按构面 / 对象 / 制造导出分栏。
 
 1. **建立面**：选择闭合路径，点击“预览区域”，确认后建立面。开放路径可显式补齐首尾；两条开放曲线可以围面，单条线也能按指定宽度加宽成面。
 2. **拆分面**：选择一个目标面和一条或多条开放样条，设置端点接边距离。橙色连接表示派生边界将补上的间隙。点击编号区域或勾选所需候选，Enter / 按钮提交；Esc 取消。端点接边只影响构面，不移动源节点。
@@ -12,7 +12,7 @@
 
 源线修改后会重算派生区域。分区数量改变，或原区域定位点不能唯一定位时，该面明确失效，需使用“重新指定来源 / 选区”修复；不会悄悄换成另一块区域。修复已有面保留对象 ID 和下游引用。改变预览参数或工程会使旧预览失效。
 
-工程升级为 version 2，仍可打开原来的 version 1 文件。所有建模定义随现有浏览器备份及绑定文件一起保存；无需每步另存 JSON。旧版 App 不支持新增建模数据，请用新版打开。
+高级建模数据使用 version 2；加入统一创作元数据后使用 version 3，仍可打开 version 1 / 2 文件。所有建模定义随现有浏览器备份及绑定文件一起保存；无需每步另存 JSON。旧版 App 不支持新增建模数据，请用新版打开。
 
 ## 计算精度与范围
 
@@ -25,22 +25,30 @@
 通过 `window.traceStudio.call(action,args)`，WebMCP 的 `bezier_` 工具，或现有 HTTP 配套服务调用。描线坐标仍为图像像素；构面几何坐标是以图像中心为原点、Y 向上的毫米坐标。
 
 ```javascript
-const call=(action,args={})=>window.traceStudio.call(action,args);
-await call('set_workspace',{mode:'faces'});
-await call('preview_region',{kind:'path',pathId:'source-path-id'});
-const {regionIds:[base]}=await call('commit_region_preview',{indices:[0],name:'底板'});
+const call = (action, args = {}) => window.traceStudio.call(action, args);
+await call('set_workspace', { mode: 'faces' });
+await call('preview_region', { kind: 'path', pathId: 'source-path-id' });
+const {
+  regionIds: [base],
+} = await call('commit_region_preview', { indices: [0], name: '底板' });
 
-const preview=await call('preview_region',{
-  kind:'split',baseId:base,pathIds:['open-cut-id'],joinMM:.15
+const preview = await call('preview_region', {
+  kind: 'split',
+  baseId: base,
+  pathIds: ['open-cut-id'],
+  joinMM: 0.15,
 });
 // 在画布中审阅编号、面积及橙色连接。indices 从 0 开始。
-const {regionIds}=await call('commit_region_preview',{indices:[0,1]});
-const {featureIds:[bottom]}=await call('create_relief',{
-  regionIds:[base],heightMM:2
+const { regionIds } = await call('commit_region_preview', { indices: [0, 1] });
+const {
+  featureIds: [bottom],
+} = await call('create_relief', {
+  regionIds: [base],
+  heightMM: 2,
 });
-await call('create_relief',{regionIds,attachId:bottom,heightMM:.8});
+await call('create_relief', { regionIds, attachId: bottom, heightMM: 0.8 });
 await call('validate_part');
-await call('export_model',{format:'blender'});
+await call('export_model', { format: 'blender' });
 ```
 
 其他构面操作：

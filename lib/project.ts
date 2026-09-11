@@ -1,4 +1,5 @@
 import { validateModel } from './model-schema.mjs';
+import { validateCreation } from './creation-schema.mjs';
 export type Point = { x: number; y: number };
 export type Cubic = [Point, Point, Point, Point];
 export type TracePath = {
@@ -17,7 +18,8 @@ export type TracePath = {
   fitError?: number;
 };
 export type Project = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
+  creation?: any;
   model?: any;
   image: string;
   imageName: string;
@@ -104,7 +106,7 @@ export function blender(project: Project) {
 }
 export function validateProject(v: any): Project {
   if (
-    ![1, 2].includes(v?.version) ||
+    ![1, 2, 3].includes(v?.version) ||
     typeof v.image !== 'string' ||
     !/^(data:image\/(png|jpeg|webp);base64,|\/reference.png$)/.test(v.image) ||
     !Number.isFinite(v.width) ||
@@ -193,6 +195,7 @@ export function validateProject(v: any): Project {
       throw Error('闭合路径存在缺口');
   }
   if (v.model !== undefined) validateModel(v.model);
+  if (v.creation !== undefined) validateCreation(v.creation);
   return v;
 }
 export function db(action: 'get' | 'put', value?: Project): Promise<any> {

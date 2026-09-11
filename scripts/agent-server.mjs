@@ -71,6 +71,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const allowed = [
+      'creation_inspect',
+      'creation_focus',
+      'creation_select',
+      'creation_command',
+      'creation_view',
+      'creation_export',
       'set_workspace',
       'inspect_model',
       'preview_region',

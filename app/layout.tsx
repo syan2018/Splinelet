@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './creation.css';
 export const metadata: Metadata = {
   title: '描迹 · 贝塞尔工作台',
   description:

@@ -1,0 +1,40 @@
+// Supply a Playwright Browser and a valid project fixture; uses a fresh context.
+module.exports = async (browser, url, project) => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    let pending;
+    const requested = new Promise((resolve) => {
+      page.route('**/character-example.bezier.json', (route) => {
+        pending = route;
+        resolve();
+      });
+    });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await requested;
+    await page.waitForFunction(() => window.traceStudio);
+    await page.evaluate(
+      (project) => window.traceStudio.call('load_project', { project }),
+      project,
+    );
+    const imported = await page.evaluate(() =>
+      window.traceStudio.call('get_project'),
+    );
+    await pending.continue();
+    await page.waitForFunction(
+      () =>
+        !document.querySelector('footer')?.textContent.includes('正在恢复工程'),
+    );
+    const actual = await page.evaluate(() =>
+      window.traceStudio.call('get_project'),
+    );
+    require('node:assert/strict').deepEqual(
+      actual,
+      imported,
+      'late startup response must not overwrite imported work',
+    );
+    return { ok: true, sourcePaths: actual.paths.length };
+  } finally {
+    await context.close();
+  }
+};

@@ -57,6 +57,52 @@ export function translatePaths(project, ids, dx, dy) {
       path.curves = path.curves.map((c) => c.map(shift));
       delete path.fitError;
     }
+  if (project.creation) {
+    project.creation = structuredClone(project.creation);
+    const shiftCoordinates = (a) =>
+      typeof a[0] === 'number'
+        ? [a[0] + dx / project.width, a[1] - dy / project.width]
+        : a.map(shiftCoordinates);
+    for (const object of project.creation.objects)
+      if (
+        object.pathIds.length &&
+        object.pathIds.every((id) => selected.has(id))
+      )
+        for (const paint of object.paints)
+          paint.geometry.coordinates = shiftCoordinates(
+            paint.geometry.coordinates,
+          );
+  }
+  if (project.model) {
+    const sources = (id, seen = new Set()) => {
+      if (seen.has(id)) return [];
+      seen.add(id);
+      const r = project.model.regions.find((r) => r.id === id);
+      if (!r) return [];
+      return [
+        ...(r.pathId ? [r.pathId] : []),
+        ...(r.pathIds || []),
+        ...[r.a, r.b, r.baseId]
+          .filter(Boolean)
+          .flatMap((id) => sources(id, seen)),
+      ];
+    };
+    const moving = project.model.regions
+      .filter(
+        (r) =>
+          r.kind === 'split' && sources(r.id).every((id) => selected.has(id)),
+      )
+      .map((r) => r.id);
+    if (moving.length) {
+      project.model = structuredClone(project.model);
+      for (const r of project.model.regions.filter((r) =>
+        moving.includes(r.id),
+      )) {
+        const scale = (r.seedWidthMM || project.widthMM) / project.width;
+        r.seed = [r.seed[0] + dx * scale, r.seed[1] - dy * scale];
+      }
+    }
+  }
 }
 export function translateNodes(path, ids, dx, dy) {
   const selected = new Set(ids),

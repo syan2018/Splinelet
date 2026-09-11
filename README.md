@@ -2,7 +2,9 @@
 
 用于沿参考图交互描线、建立关联区域，并把区域拉伸成简单的 3D 打印浮雕。底图和几何在浏览器内处理，支持 SVG、Blender Python、STL 和包含底图及建模步骤的工程文件。当前浏览器有工程时优先恢复。
 
-新增 **描线 → 构面 → 浮雕** 三个工作空间。构面与浮雕的操作、精度、Agent API 3.0 和验证说明见 [MODELING.md](MODELING.md)。旧描线 API 保持兼容。
+默认进入统一创作：**同一个部件内描轮廓、画分区、填色、调厚度**，平面与立体共享选择。右侧以头发、头饰、杯子等部件组织作品，局部区域收在部件内部；底部项目色卡统一管理颜色。新流程和 Agent API 4.0 见 [CREATION.md](CREATION.md)。
+
+原来的源线工作台、构面与浮雕放在顶部“更多”中，复杂布尔和切削继续使用这些高级工具，详见 [MODELING.md](MODELING.md)。下面保留源线编辑器和兼容 API 的说明。
 
 ## 启动
 
@@ -23,14 +25,16 @@ node scripts/agent-server.mjs
 
 ## 编辑器的层级
 
+以下路径树说明针对“更多 → 源线工作台”。统一创作的作品树、颜色与高低 / 线条 / 制作标签见 [CREATION.md](CREATION.md)。
+
 右侧上半部固定显示路径树，下半部是工程、描线、路径和节点属性。切换属性页不隐藏路径树。只有工具决定画布操作；查看属性不会偷偷改变工具。
 
-| 工具 | 点击 | 拖动 | 双击 |
-| --- | --- | --- | --- |
-| 选择 V | 选择整条路径；Shift / Ctrl 增减 | 空白框选相交曲线；已选曲线整体移动 | 曲线进入节点编辑 |
+| 工具   | 点击                                  | 拖动                                           | 双击                 |
+| ------ | ------------------------------------- | ---------------------------------------------- | -------------------- |
+| 选择 V | 选择整条路径；Shift / Ctrl 增减       | 空白框选相交曲线；已选曲线整体移动             | 曲线进入节点编辑     |
 | 节点 A | 选择当前路径的节点；Shift / Ctrl 增减 | 空白框选节点；选中节点一起移动；单个控制柄调形 | 曲线主动插入一个节点 |
-| 描线 P | 沿底图落点 | 移动鼠标预览下一段 | 使用单击确认落点 |
-| 平移 H | — | 拖动画布 | — |
+| 描线 P | 沿底图落点                            | 移动鼠标预览下一段                             | 使用单击确认落点     |
+| 平移 H | —                                     | 拖动画布                                       | —                    |
 
 节点模式编辑一条路径中的多个节点；多条路径一起移动使用选择模式。隐藏路径可以在路径树中管理，但不会被画布框选。
 
@@ -70,7 +74,7 @@ Ctrl+S 首次选择并绑定工程文件，之后写回同一文件；约 800ms 
 
 浏览器备份约 200ms 提交，事务完成后才显示成功。文件写入串行，失败中止，不将旧写入覆盖新内容。刷新后恢复工程和文件关联；首次重新保存授权后恢复文件自动写入。导入新底图 / API 载入工程解除旧文件绑定，避免覆盖旧工程文件。
 
-SVG 和 Blender 导出所有可见路径及分组。毫米尺寸按整张底图计算。Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景；闭合曲线填充和挤出，开放路径保持曲线。二维描线不会自动生成角色完整立体模型，导出曲线可用于后续建模和加工。
+统一创作“制作”标签导出分色 SVG、经检查的 STL，以及包含最终实体和源贝塞尔的 Blender 脚本。源线工作台的导出保留所有可见路径及分组。毫米尺寸按整张底图计算；Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景。具体差别见 [CREATION.md](CREATION.md)。
 
 ## Agent API 2.0
 
@@ -78,15 +82,37 @@ SVG 和 Blender 导出所有可见路径及分组。毫米尺寸按整张底图�
 
 ```javascript
 await window.traceStudio.call('state'); // tool、active、selectedPaths、selectedNodes、view、gesturing、paths、groups
-await window.traceStudio.call('detect_candidates', {limit:48,spacing:30});
-await window.traceStudio.call('create_path', {name:'轮廓',points:[{x:20,y:30},{x:80,y:50}],mode:'ink',preview:true});
+await window.traceStudio.call('detect_candidates', { limit: 48, spacing: 30 });
+await window.traceStudio.call('create_path', {
+  name: '轮廓',
+  points: [
+    { x: 20, y: 30 },
+    { x: 80, y: 50 },
+  ],
+  mode: 'ink',
+  preview: true,
+});
 await window.traceStudio.call('commit_preview');
-await window.traceStudio.call('select_paths', {pathIds:['a','b']}); // 空数组取消选择
-await window.traceStudio.call('move_paths', {pathIds:['a','b'],groupId:'g',targetId:'c',after:true});
-await window.traceStudio.call('select_node', {pathId:'a',nodeIndex:2});
-await window.traceStudio.call('set_node_mode', {pathId:'a',nodeIndex:2,mode:'symmetric'});
-await window.traceStudio.call('set_point', {pathId:'a',curve:1,point:1,position:{x:50,y:60}});
-await window.traceStudio.call('export', {format:'svg'});
+await window.traceStudio.call('select_paths', { pathIds: ['a', 'b'] }); // 空数组取消选择
+await window.traceStudio.call('move_paths', {
+  pathIds: ['a', 'b'],
+  groupId: 'g',
+  targetId: 'c',
+  after: true,
+});
+await window.traceStudio.call('select_node', { pathId: 'a', nodeIndex: 2 });
+await window.traceStudio.call('set_node_mode', {
+  pathId: 'a',
+  nodeIndex: 2,
+  mode: 'symmetric',
+});
+await window.traceStudio.call('set_point', {
+  pathId: 'a',
+  curve: 1,
+  point: 1,
+  position: { x: 50, y: 60 },
+});
+await window.traceStudio.call('export', { format: 'svg' });
 ```
 
 `create_path` 接受候选编号或点坐标，返回 fitError / needsAnchor。`manage_group` 支持 create / rename / assign / visibility / delete。`move_path` 保留单条移动兼容入口；`select_path` 现在进入路径选择模式，节点编辑使用 `select_node`。`delete_node`、`merge_paths`、`straighten_span`、`get_project`、`inspect_geometry`、`undo`、`set_view`、`load_project` 保持可用。`refit_path` 仅打开确认框，不能绕过用户确认。拖动期间拒绝 API 修改工程。
@@ -100,6 +126,8 @@ node scripts/test-node-edit.mjs
 node scripts/test-connect.mjs
 node scripts/test-single-curve.mjs
 node scripts/test-persistence.mjs
+node scripts/test-model.mjs
+node scripts/test-creation.mjs
 npx tsc --noEmit
 npm run build
 ```

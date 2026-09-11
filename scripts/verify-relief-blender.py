@@ -17,7 +17,8 @@ for p in source['paths']:
         for actual,expected in zip([a.co,a.handle_right,b.handle_left,b.co],map(point,c)):
             error=max(error,math.dist(actual,expected))
 assert error<1e-8
-obj=bpy.data.collections['描迹 · 浮雕实体'].objects[0]
+collection=bpy.data.collections.get('描迹 · 创作成品') or bpy.data.collections['描迹 · 浮雕实体']
+obj=collection.objects[0]
 bm=bmesh.new();bm.from_mesh(obj.data)
 invalid=sum(not e.is_manifold for e in bm.edges)
 degenerate=sum(f.calc_area()<1e-18 for f in bm.faces)
