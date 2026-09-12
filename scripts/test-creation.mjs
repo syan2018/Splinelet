@@ -7,6 +7,7 @@ import {
 } from '../lib/creation-engine.mjs';
 import { creationCommand } from '../lib/creation-commands.mjs';
 import { creationDocument, validateCreation } from '../lib/creation-schema.mjs';
+import { readGeometry } from '../lib/region-engine.mjs';
 import { buildSolid } from '../lib/solid-engine.mjs';
 import { translatePaths } from '../public/selection.mjs';
 const path = (id, pts, closed = true) => ({
@@ -437,6 +438,193 @@ if (fs.existsSync(repairSource)) {
     JSON.stringify(legacy.paths),
     anchors,
     'role changes do not move anchors',
+  );
+}
+// A newly added hair divider used to create a machine-epsilon segment during
+// unary union, which made JSTS reject the graph as non-noded.  Keep this as a
+// data regression: it reads a test-only copy and never mutates the artwork.
+const hairPartitionSource = new URL(
+  './fixtures/hair-partition.json',
+  import.meta.url,
+);
+{
+  const hairProject = JSON.parse(fs.readFileSync(hairPartitionSource, 'utf8')),
+    originalPaths = JSON.stringify(hairProject.paths),
+    hair = hairProject.creation.objects.find((o) => o.name === '头发'),
+    hairScene = evaluateCreation(hairProject),
+    hairCells = hairScene.cells.filter(
+      (cell) => cell.objectId === hair.id && !cell.featureId && !cell.regionId,
+    );
+  assert.equal(hairScene.errors.length, 0, 'hair graph is fully noded');
+  assert.equal(hairCells.length, 12, 'new divider creates its twelfth region');
+  assert(
+    hairCells.every((cell) => cell.painted),
+    'all children inherit paint',
+  );
+  assert(
+    hairCells.every(
+      (cell) => Number.isFinite(cell.heightMM) && Number.isFinite(cell.zMM),
+    ),
+    'all children inherit printable elevation',
+  );
+  const before = structuredClone(hairProject);
+  before.creation.objects.find((o) => o.id === hair.id).roles[
+    'c80a7c16-7975-4cd7-b966-9cc6e18a55d4'
+  ] = 'guide';
+  const oldCells = evaluateCreation(before).cells.filter(
+    (cell) => cell.objectId === hair.id && !cell.featureId && !cell.regionId,
+  );
+  assert.equal(oldCells.length, 11, 'guide state exposes prior eleven regions');
+  assert(
+    hairCells.every(
+      (cell) =>
+        oldCells.filter(
+          (old) =>
+            readGeometry(cell.geometry)
+              .intersection(readGeometry(old.geometry))
+              .getArea() > 1e-6,
+        ).length === 1,
+    ),
+    'a new divider only subdivides one existing parent region',
+  );
+  assert.equal(
+    JSON.stringify(hairProject.paths),
+    originalPaths,
+    'noding is derived-only',
+  );
+  assert(
+    hairCells.every((cell) => !cell.conflict),
+    'a new split never merges styles',
+  );
+  for (const cell of hairCells) {
+    const parent = oldCells.find(
+      (old) =>
+        readGeometry(cell.geometry)
+          .intersection(readGeometry(old.geometry))
+          .getArea() > 1e-6,
+    );
+    assert.deepEqual(
+      [cell.color, cell.heightMM, cell.zMM],
+      [parent.color, parent.heightMM, parent.zMM],
+    );
+  }
+  const solid = await buildSolid(hairProject);
+  assert.equal(solid.report.valid, true, 'hair remains a printable solid');
+  const repainted = creationCommand(
+      hairProject,
+      'paint',
+      { cellKeys: [hairCells[0].key], color: '#cc4488' },
+      hairScene,
+    ),
+    repaintedScene = evaluateCreation(repainted),
+    repaintedCells = repaintedScene.cells.filter(
+      (cell) => cell.objectId === hair.id && !cell.featureId && !cell.regionId,
+    ),
+    resized = creationCommand(
+      repainted,
+      'height',
+      { cellKeys: [repaintedCells[1].key], heightMM: 2.34 },
+      repaintedScene,
+    ),
+    reloadedCells = evaluateCreation(
+      JSON.parse(JSON.stringify(resized)),
+    ).cells.filter(
+      (cell) => cell.objectId === hair.id && !cell.featureId && !cell.regionId,
+    );
+  assert.equal(
+    repaintedCells.length,
+    12,
+    'paint keeps the accepted split graph',
+  );
+  assert.equal(repaintedCells.filter((cell) => cell.conflict).length, 0);
+  assert.equal(
+    reloadedCells.length,
+    12,
+    'height and JSON reload keep the split graph',
+  );
+  assert.equal(reloadedCells.filter((cell) => cell.conflict).length, 0);
+  assert.deepEqual(
+    reloadedCells.map((c) => c.geometry),
+    hairCells.map((c) => c.geometry),
+  );
+  assert.deepEqual(resized.paths, hairProject.paths);
+  const roleProject = structuredClone(hairProject),
+    roleHair = roleProject.creation.objects.find((o) => o.id === hair.id),
+    firstDivider = 'c80a7c16-7975-4cd7-b966-9cc6e18a55d4';
+  roleHair.roles[firstDivider] = 'guide';
+  const firstAccepted = creationCommand(
+    roleProject,
+    'roles',
+    { objectId: roleHair.id, pathIds: [firstDivider], role: 'divider' },
+    evaluateCreation(roleProject),
+  );
+  const firstConnections = evaluateCreation(firstAccepted).connections.filter(
+    (c) => c.pathId === firstDivider,
+  );
+  const secondDivider = 'hair-second-divider',
+    copied = structuredClone(
+      firstAccepted.paths.find((path) => path.id === firstDivider),
+    );
+  copied.id = secondDivider;
+  const offset = (p) => ({ ...p, x: p.x + 0.01 });
+  copied.start = offset(copied.start);
+  copied.anchors = copied.anchors.map(offset);
+  copied.curves = copied.curves.map((curve) => curve.map(offset));
+  firstAccepted.paths.push(copied);
+  const acceptedHair = firstAccepted.creation.objects.find(
+    (o) => o.id === roleHair.id,
+  );
+  acceptedHair.pathIds.push(secondDivider);
+  acceptedHair.roles[secondDivider] = 'guide';
+  const secondAccepted = creationCommand(
+      firstAccepted,
+      'roles',
+      { objectId: acceptedHair.id, pathIds: [secondDivider], role: 'divider' },
+      evaluateCreation(firstAccepted),
+    ),
+    secondScene = evaluateCreation(secondAccepted),
+    secondCells = secondScene.cells.filter(
+      (cell) => cell.objectId === hair.id && !cell.featureId && !cell.regionId,
+    );
+  assert.equal(secondScene.errors.length, 0);
+  assert.equal(secondCells.filter((cell) => cell.conflict).length, 0);
+  assert.deepEqual(
+    secondScene.connections.filter((c) => c.pathId === firstDivider),
+    firstConnections,
+    'a closer new divider cannot steal either endpoint of the previously accepted divider',
+  );
+  assert.equal(
+    secondAccepted.creation.objects.find((o) => o.id === hair.id)
+      .dividerGraphCohorts.length,
+    3,
+    'a later divider becomes a later immutable graph cohort without repainting',
+  );
+  const broken = structuredClone(hairProject),
+    brokenHair = broken.creation.objects.find((o) => o.id === hair.id),
+    oldDivider = broken.paths.find(
+      (path) => path.id === '0dc5136e-24eb-48ea-8d4a-d792d70fd171',
+    );
+  oldDivider.curves[1][0].x += 100;
+  const failed = evaluateCreation(broken),
+    fallback = failed.cells.filter((cell) => cell.objectId === brokenHair.id);
+  assert(failed.errors.some((error) => error.objectId === brokenHair.id));
+  assert.equal(
+    fallback.filter((cell) => cell.fallback).length,
+    brokenHair.paints.length,
+  );
+  assert(
+    fallback.some((cell) => cell.featureId) &&
+      fallback.filter((cell) => cell.fallback).every((cell) => cell.painted),
+    'failure retains legacy features alongside saved paint footprints',
+  );
+  assert.throws(() => compileCreation(broken), /请先处理/);
+  const unpaintedBroken = structuredClone(broken);
+  unpaintedBroken.creation.objects.find((o) => o.id === brokenHair.id).paints =
+    [];
+  assert.throws(
+    () => compileCreation(unpaintedBroken),
+    /请先处理/,
+    'a failed printable legacy object cannot export a partial solid',
   );
 }
 console.log(

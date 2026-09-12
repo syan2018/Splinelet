@@ -22,13 +22,17 @@ import {
   blender,
   validateProject,
 } from '@/lib/project';
-import { creationDocument } from '@/lib/creation-schema.mjs';
+import {
+  creationDocument,
+  acceptDividerGraph,
+} from '@/lib/creation-schema.mjs';
 import { creationCommand } from '@/lib/creation-commands.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
 import CreationColor from './creation-color';
+import CreationIssue from './creation-issue';
 import { useCreationSelection } from './use-creation-selection';
 // @ts-ignore Vite worker asset.
 import ModelWorker from '../lib/model-worker.ts?worker';
@@ -119,12 +123,14 @@ function NumberEdit({
   onCommit,
   min = 0,
   max = 1000,
+  disabled = false,
 }: {
   label: string;
   value: number;
   onCommit: (n: number) => void;
   min?: number;
   max?: number;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(String(value));
   const cancelled = useRef(false);
@@ -142,6 +148,7 @@ function NumberEdit({
   return (
     <input
       type="number"
+      disabled={disabled}
       aria-label={label}
       min={min}
       max={max}
@@ -170,11 +177,16 @@ export default function CreationWorkspace(p: Props) {
     [scene, setScene] = useState<any>(null),
     sceneRef = useRef<any>(null),
     revision = useRef<Project | null>(null),
+    roleChecking = useRef(false),
+    pendingRoleResult = useRef<any>(null),
     sequence = useRef(0),
     worker = useRef<Worker | null>(null),
     requests = useRef(new Map<number, any>());
   const [boot, setBoot] = useState(false),
     [calculating, setCalculating] = useState(false),
+    [checkingRole, setCheckingRole] = useState(false),
+    [roleIssue, setRoleIssue] = useState<any>(null),
+    [roleResult, setRoleResult] = useState<any>(null),
     [error, setError] = useState('');
   const [tab, setTab] = useState('object'),
     [brush, setBrush] = useState('cream'),
@@ -241,7 +253,12 @@ export default function CreationWorkspace(p: Props) {
   };
   useEffect(() => {
     clearConnectionPreview();
+    setRoleIssue(null);
+    setRoleResult(null);
   }, [current?.id]);
+  const failedSelection = scene?.errors.some((e: any) =>
+    objects.includes(e.objectId),
+  );
   const sourceOnly =
     current &&
     scene &&
@@ -318,6 +335,8 @@ export default function CreationWorkspace(p: Props) {
     if (!boot) return;
     let cancelled = false;
     const snapshot = p.project;
+    setRoleIssue(null);
+    setRoleResult(null);
     revisionId.current++;
     setCalculating(true);
     clearConnectionPreview();
@@ -661,7 +680,7 @@ export default function CreationWorkspace(p: Props) {
           expectedRevision !== revisionId.current
         )
           throw Error('候选区域修订号已过期，请重新调用 creation_inspect');
-        return run(action, args);
+        return action === 'roles' ? applyRoles(args) : run(action, args);
       },
       focus: (id: string) => selectObject(id, {}, true),
       select_paths: selectionState.selectPaths,
@@ -674,6 +693,7 @@ export default function CreationWorkspace(p: Props) {
         const c = creationDocument(ref.current.project),
           o = c.objects.find((o: any) => o.id === objects.at(-1));
         if (o) {
+          acceptDividerGraph(o);
           o.pathIds.push(path.id);
           o.roles[path.id] = nextRole.current;
           return c;
@@ -684,9 +704,66 @@ export default function CreationWorkspace(p: Props) {
       clear,
     });
   });
+  async function applyRoles(args: any) {
+    if (ref.current.busy || roleChecking.current)
+      throw Error('请先完成当前操作');
+    const snapshot = ref.current.project;
+    const next = creationCommand(snapshot, 'roles', args, sceneRef.current);
+    const beforeCount =
+      sceneRef.current?.cells.filter(
+        (c: any) => c.objectId === args.objectId && !c.fallback,
+      ).length || 0;
+    setCheckingRole(true);
+    roleChecking.current = true;
+    setRoleIssue(null);
+    setRoleResult(null);
+    try {
+      const result = await call('creation', {}, next);
+      if (ref.current.project !== snapshot)
+        throw Error('线条已变化，请重新设置用途');
+      const failure = result.errors.find(
+        (e: any) => e.objectId === args.objectId,
+      );
+      if (failure && args.role !== 'guide') {
+        const issue = { ...failure, pathIds: args.pathIds };
+        setRoleIssue(issue);
+        p.onStatus('本次用途切换未应用；原区域与颜色保留');
+        return { applied: false, issue };
+      }
+      p.onProject(next);
+      clearConnectionPreview();
+      const afterCount = result.cells.filter(
+        (c: any) => c.objectId === args.objectId && !c.fallback,
+      ).length;
+      const message =
+        args.role === 'divider'
+          ? afterCount > beforeCount
+            ? `分区完成 · ${beforeCount} → ${afterCount} 个区域`
+            : `已设为分区线 · 仍为 ${afterCount} 个区域。若希望继续拆分，请检查线条是否贯穿区域、两端是否接合。`
+          : args.role === 'guide'
+            ? '已设为参考线 · 线条保留，暂不参与分区'
+            : '线条用途已更新';
+      // Keep the result tied to the committed project; source edits clear it.
+      pendingRoleResult.current = {
+        project: next,
+        message,
+        objectId: args.objectId,
+      };
+      notify(message);
+      return { applied: true, regionCount: afterCount };
+    } finally {
+      roleChecking.current = false;
+      setCheckingRole(false);
+    }
+  }
+  useEffect(() => {
+    const result = pendingRoleResult.current;
+    if (result?.project === p.project) setRoleResult(result);
+    pendingRoleResult.current = null;
+  }, [p.project]);
   const chooseRole = (role: string) =>
     safely(() =>
-      run('roles', {
+      applyRoles({
         objectId: current.id,
         pathIds: p.selectedPaths.filter((id) => current.pathIds.includes(id)),
         role,
@@ -1183,7 +1260,8 @@ export default function CreationWorkspace(p: Props) {
                 ),
                 local =
                   scene?.cells.filter((c: any) => c.objectId === o.id) || [],
-                count = local.filter((c: any) => c.painted).length;
+                count = local.filter((c: any) => c.painted).length,
+                failed = scene?.errors.some((e: any) => e.objectId === o.id);
               return (
                 <div
                   key={o.id}
@@ -1298,8 +1376,20 @@ export default function CreationWorkspace(p: Props) {
                         )
                       }
                     />
-                    <small title={count ? '已填色的区域' : '源样条，尚未填色'}>
-                      {count ? `${count} 区` : `${paths.length} 线`}
+                    <small
+                      title={
+                        failed
+                          ? '分区未完成，点选部件查看恢复操作'
+                          : count
+                            ? '已填色的区域'
+                            : '源样条，尚未填色'
+                      }
+                    >
+                      {failed
+                        ? '需检查'
+                        : count
+                          ? `${count} 区`
+                          : `${paths.length} 线`}
                     </small>
                     <button
                       aria-label={(o.visible ? '隐藏' : '显示') + o.name}
@@ -1470,14 +1560,75 @@ export default function CreationWorkspace(p: Props) {
               </button>
             </div>
           )}
-          {scene?.errors
-            .filter((e: any) => objects.includes(e.objectId))
-            .map((e: any, i: number) => (
-              <p className="creation-warning" key={i}>
-                {e.message}{' '}
-                <button onClick={() => p.onAdvanced('faces')}>查看构造</button>
-              </p>
-            ))}
+          {[
+            ...(scene?.errors || []).filter((e: any) =>
+              objects.includes(e.objectId),
+            ),
+            ...(roleIssue && objects.includes(roleIssue.objectId)
+              ? [{ ...roleIssue, pending: true }]
+              : []),
+          ].map((e: any, i: number) => {
+            const owner = doc.objects.find((o: any) => o.id === e.objectId);
+            const candidates =
+              e.pathIds ||
+              owner?.pathIds.filter((id: string) =>
+                ['divider', 'hole'].includes(owner.roles[id]),
+              ) ||
+              [];
+            const selected =
+              selection.kind === 'path'
+                ? selection.ids.filter((id) => candidates.includes(id))
+                : [];
+            const ids = selected.length ? selected : candidates.slice(-1);
+            return (
+              <CreationIssue
+                key={i}
+                name={owner?.name || '当前部件'}
+                message={e.message}
+                pending={e.pending}
+                preserved={scene?.cells.some(
+                  (c: any) => c.objectId === e.objectId && c.fallback,
+                )}
+                pathNames={ids.map(
+                  (id: string) =>
+                    p.project.paths.find((path) => path.id === id)?.name ||
+                    '分区线',
+                )}
+                busy={calculating || checkingRole || p.busy}
+                onLocate={() => {
+                  selectionState.selectPaths(ids);
+                  p.onView('flat');
+                  p.onTool('edit');
+                  p.onFramePaths(ids, { force: true });
+                }}
+                onDisable={
+                  !e.pending && ids.length
+                    ? () =>
+                        safely(() =>
+                          applyRoles({
+                            objectId: owner.id,
+                            pathIds: ids,
+                            role: 'guide',
+                          }),
+                        )
+                    : undefined
+                }
+                onRetry={
+                  !e.pending
+                    ? () =>
+                        safely(async () => {
+                          const snapshot = ref.current.project;
+                          const result = await call('creation', {}, snapshot);
+                          if (ref.current.project !== snapshot) return;
+                          setScene(result);
+                          sceneRef.current = result;
+                          revision.current = snapshot;
+                        })
+                    : undefined
+                }
+              />
+            );
+          })}
           {scene?.cells.some((c: any) => c.conflict) && (
             <p className="creation-warning">
               条纹区域合并了不同颜色或高度。选中后重新填色 /
@@ -1670,7 +1821,7 @@ export default function CreationWorkspace(p: Props) {
                             .map((c: any) => c.color)
                     }
                     swatches={doc.swatches}
-                    disabled={calculating || p.busy}
+                    disabled={calculating || p.busy || failedSelection}
                     onPaint={(args) =>
                       safely(() => run('paint', { ...targets(), ...args }))
                     }
@@ -1682,12 +1833,14 @@ export default function CreationWorkspace(p: Props) {
                     <div className="creation-height-input">
                       <NumberEdit
                         label="凸起厚度"
+                        disabled={calculating || failedSelection}
                         value={displayedHeight}
                         min={0.01}
                         onCommit={(n) => safely(() => applyHeight(n))}
                       />
                       <button
                         aria-pressed={p.tool === 'height'}
+                        disabled={calculating || failedSelection}
                         onClick={() => p.onTool('height')}
                       >
                         <ArrowUpFromLine size={17} />
@@ -1696,6 +1849,7 @@ export default function CreationWorkspace(p: Props) {
                     </div>
                     <input
                       aria-label="调整凸起厚度"
+                      disabled={calculating || failedSelection}
                       type="range"
                       min=".1"
                       max={Math.max(6, displayedHeight)}
@@ -1890,6 +2044,7 @@ export default function CreationWorkspace(p: Props) {
                       ].map(([role, label]) => (
                         <button
                           key={role}
+                          disabled={checkingRole || calculating || p.busy}
                           aria-pressed={p.selectedPaths
                             .filter((id) => current.pathIds.includes(id))
                             .every(
@@ -1910,6 +2065,14 @@ export default function CreationWorkspace(p: Props) {
                     <small>
                       分区保留共享边界；挖洞使用闭合线。参考线不参与填色。
                     </small>
+                    {checkingRole && (
+                      <p role="status">正在检查分区，完成后应用…</p>
+                    )}
+                    {roleResult?.objectId === current.id && (
+                      <p role="status" className="creation-role-result">
+                        {roleResult.message}
+                      </p>
+                    )}
                   </div>
                 )}
               {current && (

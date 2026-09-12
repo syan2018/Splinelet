@@ -617,6 +617,27 @@
 .creation-property-block {
   margin: 0 0 20px;
 }
+.creation-issue p {
+  margin: 8px 0;
+}
+.creation-issue details {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.creation-issue details p {
+  overflow-wrap: anywhere;
+  color: #c9b79b;
+}
+.creation-issue summary {
+  cursor: pointer;
+}
+.creation-role-result {
+  padding: 9px;
+  color: #d4efb1;
+  background: #33463a;
+  border-radius: 6px;
+  line-height: 1.7;
+}
 .creation-color-custom {
   display: flex;
   gap: 7px;

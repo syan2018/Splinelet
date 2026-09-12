@@ -18,7 +18,7 @@ export const creationTools: Record<string, any> = {
   },
   creation_command: {
     description:
-      'Run one undoable creation command: paint, height, swatch, object, new_object, move_paths, roles, reorder. args uses objectIds or cellKeys for painting/height; paint accepts swatchId or color (#RRGGBB) to change only the selection. Custom colors are created/reused atomically; swatch edits update shared colors globally. Geometry candidates must be current.',
+      'Run one undoable creation command. paint/height use objectIds or cellKeys; paint accepts swatchId or color (#RRGGBB). roles uses {objectId,pathIds,role}; it computes the proposed regions before applying and returns {applied,regionCount} or {applied:false,issue}, leaving the project unchanged on failure. Custom colors are created/reused atomically; swatch edits update shared colors globally. Painting or height changes are blocked for objects with failed geometry.',
     properties: {
       action: {
         enum: [
