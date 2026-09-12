@@ -188,6 +188,45 @@
   fill-opacity: 0.48;
   stroke: #def3b9;
 }
+.creation-stage[data-creation-display='reference']
+  .creation-cell.candidate:hover {
+  fill-opacity: 0;
+}
+.creation-stage.tool-select .creation-cell:hover {
+  cursor: move;
+}
+.creation-object-row.contains-selection {
+  box-shadow: inset 2px 0 #abc68c;
+  background: #c6ed9608;
+}
+.creation-connection-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.creation-connection-row,
+.creation-closure {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid #39484d;
+}
+.creation-connection-row > button:first-child {
+  flex: 1;
+  text-align: left;
+  min-width: 80px;
+  overflow-wrap: anywhere;
+}
+.creation-closure > span {
+  width: 100%;
+  font-size: 12px;
+  color: #cbd8d3;
+}
+.creation-constructions p {
+  line-height: 1.7;
+}
 .creation-cell.active {
   filter: drop-shadow(0 1px 2px #0004);
 }

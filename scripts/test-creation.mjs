@@ -128,6 +128,35 @@ assert.equal(preview.connections.length, 2);
 assert.equal(evaluateCreation(p).cells.length, 1, 'preview does not mutate');
 scene = command('join', { objectId, joinMM: 0.3 });
 assert.equal(scene.cells.length, 2);
+const gapCurves = JSON.stringify(p.paths.find((x) => x.id === 'gap').curves);
+scene = command('connection', {
+  objectId,
+  pathId: 'gap',
+  endpoint: 0,
+  disabled: true,
+});
+assert.equal(
+  scene.cells.length,
+  1,
+  'a disabled automatic endpoint removes its bridge',
+);
+assert.equal(
+  JSON.stringify(p.paths.find((x) => x.id === 'gap').curves),
+  gapCurves,
+  'disabling a bridge never rewrites source anchors',
+);
+assert.equal(
+  scene.diagnostics.some((d) => d.pathId === 'gap' && d.status === 'disabled'),
+  true,
+  'the UI can identify the disabled endpoint',
+);
+scene = command('connection', {
+  objectId,
+  pathId: 'gap',
+  endpoint: 0,
+  disabled: false,
+});
+assert.equal(scene.cells.length, 2, 'a disabled endpoint can be restored');
 p = structuredClone(beforeSplit);
 p.paths.push(
   path('hole', [
@@ -248,6 +277,119 @@ if (fs.existsSync(sourcePath)) {
     'internal regions;',
     result.report.triangles,
     'triangles',
+  );
+}
+const repairSource = new URL(
+  '../../../outputs/interaction-repair/Sandrone-new.source.bezier.json',
+  import.meta.url,
+);
+// Legacy faces keep their elevation after a split is painted and serialized.
+// Removing the divider must use the saved styles, including merge conflicts.
+{
+  let legacy = structuredClone(beforeSplit);
+  delete legacy.creation;
+  legacy.model = {
+    version: 1,
+    toleranceMM: 0.015,
+    parts: [{ id: 'main', name: 'part' }],
+    regions: [
+      {
+        id: 'legacy-area',
+        name: 'area',
+        kind: 'path',
+        pathId: 'outer',
+        color: '#a59883',
+      },
+    ],
+    features: [
+      {
+        id: 'legacy-feature',
+        name: 'feature',
+        regionId: 'legacy-area',
+        partId: 'main',
+        heightMM: 1,
+        zMM: 3,
+        color: '#a59883',
+        mode: 'add',
+        enabled: true,
+      },
+    ],
+  };
+  legacy.creation = creationDocument(legacy);
+  const object = legacy.creation.objects.find((o) =>
+    o.featureIds.includes('legacy-feature'),
+  );
+  legacy.paths.push(
+    path(
+      'legacy-divider',
+      [
+        [10, 50],
+        [90, 50],
+      ],
+      false,
+    ),
+  );
+  object.pathIds.push('legacy-divider');
+  object.roles['legacy-divider'] = 'divider';
+  let divided = evaluateCreation(legacy);
+  assert.equal(divided.cells.length, 2);
+  assert(divided.cells.every((c) => c.zMM === 3));
+  legacy = creationCommand(
+    legacy,
+    'paint',
+    { cellKeys: [divided.cells[0].key], swatchId: 'gold' },
+    divided,
+  );
+  legacy = JSON.parse(JSON.stringify(legacy));
+  divided = evaluateCreation(legacy);
+  assert(
+    divided.cells.every((c) => c.zMM === 3),
+    'paint and JSON reload preserve legacy elevation',
+  );
+  assert.equal(divided.errors.length, 0);
+  legacy = creationCommand(
+    legacy,
+    'roles',
+    { objectId: object.id, pathIds: ['legacy-divider'], role: 'guide' },
+    divided,
+  );
+  const merged = evaluateCreation(legacy);
+  assert.equal(merged.cells.length, 1);
+  assert.equal(
+    merged.cells[0].conflict,
+    true,
+    'removing a painted divider exposes saved style conflicts',
+  );
+  assert.equal(merged.cells[0].zMM, 3);
+}
+if (fs.existsSync(repairSource)) {
+  const legacy = JSON.parse(fs.readFileSync(repairSource, 'utf8')),
+    cup = legacy.creation.objects.find((o) => o.name === '杯子'),
+    anchors = JSON.stringify(legacy.paths);
+  cup.joinMM = 0.1;
+  let cupScene = evaluateCreation(legacy),
+    cupCells = cupScene.cells.filter((c) => c.objectId === cup.id);
+  assert.equal(cupCells.length, 7, 'legacy cup dividers create seven cells');
+  assert(
+    cupCells.every((c) => c.painted),
+    'legacy styles survive conversion',
+  );
+  for (const id of Object.keys(cup.roles)) cup.roles[id] = 'guide';
+  cupScene = evaluateCreation(legacy);
+  cupCells = cupScene.cells.filter((c) => c.objectId === cup.id);
+  assert.equal(
+    cupCells.length,
+    5,
+    'moving dividers back to guide restores legacy',
+  );
+  assert(
+    cupCells.every((c) => c.painted),
+    'guide rollback retains legacy styles',
+  );
+  assert.equal(
+    JSON.stringify(legacy.paths),
+    anchors,
+    'role changes do not move anchors',
   );
 }
 console.log(

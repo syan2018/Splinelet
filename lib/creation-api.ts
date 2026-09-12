@@ -1,7 +1,7 @@
 export const creationTools: Record<string, any> = {
   creation_inspect: {
     description:
-      'Read unified objects, shared project swatches and current region candidates. Call again after source edits before painting.',
+      'Read unified objects, region candidates, divider endpoint diagnostics, applied connections and legacy face closures (with source and feature IDs). Call again after source edits before painting.',
     properties: {},
     readOnly: true,
   },
@@ -32,6 +32,9 @@ export const creationTools: Record<string, any> = {
           'reorder',
           'continue_partition',
           'combine_objects',
+          'join',
+          'connection',
+          'remove_connection',
         ],
       },
       args: { type: 'object' },

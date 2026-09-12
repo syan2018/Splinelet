@@ -14,6 +14,7 @@ import {
   Pipette,
   Download,
   GripVertical,
+  Focus,
 } from 'lucide-react';
 import {
   type Project,
@@ -26,6 +27,8 @@ import { creationCommand } from '@/lib/creation-commands.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import CreationView from './creation-view';
+import CreationConnections from './creation-connections';
+import { useCreationSelection } from './use-creation-selection';
 // @ts-ignore Vite worker asset.
 import ModelWorker from '../lib/model-worker.ts?worker';
 type Props = {
@@ -44,7 +47,13 @@ type Props = {
   width: number;
   selectedPaths: string[];
   onSelectPaths: (ids: string[]) => void;
-  onStartDrag: (e: React.PointerEvent, id: string) => void;
+  onStartDrag: (
+    e: React.PointerEvent,
+    id: string,
+    fromSource?: boolean,
+  ) => void;
+  onCanvasPointerDown: (e: React.PointerEvent) => void;
+  onFramePaths: (ids: string[], options?: { force?: boolean }) => void;
   sourceInspector: ReactNode;
   onAdvanced: (mode: string) => void;
   onNewPath: () => void;
@@ -165,40 +174,61 @@ export default function CreationWorkspace(p: Props) {
   const [boot, setBoot] = useState(false),
     [calculating, setCalculating] = useState(false),
     [error, setError] = useState('');
-  const [objects, setObjects] = useState<string[]>([]),
-    [cellKeys, setCellKeys] = useState<string[]>([]),
-    [expanded, setExpanded] = useState<string[]>([]),
-    [tab, setTab] = useState('object'),
-    [scope, setScope] = useState('object'),
+  const [tab, setTab] = useState('object'),
     [brush, setBrush] = useState('cream'),
     [editingSwatch, setEditingSwatch] = useState(false),
     [search, setSearch] = useState(''),
     [dragTarget, setDragTarget] = useState('');
-  const objectsRef = useRef(objects);
-  objectsRef.current = objects;
   const [draftHeight, setDraftHeight] = useState<number | null>(null),
     heightDrag = useRef<any>(null),
     paintDrag = useRef<any>(null),
     [paintKeys, setPaintKeys] = useState<string[]>([]),
     [joinPreview, setJoinPreview] = useState<any>(null),
-    [joinMM, setJoinMM] = useState(0.15),
+    [connectionHighlight, setConnectionHighlight] = useState<any[]>([]),
     [report, setReport] = useState<any>(null),
     [exporting, setExporting] = useState(false),
     [showLines, setShowLines] = useState(true),
     [displayMode, setDisplayMode] = useState('reference');
   const space = useRef(false),
-    treeAnchor = useRef(''),
     moving = useRef<any>(null),
     root = useRef<HTMLElement>(null),
     nextRole = useRef('boundary'),
     revisionId = useRef(0);
-  const skipPathSync = useRef(false);
+  const selectionState = useCreationSelection({
+    doc,
+    scene,
+    selectedPaths: p.selectedPaths,
+    onSelectPaths: p.onSelectPaths,
+    root,
+    onTab: setTab,
+  });
+  const {
+    selection,
+    objects,
+    cellKeys,
+    scope,
+    expanded,
+    setExpanded,
+    expandedCells,
+    setExpandedCells,
+  } = selectionState;
   const [basePreview, setBasePreview] = useState<any>(null),
     [baseMargin, setBaseMargin] = useState(1),
     [baseHeight, setBaseHeight] = useState(2);
+  const connectionRequest = useRef(0),
+    focusedObject = useRef<string | undefined>(undefined);
   const current = doc.objects.find((o: any) => o.id === objects.at(-1)),
     cell = scene?.cells.find((c: any) => c.key === cellKeys.at(-1)),
     swatch = doc.swatches.find((s: any) => s.id === brush) || doc.swatches[0];
+  focusedObject.current = current?.id;
+  const clearConnectionPreview = () => {
+    connectionRequest.current++;
+    setJoinPreview(null);
+    setConnectionHighlight([]);
+  };
+  useEffect(() => {
+    clearConnectionPreview();
+  }, [current?.id]);
   const sourceOnly =
     current &&
     scene &&
@@ -277,7 +307,7 @@ export default function CreationWorkspace(p: Props) {
     const snapshot = p.project;
     revisionId.current++;
     setCalculating(true);
-    setJoinPreview(null);
+    clearConnectionPreview();
     setBasePreview(null);
     setReport(null);
     const timer = setTimeout(() => {
@@ -301,28 +331,6 @@ export default function CreationWorkspace(p: Props) {
       clearTimeout(timer);
     };
   }, [p.project, boot]);
-  useEffect(() => {
-    setObjects((ids) =>
-      ids.filter((id) => doc.objects.some((o: any) => o.id === id)),
-    );
-    setCellKeys((keys) =>
-      keys.filter((key) => scene?.cells.some((c: any) => c.key === key)),
-    );
-  }, [scene]);
-  useEffect(() => {
-    if (skipPathSync.current) {
-      skipPathSync.current = false;
-      return;
-    }
-    if (!p.selectedPaths.length) return;
-    const owners = doc.objects
-      .filter((o: any) =>
-        o.pathIds.some((id: string) => p.selectedPaths.includes(id)),
-      )
-      .map((o: any) => o.id);
-    if (owners.length) setObjects(owners);
-    if (['trace', 'edit'].includes(p.tool)) setTab('lines');
-  }, [p.selectedPaths, p.tool]);
   const notify = (message: string) => {
     setError('');
     p.onStatus(message);
@@ -341,7 +349,7 @@ export default function CreationWorkspace(p: Props) {
       sceneRef.current,
     );
     p.onProject(next);
-    setJoinPreview(null);
+    clearConnectionPreview();
     notify(
       action === 'paint'
         ? '已填色 · Ctrl+Z 撤销'
@@ -367,58 +375,21 @@ export default function CreationWorkspace(p: Props) {
   function selectObject(
     id: string,
     e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean } = {},
+    frame = false,
   ) {
-    skipPathSync.current = true;
-    let ids: string[];
-    if (e.shiftKey && treeAnchor.current) {
-      const order = doc.objects.map((o: any) => o.id),
-        a = order.indexOf(treeAnchor.current),
-        b = order.indexOf(id);
-      ids = order.slice(Math.min(a, b), Math.max(a, b) + 1);
-    } else if (e.ctrlKey || e.metaKey)
-      ids = objects.includes(id)
-        ? objects.filter((x) => x !== id)
-        : [...objects, id];
-    else ids = [id];
-    if (!e.shiftKey) treeAnchor.current = id;
-    setObjects(ids);
-    objectsRef.current = ids;
-    setCellKeys([]);
-    setScope('object');
-    setTab('object');
-    p.onSelectPaths(
-      doc.objects
-        .filter((o: any) => ids.includes(o.id))
-        .flatMap((o: any) => o.pathIds)
-        .filter((id: string) => p.project.paths.some((path) => path.id === id)),
-    );
+    const selected = selectionState.choose('object', id, e);
+    if (frame) p.onFramePaths(selected.paths);
   }
   function selectCell(key: string, add = false) {
     if (!key) {
       clear();
       return;
     }
-    const c = sceneRef.current?.cells.find((c: any) => c.key === key);
-    if (!c) return;
-    setCellKeys((keys) =>
-      add
-        ? keys.includes(key)
-          ? keys.filter((k) => k !== key)
-          : [...keys, key]
-        : [key],
-    );
-    setObjects(
-      add ? [...new Set([...objectsRef.current, c.objectId])] : [c.objectId],
-    );
-    setScope('local');
-    setTab('object');
+    selectionState.choose('cell', key, { ctrlKey: add });
   }
   function clear() {
-    setObjects([]);
-    objectsRef.current = [];
-    setCellKeys([]);
-    p.onSelectPaths([]);
-    setJoinPreview(null);
+    selectionState.clear();
+    clearConnectionPreview();
     setEditingSwatch(false);
   }
   const targets = () =>
@@ -434,7 +405,7 @@ export default function CreationWorkspace(p: Props) {
     paintDrag.current = null;
     setDraftHeight(null);
     setPaintKeys([]);
-    setJoinPreview(null);
+    clearConnectionPreview();
     setBasePreview(null);
   };
   function commitPaint() {
@@ -457,6 +428,18 @@ export default function CreationWorkspace(p: Props) {
         return;
       if (e.code === 'Space') space.current = true;
       if (
+        e.key.toLowerCase() === 'f' &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !p.busy &&
+        p.viewMode === 'flat'
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        p.onFramePaths(selectionState.paths, { force: true });
+      }
+      if (
         (e.ctrlKey || e.metaKey) &&
         e.key.toLowerCase() === 'z' &&
         (heightDrag.current || paintDrag.current)
@@ -468,12 +451,15 @@ export default function CreationWorkspace(p: Props) {
         return;
       }
       if (e.key === 'Escape') {
+        // The source editor owns in-progress source gestures and their rollback.
+        if (p.busy && !heightDrag.current && !paintDrag.current) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         if (
           heightDrag.current ||
           paintDrag.current ||
           joinPreview ||
+          connectionHighlight.length ||
           basePreview
         ) {
           cancel();
@@ -481,9 +467,6 @@ export default function CreationWorkspace(p: Props) {
         } else if (['trace', 'edit'].includes(p.tool)) {
           p.onTool('select');
           setTab('object');
-        } else if (cellKeys.length && scope === 'local') {
-          setCellKeys([]);
-          setScope('object');
         } else clear();
       }
       if (
@@ -493,10 +476,10 @@ export default function CreationWorkspace(p: Props) {
       ) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        setObjects(doc.objects.map((o: any) => o.id));
-        setCellKeys([]);
-        setScope('object');
-        p.onSelectPaths(p.project.paths.map((path) => path.id));
+        selectionState.commit({
+          kind: 'object',
+          ids: doc.objects.map((o: any) => o.id),
+        });
       }
       if (
         (e.key === 'Delete' || e.key === 'Backspace') &&
@@ -614,6 +597,7 @@ export default function CreationWorkspace(p: Props) {
         revision: revisionId.current,
         objects: doc.objects,
         swatches: doc.swatches,
+        selection,
         selectedObjects: objects,
         selectedCells: cellKeys,
         calculating,
@@ -639,21 +623,16 @@ export default function CreationWorkspace(p: Props) {
           throw Error('候选区域修订号已过期，请重新调用 creation_inspect');
         return run(action, args);
       },
-      focus: (id: string) => selectObject(id),
+      focus: (id: string) => selectObject(id, {}, true),
+      select_paths: selectionState.selectPaths,
       select_cells: (keys: string[]) => {
         if (keys.some((k) => !scene?.cells.some((c: any) => c.key === k)))
           throw Error('选区已变化');
-        setCellKeys(keys);
-        setObjects([
-          ...new Set(
-            keys.map((k) => scene.cells.find((c: any) => c.key === k).objectId),
-          ),
-        ] as string[]);
-        setScope('local');
+        selectionState.commit({ kind: 'cell', ids: keys });
       },
       new_path: (path: any) => {
         const c = creationDocument(ref.current.project),
-          o = c.objects.find((o: any) => o.id === objectsRef.current.at(-1));
+          o = c.objects.find((o: any) => o.id === objects.at(-1));
         if (o) {
           o.pathIds.push(path.id);
           o.roles[path.id] = nextRole.current;
@@ -733,10 +712,8 @@ export default function CreationWorkspace(p: Props) {
               const candidate = !c.painted,
                 active =
                   cellKeys.includes(c.key) ||
-                  (scope === 'object' && objects.includes(o.id)),
+                  (selection.kind === 'object' && objects.includes(o.id)),
                 painting = paintKeys.includes(c.key);
-              if (candidate && !objects.includes(o.id) && p.tool !== 'paint')
-                return null;
               return (
                 <path
                   key={c.key}
@@ -762,7 +739,7 @@ export default function CreationWorkspace(p: Props) {
                     (candidate && !painting ? 0.12 : 1)
                   }
                   stroke={
-                    active && showFills
+                    active
                       ? '#d4fa99'
                       : c.conflict
                         ? '#ffcd8a'
@@ -777,28 +754,33 @@ export default function CreationWorkspace(p: Props) {
                   style={{
                     pointerEvents:
                       !basePreview &&
-                      (showFills || p.tool === 'paint') &&
                       ['select', 'paint', 'height'].includes(p.tool)
                         ? 'all'
                         : 'none',
                   }}
                   onPointerDown={(e) => {
+                    // This SVG layer is a React portal. Its events do not bubble
+                    // through Home's stage handlers even though the DOM is inside it.
+                    if (e.button === 1 || space.current) {
+                      p.onCanvasPointerDown(e);
+                      return;
+                    }
                     if (e.button !== 0 || space.current) return;
                     if (p.tool === 'select') {
                       if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                        selectObject(o.id, { ctrlKey: true });
+                        selectionState.choose('cell', c.key, e);
                         e.stopPropagation();
                         return;
                       }
-                      if (!objects.includes(o.id)) selectObject(o.id);
-                      setCellKeys([c.key]);
-                      if (o.pathIds.length)
-                        p.onStartDrag(
-                          e,
-                          o.pathIds.find((id: string) =>
-                            p.project.paths.some((p) => p.id === id),
-                          ) || '',
-                        );
+                      if (
+                        selection.kind !== 'cell' ||
+                        !cellKeys.includes(c.key)
+                      )
+                        selectCell(c.key);
+                      const id = o.pathIds.find((id: string) =>
+                        p.project.paths.some((path) => path.id === id),
+                      );
+                      if (id) p.onStartDrag(e, id, false);
                       else e.stopPropagation();
                     } else if (p.tool === 'paint') {
                       e.preventDefault();
@@ -830,20 +812,29 @@ export default function CreationWorkspace(p: Props) {
                 >
                   <title>
                     {o.name}
-                    {candidate ? ' · 点击填色' : ''}
+                    {candidate ? ' · 未填色区域' : ''}
                     {c.conflict ? ' · 合并后样式冲突' : ''}
                   </title>
                 </path>
               );
             })}
-            {joinPreview?.connections.map((c: any, i: number) => (
-              <path
-                key={i}
-                d={`M ${p.project.width / 2 + (c.from[0] * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (c.from[1] * p.project.width) / p.project.widthMM} L ${p.project.width / 2 + (c.to[0] * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (c.to[1] * p.project.width) / p.project.widthMM}`}
-                stroke="#ffa65f"
-                strokeWidth={4 / p.scale}
-              />
-            ))}
+            {(
+              joinPreview?.connections?.filter(
+                (c: any) => c.objectId === current?.id,
+              ) || connectionHighlight
+            )
+              .filter((c: any) => c.from && c.to)
+              .map((c: any, i: number) => (
+                <path
+                  key={i}
+                  d={`M ${p.project.width / 2 + (c.from[0] * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (c.from[1] * p.project.width) / p.project.widthMM} L ${p.project.width / 2 + (c.to[0] * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (c.to[1] * p.project.width) / p.project.widthMM}`}
+                  data-construction-connection={c.featureId || c.pathId || i}
+                  stroke="#ffa65f"
+                  strokeWidth={3 / p.scale}
+                  strokeDasharray={`${7 / p.scale} ${4 / p.scale}`}
+                  pointerEvents="none"
+                />
+              ))}
           </g>,
           p.layer,
         )}
@@ -876,7 +867,11 @@ export default function CreationWorkspace(p: Props) {
             >
               <span>
                 {current?.name || '选择一个部件，开始创作'}
-                {scope === 'local' && cell ? ' / 局部区域' : ''}
+                {selection.kind === 'cell' && cell
+                  ? ` / 已选 ${cellKeys.length} 个区域`
+                  : selection.kind === 'path' && selection.ids.length
+                    ? ` / 已选 ${selection.ids.length} 条线`
+                    : ''}
               </span>
               {p.viewMode === 'flat' && (
                 <div
@@ -1044,9 +1039,11 @@ export default function CreationWorkspace(p: Props) {
                       if (basePreview.revision !== ref.current.project)
                         throw Error('来源已变化，请重新预览');
                       p.onProject(validateProject(basePreview.project));
-                      setObjects([basePreview.objectId]);
-                      setScope('object');
-                      setCellKeys([]);
+                      selectionState.commit({
+                        kind: 'object',
+                        ids: [basePreview.objectId],
+                      });
+                      setTab('make');
                       setBasePreview(null);
                       notify('已添加底板并叠放所选部件 · Ctrl+Z 撤销');
                     })
@@ -1073,16 +1070,23 @@ export default function CreationWorkspace(p: Props) {
           <b>作品</b>
           <span>{doc.objects.length} 个对象</span>
           <button
+            aria-label="定位选中内容 (F)"
+            title="定位选中内容 · F"
+            disabled={!selectionState.paths.length || p.viewMode !== 'flat'}
+            onClick={() =>
+              p.onFramePaths(selectionState.paths, { force: true })
+            }
+          >
+            <Focus size={16} />
+          </button>
+          <button
             aria-label="新建创作对象"
             title="新建部件"
             onClick={() =>
               safely(() => {
                 const next = run('new_object');
                 const id = next.creation.objects.at(-1).id;
-                setObjects([id]);
-                objectsRef.current = [id];
-                setCellKeys([]);
-                p.onSelectPaths([]);
+                selectionState.commit({ kind: 'object', ids: [id] });
               })
             }
           >
@@ -1111,6 +1115,7 @@ export default function CreationWorkspace(p: Props) {
             .filter(
               (o: any) =>
                 !search ||
+                objects.includes(o.id) ||
                 o.name.includes(search) ||
                 p.project.paths.some(
                   (path) =>
@@ -1161,17 +1166,24 @@ export default function CreationWorkspace(p: Props) {
                   <div
                     role="treeitem"
                     aria-expanded={open}
-                    aria-selected={objects.includes(o.id)}
+                    data-tree-object={o.id}
+                    aria-selected={
+                      selection.kind === 'object' && objects.includes(o.id)
+                    }
                     tabIndex={0}
                     className={
                       'creation-object-row ' +
-                      (objects.includes(o.id) ? 'selected' : '')
+                      (objects.includes(o.id)
+                        ? selection.kind === 'object'
+                          ? 'selected'
+                          : 'contains-selection'
+                        : '')
                     }
-                    onClick={(e) => selectObject(o.id, e)}
+                    onClick={(e) => selectObject(o.id, e, true)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        selectObject(o.id, e);
+                        selectObject(o.id, e, true);
                       }
                       if (e.key === 'ArrowRight')
                         setExpanded([...new Set([...expanded, o.id])]);
@@ -1180,7 +1192,11 @@ export default function CreationWorkspace(p: Props) {
                     }}
                     draggable
                     onDragStart={(e) => {
-                      const ids = objects.includes(o.id) ? objects : [o.id];
+                      const ids =
+                        selection.kind === 'object' && objects.includes(o.id)
+                          ? objects
+                          : [o.id];
+                      selectionState.commit({ kind: 'object', ids }, false);
                       moving.current = { objects: ids };
                       e.dataTransfer.setData(
                         'application/x-creation-objects',
@@ -1251,9 +1267,11 @@ export default function CreationWorkspace(p: Props) {
                       {paths.map((path) => (
                         <div
                           key={path.id}
+                          data-tree-path={path.id}
                           className={
                             'creation-path-row ' +
-                            (p.selectedPaths.includes(path.id)
+                            (selection.kind === 'path' &&
+                            selection.ids.includes(path.id)
                               ? 'selected'
                               : '')
                           }
@@ -1261,9 +1279,12 @@ export default function CreationWorkspace(p: Props) {
                           draggable
                           onDragStart={(e) => {
                             e.stopPropagation();
-                            const ids = p.selectedPaths.includes(path.id)
-                              ? p.selectedPaths
-                              : [path.id];
+                            const ids =
+                              selection.kind === 'path' &&
+                              selection.ids.includes(path.id)
+                                ? selection.ids
+                                : [path.id];
+                            selectionState.commit({ kind: 'path', ids }, false);
                             moving.current = { paths: ids };
                             e.dataTransfer.setData(
                               'application/x-creation-paths',
@@ -1276,18 +1297,12 @@ export default function CreationWorkspace(p: Props) {
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setObjects([o.id]);
-                            objectsRef.current = [o.id];
-                            p.onSelectPaths(
-                              e.ctrlKey || e.metaKey || e.shiftKey
-                                ? p.selectedPaths.includes(path.id)
-                                  ? p.selectedPaths.filter(
-                                      (id) => id !== path.id,
-                                    )
-                                  : [...p.selectedPaths, path.id]
-                                : [path.id],
+                            const selected = selectionState.choose(
+                              'path',
+                              path.id,
+                              e,
                             );
-                            setTab('lines');
+                            p.onFramePaths(selected.paths);
                           }}
                         >
                           <GripVertical size={12} />
@@ -1313,8 +1328,8 @@ export default function CreationWorkspace(p: Props) {
                             aria-label={'编辑线条 ' + path.name}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setObjects([o.id]);
-                              p.onSelectPaths([path.id]);
+                              selectionState.selectPaths([path.id]);
+                              p.onFramePaths([path.id]);
                               p.onTool('edit');
                               setTab('lines');
                             }}
@@ -1324,21 +1339,34 @@ export default function CreationWorkspace(p: Props) {
                         </div>
                       ))}
                       {local.length > 0 && (
-                        <details>
+                        <details
+                          open={expandedCells.includes(o.id)}
+                          onToggle={(e) => {
+                            const open = e.currentTarget.open;
+                            setExpandedCells((ids) =>
+                              open
+                                ? [...new Set([...ids, o.id])]
+                                : ids.filter((id) => id !== o.id),
+                            );
+                          }}
+                        >
                           <summary>内部区域 · {local.length}</summary>
                           <div className="creation-cell-list">
                             {local.map((c: any, i: number) => (
                               <button
                                 key={c.key}
+                                data-tree-cell={c.key}
                                 aria-label={o.name + ' 区域 ' + (i + 1)}
                                 aria-pressed={cellKeys.includes(c.key)}
                                 className={c.conflict ? 'conflict' : ''}
-                                onClick={(e) =>
-                                  selectCell(
+                                onClick={(e) => {
+                                  const selected = selectionState.choose(
+                                    'cell',
                                     c.key,
-                                    e.shiftKey || e.ctrlKey || e.metaKey,
-                                  )
-                                }
+                                    e,
+                                  );
+                                  p.onFramePaths(selected.paths);
+                                }}
                                 style={{ borderBottomColor: c.color }}
                               >
                                 {i + 1}
@@ -1526,16 +1554,33 @@ export default function CreationWorkspace(p: Props) {
                   <div className="creation-scope">
                     <button
                       aria-pressed={scope === 'object'}
-                      onClick={() => setScope('object')}
+                      onClick={() =>
+                        selectionState.commit({ kind: 'object', ids: objects })
+                      }
                     >
-                      整个对象
+                      选择整个部件
                     </button>
                     <button
                       aria-pressed={scope === 'local'}
-                      disabled={!cellKeys.length}
-                      onClick={() => setScope('local')}
+                      disabled={
+                        !scene?.cells.some((c: any) =>
+                          objects.includes(c.objectId),
+                        )
+                      }
+                      onClick={() =>
+                        selectionState.commit({
+                          kind: 'cell',
+                          ids: cellKeys.length
+                            ? cellKeys
+                            : scene.cells
+                                .filter((c: any) =>
+                                  objects.includes(c.objectId),
+                                )
+                                .map((c: any) => c.key),
+                        })
+                      }
                     >
-                      局部{cellKeys.length > 1 ? ' · ' + cellKeys.length : ''}
+                      选择全部内部区域
                     </button>
                   </div>
                   <div className="creation-property-block">
@@ -1672,7 +1717,8 @@ export default function CreationWorkspace(p: Props) {
                   <Layers size={24} />
                   <b>描轮廓，填颜色，调高低</b>
                   <p>
-                    在画布或右侧选择部件。双击区域可以编辑局部；空白处取消选择。
+                    点击面选区域，点击线选样条。右侧同步定位；空白处或 Esc
+                    取消选择。
                   </p>
                   <button onClick={() => p.onTool('paint')}>
                     <PaintBucket size={16} />
@@ -1759,6 +1805,7 @@ export default function CreationWorkspace(p: Props) {
                 </button>
               </div>
               {current &&
+                selection.kind === 'path' &&
                 p.selectedPaths.some((id) => current.pathIds.includes(id)) && (
                   <div className="creation-role">
                     <label>选中线条的用途</label>
@@ -1769,7 +1816,21 @@ export default function CreationWorkspace(p: Props) {
                         ['hole', '挖洞'],
                         ['guide', '参考'],
                       ].map(([role, label]) => (
-                        <button key={role} onClick={() => chooseRole(role)}>
+                        <button
+                          key={role}
+                          aria-pressed={p.selectedPaths
+                            .filter((id) => current.pathIds.includes(id))
+                            .every(
+                              (id) =>
+                                (current.roles[id] ||
+                                  (p.project.paths.find(
+                                    (path) => path.id === id,
+                                  )?.closed
+                                    ? 'boundary'
+                                    : 'guide')) === role,
+                            )}
+                          onClick={() => chooseRole(role)}
+                        >
                           {label}
                         </button>
                       ))}
@@ -1780,57 +1841,44 @@ export default function CreationWorkspace(p: Props) {
                   </div>
                 )}
               {current && (
-                <details className="creation-join">
-                  <summary>分区没有接到边界？</summary>
-                  <label>
-                    补边范围 mm
-                    <NumberEdit
-                      label="创作补边距离"
-                      min={0}
-                      max={5}
-                      value={joinMM}
-                      onCommit={setJoinMM}
-                    />
-                  </label>
-                  <button
-                    onClick={() =>
-                      safely(async () => {
-                        const snapshot = p.project;
-                        const next = await call('creation', {
-                          objectId: current.id,
-                          joinMM,
-                        });
-                        if (ref.current.project !== snapshot)
-                          throw Error('来源已变化，请重新预览');
-                        setJoinPreview(next);
-                      })
-                    }
-                  >
-                    预览补边
-                  </button>
-                  {joinPreview && (
-                    <div>
-                      <p>
-                        {
-                          joinPreview.connections.filter(
-                            (c: any) => c.objectId === current.id,
-                          ).length
-                        }{' '}
-                        处补边 · 橙色显示新增连接
-                      </p>
-                      <button
-                        onClick={() =>
-                          safely(() =>
-                            run('join', { objectId: current.id, joinMM }),
-                          )
-                        }
-                      >
-                        接受补边
-                      </button>
-                      <button onClick={() => setJoinPreview(null)}>取消</button>
-                    </div>
-                  )}
-                </details>
+                <CreationConnections
+                  key={current.id}
+                  object={current}
+                  scene={scene}
+                  project={p.project}
+                  preview={joinPreview}
+                  onCancel={clearConnectionPreview}
+                  onPreview={(joinMM) =>
+                    safely(async () => {
+                      const snapshot = p.project,
+                        id = current.id,
+                        token = ++connectionRequest.current;
+                      const result = await call('creation', {
+                        objectId: id,
+                        joinMM,
+                      });
+                      if (
+                        token !== connectionRequest.current ||
+                        focusedObject.current !== id
+                      )
+                        return;
+                      if (ref.current.project !== snapshot)
+                        throw Error('来源已变化，请重新预览');
+                      setJoinPreview(result);
+                      setConnectionHighlight([]);
+                    })
+                  }
+                  onApply={(joinMM) =>
+                    safely(() => run('join', { objectId: current.id, joinMM }))
+                  }
+                  onCommand={(action, args) => safely(() => run(action, args))}
+                  onLocate={(ids, connections = []) => {
+                    selectionState.selectPaths(ids);
+                    p.onView('flat');
+                    p.onFramePaths(ids, { force: true });
+                    setConnectionHighlight(connections);
+                  }}
+                />
               )}
               <div className="creation-source-settings">
                 {p.sourceInspector}

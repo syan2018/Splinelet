@@ -41,6 +41,12 @@ import {
   inBox,
   pathHitsBox,
 } from '../public/selection.mjs';
+// @ts-ignore Pure, zoom-safe SVG gesture and framing math.
+import {
+  screenToDocument,
+  zoomAt,
+  framePathsView,
+} from '../public/canvas-gestures.mjs';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -543,6 +549,36 @@ export default function Home() {
       x: (r.width - p.width * s) / 2,
       y: (r.height - p.height * s) / 2 - 5,
     });
+  };
+  const framePaths = (
+    ids: string[],
+    { force = false }: { force?: boolean } = {},
+  ) => {
+    const el = stage.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // Creation's top bar and bottom palette cover these edges of the SVG.
+    // Frame inside the usable window so the selected outline remains readable.
+    const inset = unified
+      ? {
+          x: 16,
+          y: 86,
+          width: Math.max(1, r.width - 32),
+          height: Math.max(1, r.height - 202),
+        }
+      : {
+          x: 16,
+          y: 42,
+          width: Math.max(1, r.width - 32),
+          height: Math.max(1, r.height - 106),
+        };
+    const next = framePathsView(
+      pr.current.paths.filter((path) => ids.includes(path.id) && path.visible),
+      inset,
+      vr.current,
+      { force },
+    );
+    if (next) setView(next);
   };
   const rpc = (args: any) =>
     new Promise<any>((resolve, reject) => {
@@ -1125,14 +1161,12 @@ export default function Home() {
       bridge: result.bridge,
     };
   };
-  const coordinate = (event: { clientX: number; clientY: number }) => {
-    const r = stage.current!.getBoundingClientRect(),
-      v = vr.current;
-    return {
-      x: (event.clientX - r.left - v.x) / v.s,
-      y: (event.clientY - r.top - v.y) / v.s,
-    };
-  };
+  const coordinate = (event: { clientX: number; clientY: number }) =>
+    screenToDocument(
+      event,
+      stage.current!.getBoundingClientRect(),
+      vr.current,
+    ) || { x: 0, y: 0 };
   const inside = (p: Point) =>
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
   const cancelGesture = () => {
@@ -1148,7 +1182,11 @@ export default function Home() {
     setGesturing(false);
     setStatus('已取消拖动，恢复原位置');
   };
-  const startPathDrag = (e: React.PointerEvent, id: string) => {
+  const startPathDrag = (
+    e: React.PointerEvent,
+    id: string,
+    fromSource = true,
+  ) => {
     if (space.current || e.button === 1 || tool === 'pan') return;
     if (
       !['select', 'edit'].includes(tool) ||
@@ -1164,6 +1202,7 @@ export default function Home() {
       setActiveNow(id);
       setSelection(null);
       setPropertyTab('node');
+      if (unified && fromSource) creationApi.current?.select_paths([id]);
       return;
     }
     setSelection(null);
@@ -1178,6 +1217,7 @@ export default function Home() {
       (id: string) => pr.current.paths.find((p) => p.id === id)?.visible,
     );
     selectPathsNow(ids, id);
+    if (unified && fromSource) creationApi.current?.select_paths(ids);
     setPropertyTab('paths');
     if (modified) return;
     drag.current = {
@@ -1511,12 +1551,7 @@ export default function Home() {
     const r = stage.current!.getBoundingClientRect(),
       c = center || { x: r.width / 2, y: r.height / 2 };
     setView((v) => {
-      const s = Math.min(12, Math.max(0.05, v.s * factor));
-      return {
-        s,
-        x: c.x - ((c.x - v.x) * s) / v.s,
-        y: c.y - ((c.y - v.y) * s) / v.s,
-      };
+      return zoomAt(v, factor, c);
     });
   };
   useEffect(() => {
@@ -1562,12 +1597,12 @@ export default function Home() {
         return;
       }
       if (drag.current) return;
-      if (
-        e.code === 'Space' &&
-        !(e.target as HTMLElement).closest('button,summary')
-      ) {
-        e.preventDefault();
+      if (e.code === 'Space') {
+        // Remember the modifier even when a toolbar button still has focus.
+        // A subsequent canvas press can pan; keyboard button activation remains native.
         space.current = true;
+        if (!(e.target as HTMLElement).closest('button,summary'))
+          e.preventDefault();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -2274,6 +2309,8 @@ export default function Home() {
       finish();
       setActiveNow(null);
       setDoc(p);
+      creationApi.current?.clear();
+      fitView();
       return { paths: p.paths.length };
     },
     set_candidates_visible: (a: any) => {
@@ -3859,7 +3896,9 @@ export default function Home() {
             width={inspectorWidth}
             selectedPaths={selectedPaths}
             onSelectPaths={(ids) => selectPathsNow(ids)}
+            onFramePaths={framePaths}
             onStartDrag={startPathDrag}
+            onCanvasPointerDown={pointerDown}
             sourceInspector={legacyInspector}
             onAdvanced={(mode) => {
               finish();
