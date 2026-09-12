@@ -154,11 +154,18 @@ export default function CreationConnections(p: {
         <details className="creation-join">
           <summary>构面封口 · {features.length} 个带状面</summary>
           <p className="creation-source-note">
-            两条开放样条之间的带状面需要封口。橙色虚线显示自动生成的直边；取消封口会停用对应面，源样条和其他面保留。
+            两条开放样条之间的带状面需要封口。橙色虚线显示实际封口边界；取消封口会停用对应面，源样条和其他面保留。
           </p>
           {features.map((id) => (
             <div className="creation-closure" key={id}>
-              <span>{featureName(id)}</span>
+              <span>
+                {featureName(id)}
+                {closures.some(
+                  (c: any) => c.featureId === id && c.boundaryRegionId,
+                )
+                  ? ' · 沿轮廓封口'
+                  : ''}
+              </span>
               <div className="creation-connection-actions">
                 <button
                   onClick={() => {

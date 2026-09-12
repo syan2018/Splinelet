@@ -28,6 +28,7 @@ import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
+import CreationColor from './creation-color';
 import { useCreationSelection } from './use-creation-selection';
 // @ts-ignore Vite worker asset.
 import ModelWorker from '../lib/model-worker.ts?worker';
@@ -47,6 +48,7 @@ type Props = {
   width: number;
   selectedPaths: string[];
   onSelectPaths: (ids: string[]) => void;
+  onSelectionKind: (kind: 'object' | 'path' | 'cell') => void;
   onStartDrag: (
     e: React.PointerEvent,
     id: string,
@@ -190,6 +192,13 @@ export default function CreationWorkspace(p: Props) {
     [showLines, setShowLines] = useState(true),
     [displayMode, setDisplayMode] = useState('reference');
   const space = useRef(false),
+    cellClick = useRef<{
+      key: string;
+      x: number;
+      y: number;
+      pointerId: number;
+      moved: boolean;
+    } | null>(null),
     moving = useRef<any>(null),
     root = useRef<HTMLElement>(null),
     nextRole = useRef('boundary'),
@@ -212,6 +221,10 @@ export default function CreationWorkspace(p: Props) {
     expandedCells,
     setExpandedCells,
   } = selectionState;
+  useEffect(
+    () => p.onSelectionKind(selection.kind),
+    [selection.kind, p.onSelectionKind],
+  );
   const [basePreview, setBasePreview] = useState<any>(null),
     [baseMargin, setBaseMargin] = useState(1),
     [baseHeight, setBaseHeight] = useState(2);
@@ -401,6 +414,7 @@ export default function CreationWorkspace(p: Props) {
     (scope === 'local' ? cell?.heightMM : current?.heightMM) ??
     1;
   const cancel = () => {
+    cellClick.current = null;
     heightDrag.current = null;
     paintDrag.current = null;
     setDraftHeight(null);
@@ -451,6 +465,7 @@ export default function CreationWorkspace(p: Props) {
         return;
       }
       if (e.key === 'Escape') {
+        cellClick.current = null;
         // The source editor owns in-progress source gestures and their rollback.
         if (p.busy && !heightDrag.current && !paintDrag.current) return;
         e.preventDefault();
@@ -497,18 +512,43 @@ export default function CreationWorkspace(p: Props) {
       space.current = false;
       cancel();
     };
-    const pointerUp = () => {
+    const pointerMove = (e: PointerEvent) => {
+      const g = cellClick.current;
+      if (
+        g &&
+        g.pointerId === e.pointerId &&
+        Math.hypot(e.clientX - g.x, e.clientY - g.y) >= 4
+      )
+        g.moved = true;
+    };
+    const pointerCancel = () => {
+      cellClick.current = null;
+    };
+    const pointerUp = (e: PointerEvent) => {
+      const g = cellClick.current;
+      cellClick.current = null;
+      if (
+        g &&
+        g.pointerId === e.pointerId &&
+        !g.moved &&
+        Math.hypot(e.clientX - g.x, e.clientY - g.y) < 4
+      )
+        selectCell(g.key);
       if (paintDrag.current) commitPaint();
     };
     window.addEventListener('keydown', down, true);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
     window.addEventListener('pointerup', pointerUp);
+    window.addEventListener('pointermove', pointerMove);
+    window.addEventListener('pointercancel', pointerCancel);
     return () => {
       window.removeEventListener('keydown', down, true);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
       window.removeEventListener('pointerup', pointerUp);
+      window.removeEventListener('pointermove', pointerMove);
+      window.removeEventListener('pointercancel', pointerCancel);
     };
   });
   const svgExport = () => {
@@ -777,6 +817,14 @@ export default function CreationWorkspace(p: Props) {
                         !cellKeys.includes(c.key)
                       )
                         selectCell(c.key);
+                      else if (cellKeys.length > 1)
+                        cellClick.current = {
+                          key: c.key,
+                          x: e.clientX,
+                          y: e.clientY,
+                          pointerId: e.pointerId,
+                          moved: false,
+                        };
                       const id = o.pathIds.find((id: string) =>
                         p.project.paths.some((path) => path.id === id),
                       );
@@ -827,7 +875,12 @@ export default function CreationWorkspace(p: Props) {
               .map((c: any, i: number) => (
                 <path
                   key={i}
-                  d={`M ${p.project.width / 2 + (c.from[0] * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (c.from[1] * p.project.width) / p.project.widthMM} L ${p.project.width / 2 + (c.to[0] * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (c.to[1] * p.project.width) / p.project.widthMM}`}
+                  d={(c.coordinates || [c.from, c.to])
+                    .map(
+                      ([x, y]: number[], index: number) =>
+                        `${index ? 'L' : 'M'} ${p.project.width / 2 + (x * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (y * p.project.width) / p.project.widthMM}`,
+                    )
+                    .join(' ')}
                   data-construction-connection={c.featureId || c.pathId || i}
                   stroke="#ffa65f"
                   strokeWidth={3 / p.scale}
@@ -852,8 +905,9 @@ export default function CreationWorkspace(p: Props) {
                     : cellKeys
                 }
                 tool={p.tool}
-                onSelect={(key, add) => {
-                  selectCell(key, add);
+                onSelect={(key, modifiers) => {
+                  if (key) selectionState.choose('cell', key, modifiers);
+                  else clear();
                   if (key && p.tool === 'paint')
                     safely(() =>
                       run('paint', { cellKeys: [key], swatchId: swatch.id }),
@@ -1488,52 +1542,58 @@ export default function CreationWorkspace(p: Props) {
                       边界
                     </button>
                   </div>
-                  <div className="creation-draw-actions">
-                    <button
-                      onClick={() => {
-                        nextRole.current = 'boundary';
-                        p.onView('flat');
-                        p.onNewPath();
-                        setTab('lines');
-                      }}
-                    >
-                      画轮廓
-                    </button>
-                    <button
-                      onClick={() =>
-                        safely(() => {
-                          if (
-                            current.featureIds.length &&
-                            !current.baseRegionIds?.length
-                          )
-                            run('continue_partition', { objectId: current.id });
-                          nextRole.current = 'divider';
+                  {scope === 'object' && (
+                    <div className="creation-draw-actions">
+                      <button
+                        onClick={() => {
+                          nextRole.current = 'boundary';
                           p.onView('flat');
                           p.onNewPath();
                           setTab('lines');
-                        })
-                      }
-                    >
-                      画分区线
-                    </button>
-                    <button
-                      onClick={() =>
-                        safely(() => {
-                          if (
-                            current.featureIds.length &&
-                            !current.baseRegionIds?.length
-                          )
-                            run('continue_partition', { objectId: current.id });
-                          nextRole.current = 'hole';
-                          p.onView('flat');
-                          p.onNewPath();
-                          setTab('lines');
-                        })
-                      }
-                    >
-                      画挖洞轮廓
-                    </button>
-                  </div>
+                        }}
+                      >
+                        画轮廓
+                      </button>
+                      <button
+                        onClick={() =>
+                          safely(() => {
+                            if (
+                              current.featureIds.length &&
+                              !current.baseRegionIds?.length
+                            )
+                              run('continue_partition', {
+                                objectId: current.id,
+                              });
+                            nextRole.current = 'divider';
+                            p.onView('flat');
+                            p.onNewPath();
+                            setTab('lines');
+                          })
+                        }
+                      >
+                        画分区线
+                      </button>
+                      <button
+                        onClick={() =>
+                          safely(() => {
+                            if (
+                              current.featureIds.length &&
+                              !current.baseRegionIds?.length
+                            )
+                              run('continue_partition', {
+                                objectId: current.id,
+                              });
+                            nextRole.current = 'hole';
+                            p.onView('flat');
+                            p.onNewPath();
+                            setTab('lines');
+                          })
+                        }
+                      >
+                        画挖洞轮廓
+                      </button>
+                    </div>
+                  )}
                   {sourceOnly && (
                     <p className="creation-source-note">
                       仅有线条 · 尚未构面。开放样条不会单独产生色块；
@@ -1553,7 +1613,7 @@ export default function CreationWorkspace(p: Props) {
                   )}
                   <div className="creation-scope">
                     <button
-                      aria-pressed={scope === 'object'}
+                      aria-pressed={selection.kind === 'object'}
                       onClick={() =>
                         selectionState.commit({ kind: 'object', ids: objects })
                       }
@@ -1561,7 +1621,13 @@ export default function CreationWorkspace(p: Props) {
                       选择整个部件
                     </button>
                     <button
-                      aria-pressed={scope === 'local'}
+                      aria-pressed={
+                        scope === 'local' &&
+                        cellKeys.length ===
+                          scene?.cells.filter((c: any) =>
+                            objects.includes(c.objectId),
+                          ).length
+                      }
                       disabled={
                         !scene?.cells.some((c: any) =>
                           objects.includes(c.objectId),
@@ -1570,39 +1636,45 @@ export default function CreationWorkspace(p: Props) {
                       onClick={() =>
                         selectionState.commit({
                           kind: 'cell',
-                          ids: cellKeys.length
-                            ? cellKeys
-                            : scene.cells
-                                .filter((c: any) =>
-                                  objects.includes(c.objectId),
-                                )
-                                .map((c: any) => c.key),
+                          ids: scene.cells
+                            .filter((c: any) => objects.includes(c.objectId))
+                            .map((c: any) => c.key),
                         })
                       }
                     >
                       选择全部内部区域
                     </button>
                   </div>
-                  <div className="creation-property-block">
-                    <label>颜色</label>
-                    <button
-                      className="creation-fill-button"
-                      disabled={calculating}
-                      onClick={() =>
-                        safely(() =>
-                          run('paint', { ...targets(), swatchId: swatch.id }),
-                        )
-                      }
-                    >
-                      <i style={{ background: swatch.color }} />
-                      <span>
-                        {sourceOnly ? '默认色 · ' : '涂成 '}
-                        {swatch.name}
-                      </span>
-                      <PaintBucket size={17} />
-                    </button>
-                    <small>底部选画笔色；上色工具可按住扫过多块区域。</small>
-                  </div>
+                  <CreationColor
+                    key={JSON.stringify(selection)}
+                    label={
+                      sourceOnly
+                        ? '默认颜色'
+                        : scope === 'local'
+                          ? `区域颜色 · ${cellKeys.length} 区`
+                          : '部件颜色'
+                    }
+                    colors={
+                      sourceOnly
+                        ? [
+                            doc.swatches.find(
+                              (s: any) => s.id === current.swatchId,
+                            )?.color || swatch.color,
+                          ]
+                        : (scene?.cells || [])
+                            .filter((c: any) =>
+                              scope === 'local'
+                                ? cellKeys.includes(c.key)
+                                : objects.includes(c.objectId),
+                            )
+                            .map((c: any) => c.color)
+                    }
+                    swatches={doc.swatches}
+                    disabled={calculating || p.busy}
+                    onPaint={(args) =>
+                      safely(() => run('paint', { ...targets(), ...args }))
+                    }
+                  />
                   <div className="creation-property-block">
                     <label>
                       凸起厚度 <span>mm</span>

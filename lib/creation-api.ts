@@ -18,7 +18,7 @@ export const creationTools: Record<string, any> = {
   },
   creation_command: {
     description:
-      'Run one undoable creation command: paint, height, swatch, object, new_object, move_paths, roles, reorder. args uses objectIds or cellKeys for painting/height; swatchId selects a shared project colour. Geometry candidates must be current.',
+      'Run one undoable creation command: paint, height, swatch, object, new_object, move_paths, roles, reorder. args uses objectIds or cellKeys for painting/height; paint accepts swatchId or color (#RRGGBB) to change only the selection. Custom colors are created/reused atomically; swatch edits update shared colors globally. Geometry candidates must be current.',
     properties: {
       action: {
         enum: [

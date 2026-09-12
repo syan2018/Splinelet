@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { pickVisibleIntersection } from '@/public/creation-pick.mjs';
 export default function CreationView({
   scene,
   selected,
@@ -10,7 +11,10 @@ export default function CreationView({
 }: {
   scene: any;
   selected: string[];
-  onSelect: (key: string, add: boolean) => void;
+  onSelect: (
+    key: string,
+    modifiers: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
+  ) => void;
   tool: string;
 }) {
   const host = useRef<HTMLDivElement>(null),
@@ -51,7 +55,20 @@ export default function CreationView({
     world.add(grid);
     const content = new THREE.Group();
     world.add(content);
-    const s = { renderer, world, camera, controls, content, framed: false };
+    const s = {
+      renderer,
+      world,
+      camera,
+      controls,
+      content,
+      framed: false,
+      interaction: {
+        tool,
+        spaceDown: false,
+        down: null as any,
+        pointers: new Set<number>(),
+      },
+    };
     state.current = s;
     const resize = () => {
       const r = el.getBoundingClientRect();
@@ -78,15 +95,38 @@ export default function CreationView({
       frame = requestAnimationFrame(tick);
     };
     tick();
-    let down: any = null;
     const pointerDown = (e: PointerEvent) => {
-      down = { x: e.clientX, y: e.clientY };
+      const interaction = s.interaction;
+      interaction.pointers.add(e.pointerId);
+      interaction.down =
+        e.isPrimary &&
+        e.button === 0 &&
+        interaction.pointers.size === 1 &&
+        interaction.tool !== 'pan' &&
+        !interaction.spaceDown
+          ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY, moved: false }
+          : null;
+    };
+    const pointerMove = (e: PointerEvent) => {
+      const down = s.interaction.down;
+      if (
+        down?.pointerId === e.pointerId &&
+        Math.hypot(e.clientX - down.x, e.clientY - down.y) >= 4
+      )
+        down.moved = true;
     };
     const pointerUp = (e: PointerEvent) => {
+      s.interaction.pointers.delete(e.pointerId);
+      const down = s.interaction.down;
+      if (!down || e.pointerId !== down.pointerId) return;
+      // Always consume our gesture first.  OrbitControls may capture this
+      // release outside the canvas, and a stale down must never select later.
+      s.interaction.down = null;
       if (
-        !down ||
         e.button !== 0 ||
-        Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4
+        s.interaction.tool === 'pan' ||
+        s.interaction.spaceDown ||
+        down.moved
       )
         return;
       const r = el.getBoundingClientRect(),
@@ -98,16 +138,25 @@ export default function CreationView({
         ),
         camera,
       );
-      const hit = ray
-        .intersectObjects(content.children)
-        .find((h) => h.object.userData.key);
-      callback.current(
-        hit?.object.userData.key || '',
-        e.shiftKey || e.ctrlKey || e.metaKey,
+      const hit = pickVisibleIntersection(
+        ray.intersectObjects(content.children),
       );
+      callback.current(hit?.object.userData.key || '', {
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        shiftKey: e.shiftKey,
+      });
+    };
+    const clearPointer = (e: PointerEvent) => {
+      s.interaction.pointers.delete(e.pointerId);
+      if (s.interaction.down?.pointerId === e.pointerId)
+        s.interaction.down = null;
     };
     renderer.domElement.addEventListener('pointerdown', pointerDown);
+    renderer.domElement.addEventListener('pointermove', pointerMove);
     renderer.domElement.addEventListener('pointerup', pointerUp);
+    renderer.domElement.addEventListener('pointercancel', clearPointer);
+    renderer.domElement.addEventListener('lostpointercapture', clearPointer);
     return () => {
       cancelAnimationFrame(frame);
       ro.disconnect();
@@ -116,6 +165,14 @@ export default function CreationView({
         o.geometry?.dispose();
         o.material?.dispose();
       });
+      renderer.domElement.removeEventListener('pointerdown', pointerDown);
+      renderer.domElement.removeEventListener('pointermove', pointerMove);
+      renderer.domElement.removeEventListener('pointerup', pointerUp);
+      renderer.domElement.removeEventListener('pointercancel', clearPointer);
+      renderer.domElement.removeEventListener(
+        'lostpointercapture',
+        clearPointer,
+      );
       renderer.dispose();
       el.replaceChildren();
       state.current = null;
@@ -124,6 +181,10 @@ export default function CreationView({
   useEffect(() => {
     const controls = state.current?.controls;
     if (!controls) return;
+    const interaction = state.current.interaction;
+    interaction.tool = tool;
+    interaction.down = null;
+    interaction.pointers.clear();
     const restore = () => {
       controls.mouseButtons.LEFT =
         tool === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
@@ -136,18 +197,29 @@ export default function CreationView({
       ) {
         e.preventDefault();
         controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+        interaction.spaceDown = true;
+        interaction.down = null;
       }
     };
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space') restore();
+      if (e.code === 'Space') {
+        interaction.spaceDown = false;
+        restore();
+      }
+    };
+    const blur = () => {
+      interaction.spaceDown = false;
+      interaction.down = null;
+      interaction.pointers.clear();
+      restore();
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-    window.addEventListener('blur', restore);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
-      window.removeEventListener('blur', restore);
+      window.removeEventListener('blur', blur);
     };
   }, [tool]);
   useEffect(() => {
@@ -176,6 +248,7 @@ export default function CreationView({
           ? [cell.geometry.coordinates]
           : cell.geometry.coordinates;
       for (const rings of polygons) {
+        const pickOrder = renderIndex++;
         const shape = new THREE.Shape(
           rings[0].map(([x, y]: number[]) => new THREE.Vector2(x, y)),
         );
@@ -193,7 +266,7 @@ export default function CreationView({
         const material = new THREE.MeshStandardMaterial({
           polygonOffset: true,
           polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1 - renderIndex++ * 0.1,
+          polygonOffsetUnits: -1 - pickOrder * 0.1,
           color: cell.color,
           roughness: 0.76,
           metalness: 0,
@@ -203,6 +276,9 @@ export default function CreationView({
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.z = cell.bottomMM ?? cell.zMM ?? 0;
         mesh.userData.key = cell.key;
+        // This explicit ordering keeps draw order and picking order aligned.
+        mesh.userData.pickOrder = pickOrder;
+        mesh.renderOrder = pickOrder;
         s.content.add(mesh);
       }
     }

@@ -64,6 +64,118 @@ assert.equal(
     .areaMM2,
   100,
 );
+// A parent-boundary between face closes its open source curves along the
+// parent ring. The generated routes pass through the two corners; no source
+// anchor is changed and no diagonal chord is introduced.
+const bordered = {
+  ...structuredClone(p),
+  paths: [
+    path('frame', [
+      [0, 0],
+      [100, 0],
+      [100, 100],
+      [0, 100],
+      [0, 0],
+    ]),
+    path(
+      'upper',
+      [
+        [0, 20],
+        [100, 20],
+      ],
+      false,
+    ),
+    path(
+      'lower',
+      [
+        [80, 0],
+        [20, 0],
+      ],
+      false,
+    ),
+  ],
+  model: emptyModel(),
+};
+bordered.model.regions.push({
+  id: 'frame',
+  name: 'frame',
+  kind: 'path',
+  pathId: 'frame',
+  color: '#ffffff',
+});
+const borderedFace = {
+  id: 'bordered',
+  name: 'bordered',
+  kind: 'between',
+  pathIds: ['upper', 'lower'],
+  boundaryRegionId: 'frame',
+  boundaryJoinMM: 0,
+  color: '#ffffff',
+};
+const borderedPreview = previewRegion(bordered, borderedFace);
+assert.equal(borderedPreview.connections.length, 2);
+assert(borderedPreview.connections.every((c) => c.boundaryArcMM === 40));
+assert(
+  borderedPreview.connections.every(
+    (c) =>
+      c.coordinates[0] === c.from &&
+      c.coordinates.at(-1) === c.to &&
+      c.coordinates.length >= 4,
+  ),
+  'closure diagnostics retain the full constructed boundary route',
+);
+assert.equal(borderedPreview.candidates[0].areaMM2, 2000);
+bordered.model.regions.push(borderedFace);
+assert.equal(
+  evaluateRegions(bordered).find((r) => r.id === 'bordered').areaMM2,
+  2000,
+);
+assert.deepEqual(
+  new Set(regionDependants(bordered.model, ['frame'])),
+  new Set(['frame', 'bordered']),
+);
+const movedBordered = structuredClone(bordered);
+const movedUpper = movedBordered.paths.find((p) => p.id === 'upper').curves[0];
+for (const point of movedUpper.slice(0, 2)) point.x += 0.04;
+for (const point of movedUpper.slice(2)) point.x -= 0.04;
+const movedPreview = previewRegion(movedBordered, {
+  ...borderedFace,
+  boundaryJoinMM: 0.1,
+});
+assert.notEqual(
+  movedPreview.candidates[0].areaMM2,
+  borderedPreview.candidates[0].areaMM2,
+  'moving a source endpoint recomputes the bounded face',
+);
+assert(
+  movedPreview.connections.some((c) => c.gapMM > 0),
+  'the parent-boundary extension reports its real endpoint gap',
+);
+assert(
+  movedPreview.connections.every((c) => c.coordinates[1] === c.boundaryFrom),
+  'the extension from each source endpoint reaches its projected ring point',
+);
+assert.throws(
+  () =>
+    previewRegion(movedBordered, {
+      ...borderedFace,
+      boundaryJoinMM: 0.03,
+    }),
+  /超过边界接合距离/,
+);
+const translatedBordered = structuredClone(bordered);
+for (const sourcePath of translatedBordered.paths)
+  for (const curve of sourcePath.curves)
+    for (const point of curve) {
+      point.x += 5;
+      point.y -= 7;
+    }
+const translatedPreview = previewRegion(translatedBordered, borderedFace);
+assert.equal(
+  translatedPreview.candidates[0].areaMM2,
+  borderedPreview.candidates[0].areaMM2,
+  'moving the full parent and source set preserves the bounded face area',
+);
 assert.throws(
   () => previewRegion(p, { kind: 'difference', a: 'B', b: 'A' }),
   /有效面积/,

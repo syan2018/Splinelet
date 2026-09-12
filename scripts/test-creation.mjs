@@ -73,6 +73,53 @@ assert(
 );
 scene = command('paint', { cellKeys: [scene.cells[0].key], swatchId: 'cream' });
 assert.equal(new Set(scene.cells.map((c) => c.swatchId)).size, 2);
+{
+  const before = structuredClone(p),
+    keys = scene.cells.map((c) => c.key);
+  const colored = creationCommand(
+    p,
+    'paint',
+    { cellKeys: [keys[0]], color: '#E46E7F' },
+    scene,
+  );
+  const result = evaluateCreation(colored);
+  assert.equal(result.cells.find((c) => c.key === keys[0]).color, '#e46e7f');
+  assert.equal(
+    result.cells.find((c) => c.key === keys[1]).color,
+    scene.cells[1].color,
+  );
+  assert.deepEqual(
+    colored.paths,
+    before.paths,
+    'custom colour never changes source curves',
+  );
+  assert.deepEqual(
+    colored.creation.swatches.slice(0, -1),
+    before.creation.swatches,
+    'shared palette is not recoloured',
+  );
+  assert.deepEqual(
+    p,
+    before,
+    'a custom colour command is immutable and undoable as one snapshot',
+  );
+  const repeated = creationCommand(
+    colored,
+    'paint',
+    { cellKeys: [keys[1]], color: '#e46e7f' },
+    result,
+  );
+  assert.equal(
+    repeated.creation.swatches.length,
+    colored.creation.swatches.length,
+    'reuse matching custom swatch',
+  );
+  assert.throws(
+    () =>
+      creationCommand(p, 'paint', { cellKeys: keys, color: 'invalid' }, scene),
+    /色值/,
+  );
+}
 scene = command('height', { cellKeys: [scene.cells[0].key], heightMM: 2 });
 assert.equal(scene.cells[0].heightMM, 2);
 assert.equal(scene.cells[1].heightMM, 1);

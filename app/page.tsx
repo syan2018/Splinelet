@@ -122,6 +122,10 @@ export default function Home() {
   const creationApi = useRef<any>(null);
   const [unified, setUnified] = useState(true);
   const [creationView, setCreationView] = useState('flat');
+  const [creationSelectionKind, setCreationSelectionKind] = useState<
+    'object' | 'path' | 'cell'
+  >('object');
+  const highlightSourceSelection = !unified || creationSelectionKind !== 'cell';
   const creationViewRef = useRef('flat'),
     unifiedRef = useRef(true);
   creationViewRef.current = creationView;
@@ -1214,16 +1218,22 @@ export default function Home() {
           ? pathsRef.current
           : [id]
     ).filter(
-      (id: string) => pr.current.paths.find((p) => p.id === id)?.visible,
+      (id: string) =>
+        !fromSource || pr.current.paths.find((p) => p.id === id)?.visible,
     );
-    selectPathsNow(ids, id);
-    if (unified && fromSource) creationApi.current?.select_paths(ids);
+    // A face projects its owner paths for movement; that projection must not
+    // replace the semantic face selection or leave hidden boundary lines behind.
+    if (fromSource) {
+      selectPathsNow(ids, id);
+      if (unified) creationApi.current?.select_paths(ids);
+    }
     setPropertyTab('paths');
     if (modified) return;
     drag.current = {
       kind: 'paths',
       ids: ids.filter(
-        (id: string) => pr.current.paths.find((p) => p.id === id)?.visible,
+        (id: string) =>
+          !fromSource || pr.current.paths.find((p) => p.id === id)?.visible,
       ),
       base: pr.current,
       origin: coordinate(e),
@@ -3405,7 +3415,10 @@ export default function Home() {
                     data-source-id={path.id}
                     className={
                       'source-path-layer' +
-                      (selectedPaths.includes(path.id) ? ' selected' : '')
+                      (highlightSourceSelection &&
+                      selectedPaths.includes(path.id)
+                        ? ' selected'
+                        : '')
                     }
                   >
                     {!path.curves.length && (
@@ -3426,10 +3439,15 @@ export default function Home() {
                       fill={fill && path.closed ? path.color + '24' : 'none'}
                       stroke={path.color}
                       strokeWidth={
-                        (selectedPaths.includes(path.id) ? 2.8 : 1.5) / view.s
+                        (highlightSourceSelection &&
+                        selectedPaths.includes(path.id)
+                          ? 2.8
+                          : 1.5) / view.s
                       }
                       opacity={
-                        selectedPaths.length && !selectedPaths.includes(path.id)
+                        highlightSourceSelection &&
+                        selectedPaths.length &&
+                        !selectedPaths.includes(path.id)
                           ? 0.55
                           : 1
                       }
@@ -3441,7 +3459,9 @@ export default function Home() {
                       d={d(path.curves) + (path.closed ? ' Z' : '')}
                       fill="none"
                       stroke="transparent"
-                      strokeWidth={14 / view.s}
+                      strokeWidth={
+                        (unified && tool === 'select' ? 3 : 14) / view.s
+                      }
                       style={{
                         pointerEvents: ['edit', 'select'].includes(tool)
                           ? 'stroke'
@@ -3896,6 +3916,7 @@ export default function Home() {
             width={inspectorWidth}
             selectedPaths={selectedPaths}
             onSelectPaths={(ids) => selectPathsNow(ids)}
+            onSelectionKind={setCreationSelectionKind}
             onFramePaths={framePaths}
             onStartDrag={startPathDrag}
             onCanvasPointerDown={pointerDown}
