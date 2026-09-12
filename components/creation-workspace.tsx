@@ -31,6 +31,7 @@ import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
+import CreationModifiers from './creation-modifiers';
 import CreationColor from './creation-color';
 import CreationIssue from './creation-issue';
 import CreationSelectionDetails from './creation-selection-details';
@@ -392,7 +393,8 @@ export default function CreationWorkspace(p: Props) {
   const run = (action: string, args: any = {}) => {
     if (ref.current.busy) throw Error('请先完成当前拖动或描线');
     if (
-      ['paint', 'height', 'continue_partition'].includes(action) &&
+      (['paint', 'height', 'continue_partition'].includes(action) ||
+        action.startsWith('modifier_')) &&
       revision.current !== ref.current.project
     )
       throw Error('正在更新区域，请稍候再操作');
@@ -411,7 +413,9 @@ export default function CreationWorkspace(p: Props) {
           ? '已调整高低 · Ctrl+Z 撤销'
           : action === 'closure_boundary'
             ? '已调整封口 · Ctrl+Z 撤销'
-            : '已更新作品',
+            : action.startsWith('modifier_')
+              ? '已更新修改器 · Ctrl+Z 撤销'
+              : '已更新作品',
     );
     return next;
   };
@@ -1596,6 +1600,7 @@ export default function CreationWorkspace(p: Props) {
           {[
             ['object', '颜色与高低'],
             ['lines', '线条'],
+            ['modifiers', '修改器'],
             ['make', '制作'],
           ].map(([id, label]) => (
             <button
@@ -1609,6 +1614,19 @@ export default function CreationWorkspace(p: Props) {
           ))}
         </div>
         <div className="creation-properties" role="tabpanel">
+          {tab === 'modifiers' && (
+            <CreationModifiers
+              key={current?.id || 'none'}
+              object={current}
+              project={p.project}
+              scene={scene}
+              busy={calculating || revision.current !== p.project}
+              cellKeys={selection.kind === 'cell' ? selection.ids : []}
+              onCommand={(action: string, args: any) =>
+                safely(() => run(action, args))
+              }
+            />
+          )}
           {error && (
             <div role="alert" className="creation-error">
               {error}
@@ -1626,6 +1644,23 @@ export default function CreationWorkspace(p: Props) {
               : []),
           ].map((e: any, i: number) => {
             const owner = doc.objects.find((o: any) => o.id === e.objectId);
+            if (e.kind === 'modifier') {
+              const inline = scene?.modifierStatus?.some(
+                (status: any) => status.objectId === e.objectId && status.error,
+              );
+              if (tab === 'modifiers' && inline) return null;
+              return (
+                <div key={i} role="alert" className="creation-error">
+                  <strong>{owner?.name || '当前部件'} · 修改器需要调整</strong>
+                  <p>{e.message}</p>
+                  {tab !== 'modifiers' && (
+                    <button onClick={() => setTab('modifiers')}>
+                      查看修改器
+                    </button>
+                  )}
+                </div>
+              );
+            }
             const candidates =
               e.pathIds ||
               owner?.pathIds.filter((id: string) =>
