@@ -18,6 +18,7 @@ export function useCreationSelection(p: {
   onSelectPaths: (ids: string[]) => void;
   root: RefObject<HTMLElement | null>;
   onTab: (tab: string) => void;
+  onChoose: (selection: CreationSelection) => void;
 }) {
   const [selection, setSelection] = useState<CreationSelection>({
     kind: 'object',
@@ -75,6 +76,7 @@ export function useCreationSelection(p: {
     next = { ...next, ids: [...new Set(next.ids)] };
     latest.current = next;
     setSelection(next);
+    p.onChoose(next);
     const d = derive(next);
     sourceSignature.current = signature(d.paths);
     p.onSelectPaths(d.paths);
@@ -159,7 +161,12 @@ export function useCreationSelection(p: {
     setExpanded,
     expandedCells,
     setExpandedCells,
-    scope: selection.kind === 'cell' ? 'local' : 'object',
+    scope:
+      selection.kind === 'cell'
+        ? 'local'
+        : selection.kind === 'object'
+          ? 'object'
+          : 'source',
     choose,
     commit,
     selectPaths: (ids: string[]) => commit({ kind: 'path', ids }),

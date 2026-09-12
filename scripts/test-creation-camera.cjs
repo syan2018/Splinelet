@@ -19,6 +19,37 @@ module.exports = async (page) => {
     box = await canvas.boundingBox();
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const frame = () => canvas.screenshot();
+  // Static WebGL edges can alternate one antialiased pixel across frames.
+  // Measure actual pixel motion rather than treating PNG byte inequality as drift.
+  const pixelsChanged = (a, b) =>
+    page.evaluate(
+      async ({ a, b }) => {
+        const pixels = async (text) => {
+          const bytes = Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+          const bitmap = await createImageBitmap(
+            new Blob([bytes], { type: 'image/png' }),
+          );
+          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+          const context = canvas.getContext('2d');
+          context.drawImage(bitmap, 0, 0);
+          bitmap.close();
+          return context.getImageData(0, 0, canvas.width, canvas.height).data;
+        };
+        const [left, right] = await Promise.all([pixels(a), pixels(b)]);
+        if (left.length !== right.length)
+          return { changed: Infinity, total: 0 };
+        let changed = 0;
+        for (let i = 0; i < left.length; i += 4)
+          if (
+            left[i] !== right[i] ||
+            left[i + 1] !== right[i + 1] ||
+            left[i + 2] !== right[i + 2]
+          )
+            changed++;
+        return { changed, total: left.length / 4 };
+      },
+      { a: a.toString('base64'), b: b.toString('base64') },
+    );
   await frame();
   check(
     await page.evaluate(
@@ -37,10 +68,17 @@ module.exports = async (page) => {
     if (outside)
       await page.mouse.move(box.x + box.width + 30, center.y, { steps: 5 });
     await page.mouse.up({ button });
-    check(!before.equals(await frame()), label + ' changes the rendered view');
+    check(
+      (await pixelsChanged(before, await frame())).changed > 20,
+      label + ' changes the rendered view',
+    );
     const released = await frame();
     await page.mouse.move(center.x - 60, center.y - 40);
-    check(released.equals(await frame()), label + ' stops on release');
+    const idle = await pixelsChanged(released, await frame());
+    check(
+      idle.changed <= Math.max(4, idle.total * 0.00001),
+      label + ' stops on release',
+    );
   };
   await drag('right', 85, 45, 'right pan');
   await drag('left', 70, 45, 'left orbit');

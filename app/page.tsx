@@ -260,6 +260,8 @@ export default function Home() {
     if (next === 'edit') {
       if (pathsRef.current.length > 1)
         selectPathsNow(ar.current ? [ar.current] : []);
+      if (unified)
+        creationApi.current?.select_paths(ar.current ? [ar.current] : []);
       setPropertyTab('node');
     }
     if (next === 'select') {
@@ -270,7 +272,9 @@ export default function Home() {
     stage.current?.focus({ preventScroll: true });
     setStatus(
       next === 'select'
-        ? '选择路径 · 多选后可整体移动或编组'
+        ? unified
+          ? '选择 · 点击区域或线条 · Ctrl / Shift 多选 · 空白取消'
+          : '选择路径 · 多选后可整体移动或编组'
         : next === 'edit'
           ? '编辑节点 · Shift 多选 · 空白拖动框选'
           : next === 'trace'
@@ -1211,11 +1215,15 @@ export default function Home() {
     }
     setSelection(null);
     const modified = e.shiftKey || e.ctrlKey || e.metaKey;
+    const existing =
+      unified && fromSource && creationSelectionKind !== 'path'
+        ? []
+        : pathsRef.current;
     const ids = (
       modified
-        ? pickSelection(pathsRef.current, id, [], { toggle: true })
-        : pathsRef.current.includes(id)
-          ? pathsRef.current
+        ? pickSelection(existing, id, [], { toggle: true })
+        : existing.includes(id)
+          ? existing
           : [id]
     ).filter(
       (id: string) =>
@@ -1240,6 +1248,7 @@ export default function Home() {
       x: e.clientX,
       y: e.clientY,
       moved: false,
+      collapsePath: fromSource && ids.length > 1 ? id : null,
     };
     setGesturing(true);
     stage.current?.setPointerCapture(e.pointerId);
@@ -1422,6 +1431,14 @@ export default function Home() {
     drag.current = null;
     setMarquee(null);
     setGesturing(false);
+    if (!g.moved && g.collapsePath) {
+      selectPathsNow([g.collapsePath], g.collapsePath);
+      if (unified) creationApi.current?.select_paths([g.collapsePath]);
+    }
+    if (!g.moved && g.collapseNode !== undefined) {
+      const path = pr.current.paths.find((p) => p.id === g.path);
+      if (path) setSelection(nodeSelection(path, g.collapseNode));
+    }
     if (g.kind === 'box') {
       if (tool === 'select') {
         const hits = g.moved
@@ -1512,6 +1529,7 @@ export default function Home() {
       origin: coordinate(e),
       base: pr.current,
       moved: false,
+      ...(index !== null && ids.length > 1 ? { collapseNode: index } : {}),
     };
     setPropertyTab('node');
     setGesturing(true);

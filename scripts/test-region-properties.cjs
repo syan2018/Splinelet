@@ -19,15 +19,13 @@ module.exports = async (page, fixture) => {
         ),
     );
   };
-  await page
-    .locator('input[accept=".json"]')
-    .setInputFiles({
-      name: 'region-properties-qa.bezier.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(
-        JSON.stringify({ ...fixture, imageName: 'region-properties-qa' }),
-      ),
-    });
+  await page.locator('input[accept=".json"]').setInputFiles({
+    name: 'region-properties-qa.bezier.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({ ...fixture, imageName: 'region-properties-qa' }),
+    ),
+  });
   await page.waitForFunction(
     async () =>
       (await window.traceStudio.call('get_project')).imageName ===
@@ -70,6 +68,7 @@ module.exports = async (page, fixture) => {
       ids,
     });
   await click(cells[3]);
+  await page.getByLabel('选择操作', { exact: true }).click();
   await page
     .getByRole('button', { name: '选择全部内部区域', exact: true })
     .click();
@@ -136,6 +135,7 @@ module.exports = async (page, fixture) => {
   assert.deepEqual(await call('get_project'), original);
   checks.push('details project-colour choice is local and undoable');
   await click(cells[3]);
+  await page.getByLabel('选择操作', { exact: true }).click();
   await page
     .getByRole('button', { name: '选择全部内部区域', exact: true })
     .click();

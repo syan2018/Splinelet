@@ -33,6 +33,12 @@ import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
 import CreationColor from './creation-color';
 import CreationIssue from './creation-issue';
+import CreationSelectionDetails from './creation-selection-details';
+import {
+  creationEditTargets,
+  regionLabel,
+  pathsForRegions,
+} from '@/lib/creation-selection.mjs';
 import { useCreationSelection } from './use-creation-selection';
 // @ts-ignore Vite worker asset.
 import ModelWorker from '../lib/model-worker.ts?worker';
@@ -222,6 +228,16 @@ export default function CreationWorkspace(p: Props) {
     onSelectPaths: p.onSelectPaths,
     root,
     onTab: setTab,
+    onChoose: (next) => {
+      heightDrag.current = null;
+      setDraftHeight(null);
+      if (
+        next.ids.length &&
+        next.kind !== 'path' &&
+        !['select', 'paint', 'height'].includes(ref.current.tool)
+      )
+        p.onTool('select');
+    },
   });
   const {
     selection,
@@ -424,8 +440,7 @@ export default function CreationWorkspace(p: Props) {
     clearConnectionPreview();
     setEditingSwatch(false);
   }
-  const targets = () =>
-    scope === 'object' ? { objectIds: objects } : { cellKeys };
+  const targets = () => creationEditTargets(selection);
   const applyHeight = (heightMM: number) =>
     run('height', { ...targets(), heightMM });
   const displayedHeight =
@@ -836,6 +851,7 @@ export default function CreationWorkspace(p: Props) {
                   key={c.key}
                   data-creation-cell={c.key}
                   data-object-id={o.id}
+                  data-region-status={candidate ? 'candidate' : 'enabled'}
                   className={
                     'creation-cell ' +
                     (candidate ? 'candidate ' : '') +
@@ -866,7 +882,9 @@ export default function CreationWorkspace(p: Props) {
                   }
                   strokeWidth={(active ? 2 : 1) / p.scale}
                   strokeDasharray={
-                    candidate ? `${5 / p.scale} ${4 / p.scale}` : undefined
+                    candidate && !active
+                      ? `${5 / p.scale} ${4 / p.scale}`
+                      : undefined
                   }
                   style={{
                     pointerEvents:
@@ -936,8 +954,8 @@ export default function CreationWorkspace(p: Props) {
                   }}
                 >
                   <title>
-                    {o.name}
-                    {candidate ? ' · 未填色区域' : ''}
+                    {regionLabel(c, rendered)}
+                    {candidate ? ' · 待启用区域' : ''}
                     {c.conflict ? ' · 合并后样式冲突' : ''}
                   </title>
                 </path>
@@ -997,12 +1015,22 @@ export default function CreationWorkspace(p: Props) {
               onPointerDown={(e) => e.stopPropagation()}
             >
               <span>
-                {current?.name || '选择一个部件，开始创作'}
+                {selection.kind === 'cell' && cellKeys.length === 1 && cell
+                  ? regionLabel(cell, scene)
+                  : selection.kind === 'path' && selection.ids.length === 1
+                    ? p.project.paths.find(
+                        (path) => path.id === selection.ids[0],
+                      )?.name
+                    : current?.name || '选择区域或线条，开始创作'}
                 {selection.kind === 'cell' && cell
-                  ? ` / 已选 ${cellKeys.length} 个区域`
+                  ? cellKeys.length === 1
+                    ? ' / 单个区域'
+                    : ` / 已选 ${cellKeys.length} 个区域`
                   : selection.kind === 'path' && selection.ids.length
                     ? ` / 已选 ${selection.ids.length} 条线`
-                    : ''}
+                    : current
+                      ? ' / 整个部件'
+                      : ''}
               </span>
               {p.viewMode === 'flat' && (
                 <div
@@ -1052,7 +1080,8 @@ export default function CreationWorkspace(p: Props) {
                 </label>
               )}
             </div>
-            {(objects.length > 0 || cellKeys.length > 0) &&
+            {scope !== 'source' &&
+              (objects.length > 0 || cellKeys.length > 0) &&
               p.tool === 'height' && (
                 <div
                   className="creation-height-handle"
@@ -1501,6 +1530,7 @@ export default function CreationWorkspace(p: Props) {
                                 key={c.key}
                                 data-tree-cell={c.key}
                                 aria-label={o.name + ' 区域 ' + (i + 1)}
+                                title={`${regionLabel(c, rendered)}${!c.painted ? ' · 待启用' : ''}`}
                                 aria-pressed={cellKeys.includes(c.key)}
                                 className={c.conflict ? 'conflict' : ''}
                                 onClick={(e) => {
@@ -1676,23 +1706,23 @@ export default function CreationWorkspace(p: Props) {
                       </div>
                     </div>
                   )}
-                  <div className="creation-property-title">
-                    <b>
-                      {objects.length > 1
-                        ? `${objects.length} 个对象`
-                        : current.name}
-                    </b>
-                    <button
-                      aria-label="编辑当前对象边界"
-                      onClick={() => {
-                        p.onTool('edit');
-                        setTab('lines');
-                      }}
-                    >
-                      <Pencil size={15} />
-                      边界
-                    </button>
-                  </div>
+                  <CreationSelectionDetails
+                    selection={selection}
+                    objects={objects}
+                    project={p.project}
+                    scene={scene}
+                    onSelect={(next) => selectionState.commit(next)}
+                    onEnable={() => safely(() => applyHeight(displayedHeight))}
+                    onEdit={() => {
+                      const ids =
+                        selection.kind === 'cell'
+                          ? pathsForRegions(p.project, scene, cellKeys)
+                          : current.pathIds;
+                      selectionState.selectPaths(ids);
+                      p.onTool('edit');
+                      setTab('lines');
+                    }}
+                  />
                   {scope === 'object' && (
                     <div className="creation-draw-actions">
                       <button
@@ -1762,181 +1792,156 @@ export default function CreationWorkspace(p: Props) {
                       整理为一个部件
                     </button>
                   )}
-                  <div className="creation-scope">
-                    <button
-                      aria-pressed={selection.kind === 'object'}
-                      onClick={() =>
-                        selectionState.commit({ kind: 'object', ids: objects })
-                      }
-                    >
-                      选择整个部件
-                    </button>
-                    <button
-                      aria-pressed={
-                        scope === 'local' &&
-                        cellKeys.length ===
-                          scene?.cells.filter((c: any) =>
-                            objects.includes(c.objectId),
-                          ).length
-                      }
-                      disabled={
-                        !scene?.cells.some((c: any) =>
-                          objects.includes(c.objectId),
-                        )
-                      }
-                      onClick={() =>
-                        selectionState.commit({
-                          kind: 'cell',
-                          ids: scene.cells
-                            .filter((c: any) => objects.includes(c.objectId))
-                            .map((c: any) => c.key),
-                        })
-                      }
-                    >
-                      选择全部内部区域
-                    </button>
-                  </div>
-                  <CreationColor
-                    key={JSON.stringify(selection)}
-                    label={
-                      sourceOnly
-                        ? '默认颜色'
-                        : scope === 'local'
-                          ? `区域颜色 · ${cellKeys.length} 区`
-                          : '部件颜色'
-                    }
-                    colors={
-                      sourceOnly
-                        ? [
-                            doc.swatches.find(
-                              (s: any) => s.id === current.swatchId,
-                            )?.color || swatch.color,
-                          ]
-                        : (scene?.cells || [])
-                            .filter((c: any) =>
-                              scope === 'local'
-                                ? cellKeys.includes(c.key)
-                                : objects.includes(c.objectId),
+                  {scope !== 'source' && (
+                    <>
+                      <CreationColor
+                        key={JSON.stringify(selection)}
+                        label={
+                          sourceOnly
+                            ? '默认颜色'
+                            : scope === 'local'
+                              ? `区域颜色 · ${cellKeys.length} 区`
+                              : '部件颜色'
+                        }
+                        colors={
+                          sourceOnly
+                            ? [
+                                doc.swatches.find(
+                                  (s: any) => s.id === current.swatchId,
+                                )?.color || swatch.color,
+                              ]
+                            : (scene?.cells || [])
+                                .filter((c: any) =>
+                                  scope === 'local'
+                                    ? cellKeys.includes(c.key)
+                                    : objects.includes(c.objectId),
+                                )
+                                .map((c: any) => c.color)
+                        }
+                        swatches={doc.swatches}
+                        disabled={calculating || p.busy || failedSelection}
+                        onPaint={(args) =>
+                          safely(() => run('paint', { ...targets(), ...args }))
+                        }
+                      />
+                      <div className="creation-property-block">
+                        <label>
+                          {scope === 'object' ? '部件统一厚度' : '区域厚度'}{' '}
+                          <span>mm</span>
+                        </label>
+                        <div className="creation-height-input">
+                          <NumberEdit
+                            key={JSON.stringify(selection)}
+                            label="凸起厚度"
+                            disabled={calculating || failedSelection}
+                            value={displayedHeight}
+                            min={0.01}
+                            onCommit={(n) => safely(() => applyHeight(n))}
+                          />
+                          <button
+                            aria-pressed={p.tool === 'height'}
+                            disabled={calculating || failedSelection}
+                            onClick={() => p.onTool('height')}
+                          >
+                            <ArrowUpFromLine size={17} />
+                            拖动调高
+                          </button>
+                        </div>
+                        <input
+                          aria-label="调整凸起厚度"
+                          disabled={calculating || failedSelection}
+                          type="range"
+                          min=".1"
+                          max={Math.max(6, displayedHeight)}
+                          step=".1"
+                          value={displayedHeight}
+                          onPointerDown={() => {
+                            heightDrag.current = { slider: true };
+                          }}
+                          onChange={(e) => setDraftHeight(+e.target.value)}
+                          onPointerUp={() => {
+                            heightDrag.current = null;
+                            const value = draftHeight;
+                            setDraftHeight(null);
+                            if (value !== null)
+                              safely(() => applyHeight(value));
+                          }}
+                          onPointerCancel={cancel}
+                          onKeyUp={(e) => {
+                            if (e.key === 'Escape') {
+                              cancel();
+                              return;
+                            }
+                            if (draftHeight !== null) {
+                              const n = draftHeight;
+                              setDraftHeight(null);
+                              safely(() => applyHeight(n));
+                            }
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                  {scope === 'object' && (
+                    <details className="creation-position">
+                      <summary>部件位置与叠放</summary>
+                      <label>
+                        起始高度 mm
+                        <NumberEdit
+                          label="对象起始高度"
+                          value={current.zMM}
+                          onCommit={(n) =>
+                            safely(() =>
+                              run('object', {
+                                id: current.id,
+                                changes: { zMM: n },
+                              }),
                             )
-                            .map((c: any) => c.color)
-                    }
-                    swatches={doc.swatches}
-                    disabled={calculating || p.busy || failedSelection}
-                    onPaint={(args) =>
-                      safely(() => run('paint', { ...targets(), ...args }))
-                    }
-                  />
-                  <div className="creation-property-block">
-                    <label>
-                      凸起厚度 <span>mm</span>
-                    </label>
-                    <div className="creation-height-input">
-                      <NumberEdit
-                        label="凸起厚度"
-                        disabled={calculating || failedSelection}
-                        value={displayedHeight}
-                        min={0.01}
-                        onCommit={(n) => safely(() => applyHeight(n))}
-                      />
-                      <button
-                        aria-pressed={p.tool === 'height'}
-                        disabled={calculating || failedSelection}
-                        onClick={() => p.onTool('height')}
-                      >
-                        <ArrowUpFromLine size={17} />
-                        拖动调高
-                      </button>
-                    </div>
-                    <input
-                      aria-label="调整凸起厚度"
-                      disabled={calculating || failedSelection}
-                      type="range"
-                      min=".1"
-                      max={Math.max(6, displayedHeight)}
-                      step=".1"
-                      value={displayedHeight}
-                      onPointerDown={() => {
-                        heightDrag.current = { slider: true };
-                      }}
-                      onChange={(e) => setDraftHeight(+e.target.value)}
-                      onPointerUp={() => {
-                        heightDrag.current = null;
-                        const value = draftHeight;
-                        setDraftHeight(null);
-                        if (value !== null) safely(() => applyHeight(value));
-                      }}
-                      onPointerCancel={cancel}
-                      onKeyUp={(e) => {
-                        if (e.key === 'Escape') {
-                          cancel();
-                          return;
-                        }
-                        if (draftHeight !== null) {
-                          const n = draftHeight;
-                          setDraftHeight(null);
-                          safely(() => applyHeight(n));
-                        }
-                      }}
-                    />
-                  </div>
-                  <details className="creation-position">
-                    <summary>位置与叠放</summary>
-                    <label>
-                      起始高度 mm
-                      <NumberEdit
-                        label="对象起始高度"
-                        value={current.zMM}
-                        onCommit={(n) =>
-                          safely(() =>
-                            run('object', {
-                              id: current.id,
-                              changes: { zMM: n },
-                            }),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      放到对象上
-                      <select
-                        aria-label="放到对象上"
-                        value={current.attachId || ''}
-                        onChange={(e) =>
-                          safely(() =>
-                            run('object', {
-                              id: current.id,
-                              changes: { attachId: e.target.value },
-                            }),
-                          )
-                        }
-                      >
-                        <option value="">平台 · Z = 0</option>
-                        {doc.objects
-                          .filter((o: any) => o.id !== current.id)
-                          .map((o: any) => (
-                            <option key={o.id} value={o.id}>
-                              {o.name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <small>列表拖动只调整顺序；这里才会改变物理高度。</small>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={current.printable}
-                        onChange={(e) =>
-                          safely(() =>
-                            run('object', {
-                              id: current.id,
-                              changes: { printable: e.target.checked },
-                            }),
-                          )
-                        }
-                      />
-                      参与成品导出
-                    </label>
-                  </details>
+                          }
+                        />
+                      </label>
+                      <label>
+                        放到对象上
+                        <select
+                          aria-label="放到对象上"
+                          value={current.attachId || ''}
+                          onChange={(e) =>
+                            safely(() =>
+                              run('object', {
+                                id: current.id,
+                                changes: { attachId: e.target.value },
+                              }),
+                            )
+                          }
+                        >
+                          <option value="">平台 · Z = 0</option>
+                          {doc.objects
+                            .filter((o: any) => o.id !== current.id)
+                            .map((o: any) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <small>列表拖动只调整顺序；这里才会改变物理高度。</small>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={current.printable}
+                          onChange={(e) =>
+                            safely(() =>
+                              run('object', {
+                                id: current.id,
+                                changes: { printable: e.target.checked },
+                              }),
+                            )
+                          }
+                        />
+                        参与成品导出
+                      </label>
+                    </details>
+                  )}
                 </>
               ) : (
                 <div className="creation-empty">
