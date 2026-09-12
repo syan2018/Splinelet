@@ -369,7 +369,12 @@ export default function CreationWorkspace(p: Props) {
           setError('');
         })
         .catch((e) => {
-          if (!cancelled) setError(e.message);
+          if (!cancelled) {
+            setScene(null);
+            sceneRef.current = null;
+            revision.current = null;
+            setError(e.message);
+          }
         })
         .finally(() => {
           if (!cancelled) setCalculating(false);
@@ -734,9 +739,8 @@ export default function CreationWorkspace(p: Props) {
     const snapshot = ref.current.project;
     const next = creationCommand(snapshot, 'roles', args, sceneRef.current);
     const beforeCount =
-      sceneRef.current?.cells.filter(
-        (c: any) => c.objectId === args.objectId && !c.fallback,
-      ).length || 0;
+      sceneRef.current?.cells.filter((c: any) => c.objectId === args.objectId)
+        .length || 0;
     setCheckingRole(true);
     roleChecking.current = true;
     setRoleIssue(null);
@@ -757,7 +761,7 @@ export default function CreationWorkspace(p: Props) {
       p.onProject(next);
       clearConnectionPreview();
       const afterCount = result.cells.filter(
-        (c: any) => c.objectId === args.objectId && !c.fallback,
+        (c: any) => c.objectId === args.objectId,
       ).length;
       const message =
         args.role === 'divider'
@@ -1534,11 +1538,11 @@ export default function CreationWorkspace(p: Props) {
                         >
                           <summary>内部区域 · {local.length}</summary>
                           <div className="creation-cell-list">
-                            {local.map((c: any, i: number) => (
+                            {local.map((c: any) => (
                               <button
                                 key={c.key}
                                 data-tree-cell={c.key}
-                                aria-label={o.name + ' 区域 ' + (i + 1)}
+                                aria-label={regionLabel(c, rendered)}
                                 title={`${regionLabel(c, rendered)}${!c.painted ? ' · 待启用' : ''}`}
                                 aria-pressed={cellKeys.includes(c.key)}
                                 className={c.conflict ? 'conflict' : ''}
@@ -1552,8 +1556,10 @@ export default function CreationWorkspace(p: Props) {
                                 }}
                                 style={{ borderBottomColor: c.color }}
                               >
-                                {i + 1}
-                                {c.conflict ? ' !' : ''}
+                                <span>{regionLabel(c, rendered)}</span>
+                                {c.conflict && (
+                                  <span aria-label="样式冲突">!</span>
+                                )}
                               </button>
                             ))}
                           </div>
@@ -1625,9 +1631,6 @@ export default function CreationWorkspace(p: Props) {
                 name={owner?.name || '当前部件'}
                 message={e.message}
                 pending={e.pending}
-                preserved={scene?.cells.some(
-                  (c: any) => c.objectId === e.objectId && c.fallback,
-                )}
                 pathNames={ids.map(
                   (id: string) =>
                     p.project.paths.find((path) => path.id === id)?.name ||

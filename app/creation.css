@@ -462,13 +462,20 @@
   cursor: pointer;
 }
 .creation-cell-list {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 5px;
-  flex-wrap: wrap;
   padding: 5px 0;
 }
 .creation-cell-list button {
-  padding: 4px 7px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 6px 9px;
   font-size: 12px;
   border-bottom-width: 3px;
   background: #1b2528;
@@ -557,6 +564,12 @@
 .creation-selection-actions {
   position: relative;
   margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.creation-selection-details .creation-property-title > button {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .creation-selection-actions > summary {
   padding: 6px 8px;

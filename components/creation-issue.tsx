@@ -4,7 +4,6 @@ export default function CreationIssue({
   name,
   message,
   pending,
-  preserved,
   pathNames,
   onLocate,
   onDisable,
@@ -14,7 +13,6 @@ export default function CreationIssue({
   name: string;
   message: string;
   pending?: boolean;
-  preserved?: boolean;
   pathNames: string[];
   onLocate: () => void;
   onDisable?: () => void;
@@ -28,17 +26,13 @@ export default function CreationIssue({
   return (
     <section role="alert" className="creation-warning creation-issue">
       <b>
-        {name} · {pending ? '这次用途切换未应用' : '分区需要检查'}
+        {name} · {pending ? '这次用途切换未应用' : '构面需要检查'}
       </b>
       <p>
-        {numerical
-          ? '重合交点的计算没有完成。'
-          : '这组边界暂时无法生成有效区域。'}
+        {numerical ? '重合交点的计算没有完成。' : `${message}。`}
         {pending
           ? '原来的区域和颜色保持不变。'
-          : preserved
-            ? '当前显示已保存的色块，待分区恢复后再更新。'
-            : '源线和已保存的颜色仍在工程中。'}
+          : '无效区域已停止显示；源线、颜色和高度记录仍在工程中。'}
       </p>
       {!!pathNames.length && <small>检查线条：{pathNames.join('、')}</small>}
       <div className="creation-connection-actions">

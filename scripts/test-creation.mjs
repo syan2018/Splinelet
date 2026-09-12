@@ -606,16 +606,14 @@ const hairPartitionSource = new URL(
     );
   oldDivider.curves[1][0].x += 100;
   const failed = evaluateCreation(broken),
-    fallback = failed.cells.filter((cell) => cell.objectId === brokenHair.id);
+    failedCells = failed.cells.filter(
+      (cell) => cell.objectId === brokenHair.id,
+    );
   assert(failed.errors.some((error) => error.objectId === brokenHair.id));
   assert.equal(
-    fallback.filter((cell) => cell.fallback).length,
-    brokenHair.paints.length,
-  );
-  assert(
-    fallback.some((cell) => cell.featureId) &&
-      fallback.filter((cell) => cell.fallback).every((cell) => cell.painted),
-    'failure retains legacy features alongside saved paint footprints',
+    failedCells.length,
+    0,
+    'failed construction cannot display saved paint footprints as current surfaces',
   );
   assert.throws(() => compileCreation(broken), /请先处理/);
   const unpaintedBroken = structuredClone(broken);
