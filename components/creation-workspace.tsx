@@ -409,7 +409,9 @@ export default function CreationWorkspace(p: Props) {
         ? '已填色 · Ctrl+Z 撤销'
         : action === 'height'
           ? '已调整高低 · Ctrl+Z 撤销'
-          : '已更新作品',
+          : action === 'closure_boundary'
+            ? '已调整封口 · Ctrl+Z 撤销'
+            : '已更新作品',
     );
     return next;
   };
@@ -765,9 +767,18 @@ export default function CreationWorkspace(p: Props) {
       ).length;
       const message =
         args.role === 'divider'
-          ? afterCount > beforeCount
-            ? `分区完成 · ${beforeCount} → ${afterCount} 个区域`
-            : `已设为分区线 · 仍为 ${afterCount} 个区域。若希望继续拆分，请检查线条是否贯穿区域、两端是否接合。`
+          ? args.pathIds.every((id: string) =>
+              result.diagnostics.some(
+                (d: any) =>
+                  d.objectId === args.objectId &&
+                  d.pathId === id &&
+                  d.status === 'existing_boundary',
+              ),
+            )
+            ? '已是带状面的边界 · 区域、颜色和高度保留；封口请在“构面封口”中调整'
+            : afterCount > beforeCount
+              ? `分区完成 · ${beforeCount} → ${afterCount} 个区域`
+              : `已设为分区线 · 仍为 ${afterCount} 个区域。若希望继续拆分，请检查线条是否贯穿区域、两端是否接合。`
           : args.role === 'guide'
             ? '已设为参考线 · 线条保留，暂不参与分区'
             : '线条用途已更新';
@@ -990,6 +1001,7 @@ export default function CreationWorkspace(p: Props) {
                     )
                     .join(' ')}
                   data-construction-connection={c.featureId || c.pathId || i}
+                  fill="none"
                   stroke="#ffa65f"
                   strokeWidth={3 / p.scale}
                   strokeDasharray={`${7 / p.scale} ${4 / p.scale}`}

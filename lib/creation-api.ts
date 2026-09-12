@@ -1,7 +1,7 @@
 export const creationTools: Record<string, any> = {
   creation_inspect: {
     description:
-      'Read unified objects, region candidates, divider endpoint diagnostics, applied connections and legacy face closures (with source and feature IDs). Call again after source edits before painting.',
+      'Read unified objects, region candidates, divider endpoint diagnostics, applied connections and face closures (with source/feature IDs, live cap coordinates and boundaryOptions with maximum endpoint gapMM). Call again after source edits before painting.',
     properties: {},
     readOnly: true,
   },
@@ -18,7 +18,7 @@ export const creationTools: Record<string, any> = {
   },
   creation_command: {
     description:
-      'Run one undoable creation command. paint/height use objectIds or cellKeys; paint accepts swatchId or color (#RRGGBB). roles uses {objectId,pathIds,role}; it computes the proposed regions before applying and returns {applied,regionCount} or {applied:false,issue}, leaving the project unchanged on failure. Custom colors are created/reused atomically; swatch edits update shared colors globally. delete_swatch uses {id,replacementId?}; a referenced colour requires a different replacement, with all references remapped atomically and geometry/heights unchanged. At least one swatch must remain. Painting or height changes are blocked for objects with failed geometry.',
+      'Run one undoable creation command. paint/height use objectIds or cellKeys; paint accepts swatchId or color (#RRGGBB). roles uses {objectId,pathIds,role}; it computes the proposed regions before applying and returns {applied,regionCount} or {applied:false,issue}, leaving the project unchanged on failure. closure_boundary uses {objectId,featureId,regionId,boundaryRegionId,joinMM?}; choose a live boundaryOptions ID (null restores straight caps), default joinMM 0.15. It validates the clipped face before applying and never moves source nodes. A divider already used as a band edge retains its existing face; existing_boundary diagnostics explain the closure control. Custom colors are created/reused atomically; swatch edits update shared colors globally. delete_swatch uses {id,replacementId?}; a referenced colour requires a different replacement, with all references remapped atomically and geometry/heights unchanged. At least one swatch must remain. Painting or height changes are blocked for objects with failed geometry.',
     properties: {
       action: {
         enum: [
@@ -36,6 +36,7 @@ export const creationTools: Record<string, any> = {
           'join',
           'connection',
           'remove_connection',
+          'closure_boundary',
         ],
       },
       args: { type: 'object' },

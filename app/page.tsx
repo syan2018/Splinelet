@@ -1673,10 +1673,15 @@ export default function Home() {
         return;
       if (e.defaultPrevented) return;
       updateModifiers(e);
+      // Select menus have no text-edit undo stack. Keep document undo/redo
+      // available after a keyboard selection, without enabling drawing hotkeys.
+      const historyShortcut =
+        (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
       if (
         (e.target as HTMLElement).closest(
-          'input,textarea,select,[role="slider"],[contenteditable="true"],[role="dialog"]',
+          'input,textarea,[role="slider"],[contenteditable="true"],[role="dialog"]',
         ) ||
+        ((e.target as HTMLElement).closest('select') && !historyShortcut) ||
         dialog ||
         pendingRefit
       )

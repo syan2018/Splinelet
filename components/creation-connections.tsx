@@ -39,10 +39,21 @@ export default function CreationConnections(p: {
     p.project.paths.find((path: any) => path.id === id)?.name || '线条';
   const featureName = (id: string) =>
     p.project.model?.features.find((f: any) => f.id === id)?.name || '带状面';
-  const divider = Object.values(o.roles).includes('divider');
+  const existing = diagnostics.filter(
+    (d: any) => d.status === 'existing_boundary',
+  );
+  const divider = Object.entries(o.roles).some(
+    ([id, role]) =>
+      role === 'divider' && !existing.some((d: any) => d.pathId === id),
+  );
   const valid = Number.isFinite(distance) && distance >= 0 && distance <= 5;
   return (
     <div className="creation-constructions">
+      {existing.map((d: any) => (
+        <p className="creation-source-note" key={d.pathId}>
+          {d.message}
+        </p>
+      ))}
       {divider && (
         <details
           className="creation-join"
@@ -60,7 +71,7 @@ export default function CreationConnections(p: {
             </p>
           )}
           {diagnostics
-            .filter((d: any) => d.message)
+            .filter((d: any) => d.message && d.status !== 'existing_boundary')
             .map((d: any, i: number) => (
               <p key={i} className="creation-source-note">
                 {d.message}
@@ -154,7 +165,8 @@ export default function CreationConnections(p: {
         <details className="creation-join">
           <summary>构面封口 · {features.length} 个带状面</summary>
           <p className="creation-source-note">
-            两条开放样条之间的带状面需要封口。橙色虚线显示实际封口边界；取消封口会停用对应面，源样条和其他面保留。
+            封口只影响面，不移动源节点。可直连端点，或沿已有裁切轮廓封口；改完可用
+            Ctrl+Z 撤销。停用会隐藏对应面。
           </p>
           {features.map((id) => (
             <div className="creation-closure" key={id}>
@@ -164,8 +176,50 @@ export default function CreationConnections(p: {
                   (c: any) => c.featureId === id && c.boundaryRegionId,
                 )
                   ? ' · 沿轮廓封口'
-                  : ''}
+                  : ' · 端点直连'}
               </span>
+              {[
+                ...new Map<string, any>(
+                  closures
+                    .filter((c: any) => c.featureId === id)
+                    .map((c: any) => [c.regionId, c]),
+                ).values(),
+              ].map((closure: any) => (
+                <label key={closure.regionId}>
+                  封口方式
+                  <select
+                    aria-label={'封口方式 ' + featureName(id)}
+                    value={
+                      closure.boundaryRegionId ||
+                      p.project.model.regions.find(
+                        (r: any) => r.id === closure.regionId,
+                      )?.boundaryRegionId ||
+                      ''
+                    }
+                    onChange={(e) =>
+                      p.onCommand('closure_boundary', {
+                        objectId: o.id,
+                        featureId: id,
+                        regionId: closure.regionId,
+                        boundaryRegionId: e.target.value || null,
+                        joinMM: 0.15,
+                      })
+                    }
+                  >
+                    <option value="">端点直连</option>
+                    {(closure.boundaryOptions || []).map((boundary: any) => (
+                      <option
+                        key={boundary.id}
+                        value={boundary.id}
+                        disabled={boundary.gapMM > 0.15}
+                      >
+                        沿 {boundary.name} · 间隙 {boundary.gapMM.toFixed(3)} mm
+                        {boundary.gapMM > 0.15 ? '（先将端点移近轮廓）' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
               <div className="creation-connection-actions">
                 <button
                   onClick={() => {
