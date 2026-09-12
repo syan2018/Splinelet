@@ -29,6 +29,7 @@ export function useCreationSelection(p: {
   const [expandedCells, setExpandedCells] = useState<string[]>([]);
   const [reveal, setReveal] = useState<CreationSelection | null>(null);
   const sourceSignature = useRef(signature(p.selectedPaths));
+  const ownerSignature = useRef('[]');
   const anchors = useRef<Partial<Record<CreationSelection['kind'], string>>>(
     {},
   );
@@ -78,6 +79,7 @@ export function useCreationSelection(p: {
     setSelection(next);
     p.onChoose(next);
     const d = derive(next);
+    ownerSignature.current = signature(d.objects);
     sourceSignature.current = signature(d.paths);
     p.onSelectPaths(d.paths);
     if (next.ids.length) p.onTab(next.kind === 'path' ? 'lines' : 'object');
@@ -120,6 +122,18 @@ export function useCreationSelection(p: {
     sourceSignature.current = incoming;
     commit({ kind: 'path', ids: p.selectedPaths });
   }, [p.selectedPaths]);
+  useEffect(() => {
+    const current = latest.current;
+    if (current.kind !== 'path' || !current.ids.length) return;
+    const owners = derive(current).objects;
+    const incoming = signature(owners);
+    if (incoming === ownerSignature.current) return;
+    ownerSignature.current = incoming;
+    // A reparent (including undo/redo) keeps the same path selection IDs.
+    // Reveal their new owners without turning a drag into object selection.
+    setExpanded(ids => [...new Set([...ids, ...owners])]);
+    setReveal(current);
+  }, [p.doc]);
   useEffect(() => {
     if (!p.scene) return;
     const current = latest.current;
