@@ -64,7 +64,9 @@ P 描线，深色线条跟随描边，颜色边缘跟随色块边界。每两个
 
 Shift 落点暂停吸附；Alt 落点不吸附、不拟合，用直连。L 把最后一段或单选节点对应段改为直连。复杂分岔可撤销后主动补点；容差只决定偏差提示，不决定自动分段。
 
-Enter / 右键结束，C 或点击起点闭合。选择开放路径后点“续画”。节点模式可批量设为尖角、平滑（共线）或对称（等长共线，C1 连续）。开放端点只有一侧曲线，不能设置连续模式。只单选一个节点时显示它的控制柄，多选移动保持各节点与柄的相对位置。
+Enter / 右键 / Esc 结束，C 或点击另一端闭合。路径页选择“从头续画 / 从尾续画”，或点击画布头尾标记；节点模式可双击开放端点，也可单选端点后按 E。续画只增加新段，不反转或重拟合原曲线；L 修正当前续画方向最新的一段。节点模式可批量设为尖角、平滑（共线）或对称（等长共线，C1 连续）。开放端点只有一侧曲线，不能设置连续模式。只单选一个节点时显示它的控制柄，多选移动保持各节点与柄的相对位置。节点详情明确列出前后相邻段，路径删除和重新拟合收在“路径操作”中。
+
+双击底部项目色卡打开项目色编辑，点击“删除项目色”。未使用颜色直接删除；已使用颜色需选一个替换色后删除，原有形状、厚度和源线保持不变。替换与删除共一次撤销；工程至少保留一种项目色。
 
 删除中间节点会将相邻两段近似合并成一段，不新增中间节点，其他未受影响的段保持原样。删除开放端点移除相邻段。闭合接缝只算一个节点；删到最后一个节点时移除路径。节点模式中单选开放端点后按 M，再选另一条样条蓝色端点合并。合并保持原段形状，必要时反向；不重合端点间加一段直连，精确重合则焊接。
 
@@ -93,6 +95,13 @@ await window.traceStudio.call('create_path', {
   preview: true,
 });
 await window.traceStudio.call('commit_preview');
+await window.traceStudio.call('resume_path', { pathId: 'a', end: 'start' });
+await window.traceStudio.call('add_anchor', {
+  position: { x: 10, y: 40 },
+  mode: 'ink',
+  snap: false,
+});
+await window.traceStudio.call('finish_path'); // 结束当前续画；state.drawing 返回当前 pathId / end 或 null
 await window.traceStudio.call('select_paths', { pathIds: ['a', 'b'] }); // 空数组取消选择
 await window.traceStudio.call('move_paths', {
   pathIds: ['a', 'b'],
@@ -124,6 +133,8 @@ node scripts/test-selection.mjs
 node scripts/test-continuity.mjs
 node scripts/test-node-edit.mjs
 node scripts/test-connect.mjs
+node scripts/test-extend.mjs
+node scripts/test-swatch-delete.mjs
 node scripts/test-single-curve.mjs
 node scripts/test-persistence.mjs
 node scripts/test-model.mjs

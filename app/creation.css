@@ -1185,3 +1185,38 @@
     scroll-behavior: auto !important;
   }
 }
+.creation-project-color .creation-delete-color {
+  color: #efafac;
+  margin-top: 12px;
+}
+.creation-delete-color-dialog {
+  max-width: 440px;
+  background: #253238;
+  color: #dce7e5;
+}
+.creation-delete-color-dialog label {
+  display: grid;
+  gap: 8px;
+}
+.creation-delete-color-dialog select {
+  width: 100%;
+  padding: 8px;
+  background: #1b272c;
+  border: 1px solid #526467;
+  border-radius: 6px;
+  color: #dce7e5;
+}
+.creation-delete-color-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.creation-delete-color-dialog .dialog-actions button {
+  padding: 8px 12px;
+  border: 1px solid #526467;
+  border-radius: 6px;
+}
+.creation-delete-color-dialog .primary {
+  background: #c3ef75;
+  color: #203121;
+}

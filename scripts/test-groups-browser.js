@@ -65,7 +65,7 @@ async (page) => {
     id: group.id,
     pathIds: [b.id],
   });
-  await page.locator('.group-title').filter({hasText:'分组 1'}).dblclick();
+  await page.locator('.group-title').filter({ hasText: '分组 1' }).dblclick();
   await page.getByRole('textbox', { name: '重命名分组' }).fill('头发');
   await page.getByRole('textbox', { name: '重命名分组' }).press('Enter');
   await page.getByRole('button', { name: '显示隐藏分组 头发' }).click();
@@ -107,7 +107,7 @@ async (page) => {
     JSON.stringify((await call('get_project')).paths) === before,
     'cancel keeps manual edits',
   );
-  await page.getByText('高级操作', { exact: true }).click();
+  await page.getByText('路径操作', { exact: true }).click();
   await page
     .getByRole('button', { name: '重新拟合当前路径…', exact: true })
     .click();
@@ -135,4 +135,4 @@ async (page) => {
   console.log(
     'PASS: continuity UI/API, group create/assign/rename/visibility/dissolve/undo, advanced hidden by default, API confirmation, cancel, confirmed refit and full undo.',
   );
-}
+};

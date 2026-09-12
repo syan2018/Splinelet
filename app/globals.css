@@ -1957,3 +1957,112 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
   max-height: none;
   min-height: 34px;
 }
+
+/* Source operations use the same compact hierarchy for paths and nodes. */
+.spline-inspector .spline-meta {
+  margin: 0 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.node-inspector.spline-inspector {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+.spline-inspector .spline-operation-group,
+.spline-operation-group {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  align-items: stretch;
+}
+.spline-operation-group h4 {
+  font-size: 11px;
+  font-weight: 500;
+  color: #a4b5b6;
+  margin: 0;
+}
+.spline-inspector button,
+.spline-trace-controls button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 9px;
+  width: 100%;
+  font-size: 12px;
+  border: 1px solid #435456;
+  background: #27373a;
+  color: #dce7e5;
+  border-radius: 7px;
+}
+.spline-inspector button:not(:disabled):hover,
+.spline-trace-controls button:not(:disabled):hover {
+  background: #354a42;
+  border-color: #7b9b70;
+}
+.spline-inspector .spline-primary-action {
+  background: #334938;
+  border-color: #688251;
+  color: #e2f1d1;
+}
+.spline-inspector kbd,
+.spline-trace-controls kbd,
+.spline-segment-number {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #9daead;
+}
+.spline-end-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.spline-tail-icon {
+  transform: scaleX(-1);
+}
+.spline-more-actions {
+  border-top: 1px solid #3a494d;
+  margin-top: 18px;
+  padding-top: 6px;
+}
+.spline-more-actions summary,
+.spline-fitting-settings > summary {
+  padding: 9px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: #aabcbc;
+}
+.spline-more-actions button {
+  margin-top: 6px;
+}
+.spline-more-actions small {
+  display: block;
+  color: #98aaaa;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.spline-menu-divider {
+  margin: 10px 0;
+  border-top: 1px solid #3a494d;
+}
+.spline-inspector .spline-danger {
+  color: #efafac;
+}
+.spline-trace-controls {
+  padding: 16px;
+}
+.spline-trace-controls .path-actions {
+  margin-top: 10px;
+}
+.spline-fitting-settings {
+  margin: 0 16px 16px;
+  border-top: 1px solid #3a494d;
+}
+.spline-fitting-settings > section {
+  padding: 4px 0 0;
+}
+.spline-inspector .node-mode {
+  margin: 0;
+}

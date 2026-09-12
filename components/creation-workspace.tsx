@@ -34,6 +34,7 @@ import CreationConnections from './creation-connections';
 import CreationColor from './creation-color';
 import CreationIssue from './creation-issue';
 import CreationSelectionDetails from './creation-selection-details';
+import CreationSwatchDelete from './creation-swatch-delete';
 import {
   creationEditTargets,
   regionLabel,
@@ -502,6 +503,17 @@ export default function CreationWorkspace(p: Props) {
         cellClick.current = null;
         // The source editor owns in-progress source gestures and their rollback.
         if (p.busy && !heightDrag.current && !paintDrag.current) return;
+        // Let its own Escape ladder finish tracing, cancel merging or clear
+        // nodes. A workspace listener must not also change tools and tabs.
+        if (
+          ['trace', 'edit'].includes(p.tool) &&
+          !heightDrag.current &&
+          !paintDrag.current &&
+          !joinPreview &&
+          !connectionHighlight.length &&
+          !basePreview
+        )
+          return;
         e.preventDefault();
         e.stopImmediatePropagation();
         if (
@@ -513,9 +525,6 @@ export default function CreationWorkspace(p: Props) {
         ) {
           cancel();
           notify('已取消本次操作');
-        } else if (['trace', 'edit'].includes(p.tool)) {
-          p.onTool('select');
-          setTab('object');
         } else clear();
       }
       if (
@@ -2021,6 +2030,20 @@ export default function CreationWorkspace(p: Props) {
                       <Pipette size={15} />
                       取色
                     </button>
+                    <CreationSwatchDelete
+                      key={swatch.id}
+                      creation={doc}
+                      swatch={swatch}
+                      disabled={p.busy || calculating}
+                      onDelete={(replacementId) => {
+                        const next = run('delete_swatch', {
+                          id: swatch.id,
+                          replacementId,
+                        });
+                        setBrush(replacementId || next.creation.swatches[0].id);
+                        notify('项目色已删除 · Ctrl+Z 撤销');
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -2029,11 +2052,14 @@ export default function CreationWorkspace(p: Props) {
           {tab === 'lines' && (
             <>
               <div className="creation-property-title">
-                <b>{current?.name || '线条设置'}</b>
+                <b>线条编辑</b>
                 <button onClick={p.onNewPath}>
                   <Plus size={14} />
                   新线条
                 </button>
+              </div>
+              <div className="creation-source-settings">
+                {p.sourceInspector}
               </div>
               {current &&
                 selection.kind === 'path' &&
@@ -2120,9 +2146,6 @@ export default function CreationWorkspace(p: Props) {
                   }}
                 />
               )}
-              <div className="creation-source-settings">
-                {p.sourceInspector}
-              </div>
             </>
           )}
           {tab === 'make' && (

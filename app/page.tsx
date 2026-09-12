@@ -22,7 +22,6 @@ import {
   FolderOpen,
   Code2,
   Minus,
-  CornerDownLeft,
   PaintBucket,
   ArrowUpFromLine,
   Box,
@@ -31,6 +30,13 @@ import { Outliner } from '@/components/outliner';
 import { modelTools } from '@/lib/model-api';
 import ModelWorkspace from '@/components/model-workspace';
 import CreationWorkspace from '@/components/creation-workspace';
+import {
+  SplinePathInspector,
+  SplineNodeInspector,
+  SplineTraceControls,
+} from '@/components/spline-inspector';
+import { splineEndpoint, extendSpline } from '../public/extend.mjs';
+import SplineEndpoints from '@/components/spline-endpoints';
 import { creationTools } from '@/lib/creation-api';
 import {
   pickSelection,
@@ -93,7 +99,6 @@ import { workspaceDB, FileWriter } from '../public/persistence.mjs';
 // @ts-ignore Shared node continuity constraints.
 import {
   nodeModes,
-  nodeSides,
   setContinuity,
   moveHandle,
   enforceContinuity,
@@ -140,6 +145,12 @@ export default function Home() {
     [drawing, setDrawing] = useState(false),
     drawingRef = useRef(false);
   drawingRef.current = drawing;
+  const [drawingEnd, setDrawingEnd] = useState<'start' | 'end'>('end');
+  const drawingEndRef = useRef<'start' | 'end'>('end');
+  const setTraceEnd = (end: 'start' | 'end') => {
+    drawingEndRef.current = end;
+    setDrawingEnd(end);
+  };
   const [settings, setSettings] = useState<Settings>({
       mode: 'ink',
       tolerance: 1.5,
@@ -232,6 +243,11 @@ export default function Home() {
     height: number;
   } | null>(null);
   const [gesturing, setGesturing] = useState(false);
+  const lastNodeTap = useRef<{
+    pathId: string;
+    index: number;
+    time: number;
+  } | null>(null);
   const selectNodesNow = (ids: number[]) => {
     nodesRef.current = ids;
     setSelectedNodes(ids);
@@ -801,6 +817,7 @@ export default function Home() {
   }, []);
   const undo = () => {
     if (busyRef.current || drag.current) return;
+    lastNodeTap.current = null;
     const p = history.current.pop();
     if (!p) return;
     future.current.push(copy(pr.current));
@@ -814,6 +831,7 @@ export default function Home() {
     }
     setSelection(null);
     setMergeSource(null);
+    if (p.paths.find((x) => x.id === ar.current)?.closed) finish();
     selectPathsNow(
       pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
     );
@@ -821,18 +839,21 @@ export default function Home() {
   };
   const redo = () => {
     if (busyRef.current || drag.current) return;
+    lastNodeTap.current = null;
     const p = future.current.pop();
     if (!p) return;
     history.current.push(copy(pr.current));
     setDoc(p, false);
     setSelection(null);
     setMergeSource(null);
+    if (!p.paths.some((x) => x.id === ar.current && !x.closed)) finish();
     selectPathsNow(
       pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
     );
     setStatus('已重做');
   };
   const finish = () => {
+    lastNodeTap.current = null;
     setMergeSource(null);
     setDrawing(false);
     drawingRef.current = false;
@@ -842,11 +863,38 @@ export default function Home() {
   };
   const begin = () => {
     finish();
+    setTraceEnd('end');
     setActiveNow(null);
     setTool('trace');
     setPropertyTab('trace');
     setSelection(null);
     setStatus('点击新的轮廓起点');
+  };
+  const resumePath = (pathId: string, end: 'start' | 'end') => {
+    if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+    if (!ready) throw Error('底图尚未准备好');
+    const path = pr.current.paths.find((p) => p.id === pathId);
+    const point = splineEndpoint(path, end);
+    if (!path?.visible) throw Error('请先显示这条样条');
+    finish();
+    setSelection(null);
+    selectPathsNow([pathId], pathId);
+    if (unified) creationApi.current?.select_paths([pathId]);
+    setTraceEnd(end);
+    chooseTool('trace');
+    setDrawing(true);
+    drawingRef.current = true;
+    setStatus(
+      `从${end === 'start' ? '头' : '尾'}端点续画 · 点击落点 · 点击另一端闭合 · Esc 结束`,
+    );
+    return { pathId, end, point };
+  };
+  const resumeSelected = (end: 'start' | 'end') => {
+    try {
+      resumePath(ar.current || '', end);
+    } catch (e: any) {
+      setStatus(e.message);
+    }
   };
   const validPoint = (p: any): Point => {
     if (
@@ -928,6 +976,7 @@ export default function Home() {
       const config = { ...sr.current, ...options };
       const current = pr.current.paths.find((p) => p.id === ar.current);
       if (!drawingRef.current || !current || current.closed) {
+        setTraceEnd('end');
         const start = await snapped(p, config);
         const path: TracePath = {
           id: crypto.randomUUID(),
@@ -956,16 +1005,13 @@ export default function Home() {
         setStatus('移动查看预览，点击落下下一锚点');
         return start;
       }
-      const a = current.curves.at(-1)?.[3] || current.start;
+      const end = drawingEndRef.current;
+      const a = splineEndpoint(current, end);
       if (dist(a, p) < 2) return a;
       const r = await traceSpan(a, p, config);
       transact((p) => {
-        const path = p.paths.find((v) => v.id === current.id)!;
-        path.curves.push(...r.curves);
-        path.anchors.push(r.end);
-        if (path.nodeModes) path.nodeModes.push('corner');
-        path.quality = Math.min(path.quality, r.quality);
-        path.fitError = Math.max(path.fitError || 0, r.fitError);
+        const index = p.paths.findIndex((v) => v.id === current.id);
+        p.paths[index] = extendSpline(p.paths[index], end, r);
       });
       setStatus(
         config.mode === 'manual'
@@ -983,18 +1029,16 @@ export default function Home() {
       const path = pr.current.paths.find((p) => p.id === ar.current);
       if (!path || path.curves.length < 1) throw Error('至少先绘制一段曲线');
       if (path.closed) return;
+      const end = drawingRef.current ? drawingEndRef.current : 'end';
       const r = await traceSpan(
-        path.curves.at(-1)![3],
-        path.start,
+        splineEndpoint(path, end),
+        splineEndpoint(path, end === 'start' ? 'end' : 'start'),
         options,
         false,
       );
       transact((p) => {
-        const q = p.paths.find((x) => x.id === path.id)!;
-        q.curves.push(...r.curves);
-        q.closed = true;
-        q.quality = Math.min(q.quality, r.quality);
-        q.fitError = Math.max(q.fitError || 0, r.fitError);
+        const index = p.paths.findIndex((x) => x.id === path.id);
+        p.paths[index] = extendSpline(p.paths[index], end, r, true);
       });
       finish();
       setStatus(
@@ -1005,13 +1049,6 @@ export default function Home() {
     });
   const report = (promise: Promise<any>) =>
     promise.catch((e: any) => setStatus(e.message));
-  const deletePath = () => {
-    if (busyRef.current || !ar.current) return;
-    transact((p) => (p.paths = p.paths.filter((x) => x.id !== ar.current)));
-    setActiveNow(null);
-    finish();
-    setStatus('已删除路径 · 可撤销');
-  };
   const selectNode = (pathId: string, nodeIndex: number) => {
     if (busyRef.current) throw Error('请等待拟合完成');
     const path = pr.current.paths.find((p) => p.id === pathId);
@@ -1095,7 +1132,11 @@ export default function Home() {
       curve ??
       (tool === 'edit' && ar.current === pathId && selection
         ? selection.curve
-        : (path?.curves.length || 0) - 1);
+        : tool === 'trace' &&
+            drawingRef.current &&
+            drawingEndRef.current === 'start'
+          ? 0
+          : (path?.curves.length || 0) - 1);
     if (!path || !Number.isInteger(index) || !path.curves[index])
       throw Error('请先绘制一段曲线，或选中要调整的节点/控制柄');
     transact((p) => {
@@ -1383,7 +1424,7 @@ export default function Home() {
     lastPreview.current = performance.now();
     const token = ++previewToken.current;
     previewBusy.current = true;
-    const a = path.curves.at(-1)?.[3] || path.start;
+    const a = splineEndpoint(path, drawingEndRef.current);
     traceSpan(a, p, connectionSettings(sr.current, e))
       .then((r) => {
         if (token === previewToken.current && !busyRef.current)
@@ -1411,7 +1452,7 @@ export default function Home() {
     )
       return;
     traceSpan(
-      path.curves.at(-1)?.[3] || path.start,
+      splineEndpoint(path, drawingEndRef.current),
       p,
       connectionSettings(sr.current, modifiers),
     )
@@ -1420,7 +1461,7 @@ export default function Home() {
           setPreview(r.curves);
       })
       .catch(() => {});
-  }, [modifiers.shiftKey, modifiers.altKey]);
+  }, [modifiers.shiftKey, modifiers.altKey, drawingEnd]);
   useEffect(() => {
     if (tool !== 'edit') setMergeSource(null);
   }, [tool]);
@@ -1439,6 +1480,29 @@ export default function Home() {
       const path = pr.current.paths.find((p) => p.id === g.path);
       if (path) setSelection(nodeSelection(path, g.collapseNode));
     }
+    // Pointer capture retargets native click/dblclick to the stage. Recognize
+    // two completed, unmoved endpoint taps here, after releasing the gesture.
+    if (g.kind === 'nodes' && !g.moved) {
+      const path = pr.current.paths.find((p) => p.id === g.path);
+      const index = selectedNode(path, { curve: g.curve, point: g.point });
+      const previous = lastNodeTap.current;
+      lastNodeTap.current =
+        path && index !== null
+          ? { pathId: path.id, index, time: performance.now() }
+          : null;
+      if (
+        path &&
+        !path.closed &&
+        index !== null &&
+        [0, path.curves.length].includes(index) &&
+        previous?.pathId === path.id &&
+        previous.index === index &&
+        performance.now() - previous.time < 400
+      ) {
+        resumeSelected(index === 0 ? 'start' : 'end');
+        return;
+      }
+    } else lastNodeTap.current = null;
     if (g.kind === 'box') {
       if (tool === 'select') {
         const hits = g.moved
@@ -1516,7 +1580,10 @@ export default function Home() {
           : null,
       );
       selectNodesNow(ids);
-      if (modified) return;
+      if (modified) {
+        lastNodeTap.current = null;
+        return;
+      }
     } else setSelection({ curve, point });
     drag.current = {
       kind: index === null ? 'point' : 'nodes',
@@ -1608,7 +1675,7 @@ export default function Home() {
       updateModifiers(e);
       if (
         (e.target as HTMLElement).closest(
-          'input,textarea,select,[role="slider"],[contenteditable="true"]',
+          'input,textarea,select,[role="slider"],[contenteditable="true"],[role="dialog"]',
         ) ||
         dialog ||
         pendingRefit
@@ -1681,7 +1748,19 @@ export default function Home() {
       else if (e.key.toLowerCase() === 'v') chooseTool('select');
       else if (e.key.toLowerCase() === 'a') chooseTool('edit');
       else if (e.key.toLowerCase() === 'h') chooseTool('pan');
-      else if (e.key.toLowerCase() === 'c' && tool === 'trace')
+      else if (e.key.toLowerCase() === 'e' && tool === 'edit') {
+        const path = pr.current.paths.find((p) => p.id === ar.current);
+        const index =
+          nodesRef.current.length === 1 ? nodesRef.current[0] : null;
+        if (
+          path &&
+          !path.closed &&
+          index !== null &&
+          [0, path.curves.length].includes(index)
+        )
+          resumeSelected(index === 0 ? 'start' : 'end');
+        else setStatus('请先选中一个开放端点，再按 E 续画');
+      } else if (e.key.toLowerCase() === 'c' && tool === 'trace')
         report(closePath(connectionSettings(sr.current, e)));
       else if (
         e.key.toLowerCase() === 'm' &&
@@ -2128,6 +2207,9 @@ export default function Home() {
     state: () => ({
       ready,
       busy: busyRef.current,
+      drawing: drawingRef.current
+        ? { pathId: ar.current, end: drawingEndRef.current }
+        : null,
       image: {
         name: pr.current.imageName,
         width: pr.current.width,
@@ -2239,6 +2321,13 @@ export default function Home() {
     },
     creation_export: (a: any) => creationApi.current.export(a.format, false),
     create_path: createPath,
+    resume_path: (a: any) => resumePath(a.pathId, a.end),
+    add_anchor: (a: any) => addAnchor(a.position, a),
+    finish_path: () => {
+      finish();
+      return { finished: true };
+    },
+    close_path: (a: any) => closePath(a),
     refit_path: requestRefit,
     set_node_mode: changeNodeMode,
     manage_group: manageGroup,
@@ -2370,6 +2459,10 @@ export default function Home() {
       'state',
       'detect_candidates',
       'create_path',
+      'resume_path',
+      'add_anchor',
+      'finish_path',
+      'close_path',
       'commit_preview',
       'refit_path',
       'set_node_mode',
@@ -2429,6 +2522,24 @@ export default function Home() {
         snap: { type: 'boolean' },
       },
       commit_preview: {},
+      resume_path: {
+        pathId: { type: 'string' },
+        end: { enum: ['start', 'end'] },
+      },
+      add_anchor: {
+        position: {
+          type: 'object',
+          properties: { x: { type: 'number' }, y: { type: 'number' } },
+          required: ['x', 'y'],
+        },
+        mode: { enum: ['ink', 'edge', 'manual'] },
+        snap: { type: 'boolean' },
+      },
+      finish_path: {},
+      close_path: {
+        mode: { enum: ['ink', 'edge', 'manual'] },
+        snap: { type: 'boolean' },
+      },
       refit_path: { id: { type: 'string' } },
       set_node_mode: {
         pathId: { type: 'string' },
@@ -2497,6 +2608,14 @@ export default function Home() {
                       'Generate numbered image corner candidates and display on canvas. Original image pixel coordinates.',
                     create_path:
                       'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
+                    resume_path:
+                      'Resume an existing visible open path from its start or end. Changes drawing state only; keeps existing geometry and undo history unchanged.',
+                    add_anchor:
+                      'Add one point at the current drawing endpoint, with exactly one new cubic. If no drawing is active, starts a new path. Original-image pixel coordinates. Undoable.',
+                    finish_path:
+                      'Finish the current drawing session without changing geometry.',
+                    close_path:
+                      'Close the active open path from the current drawing endpoint with one cubic. Undoable.',
                     refit_path:
                       'Request a refit confirmation dialog. No geometry changes until the user explicitly confirms in the UI. Refitting replaces manual handle edits and continuity modes.',
                     set_node_mode:
@@ -2529,27 +2648,43 @@ export default function Home() {
                 properties: properties[name],
                 required:
                   { ...modelTools, ...creationTools }[name]?.required ||
-                  (['select_paths', 'move_paths'].includes(name)
-                    ? ['pathIds']
-                    : name === 'move_path'
-                      ? ['pathId']
-                      : name === 'set_node_mode'
-                        ? ['pathId', 'nodeIndex', 'mode']
-                        : name === 'manage_group'
-                          ? ['action']
-                          : name === 'merge_paths'
-                            ? ['firstId', 'firstEnd', 'secondId', 'secondEnd']
-                            : name === 'straighten_span'
-                              ? ['pathId']
-                              : name === 'create_path'
-                                ? ['points']
-                                : ['select_node', 'delete_node'].includes(name)
-                                  ? ['pathId', 'nodeIndex']
-                                  : name === 'set_point'
-                                    ? ['pathId', 'curve', 'point', 'position']
-                                    : name === 'export'
-                                      ? ['format']
-                                      : []),
+                  (name === 'resume_path'
+                    ? ['pathId', 'end']
+                    : name === 'add_anchor'
+                      ? ['position']
+                      : ['select_paths', 'move_paths'].includes(name)
+                        ? ['pathIds']
+                        : name === 'move_path'
+                          ? ['pathId']
+                          : name === 'set_node_mode'
+                            ? ['pathId', 'nodeIndex', 'mode']
+                            : name === 'manage_group'
+                              ? ['action']
+                              : name === 'merge_paths'
+                                ? [
+                                    'firstId',
+                                    'firstEnd',
+                                    'secondId',
+                                    'secondEnd',
+                                  ]
+                                : name === 'straighten_span'
+                                  ? ['pathId']
+                                  : name === 'create_path'
+                                    ? ['points']
+                                    : ['select_node', 'delete_node'].includes(
+                                          name,
+                                        )
+                                      ? ['pathId', 'nodeIndex']
+                                      : name === 'set_point'
+                                        ? [
+                                            'pathId',
+                                            'curve',
+                                            'point',
+                                            'position',
+                                          ]
+                                        : name === 'export'
+                                          ? ['format']
+                                          : []),
                 additionalProperties: false,
               },
               annotations: {
@@ -2676,146 +2811,49 @@ export default function Home() {
             </h3>
             <p>{current?.name || '选择一条路径后进入节点编辑'}</p>
             {current && current.visible && tool === 'edit' ? (
-              <div className="node-inspector">
-                <p>
-                  {selectedNodes.length === 1
-                    ? (() => {
-                        const p = pathNodes(current)[selectedNodes[0]];
-                        return (
-                          '节点 ' +
-                          (selectedNodes[0] + 1) +
-                          ' · X ' +
-                          p.x.toFixed(1) +
-                          ' / Y ' +
-                          p.y.toFixed(1) +
-                          ' px'
-                        );
-                      })()
-                    : selectedNodes.length
-                      ? '拖动任一选中节点可整体移动，控制柄随节点保持相对位置。'
-                      : selection
-                        ? '拖动圆形控制柄调整弯曲。'
-                        : '点击节点选择 · Shift 多选 · 空白拖动框选'}
-                </p>
-                {!!selectedNodes.length && (
-                  <label className="node-mode">
-                    连接方式
-                    <select
-                      aria-label="节点连接模式"
-                      disabled={busy || gesturing}
-                      value={
-                        new Set(selectedNodes.map((i) => nodeModes(current)[i]))
-                          .size > 1
-                          ? 'mixed'
-                          : nodeModes(current)[selectedNodes[0]]
-                      }
-                      onChange={(e) => {
-                        try {
-                          transact((p) => {
-                            const path = p.paths.find(
-                              (p) => p.id === current.id,
-                            )!;
-                            selectedNodes.forEach((i) =>
-                              setContinuity(path, i, e.target.value),
-                            );
-                          });
-                          setStatus(
-                            '已更新 ' +
-                              selectedNodes.length +
-                              ' 个节点的连接方式 · 可撤销',
-                          );
-                        } catch (e: any) {
-                          setStatus(e.message);
-                        }
-                      }}
-                    >
-                      <option value="mixed" disabled>
-                        混合
-                      </option>
-                      <option value="corner">尖角 · 独立控制柄</option>
-                      <option
-                        value="smooth"
-                        disabled={
-                          !current.closed &&
-                          selectedNodes.some(
-                            (i) => i === 0 || i === current.curves.length,
-                          )
-                        }
-                      >
-                        平滑 · 共线
-                      </option>
-                      <option
-                        value="symmetric"
-                        disabled={
-                          !current.closed &&
-                          selectedNodes.some(
-                            (i) => i === 0 || i === current.curves.length,
-                          )
-                        }
-                      >
-                        对称 · C1 连续
-                      </option>
-                    </select>
-                  </label>
+              <SplineNodeInspector
+                path={current}
+                nodes={selectedNodes}
+                selection={selection}
+                disabled={busy || gesturing}
+                merging={!!mergeSource}
+                canMerge={project.paths.some(
+                  (p) =>
+                    p.id !== current.id &&
+                    p.visible &&
+                    !p.closed &&
+                    p.curves.length,
                 )}
-                {!current.closed &&
-                  selectedNodes.some(
-                    (i) => i === 0 || i === current.curves.length,
-                  ) && (
-                    <p className="note">
-                      开放端点只有单侧曲线；连续模式适用于中间节点。
-                    </p>
-                  )}
-                <div className="batch-actions">
-                  <button
-                    disabled={busy || !selectedNodes.length}
-                    onClick={deleteSelection}
-                  >
-                    <Trash2 size={14} />
-                    删除节点 <kbd>Del</kbd>
-                  </button>
-                  <button
-                    disabled={!selection && !selectedNodes.length}
-                    onClick={() => setSelection(null)}
-                  >
-                    取消选择
-                  </button>
-                </div>
-                {selectedNodes.length <= 1 && (
-                  <div className="node-segment-actions">
-                    <button
-                      disabled={busy || !selection || !current.curves.length}
-                      onClick={() => {
-                        try {
-                          straightenSpan(current.id);
-                        } catch (e: any) {
-                          setStatus(e.message);
-                        }
-                      }}
-                    >
-                      此段改为直连 <kbd>L</kbd>
-                    </button>
-                    <button
-                      disabled={
-                        busy ||
-                        current.closed ||
-                        !current.curves.length ||
-                        selectedNodes.length !== 1 ||
-                        ![0, current.curves.length].includes(selectedNodes[0])
-                      }
-                      onClick={startMerge}
-                    >
-                      <Link size={14} />
-                      连接另一条样条 <kbd>M</kbd>
-                    </button>
-                  </div>
-                )}
-                {mergeSource && (
-                  <button onClick={() => setMergeSource(null)}>
-                    取消合并 · Esc
-                  </button>
-                )}
-              </div>
+                onResume={resumeSelected}
+                onMode={(mode) => {
+                  try {
+                    transact((p) => {
+                      const path = p.paths.find((p) => p.id === current.id)!;
+                      selectedNodes.forEach((i) =>
+                        setContinuity(path, i, mode),
+                      );
+                    });
+                    setStatus(
+                      '已更新 ' +
+                        selectedNodes.length +
+                        ' 个节点的连接方式 · 可撤销',
+                    );
+                  } catch (e: any) {
+                    setStatus(e.message);
+                  }
+                }}
+                onStraighten={(curve) => {
+                  try {
+                    straightenSpan(current.id, curve);
+                  } catch (e: any) {
+                    setStatus(e.message);
+                  }
+                }}
+                onMerge={startMerge}
+                onCancelMerge={() => setMergeSource(null)}
+                onDelete={deleteSelection}
+                onClear={() => setSelection(null)}
+              />
             ) : (
               <div className="empty-properties">
                 <p>
@@ -2845,158 +2883,106 @@ export default function Home() {
           aria-label="描线参数"
           hidden={propertyTab !== 'trace'}
         >
-          <section>
-            <h3>描线参数</h3>
-            <p>
-              每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
-            </p>
-            <label>识别目标</label>
-            <Tabs
-              value={settings.mode}
-              onValueChange={(v) => {
-                setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
-                setPreview([]);
-              }}
-            >
-              <TabsList className="mode-tabs">
-                <TabsTrigger value="ink">深色线条</TabsTrigger>
-                <TabsTrigger value="edge">颜色边缘</TabsTrigger>
-                <TabsTrigger value="manual">手动</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <label>
-              补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
-            </label>
-            <Slider
-              aria-label="补点提示阈值"
-              min={0.5}
-              max={6}
-              step={0.5}
-              value={[settings.tolerance]}
-              onValueChange={(v) =>
-                setSettings((s) => ({
-                  ...s,
-                  tolerance: Array.isArray(v) ? v[0] : v,
-                }))
-              }
-            />
-            <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
-            <label>
-              搜索范围 <span>{settings.corridor} px</span>
-            </label>
-            <Slider
-              aria-label="搜索范围"
-              min={20}
-              max={250}
-              step={10}
-              value={[settings.corridor]}
-              onValueChange={(v) =>
-                setSettings((s) => ({
-                  ...s,
-                  corridor: Array.isArray(v) ? v[0] : v,
-                }))
-              }
-            />
-            <label className="switch-label">
-              锚点吸附{' '}
-              <Switch
-                aria-label="锚点吸附"
-                checked={settings.snap}
-                onCheckedChange={(v) => setSettings((s) => ({ ...s, snap: v }))}
-              />
-            </label>
-            <div className="path-actions">
-              <button disabled={!drawing || busy} onClick={finish}>
-                <Check size={15} />
-                结束
-              </button>
-              <button
-                disabled={
-                  selectedPaths.length !== 1 ||
-                  !current?.curves.length ||
-                  current.closed ||
-                  busy
-                }
-                onClick={(e) =>
-                  report(closePath(connectionSettings(sr.current, e)))
-                }
+          <SplineTraceControls
+            path={selectedPaths.length === 1 ? current : undefined}
+            drawing={drawing}
+            end={drawingEnd}
+            disabled={busy || !ready || gesturing}
+            onResume={resumeSelected}
+            onFinish={finish}
+            onClose={(e) =>
+              report(closePath(connectionSettings(sr.current, e)))
+            }
+          />
+          <details className="spline-fitting-settings" open>
+            <summary>拟合与吸附</summary>
+            <section>
+              <p>
+                每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
+              </p>
+              <label>识别目标</label>
+              <Tabs
+                value={settings.mode}
+                onValueChange={(v) => {
+                  setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
+                  setPreview([]);
+                }}
               >
-                <Link size={15} />
-                闭合
-              </button>
-            </div>
-          </section>
+                <TabsList className="mode-tabs">
+                  <TabsTrigger value="ink">深色线条</TabsTrigger>
+                  <TabsTrigger value="edge">颜色边缘</TabsTrigger>
+                  <TabsTrigger value="manual">手动</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <label>
+                补点提示阈值 <span>{settings.tolerance.toFixed(1)} px</span>
+              </label>
+              <Slider
+                aria-label="补点提示阈值"
+                min={0.5}
+                max={6}
+                step={0.5}
+                value={[settings.tolerance]}
+                onValueChange={(v) =>
+                  setSettings((s) => ({
+                    ...s,
+                    tolerance: Array.isArray(v) ? v[0] : v,
+                  }))
+                }
+              />
+              <p className="note">超过此偏差时提示手动补点；不会自动分段。</p>
+              <label>
+                搜索范围 <span>{settings.corridor} px</span>
+              </label>
+              <Slider
+                aria-label="搜索范围"
+                min={20}
+                max={250}
+                step={10}
+                value={[settings.corridor]}
+                onValueChange={(v) =>
+                  setSettings((s) => ({
+                    ...s,
+                    corridor: Array.isArray(v) ? v[0] : v,
+                  }))
+                }
+              />
+              <label className="switch-label">
+                锚点吸附{' '}
+                <Switch
+                  aria-label="锚点吸附"
+                  checked={settings.snap}
+                  onCheckedChange={(v) =>
+                    setSettings((s) => ({ ...s, snap: v }))
+                  }
+                />
+              </label>
+            </section>
+          </details>
         </div>
         <div
           role="tabpanel"
           aria-label="路径与分组"
           hidden={propertyTab !== 'paths'}
         >
-          <section className="paths-section">
-            <h3>
-              {selectedPaths.length > 1
-                ? '已选 ' + selectedPaths.length + ' 条路径'
-                : current?.name || '未选择路径'}
-            </h3>
-            <p>
-              {selectedPaths.length > 1
-                ? '拖动画布中已选曲线可整体移动；在路径树拖动可批量排序和移组。'
-                : 'V 选择路径 · A 编辑节点 · 双击名称改名'}
-            </p>
-            {!!selectedPaths.length && (
-              <div className="batch-actions">
-                <button onClick={groupSelection} disabled={busy}>
-                  编组 <kbd>Ctrl G</kbd>
-                </button>
-                <button onClick={deletePaths} disabled={busy}>
-                  删除所选 <kbd>Del</kbd>
-                </button>
-              </div>
-            )}
-            {current && selectedPaths.length === 1 && (
-              <>
-                <div className="path-actions">
-                  <button
-                    onClick={() => {
-                      finish();
-                      chooseTool('edit');
-                    }}
-                  >
-                    <MousePointer2 size={14} />
-                    编辑节点
-                  </button>
-                  <button
-                    disabled={current.closed}
-                    onClick={() => {
-                      chooseTool('trace');
-                      setDrawing(true);
-                      drawingRef.current = true;
-                    }}
-                  >
-                    <CornerDownLeft size={14} />
-                    续画
-                  </button>
-                  <button
-                    aria-label="删除当前路径"
-                    onClick={deletePath}
-                    disabled={busy}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <details className="advanced-actions">
-                  <summary>高级操作</summary>
-                  <p>会替换当前路径的手动调整。</p>
-                  <button
-                    disabled={busy || !ready || current.anchors.length < 2}
-                    onClick={() => requestRefit()}
-                  >
-                    重新拟合当前路径…
-                  </button>
-                </details>
-              </>
-            )}
-          </section>
+          <SplinePathInspector
+            path={
+              !unified || creationSelectionKind === 'path' ? current : undefined
+            }
+            count={
+              !unified || creationSelectionKind === 'path'
+                ? selectedPaths.length
+                : 0
+            }
+            disabled={busy || gesturing}
+            canRefit={ready && !!current && current.anchors.length >= 2}
+            onEdit={() => chooseTool('edit')}
+            onResume={resumeSelected}
+            onGroup={groupSelection}
+            onDelete={deletePaths}
+            onClear={clearSelection}
+            onRefit={() => requestRefit()}
+          />
         </div>
         <div
           role="tabpanel"
@@ -3600,36 +3586,55 @@ export default function Home() {
                               strokeWidth={1.5 / view.s}
                               pointerEvents="none"
                             />
+                            {!current.closed &&
+                              [0, current.curves.length].includes(index) && (
+                                <text
+                                  x={p.x + 10 / view.s}
+                                  y={p.y - 12 / view.s}
+                                  fontSize={11 / view.s}
+                                  fill="#e5ffc5"
+                                  paintOrder="stroke"
+                                  stroke="#162321"
+                                  strokeWidth={3 / view.s}
+                                  pointerEvents="none"
+                                >
+                                  {index === 0 ? '头' : '尾'}
+                                </text>
+                              )}
                           </g>
                         );
                       })}
                     </>
-                  ) : tool === 'trace' ? (
+                  ) : tool === 'trace' ||
+                    (tool === 'select' &&
+                      selectedPaths.length === 1 &&
+                      (!unified || creationSelectionKind === 'path')) ? (
                     <>
-                      {current.anchors.map((p, i) => (
-                        <circle
-                          key={i}
-                          cx={p.x}
-                          cy={p.y}
-                          r={i === 0 ? 5 / view.s : 3 / view.s}
-                          fill={i === 0 ? '#1b2a16' : current.color}
-                          stroke={current.color}
-                          strokeWidth={2 / view.s}
-                          onPointerDown={(e) => {
-                            if (i === 0 && drawing && current.curves.length) {
-                              e.stopPropagation();
-                              report(
-                                closePath(
-                                  connectionSettings(
-                                    sr.current,
-                                    modifierRef.current,
-                                  ),
-                                ),
-                              );
-                            }
-                          }}
-                        />
-                      ))}
+                      {tool === 'trace' &&
+                        current.anchors
+                          .slice(1, -1)
+                          .map((p, i) => (
+                            <circle
+                              key={i}
+                              cx={p.x}
+                              cy={p.y}
+                              r={3 / view.s}
+                              fill={current.color}
+                              pointerEvents="none"
+                            />
+                          ))}
+                      <SplineEndpoints
+                        path={current}
+                        scale={view.s}
+                        drawing={tool === 'trace' && drawing}
+                        end={drawingEnd}
+                        disabled={busy || !ready}
+                        isPanning={() => space.current}
+                        onResume={resumeSelected}
+                        onClose={(e) =>
+                          report(closePath(connectionSettings(sr.current, e)))
+                        }
+                      />
                     </>
                   ) : null}
                 </g>
@@ -4150,7 +4155,7 @@ export default function Home() {
                 填色和厚度命令须带最新 creation_inspect 返回的 revision。
               </p>
               <p>
-                描线操作：state、detect_candidates、create_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
+                描线操作：state、detect_candidates、create_path、resume_path、add_anchor、finish_path、close_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
               </p>
               <p>
                 构面 /
@@ -4212,7 +4217,8 @@ export default function Home() {
               <p>
                 <b>描线 · P</b>　每两个落点只有一段贝塞尔。Shift 暂停吸附，Alt
                 默认直连；L 将最后一段改为直连。Enter / 右键结束，C
-                闭合。选中开放路径后点“续画”。
+                闭合。开放路径可选“从头续画 /
+                从尾续画”，也可双击端点或选中端点按 E。
               </p>
               <p>
                 <b>精修与合并</b>

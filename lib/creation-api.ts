@@ -18,13 +18,14 @@ export const creationTools: Record<string, any> = {
   },
   creation_command: {
     description:
-      'Run one undoable creation command. paint/height use objectIds or cellKeys; paint accepts swatchId or color (#RRGGBB). roles uses {objectId,pathIds,role}; it computes the proposed regions before applying and returns {applied,regionCount} or {applied:false,issue}, leaving the project unchanged on failure. Custom colors are created/reused atomically; swatch edits update shared colors globally. Painting or height changes are blocked for objects with failed geometry.',
+      'Run one undoable creation command. paint/height use objectIds or cellKeys; paint accepts swatchId or color (#RRGGBB). roles uses {objectId,pathIds,role}; it computes the proposed regions before applying and returns {applied,regionCount} or {applied:false,issue}, leaving the project unchanged on failure. Custom colors are created/reused atomically; swatch edits update shared colors globally. delete_swatch uses {id,replacementId?}; a referenced colour requires a different replacement, with all references remapped atomically and geometry/heights unchanged. At least one swatch must remain. Painting or height changes are blocked for objects with failed geometry.',
     properties: {
       action: {
         enum: [
           'paint',
           'height',
           'swatch',
+          'delete_swatch',
           'object',
           'new_object',
           'move_paths',
