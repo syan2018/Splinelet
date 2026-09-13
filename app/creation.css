@@ -1470,3 +1470,32 @@
   background: #c3ef75;
   color: #203121;
 }
+
+.construction-pipeline {
+  padding: 10px;
+  border: 1px solid #425154;
+  border-radius: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.construction-pipeline.blocked {
+  border-color: #bc8850;
+  background: #332e2533;
+}
+.construction-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  color: #adbebd;
+  margin-bottom: 6px;
+}
+.construction-pipeline strong {
+  color: #f2c787;
+}
+.construction-pipeline p {
+  margin: 6px 0;
+}
+.construction-pipeline small {
+  color: #99aead;
+}

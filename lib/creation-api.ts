@@ -1,7 +1,7 @@
 export const creationTools: Record<string, any> = {
   creation_inspect: {
     description:
-      'Read unified objects, live cells, modifierStatus (ordered steps with inputOptions[].ref for stable target selection, affected count, areas and errors), modifierBaseCells, divider diagnostics and face closures. Objects include modifiers and nested sources[featureId]. Call again after edits before selecting targets or painting.',
+      'Read unified objects, pipelineStatus, surfaceGraphs (stable source-bound contour outputs), surfaceGraphCandidates (explicit rebuild proposals for blocked partition steps), live cells, modifierStatus (ordered steps with inputOptions[].ref for stable target selection, affected count, areas and errors), modifierBaseCells, divider diagnostics and face closures. Objects include modifiers and nested sources[featureId]. Call again after edits before selecting targets or painting.',
     properties: {},
     readOnly: true,
   },
@@ -39,6 +39,8 @@ export const creationTools: Record<string, any> = {
           'connection',
           'remove_connection',
           'closure_boundary',
+          'rebuild_surfaces',
+          'modifier_truncate',
           'modifier_add',
           'modifier_update',
           'modifier_remove',
@@ -48,7 +50,7 @@ export const creationTools: Record<string, any> = {
       args: {
         type: 'object',
         description:
-          'Modifier commands use objectId and optional sourceFeatureId for a nested source stack. modifier_add: type boolean|split|offset, name?, operation difference|union|intersection, input {kind:path|region|object,id,projection?:surface|outline}, targets {kind:all} or {kind:selected,refs:inputOptions[].ref}, or current cellKeys; offset uses distanceMM, split uses joinMM. modifier_update: modifierId and changes {name,enabled,operation,input,targets,distanceMM,joinMM}, or cellKeys. modifier_move: modifierId with direction -1/+1 or beforeId (null moves last). modifier_remove: modifierId. Read modifierStatus errors and refreshed inputOptions after each change. Object inputs reference final evaluated faces; cyclic references fail.',
+          'rebuild_surfaces uses {objectId,confirm:true}; only invoke after the user accepts the affected output changes. modifier_truncate uses {objectId,modifierId,confirm:true} and removes that step plus downstream steps with their styles. Modifier commands use objectId and optional sourceFeatureId for a nested source stack. modifier_add: type boolean|split|offset, name?, operation difference|union|intersection, input {kind:path|region|object,id,projection?:surface|outline}, targets {kind:all} or {kind:selected,refs:inputOptions[].ref}, or current cellKeys; offset uses distanceMM, split uses joinMM. modifier_update: modifierId and changes {name,enabled,operation,input,targets,distanceMM,joinMM}, or cellKeys. modifier_move: modifierId with direction -1/+1 or beforeId (null moves last). modifier_remove: modifierId. Read modifierStatus errors and refreshed inputOptions after each change. Object inputs reference final evaluated faces; cyclic references fail.',
       },
       revision: {
         type: 'integer',

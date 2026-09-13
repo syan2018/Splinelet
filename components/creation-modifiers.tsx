@@ -14,6 +14,7 @@ import {
   ModifierName,
 } from './modifier-controls';
 import { targetForCell } from '@/lib/modifier-schema.mjs';
+import ConstructionPipeline from './construction-pipeline';
 import type {
   SurfaceModifier,
   ModifierInputRef,
@@ -275,9 +276,24 @@ function ModifierStack({
               </div>
             )}
             {status?.error && (
-              <p className="modifier-error" role="alert">
-                {status.error}
-              </p>
+              <div className="modifier-error" role="alert">
+                <p>此步已暂停：{status.error}</p>
+                <button
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `移除「${m.name}」及其后的 ${stack.length - index - 1} 个修改器？\n相关输出样式随步骤解除，源线保留。此操作可撤销。`,
+                      )
+                    )
+                      send('modifier_truncate', {
+                        modifierId: m.id,
+                        confirm: true,
+                      });
+                  }}
+                >
+                  移除此步及下游…
+                </button>
+              </div>
             )}
             {status?.note && <p className="modifier-hint">{status.note}</p>}
           </article>
@@ -294,6 +310,7 @@ export default function CreationModifiers({
   cellKeys,
   onCommand,
   busy,
+  onLocate,
 }: {
   object?: ModifierObject;
   project: ModifierProject;
@@ -301,6 +318,7 @@ export default function CreationModifiers({
   cellKeys: string[];
   onCommand: ModifierCommand;
   busy: boolean;
+  onLocate?: (ids: string[]) => void;
 }) {
   const [adding, setAdding] = useState(false),
     [kind, setKind] = useState('difference'),
@@ -343,6 +361,13 @@ export default function CreationModifiers({
       <p className="modifier-hint">
         从上到下计算。源线条保留，随时停用或撤销。
       </p>
+      <ConstructionPipeline
+        object={object}
+        scene={scene}
+        onCommand={onCommand}
+        busy={busy}
+        onLocate={onLocate}
+      />
       <ModifierStack
         stack={object.modifiers || []}
         object={object}

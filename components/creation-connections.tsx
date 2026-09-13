@@ -11,6 +11,7 @@ export default function CreationConnections(p: {
   onPreview: (distance: number) => void;
   onCancel: () => void;
   onApply: (distance: number) => void;
+  onModifiers?: () => void;
   onCommand: (action: string, args: any) => void;
   onLocate: (paths: string[], connections?: any[]) => void;
 }) {
@@ -44,11 +45,16 @@ export default function CreationConnections(p: {
   );
   const divider = Object.entries(o.roles).some(
     ([id, role]) =>
-      role === 'divider' && !existing.some((d: any) => d.pathId === id),
+      role === 'divider' &&
+      !existing.some((d: any) => d.pathId === id) &&
+      !o.modifiers?.some((m: any) => m.type === 'split' && m.rolePathId === id),
   );
   const valid = Number.isFinite(distance) && distance >= 0 && distance <= 5;
   return (
     <div className="creation-constructions">
+      {o.modifiers?.some((m: any) => m.type === 'split' && m.rolePathId) && (
+        <button onClick={p.onModifiers}>分区连接设置 · 修改器</button>
+      )}
       {existing.map((d: any) => (
         <p className="creation-source-note" key={d.pathId}>
           {d.message}

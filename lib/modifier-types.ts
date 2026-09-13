@@ -42,6 +42,7 @@ export type ModifierCell = {
   targetTopology?: string;
 };
 export type ModifierScene = {
+  errors?: { objectId: string; message: string; pathIds?: string[] }[];
   creation: { objects: ModifierObject[] };
   cells: ModifierCell[];
   modifierBaseCells?: ModifierCell[];

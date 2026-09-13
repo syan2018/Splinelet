@@ -27,11 +27,13 @@ import {
   acceptDividerGraph,
 } from '@/lib/creation-schema.mjs';
 import { creationCommand } from '@/lib/creation-commands.mjs';
+import { bindSurfaceGraphs } from '@/lib/surface-lineage.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
 import CreationModifiers from './creation-modifiers';
+import ConstructionPipeline from './construction-pipeline';
 import CreationColor from './creation-color';
 import CreationIssue from './creation-issue';
 import CreationSelectionDetails from './creation-selection-details';
@@ -51,7 +53,7 @@ type Props = {
   tool: string;
   onTool: (t: string) => void;
   onView: (v: string) => void;
-  onProject: (p: Project) => void;
+  onProject: (p: Project, record?: boolean) => void;
   onStatus: (s: string) => void;
   onApi: (a: any) => void;
   layer: SVGGElement | null;
@@ -363,7 +365,12 @@ export default function CreationWorkspace(p: Props) {
     const timer = setTimeout(() => {
       call('creation', {}, snapshot)
         .then((result) => {
-          if (cancelled) return;
+          if (cancelled || ref.current.project !== snapshot) return;
+          const bound = bindSurfaceGraphs(snapshot, result);
+          if (bound !== snapshot && !ref.current.busy) {
+            p.onProject(bound, false);
+            return;
+          }
           setScene(result);
           sceneRef.current = result;
           revision.current = snapshot;
@@ -385,7 +392,7 @@ export default function CreationWorkspace(p: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [p.project, boot]);
+  }, [p.project, p.busy, boot]);
   const notify = (message: string) => {
     setError('');
     p.onStatus(message);
@@ -393,7 +400,9 @@ export default function CreationWorkspace(p: Props) {
   const run = (action: string, args: any = {}) => {
     if (ref.current.busy) throw Error('请先完成当前拖动或描线');
     if (
-      (['paint', 'height', 'continue_partition'].includes(action) ||
+      (['paint', 'height', 'continue_partition', 'rebuild_surfaces'].includes(
+        action,
+      ) ||
         action.startsWith('modifier_')) &&
       revision.current !== ref.current.project
     )
@@ -758,7 +767,7 @@ export default function CreationWorkspace(p: Props) {
       const failure = result.errors.find(
         (e: any) => e.objectId === args.objectId,
       );
-      if (failure && args.role !== 'guide') {
+      if (failure && failure.kind !== 'pipeline' && args.role !== 'guide') {
         const issue = { ...failure, pathIds: args.pathIds };
         setRoleIssue(issue);
         p.onStatus('本次用途切换未应用；原区域与颜色保留');
@@ -766,6 +775,10 @@ export default function CreationWorkspace(p: Props) {
       }
       p.onProject(next);
       clearConnectionPreview();
+      if (failure?.kind === 'pipeline') {
+        notify('用途已更新 · 下游构造已暂停，请修复或重建分区输出');
+        return { applied: true, blocked: true, issue: failure };
+      }
       const afterCount = result.cells.filter(
         (c: any) => c.objectId === args.objectId,
       ).length;
@@ -846,18 +859,6 @@ export default function CreationWorkspace(p: Props) {
         rendered &&
         createPortal(
           <g className={'creation-fills ' + (showLines ? '' : 'without-lines')}>
-            <defs>
-              <pattern
-                id="creation-conflict"
-                width="12"
-                height="12"
-                patternUnits="userSpaceOnUse"
-                patternTransform="rotate(30)"
-              >
-                <rect width="12" height="12" fill="#be683d" />
-                <rect width="4" height="12" fill="#ffd18d" />
-              </pattern>
-            </defs>
             {rendered.cells.map((c: any) => {
               const o = rendered.creation.objects.find(
                 (o: any) => o.id === c.objectId,
@@ -883,17 +884,10 @@ export default function CreationWorkspace(p: Props) {
                   className={
                     'creation-cell ' +
                     (candidate ? 'candidate ' : '') +
-                    (active ? 'active ' : '') +
-                    (c.conflict ? 'conflict' : '')
+                    (active ? 'active ' : '')
                   }
                   d={regionSVGPath(c.geometry, p.project)}
-                  fill={
-                    c.conflict
-                      ? 'url(#creation-conflict)'
-                      : painting
-                        ? swatch?.color
-                        : c.color
-                  }
+                  fill={painting ? swatch?.color : c.color}
                   fillRule="evenodd"
                   fillOpacity={
                     (showFills || painting ? fillAlpha : 0) *
@@ -902,11 +896,9 @@ export default function CreationWorkspace(p: Props) {
                   stroke={
                     active
                       ? '#d4fa99'
-                      : c.conflict
-                        ? '#ffcd8a'
-                        : candidate && showFills
-                          ? '#b5cfb3'
-                          : 'none'
+                      : candidate && showFills
+                        ? '#b5cfb3'
+                        : 'none'
                   }
                   strokeWidth={(active ? 2 : 1) / p.scale}
                   strokeDasharray={
@@ -984,7 +976,6 @@ export default function CreationWorkspace(p: Props) {
                   <title>
                     {regionLabel(c, rendered)}
                     {candidate ? ' · 待启用区域' : ''}
-                    {c.conflict ? ' · 合并后样式冲突' : ''}
                   </title>
                 </path>
               );
@@ -1561,7 +1552,6 @@ export default function CreationWorkspace(p: Props) {
                                 aria-label={regionLabel(c, rendered)}
                                 title={`${regionLabel(c, rendered)}${!c.painted ? ' · 待启用' : ''}`}
                                 aria-pressed={cellKeys.includes(c.key)}
-                                className={c.conflict ? 'conflict' : ''}
                                 onClick={(e) => {
                                   const selected = selectionState.choose(
                                     'cell',
@@ -1573,9 +1563,6 @@ export default function CreationWorkspace(p: Props) {
                                 style={{ borderBottomColor: c.color }}
                               >
                                 <span>{regionLabel(c, rendered)}</span>
-                                {c.conflict && (
-                                  <span aria-label="样式冲突">!</span>
-                                )}
                               </button>
                             ))}
                           </div>
@@ -1622,6 +1609,12 @@ export default function CreationWorkspace(p: Props) {
               scene={scene}
               busy={calculating || revision.current !== p.project}
               cellKeys={selection.kind === 'cell' ? selection.ids : []}
+              onLocate={(ids) => {
+                selectionState.selectPaths(ids);
+                p.onView('flat');
+                p.onTool('edit');
+                p.onFramePaths(ids, { force: true });
+              }}
               onCommand={(action: string, args: any) =>
                 safely(() => run(action, args))
               }
@@ -1644,14 +1637,30 @@ export default function CreationWorkspace(p: Props) {
               : []),
           ].map((e: any, i: number) => {
             const owner = doc.objects.find((o: any) => o.id === e.objectId);
-            if (e.kind === 'modifier') {
+            if (e.kind === 'pipeline' && !e.modifierId)
+              return (
+                <ConstructionPipeline
+                  key={i}
+                  object={owner}
+                  scene={scene}
+                  busy={calculating || p.busy}
+                  onCommand={(action, args) => safely(() => run(action, args))}
+                  onLocate={(ids) => {
+                    selectionState.selectPaths(ids);
+                    p.onView('flat');
+                    p.onTool('edit');
+                    p.onFramePaths(ids, { force: true });
+                  }}
+                />
+              );
+            if (e.kind === 'modifier' || e.modifierId) {
               const inline = scene?.modifierStatus?.some(
                 (status: any) => status.objectId === e.objectId && status.error,
               );
               if (tab === 'modifiers' && inline) return null;
               return (
                 <div key={i} role="alert" className="creation-error">
-                  <strong>{owner?.name || '当前部件'} · 修改器需要调整</strong>
+                  <strong>{owner?.name || '当前部件'} · 产出链已暂停</strong>
                   <p>{e.message}</p>
                   {tab !== 'modifiers' && (
                     <button onClick={() => setTab('modifiers')}>
@@ -1718,53 +1727,10 @@ export default function CreationWorkspace(p: Props) {
               />
             );
           })}
-          {scene?.cells.some((c: any) => c.conflict) && (
-            <p className="creation-warning">
-              条纹区域合并了不同颜色或高度。选中后重新填色 /
-              赋高，其他区域会保留。
-            </p>
-          )}
           {tab === 'object' && (
             <>
               {current ? (
                 <>
-                  {cell?.conflict && (
-                    <div className="creation-warning">
-                      选择这块区域要保留的样式：
-                      <div className="creation-cell-list">
-                        {cell.conflictPaints
-                          .filter(
-                            (paint: any, i: number, all: any[]) =>
-                              all.findIndex(
-                                (p) =>
-                                  p.swatchId === paint.swatchId &&
-                                  p.heightMM === paint.heightMM,
-                              ) === i,
-                          )
-                          .map((paint: any) => (
-                            <button
-                              key={paint.swatchId + paint.heightMM}
-                              onClick={() =>
-                                safely(() =>
-                                  run('paint', {
-                                    cellKeys: [cell.key],
-                                    swatchId: paint.swatchId,
-                                    heightMM: paint.heightMM,
-                                  }),
-                                )
-                              }
-                            >
-                              {
-                                doc.swatches.find(
-                                  (s: any) => s.id === paint.swatchId,
-                                )?.name
-                              }{' '}
-                              · {paint.heightMM} mm
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  )}
                   <CreationSelectionDetails
                     selection={selection}
                     objects={objects}
@@ -1797,13 +1763,6 @@ export default function CreationWorkspace(p: Props) {
                       <button
                         onClick={() =>
                           safely(() => {
-                            if (
-                              current.featureIds.length &&
-                              !current.baseRegionIds?.length
-                            )
-                              run('continue_partition', {
-                                objectId: current.id,
-                              });
                             nextRole.current = 'divider';
                             p.onView('flat');
                             p.onNewPath();
@@ -1816,13 +1775,6 @@ export default function CreationWorkspace(p: Props) {
                       <button
                         onClick={() =>
                           safely(() => {
-                            if (
-                              current.featureIds.length &&
-                              !current.baseRegionIds?.length
-                            )
-                              run('continue_partition', {
-                                objectId: current.id,
-                              });
                             nextRole.current = 'hole';
                             p.onView('flat');
                             p.onNewPath();
@@ -2164,6 +2116,7 @@ export default function CreationWorkspace(p: Props) {
                   project={p.project}
                   preview={joinPreview}
                   onCancel={clearConnectionPreview}
+                  onModifiers={() => setTab('modifiers')}
                   onPreview={(joinMM) =>
                     safely(async () => {
                       const snapshot = p.project,

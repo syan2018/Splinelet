@@ -1,3 +1,4 @@
+import { bindSurfaceGraphs } from '../lib/surface-lineage.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { creationCommand } from '../lib/creation-commands.mjs';
@@ -304,7 +305,8 @@ const file =
   process.argv[2] ||
   '../../outputs/modifier-stack/Sandrone-new.source.bezier.json';
 if (fs.existsSync(file)) {
-  const art = JSON.parse(fs.readFileSync(file)),
+  const source = JSON.parse(fs.readFileSync(file));
+  const art = bindSurfaceGraphs(source, evaluateCreation(source)),
     before = evaluateCreation(art),
     crown = before.creation.objects.find((o) => o.name === '头饰');
   const h = crown.modifiers.find(

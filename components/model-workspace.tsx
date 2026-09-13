@@ -472,6 +472,7 @@ export default function ModelWorkspace(p: Props) {
         };
       if (value.spec.kind === 'split') {
         region.seed = value.candidates[i].seed;
+        region.contourSignature = value.candidates[i].contourSignature;
         region.seedWidthMM = ref.current.project.widthMM;
         region.expectedCount = value.candidates.length;
       }
