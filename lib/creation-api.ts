@@ -76,8 +76,8 @@ export const creationTools: Record<string, any> = {
   },
   creation_export: {
     description:
-      'Return coloured SVG, checked STL or Blender Python from the same work. check returns actual manifold report. Does not download.',
-    properties: { format: { enum: ['svg', 'stl', 'blender', 'check'] } },
+      'Return 3MF (base64 ZIP, mimeType, filename, material/part summaries and mesh report), coloured SVG, or Blender Python. 3MF retains non-overlapping material volumes and placement; actual filament mapping is chosen in the slicer. check returns the manifold report. Legacy stl is retained for API compatibility. Does not download.',
+    properties: { format: { enum: ['3mf', 'svg', 'stl', 'blender', 'check'] } },
     required: ['format'],
   },
 };

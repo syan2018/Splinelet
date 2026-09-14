@@ -141,8 +141,8 @@ export const modelTools: Record<string, any> = {
   },
   export_model: {
     description:
-      'Return derived face SVG, Blender Python with original Bezier curves and the computed part, or validated STL-ready mesh data. No download is triggered. Source-curve SVG is available through the original export action.',
-    properties: { format: { enum: ['svg', 'blender', 'stl'] } },
+      'Return 3MF as base64 ZIP with separate material solids, derived face SVG, Blender Python with source curves, or legacy STL mesh data. 3MF preserves millimeter dimensions and placement; select physical filaments in the slicer. No download is triggered.',
+    properties: { format: { enum: ['3mf', 'svg', 'blender', 'stl'] } },
     required: ['format'],
     readOnly: true,
   },

@@ -25,6 +25,7 @@ import {
 } from '@/lib/model-schema.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
+import { deliver3MF } from '@/lib/manufacturing-download';
 import ReliefView from './relief-view';
 import NumberEdit from './creation-number';
 import {
@@ -662,6 +663,11 @@ export default function ModelWorkspace(p: Props) {
         const content = `<svg xmlns="http://www.w3.org/2000/svg" width="${q.widthMM}mm" height="${(q.widthMM * q.height) / q.width}mm" viewBox="0 0 ${q.width} ${q.height}"><title>描迹 · 派生区域 · 精度 ${model.toleranceMM} mm</title>${chosen.map((r: any) => `<path id="${esc(r.id)}" data-name="${esc(r.name)}" fill="${r.color}" fill-rule="evenodd" d="${regionSVGPath(r.geometry, q)}"/>`).join('')}</svg>`;
         if (save) download(content, '构面结果.svg', 'image/svg+xml');
         return { filename: '构面结果.svg', content };
+      }
+      if (format === '3mf') {
+        const result = await rpc('3mf', { partId }, q);
+        if (q !== ref.current.project) throw Error('工程已改变，请重新导出');
+        return deliver3MF(result, save);
       }
       const r = await getSolid();
       if (format === 'stl') {
@@ -1946,13 +1952,12 @@ export default function ModelWorkspace(p: Props) {
                     working ||
                     calculating ||
                     !result?.report.valid ||
-                    result.report.components !== 1 ||
                     resultRevision.current !== p.project
                   }
-                  onClick={() => action(() => exportModel('stl'))}
+                  onClick={() => action(() => exportModel('3mf'))}
                 >
                   <Download size={15} />
-                  打印 STL
+                  打印 3MF
                 </button>
                 <button
                   disabled={working || calculating || !model.features.length}
@@ -1968,8 +1973,8 @@ export default function ModelWorkspace(p: Props) {
                 </button>
               </div>
               <p className="model-help">
-                STL 以毫米导出当前零件；面 SVG
-                是按上述精度计算的派生轮廓。源贝塞尔 SVG
+                3MF 保留当前零件的分色实体与毫米尺寸，耗材槽在切片软件中指定；面
+                SVG 是按上述精度计算的派生轮廓。源贝塞尔 SVG
                 在描线工作空间的顶部导出中。
               </p>
             </>

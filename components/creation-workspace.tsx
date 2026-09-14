@@ -30,6 +30,7 @@ import { creationCommand } from '@/lib/creation-commands.mjs';
 import { bindSurfaceGraphs } from '@/lib/surface-lineage.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
+import { deliver3MF } from '@/lib/manufacturing-download';
 import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
 import CreationModifiers from './creation-modifiers';
@@ -635,6 +636,17 @@ export default function CreationWorkspace(p: Props) {
     }
     setExporting(true);
     try {
+      if (format === '3mf') {
+        const result = await call(
+          '3mf',
+          { partId: snapshot.model?.parts[0]?.id || 'main' },
+          snapshot,
+        );
+        if (ref.current.project !== snapshot)
+          throw Error('作品已修改，请重新导出');
+        setReport(result);
+        return deliver3MF(result, save);
+      }
       const r = await call(
         'solid',
         { partId: snapshot.model?.parts[0]?.id || 'main' },
@@ -1233,11 +1245,11 @@ export default function CreationWorkspace(p: Props) {
                       });
                       setTab('make');
                       setBasePreview(null);
-                      notify('已添加底板并叠放所选部件 · Ctrl+Z 撤销');
+                      notify('已生成承托部件 · Ctrl+Z 撤销');
                     })
                   }
                 >
-                  添加底板并叠放
+                  添加承托部件
                 </button>
                 <button onClick={() => setBasePreview(null)}>取消底板</button>
               </div>
@@ -2222,8 +2234,11 @@ export default function CreationWorkspace(p: Props) {
                   }}
                 />
               </label>
-              <details className="creation-base" open>
-                <summary>为所选部件加底板</summary>
+              <details className="creation-base">
+                <summary>生成承托部件 · 可选</summary>
+                <p className="creation-muted">
+                  已有完整底层轮廓时无需添加。此工具只根据所选部件的外形生成新的承托部件，可在普通修改器中继续编辑。
+                </p>
                 <label>
                   外扩边距 mm
                   <NumberEdit
@@ -2291,7 +2306,7 @@ export default function CreationWorkspace(p: Props) {
               <p className="creation-muted">
                 {printHeight
                   ? '同层轮廓仍需自行分区或布尔处理；分层只安排竖直位置。高低不齐的层叠放后，可检查上层是否有悬空。'
-                  : '在“位置与叠放”把部件放到底板上，再检查最终实体。'}
+                  : '已有底层轮廓可直接承托；在“位置与叠放”设置上下关系后检查实体。'}
               </p>
               <button
                 className="creation-wide"
@@ -2320,10 +2335,10 @@ export default function CreationWorkspace(p: Props) {
               <div className="creation-export">
                 <button
                   disabled={exporting}
-                  onClick={() => safely(() => exportWork('stl'))}
+                  onClick={() => safely(() => exportWork('3mf'))}
                 >
                   <Download size={16} />
-                  打印 STL
+                  打印 3MF
                 </button>
                 <button
                   disabled={exporting}
@@ -2339,8 +2354,8 @@ export default function CreationWorkspace(p: Props) {
                 </button>
               </div>
               <small>
-                STL
-                不保存颜色。立体分色用于检查外观，打印导出会进行实体布尔合并。
+                3MF
+                保留分色实体、名称和相对位置。导入切片软件后将各色块指定到实际耗材槽；工程层高已附在文件信息中，切片参数仍需在切片软件中设置。
               </small>
               <details className="creation-advanced">
                 <summary>高级构造与制造参数</summary>
