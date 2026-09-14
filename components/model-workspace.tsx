@@ -26,6 +26,7 @@ import {
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
+import SlicerTemplate from './slicer-template';
 import ReliefView from './relief-view';
 import NumberEdit from './creation-number';
 import {
@@ -664,8 +665,18 @@ export default function ModelWorkspace(p: Props) {
         if (save) download(content, '构面结果.svg', 'image/svg+xml');
         return { filename: '构面结果.svg', content };
       }
-      if (format === '3mf') {
-        const result = await rpc('3mf', { partId }, q);
+      if (format === '3mf' || format === '3mf-generic') {
+        if (format === '3mf' && !q.model?.slicerTemplate)
+          throw Error('请先载入 Bambu Studio 配置模板');
+        const result = await rpc(
+          '3mf',
+          {
+            partId,
+            slicerTemplate:
+              format === '3mf-generic' ? null : q.model?.slicerTemplate,
+          },
+          q,
+        );
         if (q !== ref.current.project) throw Error('工程已改变，请重新导出');
         return deliver3MF(result, save);
       }
@@ -1957,7 +1968,7 @@ export default function ModelWorkspace(p: Props) {
                   onClick={() => action(() => exportModel('3mf'))}
                 >
                   <Download size={15} />
-                  打印 3MF
+                  打印 3MF · Bambu
                 </button>
                 <button
                   disabled={working || calculating || !model.features.length}
@@ -1972,6 +1983,13 @@ export default function ModelWorkspace(p: Props) {
                   导出{selected.length ? '所选' : '全部'}面 SVG
                 </button>
               </div>
+              <SlicerTemplate
+                value={p.project.model?.slicerTemplate}
+                onChange={(slicerTemplate) =>
+                  p.onModel({ ...p.project.model, slicerTemplate })
+                }
+                disabled={working}
+              />
               <p className="model-help">
                 3MF 保留当前零件的分色实体与毫米尺寸，耗材槽在切片软件中指定；面
                 SVG 是按上述精度计算的派生轮廓。源贝塞尔 SVG

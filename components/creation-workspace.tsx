@@ -31,6 +31,7 @@ import { bindSurfaceGraphs } from '@/lib/surface-lineage.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
+import SlicerTemplate from './slicer-template';
 import CreationView from './creation-view';
 import CreationConnections from './creation-connections';
 import CreationModifiers from './creation-modifiers';
@@ -636,10 +637,18 @@ export default function CreationWorkspace(p: Props) {
     }
     setExporting(true);
     try {
-      if (format === '3mf') {
+      if (format === '3mf' || format === '3mf-generic') {
+        if (format === '3mf' && !snapshot.model?.slicerTemplate)
+          throw Error(
+            '请先在「3MF 切片配置」载入一个 Bambu Studio 工程作为模板，之后可一直复用。',
+          );
         const result = await call(
           '3mf',
-          { partId: snapshot.model?.parts[0]?.id || 'main' },
+          {
+            partId: snapshot.model?.parts[0]?.id || 'main',
+            slicerTemplate:
+              format === '3mf-generic' ? null : snapshot.model?.slicerTemplate,
+          },
           snapshot,
         );
         if (ref.current.project !== snapshot)
@@ -2338,7 +2347,7 @@ export default function CreationWorkspace(p: Props) {
                   onClick={() => safely(() => exportWork('3mf'))}
                 >
                   <Download size={16} />
-                  打印 3MF
+                  打印 3MF · Bambu
                 </button>
                 <button
                   disabled={exporting}
@@ -2353,12 +2362,24 @@ export default function CreationWorkspace(p: Props) {
                   分色 SVG
                 </button>
               </div>
-              <small>
-                3MF
-                保留分色实体、名称和相对位置。导入切片软件后将各色块指定到实际耗材槽；工程层高已附在文件信息中，切片参数仍需在切片软件中设置。
-              </small>
+              <SlicerTemplate
+                value={p.project.model?.slicerTemplate}
+                disabled={exporting}
+                onChange={(slicerTemplate) =>
+                  p.onProject({
+                    ...p.project,
+                    model: { ...p.project.model, slicerTemplate },
+                  })
+                }
+              />
               <details className="creation-advanced">
                 <summary>高级构造与制造参数</summary>
+                <button
+                  disabled={exporting}
+                  onClick={() => safely(() => exportWork('3mf-generic'))}
+                >
+                  通用 3MF · 不含切片配置
+                </button>
                 <p>已有布尔、两线围面、切削和零件定义保留在构造记录中。</p>
                 <button onClick={() => p.onAdvanced('faces')}>构造记录</button>
                 <button onClick={() => p.onAdvanced('relief')}>

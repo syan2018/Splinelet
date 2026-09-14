@@ -9,7 +9,12 @@ self.onmessage = async ({ data }) => {
   try {
     const result =
       action === '3mf'
-        ? await export3MF(project, args.partId, { locateFile: () => wasmURL })
+        ? await export3MF(
+            project,
+            args.partId,
+            { locateFile: () => wasmURL },
+            { slicerTemplate: args.slicerTemplate },
+          )
         : action === 'creation_base'
           ? previewCreationBase(project, args)
           : action === 'creation'
