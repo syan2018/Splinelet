@@ -48,7 +48,7 @@ export default function ConstructionPipeline({
         <span>→ 分区轮廓 {graph?.outputs.length || ''}</span>
         <span>→ 面片</span>
         <span>→ 颜色 / 厚度</span>
-        <span>→ 叠放 / 导出</span>
+        <span>→ 分层定位 / 导出</span>
       </div>
       {failure ? (
         <>

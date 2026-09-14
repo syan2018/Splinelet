@@ -38,6 +38,9 @@ import CreationColor from './creation-color';
 import CreationIssue from './creation-issue';
 import CreationSelectionDetails from './creation-selection-details';
 import CreationSwatchDelete from './creation-swatch-delete';
+import NumberEdit from './creation-number';
+import PrintStack, { PrintPlacement } from './creation-print-stack';
+import { printCount, printMM, resolvePrintStack } from '@/lib/print-stack.mjs';
 import {
   creationEditTargets,
   regionLabel,
@@ -122,59 +125,6 @@ function Name({
         if (e.key === 'Escape') {
           done.current = true;
           setDraft(null);
-        }
-      }}
-    />
-  );
-}
-function NumberEdit({
-  label,
-  value,
-  onCommit,
-  min = 0,
-  max = 1000,
-  disabled = false,
-}: {
-  label: string;
-  value: number;
-  onCommit: (n: number) => void;
-  min?: number;
-  max?: number;
-  disabled?: boolean;
-}) {
-  const [draft, setDraft] = useState(String(value));
-  const cancelled = useRef(false);
-  useEffect(() => setDraft(String(+value.toFixed(3))), [value]);
-  const commit = () => {
-    if (cancelled.current) {
-      cancelled.current = false;
-      return;
-    }
-    const n = Number(draft);
-    if (draft.trim() && Number.isFinite(n) && n >= min && n <= max) {
-      if (n !== value) onCommit(n);
-    } else setDraft(String(value));
-  };
-  return (
-    <input
-      type="number"
-      disabled={disabled}
-      aria-label={label}
-      min={min}
-      max={max}
-      step=".1"
-      value={draft}
-      onFocus={() => {
-        cancelled.current = false;
-      }}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur();
-        if (e.key === 'Escape') {
-          cancelled.current = true;
-          setDraft(String(value));
-          e.currentTarget.blur();
         }
       }}
     />
@@ -403,7 +353,8 @@ export default function CreationWorkspace(p: Props) {
       (['paint', 'height', 'continue_partition', 'rebuild_surfaces'].includes(
         action,
       ) ||
-        action.startsWith('modifier_')) &&
+        action.startsWith('modifier_') ||
+        action.startsWith('print_')) &&
       revision.current !== ref.current.project
     )
       throw Error('正在更新区域，请稍候再操作');
@@ -462,12 +413,19 @@ export default function CreationWorkspace(p: Props) {
     setEditingSwatch(false);
   }
   const targets = () => creationEditTargets(selection);
-  const applyHeight = (heightMM: number) =>
-    run('height', { ...targets(), heightMM });
+  const printHeight = doc.printStack?.layerHeightMM;
+  const applyHeight = (value: number) =>
+    run('height', {
+      ...targets(),
+      ...(printHeight ? { heightLayers: value } : { heightMM: value }),
+    });
+  const selectedHeight =
+    (scope === 'local' ? cell?.heightMM : current?.heightMM) ?? 1;
   const displayedHeight =
     draftHeight ??
-    (scope === 'local' ? cell?.heightMM : current?.heightMM) ??
-    1;
+    (printHeight ? printCount(selectedHeight, printHeight) : selectedHeight);
+  const heightMinimum = printHeight ? 1 : 0.01;
+  const heightMaximum = printHeight ? Math.floor(1000 / printHeight) : 1000;
   const cancel = () => {
     cellClick.current = null;
     heightDrag.current = null;
@@ -632,19 +590,40 @@ export default function CreationWorkspace(p: Props) {
             "'": '&apos;',
           })[c]!,
       );
-    const body = scene.creation.objects
-      .filter((o: any) => o.visible)
-      .map(
-        (o: any) =>
-          `<g id="${escape(o.id)}" data-name="${escape(o.name)}">${scene.cells
-            .filter((c: any) => c.objectId === o.id && c.painted)
-            .map((c: any) => {
-              if (c.conflict) throw Error('请先处理标记的颜色冲突');
-              return `<path d="${regionSVGPath(c.geometry, p.project)}" fill="${c.color}" fill-rule="evenodd"/>`;
-            })
-            .join('')}</g>`,
-      )
-      .join('\n');
+    const body = scene.creation.printStack
+      ? scene.creation.printStack.layers
+          .map(
+            (layer: any) =>
+              `<g id="${escape(layer.id)}" data-name="${escape(layer.name)}">${scene.cells
+                .filter(
+                  (c: any) =>
+                    c.printLayerId === layer.id &&
+                    c.painted &&
+                    c.mode !== 'cut' &&
+                    c.mode !== 'through' &&
+                    scene.creation.objects.find((o: any) => o.id === c.objectId)
+                      ?.visible,
+                )
+                .map(
+                  (c: any) =>
+                    `<path data-object-id="${escape(c.objectId)}" data-name="${escape(c.name || c.key)}" d="${regionSVGPath(c.geometry, p.project)}" fill="${c.color}" fill-rule="evenodd"/>`,
+                )
+                .join('')}</g>`,
+          )
+          .join('\n')
+      : scene.creation.objects
+          .filter((o: any) => o.visible)
+          .map(
+            (o: any) =>
+              `<g id="${escape(o.id)}" data-name="${escape(o.name)}">${scene.cells
+                .filter((c: any) => c.objectId === o.id && c.painted)
+                .map((c: any) => {
+                  if (c.conflict) throw Error('请先处理标记的颜色冲突');
+                  return `<path d="${regionSVGPath(c.geometry, p.project)}" fill="${c.color}" fill-rule="evenodd"/>`;
+                })
+                .join('')}</g>`,
+          )
+          .join('\n');
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${p.project.widthMM}mm" height="${(p.project.widthMM * p.project.height) / p.project.width}mm" viewBox="0 0 ${p.project.width} ${p.project.height}">${body}</svg>`;
   };
   async function exportWork(format: string, save = true) {
@@ -700,6 +679,8 @@ export default function CreationWorkspace(p: Props) {
         revision: revisionId.current,
         objects: doc.objects,
         swatches: doc.swatches,
+        printStack: doc.printStack,
+        printLevels: scene?.printLevels,
         selection,
         selectedObjects: objects,
         selectedCells: cellKeys,
@@ -833,7 +814,7 @@ export default function CreationWorkspace(p: Props) {
     setDraftHeight(displayedHeight);
   };
   const effectiveScene = basePreview?.scene || scene;
-  const draftScene =
+  const editedDraft =
     effectiveScene && draftHeight !== null
       ? {
           ...effectiveScene,
@@ -843,11 +824,27 @@ export default function CreationWorkspace(p: Props) {
                 ? objects.includes(c.objectId)
                 : cellKeys.includes(c.key)
             )
-              ? { ...c, heightMM: draftHeight }
+              ? {
+                  ...c,
+                  heightMM: printHeight
+                    ? printMM(draftHeight, printHeight)
+                    : draftHeight,
+                }
               : c,
           ),
         }
       : effectiveScene;
+  const draftScene =
+    editedDraft && draftHeight !== null && printHeight
+      ? {
+          ...editedDraft,
+          ...resolvePrintStack(
+            editedDraft.creation,
+            editedDraft.cells,
+            editedDraft.errors,
+          ),
+        }
+      : editedDraft;
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.
@@ -1110,14 +1107,19 @@ export default function CreationWorkspace(p: Props) {
                     if (heightDrag.current)
                       setDraftHeight(
                         Math.max(
-                          0.01,
+                          heightMinimum,
                           Math.min(
-                            1000,
-                            Math.round(
-                              (heightDrag.current.value +
-                                (heightDrag.current.y - e.clientY) * 0.02) *
-                                100,
-                            ) / 100,
+                            heightMaximum,
+                            printHeight
+                              ? Math.round(
+                                  heightDrag.current.value +
+                                    (heightDrag.current.y - e.clientY) / 8,
+                                )
+                              : Math.round(
+                                  (heightDrag.current.value +
+                                    (heightDrag.current.y - e.clientY) * 0.02) *
+                                    100,
+                                ) / 100,
                           ),
                         ),
                       );
@@ -1133,8 +1135,8 @@ export default function CreationWorkspace(p: Props) {
                   role="slider"
                   tabIndex={0}
                   aria-label="拖动区域高度"
-                  aria-valuemin={0.01}
-                  aria-valuemax={1000}
+                  aria-valuemin={heightMinimum}
+                  aria-valuemax={heightMaximum}
                   aria-valuenow={displayedHeight}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') {
@@ -1146,9 +1148,13 @@ export default function CreationWorkspace(p: Props) {
                       safely(() =>
                         applyHeight(
                           Math.max(
-                            0.01,
-                            displayedHeight +
-                              (e.key === 'ArrowUp' ? 0.1 : -0.1),
+                            heightMinimum,
+                            Math.min(
+                              heightMaximum,
+                              displayedHeight +
+                                (e.key === 'ArrowUp' ? 1 : -1) *
+                                  (printHeight ? 1 : 0.1),
+                            ),
                           ),
                         ),
                       );
@@ -1156,8 +1162,10 @@ export default function CreationWorkspace(p: Props) {
                   }}
                 >
                   <ArrowUpFromLine size={22} />
-                  <b>{displayedHeight.toFixed(2)}</b>
-                  <small>mm</small>
+                  <b>
+                    {printHeight ? displayedHeight : displayedHeight.toFixed(2)}
+                  </b>
+                  <small>{printHeight ? '打印层' : 'mm'}</small>
                 </div>
               )}
             <div
@@ -1805,6 +1813,27 @@ export default function CreationWorkspace(p: Props) {
                   )}
                   {scope !== 'source' && (
                     <>
+                      {scope === 'object' ? (
+                        <PrintPlacement
+                          doc={doc}
+                          scene={scene}
+                          objectIds={objects}
+                          disabled={calculating || p.busy}
+                          onCommand={(a, args) => safely(() => run(a, args))}
+                          onManage={() => setTab('make')}
+                        />
+                      ) : (
+                        printHeight && (
+                          <p className="creation-muted">
+                            {
+                              doc.printStack.layers.find(
+                                (l: any) => l.id === current?.printLayerId,
+                              )?.name
+                            }{' '}
+                            · 从 {cell?.bottomMM ?? 0} mm 开始，跟随下层抬升
+                          </p>
+                        )
+                      )}
                       <CreationColor
                         key={JSON.stringify(selection)}
                         label={
@@ -1838,15 +1867,17 @@ export default function CreationWorkspace(p: Props) {
                       <div className="creation-property-block">
                         <label>
                           {scope === 'object' ? '部件统一厚度' : '区域厚度'}{' '}
-                          <span>mm</span>
+                          <span>{printHeight ? '打印层' : 'mm'}</span>
                         </label>
                         <div className="creation-height-input">
                           <NumberEdit
                             key={JSON.stringify(selection)}
-                            label="凸起厚度"
+                            label={printHeight ? '厚度打印层数' : '凸起厚度'}
                             disabled={calculating || failedSelection}
                             value={displayedHeight}
-                            min={0.01}
+                            min={heightMinimum}
+                            max={heightMaximum}
+                            step={printHeight ? 1 : 0.1}
                             onCommit={(n) => safely(() => applyHeight(n))}
                           />
                           <button
@@ -1862,9 +1893,9 @@ export default function CreationWorkspace(p: Props) {
                           aria-label="调整凸起厚度"
                           disabled={calculating || failedSelection}
                           type="range"
-                          min=".1"
-                          max={Math.max(6, displayedHeight)}
-                          step=".1"
+                          min={printHeight ? 1 : 0.1}
+                          max={Math.max(printHeight ? 30 : 6, displayedHeight)}
+                          step={printHeight ? 1 : 0.1}
                           value={displayedHeight}
                           onPointerDown={() => {
                             heightDrag.current = { slider: true };
@@ -1890,52 +1921,66 @@ export default function CreationWorkspace(p: Props) {
                             }
                           }}
                         />
+                        {printHeight && (
+                          <small>
+                            {displayedHeight} × {printHeight} mm ={' '}
+                            {printMM(displayedHeight, printHeight)} mm
+                          </small>
+                        )}
                       </div>
                     </>
                   )}
                   {scope === 'object' && (
                     <details className="creation-position">
-                      <summary>部件位置与叠放</summary>
-                      <label>
-                        起始高度 mm
-                        <NumberEdit
-                          label="对象起始高度"
-                          value={current.zMM}
-                          onCommit={(n) =>
-                            safely(() =>
-                              run('object', {
-                                id: current.id,
-                                changes: { zMM: n },
-                              }),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        放到对象上
-                        <select
-                          aria-label="放到对象上"
-                          value={current.attachId || ''}
-                          onChange={(e) =>
-                            safely(() =>
-                              run('object', {
-                                id: current.id,
-                                changes: { attachId: e.target.value },
-                              }),
-                            )
-                          }
-                        >
-                          <option value="">平台 · Z = 0</option>
-                          {doc.objects
-                            .filter((o: any) => o.id !== current.id)
-                            .map((o: any) => (
-                              <option key={o.id} value={o.id}>
-                                {o.name}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <small>列表拖动只调整顺序；这里才会改变物理高度。</small>
+                      <summary>
+                        {printHeight ? '成品选项' : '部件位置与叠放'}
+                      </summary>
+                      {!printHeight && (
+                        <>
+                          <label>
+                            起始高度 mm
+                            <NumberEdit
+                              label="对象起始高度"
+                              value={current.zMM}
+                              onCommit={(n) =>
+                                safely(() =>
+                                  run('object', {
+                                    id: current.id,
+                                    changes: { zMM: n },
+                                  }),
+                                )
+                              }
+                            />
+                          </label>
+                          <label>
+                            放到对象上
+                            <select
+                              aria-label="放到对象上"
+                              value={current.attachId || ''}
+                              onChange={(e) =>
+                                safely(() =>
+                                  run('object', {
+                                    id: current.id,
+                                    changes: { attachId: e.target.value },
+                                  }),
+                                )
+                              }
+                            >
+                              <option value="">平台 · Z = 0</option>
+                              {doc.objects
+                                .filter((o: any) => o.id !== current.id)
+                                .map((o: any) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          <small>
+                            列表拖动只调整顺序；这里才会改变物理高度。
+                          </small>
+                        </>
+                      )}
                       <label>
                         <input
                           type="checkbox"
@@ -2153,6 +2198,13 @@ export default function CreationWorkspace(p: Props) {
           )}
           {tab === 'make' && (
             <>
+              <PrintStack
+                doc={doc}
+                scene={scene}
+                objectIds={objects}
+                disabled={calculating || p.busy}
+                onCommand={(action, args) => safely(() => run(action, args))}
+              />
               <div className="creation-property-title">
                 <b>制作成品</b>
                 <span>毫米</span>
@@ -2186,14 +2238,19 @@ export default function CreationWorkspace(p: Props) {
                   />
                 </label>
                 <label>
-                  底板厚度 mm
+                  底板厚度 {printHeight ? '打印层' : 'mm'}
                   <NumberEdit
                     label="底板厚度"
-                    value={baseHeight}
-                    min={0.1}
-                    max={1000}
+                    value={
+                      printHeight
+                        ? printCount(baseHeight, printHeight)
+                        : baseHeight
+                    }
+                    min={printHeight ? 1 : 0.1}
+                    max={heightMaximum}
+                    step={printHeight ? 1 : 0.1}
                     onCommit={(n) => {
-                      setBaseHeight(n);
+                      setBaseHeight(printHeight ? printMM(n, printHeight) : n);
                       setBasePreview(null);
                     }}
                   />
@@ -2206,7 +2263,11 @@ export default function CreationWorkspace(p: Props) {
                       const result = await call('creation_base', {
                         objectIds: objects,
                         offsetMM: baseMargin,
-                        heightMM: baseHeight,
+                        ...(printHeight
+                          ? {
+                              heightLayers: printCount(baseHeight, printHeight),
+                            }
+                          : { heightMM: baseHeight }),
                         swatchId: swatch.id,
                       });
                       if (ref.current.project !== snapshot)
@@ -2221,10 +2282,16 @@ export default function CreationWorkspace(p: Props) {
                 >
                   预览底板
                 </button>
-                <small>采用当前画笔色。确认后所选部件放到底板顶面。</small>
+                <small>
+                  {printHeight
+                    ? '采用当前画笔色。底板会占据新的最底层，现有层整体抬升。'
+                    : '采用当前画笔色。确认后所选部件放到底板顶面。'}
+                </small>
               </details>
               <p className="creation-muted">
-                在“位置与叠放”把部件放到底板上，再检查最终实体。
+                {printHeight
+                  ? '同层轮廓仍需自行分区或布尔处理；分层只安排竖直位置。高低不齐的层叠放后，可检查上层是否有悬空。'
+                  : '在“位置与叠放”把部件放到底板上，再检查最终实体。'}
               </p>
               <button
                 className="creation-wide"

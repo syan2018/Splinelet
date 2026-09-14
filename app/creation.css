@@ -1499,3 +1499,112 @@
 .construction-pipeline small {
   color: #99aead;
 }
+.creation-print-stack {
+  border: 1px solid #4b6060;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 18px;
+  background: #1e2b2e;
+}
+.creation-print-stack p,
+.creation-print-stack small,
+.creation-print-caption {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #aebfbd;
+}
+.creation-print-profile,
+.creation-print-caption,
+.creation-print-layer-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.creation-print-profile {
+  margin: 12px 0;
+  font-size: 13px;
+}
+.creation-print-profile > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.creation-print-profile input {
+  width: 78px;
+}
+.creation-print-layers {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.creation-print-layer {
+  border: 1px solid #415455;
+  border-left: 3px solid #9dba83;
+  border-radius: 8px;
+  padding: 9px;
+  background: #28373a;
+}
+.creation-print-layer.blocked {
+  border-left-color: #dda568;
+}
+.creation-print-layer-title > b {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.creation-print-layer-title > input {
+  flex: 1;
+  min-width: 0;
+  width: 50px;
+}
+.creation-print-index {
+  color: #c8e69e;
+  font-size: 12px;
+  width: 20px;
+}
+.creation-print-layer-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.creation-print-layer-actions button {
+  padding: 4px;
+  min-height: 26px;
+}
+.creation-print-caption {
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+.creation-print-caption button {
+  padding: 3px 7px;
+  font-size: 12px;
+}
+.creation-print-members {
+  max-height: 56px;
+  overflow: auto;
+  margin: 5px 0 0;
+}
+.creation-print-assign {
+  width: 100%;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.creation-print-stack > .creation-wide {
+  margin: 9px 0;
+}
+.creation-print-placement {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #3d4e51;
+}
+.creation-print-placement label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.creation-print-placement select {
+  width: 100%;
+  min-width: 0;
+}

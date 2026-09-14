@@ -26,6 +26,12 @@ import {
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import ReliefView from './relief-view';
+import NumberEdit from './creation-number';
+import {
+  printCount,
+  printMM,
+  requestedPrintCount,
+} from '@/lib/print-stack.mjs';
 // @ts-ignore Vite's explicit worker import also works through the RSC transform.
 import ModelWorker from '../lib/model-worker.ts?worker';
 
@@ -489,6 +495,22 @@ export default function ModelWorkspace(p: Props) {
     return { regionIds: created };
   }
   function addFeatures(args: any = {}) {
+    const h = ref.current.project.creation?.printStack?.layerHeightMM;
+    if (h) {
+      const count = requestedPrintCount(
+        args.heightLayers !== undefined || args.heightMM !== undefined
+          ? args
+          : { heightLayers: printCount(2, h) },
+        h,
+      );
+      args = {
+        ...args,
+        heightMM: printMM(count, h),
+        heightLayers: count,
+        zMM: 0,
+        attachId: '',
+      };
+    }
     const regionIds = args.regionIds || selected,
       m = structuredClone(ref.current.project.model || emptyModel());
     if (!Array.isArray(regionIds) || !regionIds.length)
@@ -508,6 +530,7 @@ export default function ModelWorkspace(p: Props) {
         mode: args.mode || 'add',
         zMM: args.zMM ?? 0,
         heightMM: args.heightMM ?? 2,
+        ...(h ? { heightLayers: args.heightLayers } : {}),
         attachId: args.attachId || '',
         enabled: true,
         color: r.color,
@@ -521,6 +544,17 @@ export default function ModelWorkspace(p: Props) {
     return { featureIds: created };
   }
   function updateFeature(id: string, changes: any) {
+    const h = ref.current.project.creation?.printStack?.layerHeightMM;
+    if (h && ('heightMM' in changes || 'heightLayers' in changes)) {
+      const count = requestedPrintCount(changes, h);
+      changes = {
+        ...changes,
+        heightLayers: count,
+        heightMM: printMM(count, h),
+      };
+    }
+    if (h && (changes.attachId || ('zMM' in changes && !('mode' in changes))))
+      throw Error('打印分层已接管起始高度，请在部件的所属堆叠层中调整');
     const allowed = [
       'name',
       'regionId',
@@ -528,6 +562,7 @@ export default function ModelWorkspace(p: Props) {
       'mode',
       'zMM',
       'heightMM',
+      'heightLayers',
       'attachId',
       'enabled',
       'color',
@@ -1607,81 +1642,114 @@ export default function ModelWorkspace(p: Props) {
                   </label>
                   {feature.mode !== 'through' && (
                     <>
+                      {p.project.creation?.printStack ? (
+                        <p className="model-hint">
+                          起始位置由部件所属的堆叠层统一计算。调整所属层请返回创作界面。
+                        </p>
+                      ) : (
+                        <>
+                          <label className="model-field">
+                            高度基准
+                            <select
+                              aria-label="高度基准"
+                              value={feature.attachId || ''}
+                              onChange={(e) =>
+                                updateFeature(feature.id, {
+                                  attachId: e.target.value,
+                                })
+                              }
+                            >
+                              <option value="">绝对高度 · Z=0</option>
+                              {model.features
+                                .filter(
+                                  (x: any) =>
+                                    x.mode === 'add' &&
+                                    x.id !== feature.id &&
+                                    x.partId === partId &&
+                                    !featureDependants(model, [
+                                      feature.id,
+                                    ]).includes(x.id),
+                                )
+                                .map((x: any) => (
+                                  <option key={x.id} value={x.id}>
+                                    {x.name} · 顶面
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          <label className="model-field">
+                            {feature.attachId
+                              ? '相对顶面偏移'
+                              : feature.mode === 'cut'
+                                ? '切削起点 Z'
+                                : '底面 Z'}
+                            （mm）
+                            <input
+                              key={feature.id + 'z' + feature.zMM}
+                              aria-label="体块起始高度"
+                              type="number"
+                              step={0.1}
+                              defaultValue={feature.zMM}
+                              onBlur={(e) =>
+                                action(() =>
+                                  updateFeature(feature.id, {
+                                    zMM: +e.target.value,
+                                  }),
+                                )
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur();
+                              }}
+                            />
+                          </label>
+                        </>
+                      )}
                       <label className="model-field">
-                        高度基准
-                        <select
-                          aria-label="高度基准"
-                          value={feature.attachId || ''}
-                          onChange={(e) =>
-                            updateFeature(feature.id, {
-                              attachId: e.target.value,
-                            })
-                          }
-                        >
-                          <option value="">绝对高度 · Z=0</option>
-                          {model.features
-                            .filter(
-                              (x: any) =>
-                                x.mode === 'add' &&
-                                x.id !== feature.id &&
-                                x.partId === partId &&
-                                !featureDependants(model, [
-                                  feature.id,
-                                ]).includes(x.id),
-                            )
-                            .map((x: any) => (
-                              <option key={x.id} value={x.id}>
-                                {x.name} · 顶面
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <label className="model-field">
-                        {feature.attachId
-                          ? '相对顶面偏移'
-                          : feature.mode === 'cut'
-                            ? '切削起点 Z'
-                            : '底面 Z'}
-                        （mm）
-                        <input
-                          key={feature.id + 'z' + feature.zMM}
-                          aria-label="体块起始高度"
-                          type="number"
-                          step={0.1}
-                          defaultValue={feature.zMM}
-                          onBlur={(e) =>
-                            action(() =>
-                              updateFeature(feature.id, {
-                                zMM: +e.target.value,
-                              }),
-                            )
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') e.currentTarget.blur();
-                          }}
-                        />
-                      </label>
-                      <label className="model-field">
-                        {feature.mode === 'cut' ? '切削深度' : '厚度'}（mm）
-                        <input
-                          key={feature.id + 'h' + feature.heightMM}
-                          aria-label="体块厚度"
-                          type="number"
-                          min={0.01}
-                          max={1000}
-                          step={0.1}
-                          defaultValue={feature.heightMM}
-                          onBlur={(e) =>
-                            action(() =>
-                              updateFeature(feature.id, {
-                                heightMM: +e.target.value,
-                              }),
-                            )
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') e.currentTarget.blur();
-                          }}
-                        />
+                        {feature.mode === 'cut' ? '切削深度' : '厚度'}（
+                        {p.project.creation?.printStack ? '打印层' : 'mm'}）
+                        {p.project.creation?.printStack ? (
+                          <NumberEdit
+                            label="体块厚度打印层数"
+                            min={1}
+                            max={Math.floor(
+                              1000 /
+                                p.project.creation.printStack.layerHeightMM,
+                            )}
+                            step={1}
+                            value={
+                              feature.heightLayers ??
+                              printCount(
+                                feature.heightMM,
+                                p.project.creation.printStack.layerHeightMM,
+                              )
+                            }
+                            onCommit={(heightLayers) =>
+                              action(() =>
+                                updateFeature(feature.id, { heightLayers }),
+                              )
+                            }
+                          />
+                        ) : (
+                          <input
+                            key={feature.id + 'h' + feature.heightMM}
+                            aria-label="体块厚度"
+                            type="number"
+                            min={0.01}
+                            max={1000}
+                            step={0.1}
+                            defaultValue={feature.heightMM}
+                            onBlur={(e) =>
+                              action(() =>
+                                updateFeature(feature.id, {
+                                  heightMM: +e.target.value,
+                                }),
+                              )
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                          />
+                        )}
                       </label>
                     </>
                   )}

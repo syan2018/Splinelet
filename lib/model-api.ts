@@ -69,6 +69,12 @@ export const modelTools: Record<string, any> = {
       mode: { enum: ['add', 'cut', 'through'] },
       zMM: number,
       heightMM: number,
+      heightLayers: {
+        type: 'integer',
+        minimum: 1,
+        description:
+          'Use integer slice counts when creation.printStack is enabled; stack membership controls Z.',
+      },
       attachId: id,
     },
     required: ['regionIds'],
@@ -87,6 +93,7 @@ export const modelTools: Record<string, any> = {
           mode: { enum: ['add', 'cut', 'through'] },
           zMM: number,
           heightMM: number,
+          heightLayers: { type: 'integer', minimum: 1 },
           attachId: id,
           enabled: { type: 'boolean' },
           color: id,
