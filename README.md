@@ -1,6 +1,11 @@
-# 描迹 · 贝塞尔工作台
+# Splinelet
 
-用于沿参考图交互描线、建立关联区域，并把区域拉伸成简单的 3D 打印浮雕。底图和几何在浏览器内处理，支持 SVG、Blender Python、STL 和包含底图及建模步骤的工程文件。当前浏览器有工程时优先恢复。
+**Trace images. Shape curves. Build layered reliefs.**
+
+A browser-based Bézier tracing and relief modeling workspace for 3D-printable creations.
+
+
+用于沿参考图交互描线、建立关联区域，并把区域拉伸成简单的 3D 打印浮雕。底图和几何在浏览器内处理，支持通用 3MF、SVG、Blender Python 和包含底图及建模步骤的工程文件，保留旧 STL API。通用 3MF 不绑定打印机；Bambu 工程配置是可选导出项。当前浏览器有工程时优先恢复。
 
 默认进入统一创作：**同一个部件内描轮廓、画分区、填色、调厚度**，平面与立体共享选择。右侧以头发、头饰、杯子等部件组织作品，局部区域收在部件内部；底部项目色卡统一管理颜色。新流程和 Agent API 4.0 见 [CREATION.md](CREATION.md)。
 

@@ -691,7 +691,7 @@ export default function CreationWorkspace(p: Props) {
             ...snapshot,
             paths: snapshot.paths.map((path) => ({ ...path, visible: true })),
           }) +
-          `\n# Source curves and the checked solid; all coordinates below are mm.\ncollection.hide_render=True\ncollection.hide_viewport=True\nDATA_MESH=json.loads(${JSON.stringify(mesh)})\nsolid_collection=bpy.data.collections.new('描迹 · 创作成品')\nbpy.context.scene.collection.children.link(solid_collection)\nmesh=bpy.data.meshes.new('成品')\nvs=DATA_MESH['positions'];ts=DATA_MESH['triangles']\nmesh.from_pydata([tuple(v*.001 for v in vs[i:i+3]) for i in range(0,len(vs),3)],[],[ts[i:i+3] for i in range(0,len(ts),3)])\nmesh.update()\nobj=bpy.data.objects.new('成品',mesh)\nsolid_collection.objects.link(obj)\n`;
+          `\n# Source curves and the checked solid; all coordinates below are mm.\ncollection.hide_render=True\ncollection.hide_viewport=True\nDATA_MESH=json.loads(${JSON.stringify(mesh)})\nsolid_collection=bpy.data.collections.new('Splinelet · 创作成品')\nbpy.context.scene.collection.children.link(solid_collection)\nmesh=bpy.data.meshes.new('成品')\nvs=DATA_MESH['positions'];ts=DATA_MESH['triangles']\nmesh.from_pydata([tuple(v*.001 for v in vs[i:i+3]) for i in range(0,len(vs),3)],[],[ts[i:i+3] for i in range(0,len(ts),3)])\nmesh.update()\nobj=bpy.data.objects.new('成品',mesh)\nsolid_collection.objects.link(obj)\n`;
       if (save) download(content, '作品-Blender.py', 'text/x-python');
       return { content, report: r.report };
     } finally {

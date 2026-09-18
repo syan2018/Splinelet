@@ -661,7 +661,7 @@ export default function ModelWorkspace(p: Props) {
           : rs;
         if (!chosen.length || chosen.some((r: any) => r.error))
           throw Error('请先建立有效的面');
-        const content = `<svg xmlns="http://www.w3.org/2000/svg" width="${q.widthMM}mm" height="${(q.widthMM * q.height) / q.width}mm" viewBox="0 0 ${q.width} ${q.height}"><title>描迹 · 派生区域 · 精度 ${model.toleranceMM} mm</title>${chosen.map((r: any) => `<path id="${esc(r.id)}" data-name="${esc(r.name)}" fill="${r.color}" fill-rule="evenodd" d="${regionSVGPath(r.geometry, q)}"/>`).join('')}</svg>`;
+        const content = `<svg xmlns="http://www.w3.org/2000/svg" width="${q.widthMM}mm" height="${(q.widthMM * q.height) / q.width}mm" viewBox="0 0 ${q.width} ${q.height}"><title>Splinelet · 派生区域 · 精度 ${model.toleranceMM} mm</title>${chosen.map((r: any) => `<path id="${esc(r.id)}" data-name="${esc(r.name)}" fill="${r.color}" fill-rule="evenodd" d="${regionSVGPath(r.geometry, q)}"/>`).join('')}</svg>`;
         if (save) download(content, '构面结果.svg', 'image/svg+xml');
         return { filename: '构面结果.svg', content };
       }
@@ -709,7 +709,7 @@ export default function ModelWorkspace(p: Props) {
             depthMM: 0,
             paths: q.paths.map((path) => ({ ...path, visible: true })),
           }) +
-          `\n# Editable source curves plus the computed relief mesh (millimeters).\ncollection.hide_render=True\ncollection.hide_viewport=True\nRELIEF=json.loads(${JSON.stringify(mesh)})\nmodel_collection=bpy.data.collections.new('描迹 · 浮雕实体')\nbpy.context.scene.collection.children.link(model_collection)\nmesh=bpy.data.meshes.new('浮雕实体')\nvs=RELIEF['positions'];ts=RELIEF['triangles']\nmesh.from_pydata([tuple(v*.001 for v in vs[i:i+3]) for i in range(0,len(vs),3)],[],[ts[i:i+3] for i in range(0,len(ts),3)])\nmesh.update()\nobj=bpy.data.objects.new('浮雕实体',mesh)\nmodel_collection.objects.link(obj)\nobj['geometry_report']=${JSON.stringify(JSON.stringify(r.report))}\n`;
+          `\n# Editable source curves plus the computed relief mesh (millimeters).\ncollection.hide_render=True\ncollection.hide_viewport=True\nRELIEF=json.loads(${JSON.stringify(mesh)})\nmodel_collection=bpy.data.collections.new('Splinelet · 浮雕实体')\nbpy.context.scene.collection.children.link(model_collection)\nmesh=bpy.data.meshes.new('浮雕实体')\nvs=RELIEF['positions'];ts=RELIEF['triangles']\nmesh.from_pydata([tuple(v*.001 for v in vs[i:i+3]) for i in range(0,len(vs),3)],[],[ts[i:i+3] for i in range(0,len(ts),3)])\nmesh.update()\nobj=bpy.data.objects.new('浮雕实体',mesh)\nmodel_collection.objects.link(obj)\nobj['geometry_report']=${JSON.stringify(JSON.stringify(r.report))}\n`;
       if (save) download(content, '浮雕与源曲线_blender.py', 'text/x-python');
       return { filename: '浮雕与源曲线_blender.py', content, report: r.report };
     });

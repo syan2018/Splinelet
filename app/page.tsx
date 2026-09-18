@@ -462,10 +462,10 @@ export default function Home() {
           return;
         }
         handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName || '描迹工程.bezier.json',
+          suggestedName: fileName || 'Splinelet工程.bezier.json',
           types: [
             {
-              description: '描迹工程',
+              description: 'Splinelet工程',
               accept: { 'application/json': ['.json'] },
             },
           ],
@@ -517,7 +517,7 @@ export default function Home() {
         multiple: false,
         types: [
           {
-            description: '描迹工程',
+            description: 'Splinelet工程',
             accept: { 'application/json': ['.json'] },
           },
         ],
@@ -1847,7 +1847,7 @@ export default function Home() {
     if (format === 'json') {
       download(
         JSON.stringify(p, null, 2),
-        '描迹工程.bezier.json',
+        'Splinelet工程.bezier.json',
         'application/json',
       );
       setStatus('工程已下载，包含底图和所有曲线');
@@ -2418,7 +2418,7 @@ export default function Home() {
         };
       if (a.format === 'json')
         return {
-          filename: '描迹工程.bezier.json',
+          filename: 'Splinelet工程.bezier.json',
           content: JSON.stringify(pr.current),
         };
       throw Error('format 必须是 svg、blender 或 json');
@@ -3072,7 +3072,7 @@ export default function Home() {
       <header>
         <div className="brand">
           <Spline />
-          <b>描迹</b>
+          <b>Splinelet</b>
           <span>BÉZIER STUDIO</span>
         </div>
         <span className="project-name">
