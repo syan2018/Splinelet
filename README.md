@@ -2,155 +2,164 @@
 
 **Trace images. Shape curves. Build layered reliefs.**
 
-A browser-based Bézier tracing and relief modeling workspace for 3D-printable creations.
+Splinelet 是一个在浏览器中运行的贝塞尔描线与浮雕建模工具：垫入参考图，沿轮廓落点，组织分区和颜色，再把图案做成有层次的可打印体块。适合制作徽章、挂件、装饰牌等简单的 2.5D 作品。
 
+你决定节点和构造关系，算法辅助拟合曲线；它不是一键图片转 3D，也不承担切片和打印机控制。
 
-用于沿参考图交互描线、建立关联区域，并把区域拉伸成简单的 3D 打印浮雕。底图和几何在浏览器内处理，支持通用 3MF、SVG、Blender Python 和包含底图及建模步骤的工程文件，保留旧 STL API。通用 3MF 不绑定打印机；Bambu 工程配置是可选导出项。当前浏览器有工程时优先恢复。
+![Splinelet 三维浮雕预览与打印分层面板](docs/images/workflow-relief.png)
 
-默认进入统一创作：**同一个部件内描轮廓、画分区、填色、调厚度**，平面与立体共享选择。右侧以头发、头饰、杯子等部件组织作品，局部区域收在部件内部；底部项目色卡统一管理颜色。新流程和 Agent API 4.0 见 [CREATION.md](CREATION.md)。
+*本文为桑多涅参考工程的实际界面截图。模型是手工描线、分区和分层后的结果，不是自动识别生成，也不是实物打印照片。*
 
-原来的源线工作台、构面与浮雕放在顶部“更多”中，复杂布尔和切削继续使用这些高级工具，详见 [MODELING.md](MODELING.md)。下面保留源线编辑器和兼容 API 的说明。
+## 能做什么
 
-## 启动
+- **辅助描线**：跟随深色线条或颜色边缘拟合三次贝塞尔。相邻两个落点之间只生成一段曲线，不插入额外锚点；控制柄可手工调整。
+- **编辑样条**：节点移动、删除、连续性设置，头尾续画、端点合并、批量选择与拖拽，配合撤销和重做。
+- **组织区域**：按部件管理轮廓、分区线、挖洞线和参考线；局部区域分别设置颜色和厚度，项目色卡统一管理配色。
+- **组合构造**：面修改器支持分区、布尔差／并／交和轮廓偏移。上游关系失效时暂停受影响的输出链，修复来源或明确重建后再继续。
+- **分层浮雕**：用堆叠层安排上下关系，以打印层高的整数倍设置厚度，下层变厚后上层随之抬升。
+- **保存与导出**：浏览器备份、绑定文件保存，导出通用 3MF、SVG 或 Blender Python；也提供可选的 Bambu 工程导出和 Agent API。
 
-需要 Node.js 22.13 或更高版本。
+## 本地运行
 
-```powershell
+需要 **Node.js 22.13 或更高版本**，使用带鼠标的桌面浏览器。支持文件访问 API 的 Chrome / Edge 可以绑定本地工程文件。
+
+在仓库目录执行：
+
+```sh
 npm ci
 npm run dev
 ```
 
-打开 http://localhost:3000/ 。可选 Agent 配套服务：
+打开终端显示的地址，默认是 **http://localhost:3000/**。无需配置打印机或 API Key。
 
-```powershell
+```sh
+npm run build  # 构建
+npm start      # 运行构建后的本地服务，地址以终端输出为准
+```
+
+应用目前以中文界面为主。初次启动会载入内置描线示例；浏览器已有工程时优先恢复。截图中的完整浮雕工程并非默认启动示例。
+
+## 基本工作流
+
+### 1. 导入底图，建立部件
+
+点击「导入底图」选择 PNG、JPG 或 WebP；已有 `.bezier.json` 工程可从「打开工程」继续。
+
+在右侧作品树新建部件，双击名称改名。按可独立编辑的部分组织作品，例如外框、头发、杯子，而不是每条线都单独建一个部件。选择「底图」显示方式，便于对照参考图描线。
+
+### 2. 沿轮廓落点，调整曲线
+
+选择「画轮廓」或描线工具，依次点击关键位置。算法只计算两点之间的控制柄，节点的数量和位置由你控制。
+
+- 按住 **Shift** 落点：临时取消吸附。
+- 按住 **Alt** 落点：取消吸附与拟合，使用直连。
+- 用节点工具调整锚点和控制柄；开放曲线可以从头或尾继续画。
+- 用 **C** 闭合轮廓。遇到复杂分岔时主动增加落点，比强行一次拟合很长的曲线更可控。
+
+![参考底图上的贝塞尔轮廓与部件树](docs/images/workflow-tracing.png)
+
+### 3. 分区、挖洞，给局部上色
+
+闭合轮廓确定基础范围。在部件内画分区线，将一个区域拆成多个区域；闭合的挖洞轮廓用于扣除面积。分区线应贯穿目标区域，不能只在面内悬空结束。
+
+使用「上色」给区域填色，或选中单个区域，在「颜色与高低」中修改。选整个部件会作用于其多个区域，编辑前先看详情栏的选择范围。底部色卡用于选择画笔色，修改项目色则会联动引用它的区域。
+
+「底图」「叠色」「分色」只改变显示方式。需要嵌套引用、布尔或偏移时，进入「修改器」页组合步骤；这些操作不改写源贝塞尔节点。
+
+![分色视图中选择杯子部件并调整其属性](docs/images/workflow-regions.png)
+
+如果移动轮廓使既有分区不再成立，查看构造链的错误并修复源线；确实要改变结构时，再明确重建输出或移除相应步骤。应用不会把失效区域悄悄替换成另一块面。
+
+### 4. 安排堆叠层，再设置局部厚度
+
+在「制作 → 打印分层」中设置打印层高并启用分层，新增堆叠层，将部件分配到相应层。
+
+这里有两个不同的概念：
+
+| 概念 | 用途 |
+| --- | --- |
+| 堆叠层 | 安排部件上下关系。上层起点跟随下层最高点；层数和名称由你决定。 |
+| 打印层高 | 一次打印层的物理高度，例如 0.2 mm。区域厚度按整数打印层设置，8 层即 1.6 mm。 |
+
+切换「立体预览」检查形状和层次。下层增厚会抬升其上方各层；修改打印层高会保持层数，改变物理厚度。不同区域仍可有各自的厚度。
+
+有完整底层轮廓时无需另加底板。「生成承托部件」是可选的引用外形与外扩操作，不是每个作品的必经步骤。
+
+### 5. 检查、保存、导出
+
+在「制作」中设置作品宽度，执行「检查可打印实体」，再导出。工程尺寸以毫米计算；源线导出的比例按整张底图宽度换算。
+
+| 格式 | 用途与边界 |
+| --- | --- |
+| **通用 3MF** | 默认打印导出。包含分色实体、毫米尺寸与相对位置，不绑定打印机。到切片软件再选择机器、耗材和工艺。 |
+| **Bambu 工程 3MF** | 可选折叠入口。从已有 Bambu 工程读取配置模板，携带部件耗材编号和切片参数；实际 AMS 槽位在切片软件中选择。 |
+| **分色 SVG** | 导出已填色区域与孔洞；派生边界按计算精度采样。 |
+| **源线 SVG** | 从「更多 → 源线工作台」导出可编辑的原生三次贝塞尔路径。 |
+| **Blender Python** | 在 Blender 的 Scripting 工作区运行，创建最终实体及独立隐藏集合中的源贝塞尔。当前实体导出为单一材质。 |
+| **工程 JSON** | 保存底图、源线、构造关系、颜色和层设置，用于继续编辑。 |
+
+STL 保留在兼容 API 中。通用 3MF 不带切片软件的专有配置。Bambu 可能提示「仅加载几何」，部分软件需要重新指定颜色／耗材；这不等同于模型几何损坏。格式细节见 [3MF 导出说明](docs/3mf-export.md)。
+
+**Ctrl+S** 首次选择文件后绑定保存，后续写回同一文件；**Ctrl+Shift+S** 另存为。浏览器同时保留本地备份。不支持文件访问 API 时使用下载副本；浏览器缓存不是文件备份的替代品。
+
+## 常用操作
+
+| 操作 | 快捷方式 |
+| --- | --- |
+| 选择 / 节点 / 描线 / 平移 | V / A / P / H |
+| 平移画布 / 缩放 | 空格拖动或中键拖动 / 滚轮 |
+| 取消选择或当前操作 | Esc；空白单击取消选择 |
+| 撤销 / 重做 | Ctrl+Z / Ctrl+Shift+Z |
+| 作品树改名 | 双击名称；箭头单独负责展开 |
+| 三维视角 | 左键拖动旋转，右键拖动平移，滚轮缩放 |
+
+详细节点、路径、合并、续画和兼容 API 操作见 [源线编辑器手册](docs/source-editor.md)。
+
+## 当前边界
+
+Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改器不等于通用三维网格建模；目前没有圆角、斜面、自动最小壁厚分析或切片功能。
+
+分层安排竖直位置，不自动解决同层轮廓关系。下层高低不齐时，上层可能局部悬空。彩色预览用于编辑外观，最终导出另执行实体构造和检查；检查通过不等于已经验证特定机器上的打印效果。应在切片软件中确认连通、承托、薄壁与耗材分配。
+
+参考角色图与截图用于演示工作流，图像权利归各自权利人；不作为应用原创素材或通用模型授权声明。
+
+## 文档与开发
+
+- [统一创作与 API](CREATION.md)
+- [源线编辑与快捷键](docs/source-editor.md)
+- [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/construction-pipeline-review.md)
+- [打印分层](docs/print-stack.md) · [3MF 导出](docs/3mf-export.md)
+- [高级构面与实体操作](MODELING.md)
+
+主要使用 React、TypeScript、Vinext / Vite、Three.js、JSTS 和 Manifold。底图、曲线与几何计算在浏览器中处理，构面和实体运算放在 Worker 中。
+
+部分核心回归检查：
+
+```sh
+npx tsc --noEmit
+node scripts/test-construction-pipeline.mjs
+node scripts/test-modifiers.mjs
+node scripts/test-print-stack.mjs
+node scripts/test-3mf.mjs
+node scripts/test-bambu-3mf.mjs
+```
+
+部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
+
+### Agent 接口（可选）
+
+浏览器提供 `window.traceStudio.call(action, args)`。先用 `state`、`creation_inspect` 读取当前状态，再执行命令；涉及区域修改时使用最新 `revision`。
+
+```js
+await window.traceStudio.call('creation_inspect');
+await window.traceStudio.call('creation_view', { view: '3d' });
+await window.traceStudio.call('creation_export', { format: '3mf' });
+```
+
+如需本机 HTTP 桥接：
+
+```sh
 node scripts/agent-server.mjs
 ```
 
-配套服务监听 127.0.0.1:4318，仅接受 localhost:3000 的浏览器 Origin。当前工作台使用一个标签页；云端页面不会连接本机服务。
-
-## 编辑器的层级
-
-以下路径树说明针对“更多 → 源线工作台”。统一创作的作品树、颜色与高低 / 线条 / 制作标签见 [CREATION.md](CREATION.md)。
-
-右侧上半部固定显示路径树，下半部是工程、描线、路径和节点属性。切换属性页不隐藏路径树。只有工具决定画布操作；查看属性不会偷偷改变工具。
-
-| 工具   | 点击                                  | 拖动                                           | 双击                 |
-| ------ | ------------------------------------- | ---------------------------------------------- | -------------------- |
-| 选择 V | 选择整条路径；Shift / Ctrl 增减       | 空白框选相交曲线；已选曲线整体移动             | 曲线进入节点编辑     |
-| 节点 A | 选择当前路径的节点；Shift / Ctrl 增减 | 空白框选节点；选中节点一起移动；单个控制柄调形 | 曲线主动插入一个节点 |
-| 描线 P | 沿底图落点                            | 移动鼠标预览下一段                             | 使用单击确认落点     |
-| 平移 H | —                                     | 拖动画布                                       | —                    |
-
-节点模式编辑一条路径中的多个节点；多条路径一起移动使用选择模式。隐藏路径可以在路径树中管理，但不会被画布框选。
-
-- Ctrl+A：画布选择模式全选可见路径；节点模式全选当前路径节点；路径树中全选路径。
-- 框选遇到的曲线会入选，不要求整条曲线完全在框内。Shift / Ctrl 框选追加。
-- 移动超过 4 个屏幕像素才视为拖动。拖动开始后按 Shift 限制水平 / 垂直方向。
-- 单次拖动只产生一次撤销记录。Esc、指针取消或窗口失焦恢复原位置。拖动中暂停自动保存，松手后保存最终结果。
-- 空白单击清除当前层级选择；节点模式保留正在编辑的路径。Esc 依次取消当前操作、节点选择、路径选择。
-- Delete / Backspace 根据当前层级删除路径或节点；未选节点时不会顺带删除整条路径。
-- Ctrl+Z 撤销，Ctrl+Shift+Z 重做。滚轮围绕鼠标缩放；空格拖动或中键平移。
-
-## 路径树
-
-- 单击名称选择，Ctrl 增减，Shift 按当前可见列表连续选择；上下方向键移动选择。
-- 仅左侧箭头展开 / 折叠。分组名称选择组内路径，复选框增减整组选择。
-- 分组和路径名称双击修改。路径也可按 F2。Enter / 失焦提交，Esc 取消；改名是一次撤销操作。
-- 拖动任一选中路径会带上整个选择集。组标题是移入组尾；行上半部插入前面，下半部插入后面。拖动提示显示数量和目标线；折叠组在悬停后展开，放入后保持展开。
-- 批量移动保留路径树的相对顺序。Ctrl+G 将所选路径编组；Ctrl+Shift+G 移到未分组。没有选择时新建分组创建空组。
-- 显示控制和解散分组位于右侧。解散只移出组内路径，不删除曲线。隐藏路径时取消它的选择。
-- 选中路径后 Enter 进入节点编辑。重拟合在路径属性底部的“高级操作”中，必须确认替换后才执行。
-
-## 描线与节点
-
-导入或拖入 PNG、JPG、WebP，最大 30 MB；超过 4096 像素的底图缩小。算法分析最长边 900 像素，曲线坐标仍使用底图坐标。
-
-P 描线，深色线条跟随描边，颜色边缘跟随色块边界。每两个落点只生成一段三次贝塞尔，两个控制柄负责弯曲，不添加中间锚点。开放路径 N 个落点对应 N−1 段，闭合对应 N 段。旧工程已有的多段拟合结果不会被自动重写。
-
-Shift 落点暂停吸附；Alt 落点不吸附、不拟合，用直连。L 把最后一段或单选节点对应段改为直连。复杂分岔可撤销后主动补点；容差只决定偏差提示，不决定自动分段。
-
-Enter / 右键 / Esc 结束，C 或点击另一端闭合。路径页选择“从头续画 / 从尾续画”，或点击画布头尾标记；节点模式可双击开放端点，也可单选端点后按 E。续画只增加新段，不反转或重拟合原曲线；L 修正当前续画方向最新的一段。节点模式可批量设为尖角、平滑（共线）或对称（等长共线，C1 连续）。开放端点只有一侧曲线，不能设置连续模式。只单选一个节点时显示它的控制柄，多选移动保持各节点与柄的相对位置。节点详情明确列出前后相邻段，路径删除和重新拟合收在“路径操作”中。
-
-双击底部项目色卡打开项目色编辑，点击“删除项目色”。未使用颜色直接删除；已使用颜色需选一个替换色后删除，原有形状、厚度和源线保持不变。替换与删除共一次撤销；工程至少保留一种项目色。
-
-删除中间节点会将相邻两段近似合并成一段，不新增中间节点，其他未受影响的段保持原样。删除开放端点移除相邻段。闭合接缝只算一个节点；删到最后一个节点时移除路径。节点模式中单选开放端点后按 M，再选另一条样条蓝色端点合并。合并保持原段形状，必要时反向；不重合端点间加一段直连，精确重合则焊接。
-
-## 保存与导出
-
-Ctrl+S 首次选择并绑定工程文件，之后写回同一文件；约 800ms 自动写入，Ctrl+Shift+S 另存为。浏览器不支持文件选择 API 时仍更新同一份浏览器备份，导出面板可下载副本。
-
-浏览器备份约 200ms 提交，事务完成后才显示成功。文件写入串行，失败中止，不将旧写入覆盖新内容。刷新后恢复工程和文件关联；首次重新保存授权后恢复文件自动写入。导入新底图 / API 载入工程解除旧文件绑定，避免覆盖旧工程文件。
-
-统一创作“制作”标签导出分色 SVG、经检查的 STL，以及包含最终实体和源贝塞尔的 Blender 脚本。源线工作台的导出保留所有可见路径及分组。毫米尺寸按整张底图计算；Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景。具体差别见 [CREATION.md](CREATION.md)。
-
-## Agent API 2.0
-
-浏览器调用 `window.traceStudio.call(action,args)`；主要操作也通过 WebMCP 暴露。HTTP 配套接口为 POST /command，body 为 `{action,args}`；GET /state 读取连接状态。所有坐标均为原图像素。
-
-```javascript
-await window.traceStudio.call('state'); // tool、active、selectedPaths、selectedNodes、view、gesturing、paths、groups
-await window.traceStudio.call('detect_candidates', { limit: 48, spacing: 30 });
-await window.traceStudio.call('create_path', {
-  name: '轮廓',
-  points: [
-    { x: 20, y: 30 },
-    { x: 80, y: 50 },
-  ],
-  mode: 'ink',
-  preview: true,
-});
-await window.traceStudio.call('commit_preview');
-await window.traceStudio.call('resume_path', { pathId: 'a', end: 'start' });
-await window.traceStudio.call('add_anchor', {
-  position: { x: 10, y: 40 },
-  mode: 'ink',
-  snap: false,
-});
-await window.traceStudio.call('finish_path'); // 结束当前续画；state.drawing 返回当前 pathId / end 或 null
-await window.traceStudio.call('select_paths', { pathIds: ['a', 'b'] }); // 空数组取消选择
-await window.traceStudio.call('move_paths', {
-  pathIds: ['a', 'b'],
-  groupId: 'g',
-  targetId: 'c',
-  after: true,
-});
-await window.traceStudio.call('select_node', { pathId: 'a', nodeIndex: 2 });
-await window.traceStudio.call('set_node_mode', {
-  pathId: 'a',
-  nodeIndex: 2,
-  mode: 'symmetric',
-});
-await window.traceStudio.call('set_point', {
-  pathId: 'a',
-  curve: 1,
-  point: 1,
-  position: { x: 50, y: 60 },
-});
-await window.traceStudio.call('export', { format: 'svg' });
-```
-
-`create_path` 接受候选编号或点坐标，返回 fitError / needsAnchor。`manage_group` 支持 create / rename / assign / visibility / delete。`move_path` 保留单条移动兼容入口；`select_path` 现在进入路径选择模式，节点编辑使用 `select_node`。`delete_node`、`merge_paths`、`straighten_span`、`get_project`、`inspect_geometry`、`undo`、`set_view`、`load_project` 保持可用。`refit_path` 仅打开确认框，不能绕过用户确认。拖动期间拒绝 API 修改工程。
-
-## 验证
-
-```powershell
-node scripts/test-selection.mjs
-node scripts/test-continuity.mjs
-node scripts/test-node-edit.mjs
-node scripts/test-connect.mjs
-node scripts/test-extend.mjs
-node scripts/test-swatch-delete.mjs
-node scripts/test-single-curve.mjs
-node scripts/test-persistence.mjs
-node scripts/test-model.mjs
-node scripts/test-creation.mjs
-npx tsc --noEmit
-npm run build
-```
-
-浏览器调试脚本供 Playwright CLI `run-code --filename` 使用，必须在隔离的测试浏览器中运行，会替换测试工程：
-
-- test-properties-layout.js：选择集、批量编组 / 拖动、框选、节点批量删除及撤销。
-- test-interaction-edges.js：折叠组、插入位置、改名、隐藏、连续模式、视图保持、拟合确认。
-- test-interaction-storage.js：拖动中不保存、提交后保存、刷新恢复、F2 和导出；接上一脚本的测试工程。
-- test-saving-browser.js：用实际浏览器私有文件系统测试同文件自动保存、授权恢复与另存为，仅替换 OS 文件选择器。
+桥接监听 `127.0.0.1:4318`，浏览器连接限定为 `http://localhost:3000`。普通手工创作无需启动它；接口返回导出数据，不自动下载。
