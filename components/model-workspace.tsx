@@ -665,15 +665,19 @@ export default function ModelWorkspace(p: Props) {
         if (save) download(content, '构面结果.svg', 'image/svg+xml');
         return { filename: '构面结果.svg', content };
       }
-      if (format === '3mf' || format === '3mf-generic') {
-        if (format === '3mf' && !q.model?.slicerTemplate)
+      if (
+        format === '3mf' ||
+        format === '3mf-generic' ||
+        format === '3mf-bambu'
+      ) {
+        if (format === '3mf-bambu' && !q.model?.slicerTemplate)
           throw Error('请先载入 Bambu Studio 配置模板');
         const result = await rpc(
           '3mf',
           {
             partId,
             slicerTemplate:
-              format === '3mf-generic' ? null : q.model?.slicerTemplate,
+              format === '3mf-bambu' ? q.model?.slicerTemplate : null,
           },
           q,
         );
@@ -1968,7 +1972,7 @@ export default function ModelWorkspace(p: Props) {
                   onClick={() => action(() => exportModel('3mf'))}
                 >
                   <Download size={15} />
-                  打印 3MF · Bambu
+                  导出 3MF
                 </button>
                 <button
                   disabled={working || calculating || !model.features.length}
@@ -1983,7 +1987,12 @@ export default function ModelWorkspace(p: Props) {
                   导出{selected.length ? '所选' : '全部'}面 SVG
                 </button>
               </div>
+              <p className="model-help">
+                通用 3MF
+                保留分色部件、尺寸和位置，不绑定打印机。打印机、耗材与切片参数在切片软件中选择；部分软件需重新指定部件颜色。
+              </p>
               <SlicerTemplate
+                onExport={() => action(() => exportModel('3mf-bambu'))}
                 value={p.project.model?.slicerTemplate}
                 onChange={(slicerTemplate) =>
                   p.onModel({ ...p.project.model, slicerTemplate })

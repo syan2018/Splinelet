@@ -76,10 +76,18 @@ export const creationTools: Record<string, any> = {
   },
   creation_export: {
     description:
-      'Return 3MF (base64 ZIP, mimeType, filename, material/part summaries and mesh report), coloured SVG, or Blender Python. 3MF retains non-overlapping material volumes and placement; 3mf requires model.slicerTemplate from a saved Bambu project and includes extruder assignments, printer/process settings and layer height. 3mf-generic omits slicer settings. Physical AMS mapping is chosen in the slicer. check returns the manifold report. Legacy stl is retained for API compatibility. Does not download.',
+      'Return 3MF (base64 ZIP, mimeType, filename, material/part summaries and mesh report), coloured SVG, or Blender Python. 3MF retains non-overlapping material volumes and placement; 3mf (alias 3mf-generic) is printer-independent without slicer settings. 3mf-bambu explicitly requires model.slicerTemplate from a saved Bambu project and includes extruder assignments, printer/process settings and layer height. Physical AMS mapping is chosen in the slicer. check returns the manifold report. Legacy stl is retained for API compatibility. Does not download.',
     properties: {
       format: {
-        enum: ['3mf', '3mf-generic', 'svg', 'stl', 'blender', 'check'],
+        enum: [
+          '3mf',
+          '3mf-generic',
+          '3mf-bambu',
+          'svg',
+          'stl',
+          'blender',
+          'check',
+        ],
       },
     },
     required: ['format'],

@@ -637,8 +637,12 @@ export default function CreationWorkspace(p: Props) {
     }
     setExporting(true);
     try {
-      if (format === '3mf' || format === '3mf-generic') {
-        if (format === '3mf' && !snapshot.model?.slicerTemplate)
+      if (
+        format === '3mf' ||
+        format === '3mf-generic' ||
+        format === '3mf-bambu'
+      ) {
+        if (format === '3mf-bambu' && !snapshot.model?.slicerTemplate)
           throw Error(
             '请先在「3MF 切片配置」载入一个 Bambu Studio 工程作为模板，之后可一直复用。',
           );
@@ -647,7 +651,7 @@ export default function CreationWorkspace(p: Props) {
           {
             partId: snapshot.model?.parts[0]?.id || 'main',
             slicerTemplate:
-              format === '3mf-generic' ? null : snapshot.model?.slicerTemplate,
+              format === '3mf-bambu' ? snapshot.model?.slicerTemplate : null,
           },
           snapshot,
         );
@@ -2347,7 +2351,7 @@ export default function CreationWorkspace(p: Props) {
                   onClick={() => safely(() => exportWork('3mf'))}
                 >
                   <Download size={16} />
-                  打印 3MF · Bambu
+                  导出 3MF
                 </button>
                 <button
                   disabled={exporting}
@@ -2362,7 +2366,12 @@ export default function CreationWorkspace(p: Props) {
                   分色 SVG
                 </button>
               </div>
+              <p className="model-help">
+                通用 3MF
+                保留分色部件、尺寸和位置，不绑定打印机。打印机、耗材与切片参数在切片软件中选择；部分软件需重新指定部件颜色。
+              </p>
               <SlicerTemplate
+                onExport={() => safely(() => exportWork('3mf-bambu'))}
                 value={p.project.model?.slicerTemplate}
                 disabled={exporting}
                 onChange={(slicerTemplate) =>
@@ -2374,12 +2383,6 @@ export default function CreationWorkspace(p: Props) {
               />
               <details className="creation-advanced">
                 <summary>高级构造与制造参数</summary>
-                <button
-                  disabled={exporting}
-                  onClick={() => safely(() => exportWork('3mf-generic'))}
-                >
-                  通用 3MF · 不含切片配置
-                </button>
                 <p>已有布尔、两线围面、切削和零件定义保留在构造记录中。</p>
                 <button onClick={() => p.onAdvanced('faces')}>构造记录</button>
                 <button onClick={() => p.onAdvanced('relief')}>

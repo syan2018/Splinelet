@@ -141,9 +141,11 @@ export const modelTools: Record<string, any> = {
   },
   export_model: {
     description:
-      'Return 3MF as base64 ZIP with separate material solids, derived face SVG, Blender Python with source curves, or legacy STL mesh data. 3MF preserves millimeter dimensions and placement; 3mf requires model.slicerTemplate from a saved Bambu project; 3mf-generic omits machine settings. Physical AMS mapping is chosen in the slicer. No download is triggered.',
+      'Return 3MF as base64 ZIP with separate material solids, derived face SVG, Blender Python with source curves, or legacy STL mesh data. 3MF preserves millimeter dimensions and placement; 3mf (alias 3mf-generic) is printer-independent without machine settings; 3mf-bambu explicitly requires model.slicerTemplate from a saved Bambu project. Physical AMS mapping is chosen in the slicer. No download is triggered.',
     properties: {
-      format: { enum: ['3mf', '3mf-generic', 'svg', 'blender', 'stl'] },
+      format: {
+        enum: ['3mf', '3mf-generic', '3mf-bambu', 'svg', 'blender', 'stl'],
+      },
     },
     required: ['format'],
     readOnly: true,

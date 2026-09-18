@@ -88,7 +88,9 @@ assert.throws(
 );
 const project = liveSurfaces();
 project.model.slicerTemplate = template;
-const result = await export3MF(project);
+const result = await export3MF(project, 'main', undefined, {
+  slicerTemplate: template,
+});
 const zip = unzipSync(new Uint8Array(result.bytes));
 assert(
   zip['Metadata/project_settings.config'] &&
@@ -96,12 +98,10 @@ assert(
 );
 assert(strFromU8(zip['3D/3dmodel.model']).includes('bs:Generator'));
 assert.equal(result.slicer.kind, 'bambu');
-const generic = await export3MF(project, 'main', undefined, {
-  slicerTemplate: null,
-});
+const generic = await export3MF(project);
 assert(
   !unzipSync(new Uint8Array(generic.bytes))['Metadata/project_settings.config'],
 );
 console.log(
-  'PASS: native config, profile/color mapping, multi-nozzle isolation, layer height, placement, stale config cleanup, immutable template and explicit generic export',
+  'PASS: native config, profile/color mapping, multi-nozzle isolation, layer height, placement, stale config cleanup, immutable template and printer-independent default even with a saved template',
 );

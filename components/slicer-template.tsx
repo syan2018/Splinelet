@@ -6,18 +6,20 @@ type Template = ReturnType<typeof readSlicerTemplate>;
 export default function SlicerTemplate({
   value,
   onChange,
+  onExport,
   disabled = false,
 }: {
   value: Template;
   onChange: (value: Template) => void;
+  onExport: () => void;
   disabled?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   return (
-    <details className="creation-advanced" open={value ? undefined : true}>
+    <details className="creation-advanced">
       <summary>
-        3MF 切片配置
+        Bambu 工程导出 · 可选
         {value
           ? ` · ${value.settings.printer_model || value.name}`
           : ' · 尚未设置'}
@@ -64,6 +66,9 @@ export default function SlicerTemplate({
         }}
       />
       {error && <p role="alert">{error}</p>}
+      <button disabled={disabled || !value} onClick={onExport}>
+        导出 Bambu 工程 3MF
+      </button>
       <small>
         保留模板的机器参数；工程启用打印分层时同步层高和首层层高。新增色号沿用模板首个耗材参数，实际
         AMS 槽位在切片软件中选择。
@@ -71,4 +76,3 @@ export default function SlicerTemplate({
     </details>
   );
 }
-
