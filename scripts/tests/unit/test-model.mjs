@@ -5,7 +5,11 @@ import {
   regionDependants,
 } from '../../../lib/model-schema.mjs';
 import { evaluateRegions, previewRegion } from '../../../lib/region-engine.mjs';
-import { buildSolid, meshSTL, inspectMesh } from '../../../lib/solid-engine.mjs';
+import {
+  buildSolid,
+  meshSTL,
+  inspectMesh,
+} from '../../../lib/solid-engine.mjs';
 const path = (id, pts, closed = true) => ({
   id,
   name: id,

@@ -121,8 +121,4 @@ npx tsc --noEmit
 npm run build
 ```
 
-浏览器调试脚本供 Playwright CLI `run-code --filename` 使用，必须在隔离的测试浏览器中运行，会替换测试工程：
-
-- test-interaction-edges.js：折叠组、插入位置、改名、隐藏、连续模式、视图保持、拟合确认。
-- test-interaction-storage.js：拖动中不保存、提交后保存、刷新恢复、F2 和导出；接上一脚本的测试工程。
-- test-saving-browser.js：用实际浏览器私有文件系统测试同文件自动保存、授权恢复与另存为，仅替换 OS 文件选择器。
+浏览器注入脚本必须在隔离测试浏览器中运行，并自行建立工程或使用 `scripts/tests/fixtures/` 中已提交的最小 fixture。当前源编辑器保留 `test-spline-endpoints.cjs` 的端点续画/闭合覆盖，以及 `test-restore-race.cjs` 的恢复竞争覆盖。依赖当前页面、前序脚本状态或 OS 私有文件选择器的旧调试脚本已删除。

@@ -20,4 +20,4 @@ export type TraceSettings = {
   snap: boolean;
 };
 
-export const cloneTraceValue = <T,>(value: T): T => structuredClone(value);
+export const cloneTraceValue = <T>(value: T): T => structuredClone(value);

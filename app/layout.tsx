@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Splinelet · 贝塞尔工作台',
   description:
     '在底图上点击锚点，沿边缘拟合可编辑的贝塞尔曲线，并导出用于建模的矢量路径。',
+  icons: { icon: '/favicon.svg' },
 };
 export default function RootLayout({
   children,

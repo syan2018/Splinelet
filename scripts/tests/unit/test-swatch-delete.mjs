@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { creationCommand } from '../../../lib/creation-commands.mjs';
-import { creationDocument, validateCreation } from '../../../lib/creation-schema.mjs';
+import {
+  creationDocument,
+  validateCreation,
+} from '../../../lib/creation-schema.mjs';
 import { evaluateCreation } from '../../../lib/creation-engine.mjs';
 import { swatchOwners } from '../../../lib/creation-colors.mjs';
 

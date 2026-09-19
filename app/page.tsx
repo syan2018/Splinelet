@@ -1,5 +1,12 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useEffectEvent,
+  type ComponentProps,
+} from 'react';
 import {
   PenTool,
   MousePointer2,
@@ -11,11 +18,7 @@ import {
   Scan,
   Undo2,
   Redo2,
-  Eye,
-  EyeOff,
-  Trash2,
   Check,
-  Link,
   Target,
   HelpCircle,
   Save,
@@ -44,6 +47,26 @@ import {
   type TraceSettings,
 } from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
+import type {
+  AgentCreationCommandArgs,
+  AgentCreationExportArgs,
+  AgentCreationFocusArgs,
+  AgentCreationSelectArgs,
+  AgentCreationViewArgs,
+  AgentExportArgs,
+  AgentGroupArgs,
+  AgentLoadProjectArgs,
+  AgentMergeArgs,
+  AgentMovePathsArgs,
+  AgentNodeArgs,
+  AgentPathEndArgs,
+  AgentPathListArgs,
+  AgentPointArgs,
+  AgentSpanArgs,
+  AgentViewArgs,
+  AgentVisibilityArgs,
+  AgentWorkspaceArgs,
+} from '@/hooks/trace-agent-contract';
 import {
   pickSelection,
   movePaths,
@@ -53,7 +76,6 @@ import {
   inBox,
   pathHitsBox,
 } from '../public/selection.mjs';
-// @ts-ignore Pure, zoom-safe SVG gesture and framing math.
 import {
   screenToDocument,
   zoomAt,
@@ -80,39 +102,138 @@ import {
   blender,
   validateProject,
 } from '@/lib/project';
-// @ts-ignore Shared pure JS geometry module.
 import {
   splitCubic,
   evaluate,
   dist,
   inspectGeometry,
 } from '../public/geometry.mjs';
-// @ts-ignore Shared geometry editor, also tested directly in Node.
 import {
   pathNodes,
   nodeSelection,
   selectedNode,
   removeNode,
 } from '../public/node-edit.mjs';
-// @ts-ignore Shared connection operations.
 import {
   connectionSettings,
   straightCubic,
   mergeSplines,
 } from '../public/connect.mjs';
-// @ts-ignore Browser persistence and serialized file writes.
 import { workspaceDB, FileWriter } from '../public/persistence.mjs';
-// @ts-ignore Shared node continuity constraints.
 import {
   nodeModes,
   setContinuity,
   moveHandle,
   enforceContinuity,
 } from '../public/continuity.mjs';
+
+type ModelApi = {
+  state: (input?: unknown) => unknown;
+  [action: string]: (input?: unknown) => unknown;
+};
+type CreationApi = Parameters<
+  ComponentProps<typeof CreationWorkspace>['onApi']
+>[0];
+type CandidatePoint = Omit<TraceCandidate, 'id'>;
+type RpcRequest = Record<string, unknown>;
+type TraceResponse = {
+  end: Point;
+  curves: Point[][];
+  quality: number;
+  fitError: number;
+};
+type SnapResponse = { point: Point };
+type DetectCandidatesArgs = {
+  limit?: number;
+  spacing?: number;
+  region?: { x: number; y: number; width: number; height: number };
+};
+type ImageInitResponse = { candidates: CandidatePoint[] };
+type ProjectFileHandle = {
+  name: string;
+  queryPermission: (options: { mode: 'readwrite' }) => Promise<PermissionState>;
+  requestPermission: (options: {
+    mode: 'readwrite';
+  }) => Promise<PermissionState>;
+  getFile: () => Promise<File>;
+};
+type FilePickerWindow = Window &
+  typeof globalThis & {
+    showSaveFilePicker?: (options: {
+      suggestedName: string;
+      types: Array<{
+        description: string;
+        accept: Record<string, string[]>;
+      }>;
+    }) => Promise<ProjectFileHandle>;
+    showOpenFilePicker?: (options: {
+      multiple: boolean;
+      types: Array<{
+        description: string;
+        accept: Record<string, string[]>;
+      }>;
+    }) => Promise<ProjectFileHandle[]>;
+  };
+type AgentHandler = { invoke(args?: unknown): unknown }['invoke'];
+type TraceApi = Record<string, AgentHandler>;
+type TraceStudioWindow = Window &
+  typeof globalThis & {
+    traceStudio?: {
+      version: string;
+      call: (action: string, args?: unknown) => Promise<unknown>;
+    };
+  };
+type DragBase = {
+  x: number;
+  y: number;
+  base?: Project;
+  origin?: Point;
+  moved?: boolean;
+  collapsePath?: string | null;
+  collapseNode?: number;
+  path?: string | null;
+  curve?: number;
+  point?: number;
+  add?: boolean;
+  oldPaths?: string[];
+  oldNodes?: number[];
+  rect?: { x: number; y: number; width: number; height: number };
+};
+type DragGesture = DragBase &
+  (
+    | { kind: 'pan'; view: { x: number; y: number; s: number } }
+    | { kind: 'paths'; ids: string[]; base: Project; origin: Point }
+    | {
+        kind: 'box';
+        origin: Point;
+        add: boolean;
+        oldPaths: string[];
+        oldNodes: number[];
+      }
+    | {
+        kind: 'nodes' | 'point';
+        ids: number[];
+        path: string | null;
+        curve: number;
+        point: number;
+        base: Project;
+        origin: Point;
+      }
+  );
+type GeometryReportItem = {
+  name: string;
+  gaps: number;
+  selfIntersections: unknown[];
+};
+
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+const currentTime = () => performance.now();
+
 export default function Home() {
   const [workspace, setWorkspace] = useState('trace');
-  const modelApi = useRef<any>(null);
-  const creationApi = useRef<any>(null);
+  const modelApi = useRef<ModelApi>(null);
+  const creationApi = useRef<CreationApi>(null);
   const [unified, setUnified] = useState(true);
   const [creationView, setCreationView] = useState('flat');
   const [creationSelectionKind, setCreationSelectionKind] = useState<
@@ -121,18 +242,14 @@ export default function Home() {
   const highlightSourceSelection = !unified || creationSelectionKind !== 'cell';
   const creationViewRef = useRef('flat'),
     unifiedRef = useRef(true);
-  creationViewRef.current = creationView;
-  unifiedRef.current = unified;
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
   const [project, setProject] = useState<Project>(initialTraceProject),
     pr = useRef(project);
   const [active, setActive] = useState<string | null>(null),
     ar = useRef(active);
-  ar.current = active;
   const [tool, setTool] = useState('select'),
     [drawing, setDrawing] = useState(false),
     drawingRef = useRef(false);
-  drawingRef.current = drawing;
   const [drawingEnd, setDrawingEnd] = useState<'start' | 'end'>('end');
   const drawingEndRef = useRef<'start' | 'end'>('end');
   const setTraceEnd = (end: 'start' | 'end') => {
@@ -146,7 +263,6 @@ export default function Home() {
       snap: true,
     }),
     sr = useRef(settings);
-  sr.current = settings;
   const [ready, setReady] = useState(false),
     [busy, setBusy] = useState(false),
     busyRef = useRef(false),
@@ -158,12 +274,34 @@ export default function Home() {
     [fill, setFill] = useState(false);
   const [candidates, setCandidates] = useState<TraceCandidate[]>([]),
     cr = useRef(candidates);
-  cr.current = candidates;
-  const allCandidates = useRef<any[]>([]);
+  const allCandidates = useRef<CandidatePoint[]>([]);
   const [showCandidates, setShowCandidates] = useState(false);
   const [view, setView] = useState({ x: 0, y: 0, s: 0.5 }),
     vr = useRef(view);
-  vr.current = view;
+  const movePathBatchRef =
+    useRef<
+      (
+        ids: string[],
+        groupId: string,
+        targetId?: string,
+        after?: boolean,
+      ) => unknown
+    >(null);
+  const [stageElement, setStageElement] = useState<HTMLDivElement | null>(null);
+  const setStage = useCallback((element: HTMLDivElement | null) => {
+    stage.current = element;
+    if (element) element.tabIndex = 0;
+    setStageElement((current) => (current === element ? current : element));
+  }, []);
+  useEffect(() => {
+    creationViewRef.current = creationView;
+    unifiedRef.current = unified;
+    ar.current = active;
+    drawingRef.current = drawing;
+    sr.current = settings;
+    cr.current = candidates;
+    vr.current = view;
+  }, [active, candidates, creationView, drawing, settings, unified, view]);
   const stage = useRef<HTMLDivElement>(null),
     worker = useRef<Worker | null>(null),
     scale = useRef(1),
@@ -171,19 +309,22 @@ export default function Home() {
     requests = useRef(
       new Map<
         number,
-        { resolve: (v: any) => void; reject: (e: Error) => void }
+        { resolve: (value: unknown) => void; reject: (error: Error) => void }
       >(),
     );
   const history = useRef<Project[]>([]),
     future = useRef<Project[]>([]),
     [, setHistoryTick] = useState(0),
+    [historySize, setHistorySize] = useState(0),
+    [futureSize, setFutureSize] = useState(0),
     [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null),
     [saved, setSaved] = useState('正在恢复工程…'),
     [initialized, setInitialized] = useState(false);
   const file = useRef<HTMLInputElement>(null),
     projectFile = useRef<HTMLInputElement>(null),
     space = useRef(false),
-    drag = useRef<any>(null),
+    [isSpaceDown, setIsSpaceDown] = useState(false),
+    drag = useRef<DragGesture | null>(null),
     previewToken = useRef(0),
     lastPreview = useRef(0),
     previewBusy = useRef(false),
@@ -199,6 +340,10 @@ export default function Home() {
   const modifierRef = useRef(modifiers);
   const lastPointer = useRef<Point | null>(null);
   const [mergeSource, setMergeSource] = useState<{
+    pathId: string;
+    end: 'start' | 'end';
+  } | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<{
     pathId: string;
     end: 'start' | 'end';
   } | null>(null);
@@ -218,7 +363,6 @@ export default function Home() {
   } | null>(null);
   const [propertyTab, setPropertyTab] = useState('paths');
   const [inspectorWidth, setInspectorWidth] = useState(320);
-  const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]),
     pathsRef = useRef<string[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<number[]>([]),
@@ -311,7 +455,7 @@ export default function Home() {
     const ids = pickSelection(pathsRef.current, id, order, {
       toggle: !!(e.ctrlKey || e.metaKey),
       range: !!e.shiftKey,
-      anchor: rangeAnchor.current as any,
+      anchor: rangeAnchor.current,
     });
     selectPathsNow(ids, id);
     if (!e.shiftKey) rangeAnchor.current = id;
@@ -380,10 +524,13 @@ export default function Home() {
   const clampInspector = (width: number) =>
     Math.max(240, Math.min(600, window.innerWidth - 280, width));
   useEffect(() => {
-    try {
-      const w = Number(localStorage.getItem('bezier-inspector-width'));
-      if (w >= 240) setInspectorWidth(clampInspector(w));
-    } catch {}
+    const timer = setTimeout(() => {
+      try {
+        const width = Number(localStorage.getItem('bezier-inspector-width'));
+        if (width >= 240) setInspectorWidth(clampInspector(width));
+      } catch {}
+    });
+    return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -398,18 +545,21 @@ export default function Home() {
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
-  const fileHandle = useRef<any>(null);
+  const fileHandle = useRef<ProjectFileHandle | null>(null);
   const allowAutoWrite = useRef(false);
   const writer = useRef(new FileWriter());
   const backupQueue = useRef(Promise.resolve());
   const backupSaved = useRef<Project | null>(null);
-  const backupBinding = useRef<any>(null);
-  const fileSaved = useRef<{ handle: any; project: Project } | null>(null);
+  const backupBinding = useRef<ProjectFileHandle | null>(null);
+  const fileSaved = useRef<{
+    handle: ProjectFileHandle;
+    project: Project;
+  } | null>(null);
   const [fileName, setFileName] = useState('');
   const [fileBusy, setFileBusy] = useState(false);
   const fileBusyRef = useRef(false);
   const [bindingVersion, setBindingVersion] = useState(0);
-  const bindFile = (handle: any) => {
+  const bindFile = (handle: ProjectFileHandle | null) => {
     fileHandle.current = handle;
     allowAutoWrite.current = false;
     fileSaved.current = null;
@@ -428,7 +578,10 @@ export default function Home() {
       backupBinding.current = handle;
     });
   };
-  const writeProjectFile = async (snapshot: Project, handle: any) => {
+  const writeProjectFile = async (
+    snapshot: Project,
+    handle: ProjectFileHandle,
+  ) => {
     await writer.current.write(handle, JSON.stringify(snapshot, null, 2));
     fileSaved.current = { handle, project: snapshot };
     if (pr.current === snapshot && fileHandle.current === handle)
@@ -441,7 +594,8 @@ export default function Home() {
     try {
       let handle = saveAs ? null : fileHandle.current;
       if (!handle) {
-        if (!(window as any).showSaveFilePicker) {
+        const pickerWindow = window as FilePickerWindow;
+        if (!pickerWindow.showSaveFilePicker) {
           await backupProject(pr.current);
           setSaved('已保存到此浏览器 · 当前浏览器不支持直接写文件');
           setStatus(
@@ -449,7 +603,7 @@ export default function Home() {
           );
           return;
         }
-        handle = await (window as any).showSaveFilePicker({
+        handle = await pickerWindow.showSaveFilePicker({
           suggestedName: fileName || 'Splinelet工程.bezier.json',
           types: [
             {
@@ -482,12 +636,12 @@ export default function Home() {
         '已绑定 ' + handle.name + ' · 后续修改自动写回，Ctrl+S 立即保存',
       );
       navigator.storage?.persist?.().catch(() => {});
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
         setStatus('已取消选择保存位置');
         return;
       }
-      setSaved('文件保存失败 · ' + e.message);
+      setSaved('文件保存失败 · ' + errorMessage(error));
       setStatus('文件未写入成功；浏览器备份仍独立保存。可重试保存或另存为。');
     } finally {
       fileBusyRef.current = false;
@@ -496,12 +650,13 @@ export default function Home() {
   };
   const openProjectFile = async () => {
     if (busyRef.current || fileBusyRef.current) return;
-    if (!(window as any).showOpenFilePicker) {
+    const pickerWindow = window as FilePickerWindow;
+    if (!pickerWindow.showOpenFilePicker) {
       projectFile.current?.click();
       return;
     }
     try {
-      const [handle] = await (window as any).showOpenFilePicker({
+      const [handle] = await pickerWindow.showOpenFilePicker({
         multiple: false,
         types: [
           {
@@ -512,15 +667,16 @@ export default function Home() {
       });
       const file = await handle.getFile();
       const parsed = validateProject(JSON.parse(await file.text()));
-      apiRef.current.load_project({ project: parsed });
+      apiRef.current?.load_project({ project: parsed });
       bindFile(handle);
       allowAutoWrite.current = true;
       fileSaved.current = { handle, project: pr.current };
       await backupProject(pr.current, handle);
       setSaved('已打开 ' + handle.name + ' · 修改后自动保存');
       setStatus('已打开原文件 · Ctrl+S 保存到同一文件，首次写入可能需要授权');
-    } catch (e: any) {
-      if (e.name !== 'AbortError') setStatus('打开工程失败：' + e.message);
+    } catch (error: unknown) {
+      if (!(error instanceof DOMException && error.name === 'AbortError'))
+        setStatus('打开工程失败：' + errorMessage(error));
     }
   };
   const setDoc = (p: Project, record = true) => {
@@ -528,6 +684,8 @@ export default function Home() {
       history.current.push(cloneTraceValue(pr.current));
       if (history.current.length > 80) history.current.shift();
       future.current = [];
+      setHistorySize(history.current.length);
+      setFutureSize(0);
     }
     pr.current = p;
     setProject(p);
@@ -562,6 +720,7 @@ export default function Home() {
       y: (r.height - p.height * s) / 2 - 5,
     });
   };
+  const fitViewForEffect = useEffectEvent(fitView);
   const framePaths = (
     ids: string[],
     { force = false }: { force?: boolean } = {},
@@ -592,42 +751,51 @@ export default function Home() {
     );
     if (next) setView(next);
   };
-  const rpc = (args: any) =>
-    new Promise<any>((resolve, reject) => {
+  const rpc = <T,>(args: RpcRequest) =>
+    new Promise<T>((resolve, reject) => {
       if (!worker.current) {
         reject(Error('底图未准备好'));
         return;
       }
       const id = ++seq.current;
-      requests.current.set(id, { resolve, reject });
+      requests.current.set(id, {
+        resolve: (value) => resolve(value as T),
+        reject,
+      });
       worker.current.postMessage({ ...args, id });
     });
   useEffect(() => {
     let alive = true;
     const startingProject = pr.current;
     workspaceDB('get')
-      .then(async (session: any) => {
-        let v = session?.project;
-        if (!v) {
-          try {
-            const r = await fetch('/character-example.bezier.json');
-            if (r.ok) v = await r.json();
-          } catch {}
-        }
-        // A late restore must never replace an import or edit made meanwhile.
-        if (v && alive && pr.current === startingProject) {
-          try {
-            setDoc(validateProject(v), false);
-            if (session?.handle) {
-              bindFile(session.handle);
-              fileSaved.current = null;
-            }
-            setStatus('已恢复本地工程');
-          } catch {
-            setStatus('本地工程不可用，已载入参考图');
+      .then(
+        async (
+          session:
+            | { project?: unknown; handle?: ProjectFileHandle }
+            | undefined,
+        ) => {
+          let v = session?.project;
+          if (!v) {
+            try {
+              const r = await fetch('/character-example.bezier.json');
+              if (r.ok) v = await r.json();
+            } catch {}
           }
-        }
-      })
+          // A late restore must never replace an import or edit made meanwhile.
+          if (v && alive && pr.current === startingProject) {
+            try {
+              setDoc(validateProject(v), false);
+              if (session?.handle) {
+                bindFile(session.handle);
+                fileSaved.current = null;
+              }
+              setStatus('已恢复本地工程');
+            } catch {
+              setStatus('本地工程不可用，已载入参考图');
+            }
+          }
+        },
+      )
       .catch(() => setSaved('自动保存不可用，请保存工程'))
       .finally(() => {
         if (alive) setInitialized(true);
@@ -653,9 +821,11 @@ export default function Home() {
           if (pr.current === project && !fileHandle.current)
             setSaved('已保存到此浏览器 · 可绑定工程文件');
         })
-        .catch((e: any) => {
+        .catch((error: unknown) => {
           setSaved('浏览器备份失败');
-          setStatus('浏览器备份失败：' + e.message + '；请保存到工程文件');
+          setStatus(
+            '浏览器备份失败：' + errorMessage(error) + '；请保存到工程文件',
+          );
         });
     }, 200);
     const fileTimer = setTimeout(async () => {
@@ -680,7 +850,7 @@ export default function Home() {
         if (fileHandle.current !== handle || pr.current !== project) return;
         setSaved('正在保存 ' + handle.name + '…');
         await writeProjectFile(project, handle);
-      } catch (e: any) {
+      } catch {
         if (fileHandle.current === handle)
           setSaved('文件自动保存失败 · 点击保存重试');
       }
@@ -713,7 +883,6 @@ export default function Home() {
       ) {
         flush();
         e.preventDefault();
-        e.returnValue = '';
       }
     };
     document.addEventListener('visibilitychange', visibility);
@@ -728,10 +897,13 @@ export default function Home() {
   useEffect(() => {
     if (!initialized) return;
     let alive = true;
-    setReady(false);
-    setPreview([]);
-    setCandidates([]);
-    setShowCandidates(false);
+    queueMicrotask(() => {
+      if (!alive) return;
+      setReady(false);
+      setPreview([]);
+      setCandidates([]);
+      setShowCandidates(false);
+    });
     const img = new Image();
     img.onload = async () => {
       if (!alive) return;
@@ -751,7 +923,8 @@ export default function Home() {
           const req = requests.current.get(data.id);
           if (req) {
             requests.current.delete(data.id);
-            data.error ? req.reject(Error(data.error)) : req.resolve(data);
+            if (data.error) req.reject(Error(data.error));
+            else req.resolve(data);
           }
         };
         worker.current.onerror = () => {
@@ -763,23 +936,23 @@ export default function Home() {
           busyRef.current = false;
           setStatus('图像计算失败，请重新载入');
         };
-        const r = await rpc({
+        const r = await rpc<ImageInitResponse>({
           type: 'init',
           rgba: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
           w: canvas.width,
           h: canvas.height,
         });
         if (!alive) return;
-        allCandidates.current = r.candidates.map((p: any) => ({
+        allCandidates.current = r.candidates.map((p) => ({
           ...p,
           x: p.x / s,
           y: p.y / s,
         }));
         setReady(true);
         setStatus('底图就绪');
-        fitView();
-      } catch (e: any) {
-        setStatus(e.message);
+        fitViewForEffect();
+      } catch (error: unknown) {
+        setStatus(errorMessage(error));
       }
     };
     img.onerror = () => setStatus('图片读取失败，请重新导入 PNG、JPG 或 WebP');
@@ -792,7 +965,7 @@ export default function Home() {
     let previous: { width: number; height: number } | null = null;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      if (!previous) fitView();
+      if (!previous) fitViewForEffect();
       else {
         const dx = (width - previous.width) / 2,
           dy = (height - previous.height) / 2;
@@ -809,6 +982,8 @@ export default function Home() {
     const p = history.current.pop();
     if (!p) return;
     future.current.push(cloneTraceValue(pr.current));
+    setHistorySize(history.current.length);
+    setFutureSize(future.current.length);
     setDoc(p, false);
     setPreview([]);
     setProposed(null);
@@ -831,6 +1006,8 @@ export default function Home() {
     const p = future.current.pop();
     if (!p) return;
     history.current.push(cloneTraceValue(pr.current));
+    setHistorySize(history.current.length);
+    setFutureSize(future.current.length);
     setDoc(p, false);
     setSelection(null);
     setMergeSource(null);
@@ -880,27 +1057,30 @@ export default function Home() {
   const resumeSelected = (end: 'start' | 'end') => {
     try {
       resumePath(ar.current || '', end);
-    } catch (e: any) {
-      setStatus(e.message);
+    } catch (error: unknown) {
+      setStatus(errorMessage(error));
     }
   };
-  const validPoint = (p: any): Point => {
+  const validPoint = (p: unknown): Point => {
+    if (typeof p !== 'object' || p === null) {
+      throw Error('坐标必须在底图范围内，单位为原图像素');
+    }
+    const point = p as { x?: unknown; y?: unknown };
     if (
-      !p ||
-      !Number.isFinite(p.x) ||
-      !Number.isFinite(p.y) ||
-      p.x < 0 ||
-      p.y < 0 ||
-      p.x >= pr.current.width ||
-      p.y >= pr.current.height
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y) ||
+      (point.x as number) < 0 ||
+      (point.y as number) < 0 ||
+      (point.x as number) >= pr.current.width ||
+      (point.y as number) >= pr.current.height
     )
       throw Error('坐标必须在底图范围内，单位为原图像素');
-    return { x: p.x, y: p.y };
+    return { x: point.x as number, y: point.y as number };
   };
   const snapped = async (p: Point, config = sr.current) => {
     const s = scale.current;
     if (!config.snap || config.mode === 'manual') return p;
-    const r = await rpc({
+    const r = await rpc<SnapResponse>({
       type: 'snap',
       point: { x: p.x * s, y: p.y * s },
       mode: config.mode,
@@ -925,7 +1105,7 @@ export default function Home() {
         fitting: 'single',
       };
     }
-    const r = await rpc({
+    const r = await rpc<TraceResponse>({
       type: 'trace',
       start: { x: a.x * s, y: a.y * s },
       end: { x: b.x * s, y: b.y * s },
@@ -937,8 +1117,8 @@ export default function Home() {
     });
     return {
       end: { x: r.end.x / s, y: r.end.y / s },
-      curves: r.curves.map((c: any) =>
-        c.map((p: any) => ({ x: p.x / s, y: p.y / s })),
+      curves: r.curves.map((curve) =>
+        curve.map((point) => ({ x: point.x / s, y: point.y / s })),
       ) as Cubic[],
       quality: r.quality,
       fitError: r.fitError / s,
@@ -1035,8 +1215,8 @@ export default function Home() {
           : '已用一段曲线闭合 · 未添加中间锚点',
       );
     });
-  const report = (promise: Promise<any>) =>
-    promise.catch((e: any) => setStatus(e.message));
+  const report = (promise: Promise<unknown>) =>
+    void promise.catch((error: unknown) => setStatus(errorMessage(error)));
   const selectNode = (pathId: string, nodeIndex: number) => {
     if (busyRef.current) throw Error('请等待拟合完成');
     const path = pr.current.paths.find((p) => p.id === pathId);
@@ -1107,8 +1287,8 @@ export default function Home() {
       setStatus(
         '已删除 ' + ids.length + ' 个节点 · 相邻节点直接连接 · Ctrl+Z 撤销',
       );
-    } catch (e: any) {
-      setStatus(e.message);
+    } catch (error: unknown) {
+      setStatus(errorMessage(error));
     }
   };
   const straightenSpan = (pathId: string, curve?: number) => {
@@ -1377,8 +1557,11 @@ export default function Home() {
         if (!path) return;
         if (g.kind === 'nodes') translateNodes(path, g.ids, dx, dy);
         else {
-          const original = g.base.paths.find((p: TracePath) => p.id === g.path)
-            .curves[g.curve][g.point];
+          const originalPath = g.base.paths.find(
+            (candidate: TracePath) => candidate.id === g.path,
+          );
+          const original = originalPath?.curves[g.curve]?.[g.point];
+          if (!original) return;
           moveHandle(path, g.curve, g.point, {
             x: original.x + dx,
             y: original.y + dy,
@@ -1404,12 +1587,12 @@ export default function Home() {
       busyRef.current ||
       previewBusy.current ||
       !inside(p) ||
-      performance.now() - lastPreview.current < 90
+      currentTime() - lastPreview.current < 90
     )
       return;
     const path = pr.current.paths.find((p) => p.id === ar.current);
     if (!path || path.closed) return;
-    lastPreview.current = performance.now();
+    lastPreview.current = currentTime();
     const token = ++previewToken.current;
     previewBusy.current = true;
     const a = splineEndpoint(path, drawingEndRef.current);
@@ -1427,7 +1610,9 @@ export default function Home() {
     const p = lastPointer.current,
       path = pr.current.paths.find((p) => p.id === ar.current);
     const token = ++previewToken.current;
-    setPreview([]);
+    queueMicrotask(() => {
+      if (previewToken.current === token) setPreview([]);
+    });
     if (
       !p ||
       !ready ||
@@ -1449,10 +1634,27 @@ export default function Home() {
           setPreview(r.curves);
       })
       .catch(() => {});
-  }, [modifiers.shiftKey, modifiers.altKey, drawingEnd]);
+  }, [drawingEnd, modifiers, ready, tool]);
   useEffect(() => {
-    if (tool !== 'edit') setMergeSource(null);
+    if (tool !== 'edit') queueMicrotask(() => setMergeSource(null));
   }, [tool]);
+  useEffect(() => {
+    if (!mergeTarget) return;
+    queueMicrotask(() => {
+      setMergeTarget(null);
+      if (!mergeSource) return;
+      try {
+        mergePaths({
+          firstId: mergeSource.pathId,
+          firstEnd: mergeSource.end,
+          secondId: mergeTarget.pathId,
+          secondEnd: mergeTarget.end,
+        });
+      } catch (error: unknown) {
+        setStatus(errorMessage(error));
+      }
+    });
+  }, [mergeSource, mergeTarget]);
   const pointerUp = () => {
     if (unified && creationView === '3d') return;
     const g = drag.current;
@@ -1476,7 +1678,7 @@ export default function Home() {
       const previous = lastNodeTap.current;
       lastNodeTap.current =
         path && index !== null
-          ? { pathId: path.id, index, time: performance.now() }
+          ? { pathId: path.id, index, time: currentTime() }
           : null;
       if (
         path &&
@@ -1485,7 +1687,7 @@ export default function Home() {
         [0, path.curves.length].includes(index) &&
         previous?.pathId === path.id &&
         previous.index === index &&
-        performance.now() - previous.time < 400
+        currentTime() - previous.time < 400
       ) {
         resumeSelected(index === 0 ? 'start' : 'end');
         return;
@@ -1532,6 +1734,8 @@ export default function Home() {
         history.current.push(g.base);
         if (history.current.length > 80) history.current.shift();
         future.current = [];
+        setHistorySize(history.current.length);
+        setFutureSize(0);
         setHistoryTick((t) => t + 1);
       }
       setStatus(
@@ -1558,7 +1762,9 @@ export default function Home() {
     if (index !== null) {
       const modified = e.shiftKey || e.ctrlKey || e.metaKey;
       ids = modified
-        ? pickSelection(nodesRef.current, index, [], { toggle: true })
+        ? (pickSelection(nodesRef.current as never, index as never, [], {
+            toggle: true,
+          }) as unknown as number[])
         : nodesRef.current.includes(index)
           ? nodesRef.current
           : [index];
@@ -1689,12 +1895,14 @@ export default function Home() {
         // Remember the modifier even when a toolbar button still has focus.
         // A subsequent canvas press can pan; keyboard button activation remains native.
         space.current = true;
+        setIsSpaceDown(true);
         if (!(e.target as HTMLElement).closest('button,summary'))
           e.preventDefault();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        e.shiftKey ? redo() : undo();
+        if (e.shiftKey) redo();
+        else undo();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         void saveProject(e.shiftKey);
@@ -1719,7 +1927,8 @@ export default function Home() {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
         e.preventDefault();
         if (e.shiftKey) {
-          if (pathsRef.current.length) movePathBatch(pathsRef.current, '');
+          if (pathsRef.current.length)
+            movePathBatchRef.current?.(pathsRef.current, '');
         } else groupSelection();
       } else if (e.ctrlKey || e.metaKey || e.altKey) return;
       else if (e.key === 'Enter') {
@@ -1766,8 +1975,8 @@ export default function Home() {
         e.preventDefault();
         try {
           straightenSpan(ar.current || '');
-        } catch (e: any) {
-          setStatus(e.message);
+        } catch (error: unknown) {
+          setStatus(errorMessage(error));
         }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
@@ -1777,12 +1986,16 @@ export default function Home() {
     };
     const up = (e: KeyboardEvent) => {
       updateModifiers(e);
-      if (e.code === 'Space') space.current = false;
+      if (e.code === 'Space') {
+        space.current = false;
+        setIsSpaceDown(false);
+      }
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     const blur = () => {
       space.current = false;
+      setIsSpaceDown(false);
       updateModifiers({ shiftKey: false, altKey: false });
       cancelGesture();
     };
@@ -1862,7 +2075,7 @@ export default function Home() {
         : 'Blender 脚本已导出 · 在脚本工作区打开并运行',
     );
   };
-  const detect = (args: any = {}) => {
+  const detect = (args: DetectCandidatesArgs = {}) => {
     if (!ready) throw Error('底图尚未准备好');
     if (
       args.limit !== undefined &&
@@ -1902,7 +2115,9 @@ export default function Home() {
     setStatus(`已标记 ${out.length} 个候选点 · 点击编号开始或继续路径`);
     return out;
   };
-  const createPath = async (args: any) =>
+  const createPath = async (
+    args: import('@/hooks/trace-agent-contract').AgentCreatePathArgs,
+  ) =>
     lock(async () => {
       if (
         !Array.isArray(args.points) ||
@@ -1910,7 +2125,7 @@ export default function Home() {
         args.points.length > 200
       )
         throw Error('points 需要 2–200 个坐标或候选点编号');
-      const pts: Point[] = args.points.map((p: any) =>
+      const pts: Point[] = args.points.map((p) =>
         typeof p === 'string'
           ? validPoint(cr.current.find((c) => c.id === p))
           : validPoint(p),
@@ -2030,12 +2245,12 @@ export default function Home() {
     );
     return { pathId: args.pathId, nodeIndex: args.nodeIndex, mode: args.mode };
   };
-  const movePathBatch = (
+  function movePathBatch(
     ids: string[],
     groupId: string,
     targetId?: string,
     after = false,
-  ) => {
+  ) {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
     const next = cloneTraceValue(pr.current);
     const moved = movePaths(next, ids, groupId, targetId, after);
@@ -2046,7 +2261,10 @@ export default function Home() {
       setDoc(next);
     setStatus('已移动 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
     return { moved, pathIds: ids, groupId };
-  };
+  }
+  useEffect(() => {
+    movePathBatchRef.current = movePathBatch;
+  });
   const movePath = (a: {
     pathId: string;
     groupId?: string;
@@ -2068,10 +2286,13 @@ export default function Home() {
     });
     setStatus('名称已更新 · Ctrl+Z 撤销');
   };
-  const manageGroup = (a: any) => {
+  const manageGroup = (a: AgentGroupArgs) => {
     if (busyRef.current) throw Error('请等待当前拟合完成');
     const action = a.action,
-      groups = pr.current.groups || [];
+      groups = pr.current.groups || [],
+      name = a.name ?? '',
+      pathIds = a.pathIds ?? [],
+      visible = a.visible ?? false;
     if (
       !['create', 'rename', 'assign', 'visibility', 'delete'].includes(action)
     )
@@ -2085,14 +2306,13 @@ export default function Home() {
       throw Error('分组不存在');
     if (
       ['create', 'rename'].includes(action) &&
-      (typeof a.name !== 'string' || !a.name.trim() || a.name.length > 80)
+      (!name.trim() || name.length > 80)
     )
       throw Error('分组名称需要 1–80 个字符');
     if (
       action === 'assign' &&
-      (!Array.isArray(a.pathIds) ||
-        !a.pathIds.length ||
-        a.pathIds.some(
+      (!pathIds.length ||
+        pathIds.some(
           (id: string) => !pr.current.paths.some((p) => p.id === id),
         ))
     )
@@ -2102,12 +2322,12 @@ export default function Home() {
     const id = action === 'create' ? crypto.randomUUID() : a.id;
     transact((p) => {
       p.groups = p.groups || [];
-      if (action === 'create') p.groups.push({ id, name: a.name.trim() });
+      if (action === 'create') p.groups.push({ id: id!, name: name.trim() });
       if (action === 'rename')
-        p.groups.find((g) => g.id === id)!.name = a.name.trim();
+        p.groups.find((g) => g.id === id)!.name = name.trim();
       if (action === 'assign')
         p.paths
-          .filter((p) => a.pathIds.includes(p.id))
+          .filter((p) => pathIds.includes(p.id))
           .forEach((p) => {
             if (id) p.groupId = id;
             else delete p.groupId;
@@ -2115,7 +2335,7 @@ export default function Home() {
       if (action === 'visibility')
         p.paths
           .filter((p) => p.groupId === id)
-          .forEach((p) => (p.visible = a.visible));
+          .forEach((p) => (p.visible = visible));
       if (action === 'delete') {
         p.groups = p.groups.filter((g) => g.id !== id);
         p.paths
@@ -2201,244 +2421,252 @@ export default function Home() {
     setProposed(null);
     return { id: proposed.id };
   };
-  const apiRef = useRef<any>(null);
-  apiRef.current = {
-    state: () => ({
-      ready,
-      busy: busyRef.current,
-      drawing: drawingRef.current
-        ? { pathId: ar.current, end: drawingEndRef.current }
-        : null,
-      image: {
-        name: pr.current.imageName,
-        width: pr.current.width,
-        height: pr.current.height,
-      },
-      widthMM: pr.current.widthMM,
-      depthMM: pr.current.depthMM,
-      storage: {
-        fileName: fileHandle.current?.name || null,
-        status: saved,
-        fileSystemSupported:
-          typeof window !== 'undefined' && !!(window as any).showSaveFilePicker,
-      },
-      active: ar.current,
-      tool,
-      selectedPaths: pathsRef.current,
-      workspace,
-      model: modelApi.current?.state(),
-      creation: creationApi.current?.state(),
-      selectedNodes: nodesRef.current,
-      gesturing: !!drag.current,
-      view: vr.current,
-      modifiers: modifierRef.current,
-      mergeSource,
-      selection: selection
-        ? {
-            ...selection,
-            nodeIndex: selectedNode(
-              pr.current.paths.find((p) => p.id === ar.current),
-              selection,
-            ),
-          }
-        : null,
-      settings: sr.current,
-      paths: pr.current.paths.map(
-        ({
-          id,
-          name,
-          curves,
-          closed,
-          visible,
-          quality,
-          anchors,
-          fitting,
-          fitError,
-          groupId,
-          nodeModes,
-        }) => ({
-          id,
-          name,
-          groupId,
-          nodeModes,
-          segments: curves.length,
-          closed,
-          visible,
-          quality,
-          fitting,
-          fitError,
-          anchors,
-        }),
-      ),
-      groups: pr.current.groups || [],
-      candidates: cr.current,
-    }),
-    detect_candidates: detect,
-    set_workspace: (a: any) => {
-      if (!['trace', 'faces', 'relief'].includes(a.mode))
-        throw Error('mode 必须为 trace、faces 或 relief');
-      finish();
-      setWorkspace(a.mode);
-      if (a.mode !== 'trace') setUnified(false);
-      return { workspace: a.mode };
-    },
-    ...Object.fromEntries(
-      [
-        'inspect_model',
-        'preview_region',
-        'commit_region_preview',
-        'discard_region_preview',
-        'select_regions',
-        'create_relief',
-        'set_relief',
-        'set_model_options',
-        'create_part',
-        'select_part',
-        'delete_model_object',
-        'validate_part',
-        'get_relief_mesh',
-        'export_model',
-      ].map((name) => [
-        name,
-        (a: any) => {
-          if (!modelApi.current) throw Error('建模工作空间未准备好');
-          return modelApi.current[name](a);
-        },
-      ]),
-    ),
-    creation_inspect: () => creationApi.current.inspect(),
-    creation_focus: (a: any) => creationApi.current.focus(a.objectId),
-    creation_select: (a: any) => creationApi.current.select_cells(a.cellKeys),
-    creation_command: (a: any) =>
-      creationApi.current.command(a.action, a.args, a.revision),
-    creation_view: (a: any) => {
-      if (!['flat', '3d'].includes(a.view))
-        throw Error('view 必须为 flat 或 3d');
-      setUnified(true);
-      setWorkspace('trace');
-      setCreationView(a.view);
-    },
-    creation_export: (a: any) => creationApi.current.export(a.format, false),
-    create_path: createPath,
-    resume_path: (a: any) => resumePath(a.pathId, a.end),
-    add_anchor: (a: any) => addAnchor(a.position, a),
-    finish_path: () => {
-      finish();
-      return { finished: true };
-    },
-    close_path: (a: any) => closePath(a),
-    refit_path: requestRefit,
-    set_node_mode: changeNodeMode,
-    manage_group: manageGroup,
-    move_path: movePath,
-    select_paths: (a: any) => {
-      if (
-        !Array.isArray(a.pathIds) ||
-        a.pathIds.some(
-          (id: string) => !pr.current.paths.some((p) => p.id === id),
-        )
-      )
-        throw Error('pathIds 必须为现有路径 ID');
-      chooseGroup(a.pathIds, false);
-      return { selectedPaths: pathsRef.current };
-    },
-    move_paths: (a: any) => {
-      if (!Array.isArray(a.pathIds)) throw Error('需要 pathIds');
-      return movePathBatch(a.pathIds, a.groupId || '', a.targetId, !!a.after);
-    },
-    merge_paths: mergePaths,
-    straighten_span: (a: any) => straightenSpan(a.pathId, a.curve),
-    select_node: (a: any) => selectNode(a.pathId, a.nodeIndex),
-    delete_node: (a: any) => deleteNode(a.pathId, a.nodeIndex),
-    commit_preview: acceptPreview,
-    discard_preview: () => {
-      setProposed(null);
-      return { discarded: true };
-    },
-    get_project: () => cloneTraceValue(pr.current),
-    inspect_geometry: () => inspectGeometry(pr.current.paths),
-    undo: () => {
-      undo();
-      return { paths: pr.current.paths.length };
-    },
-    set_view: (a: any) => {
-      if (a.fit) {
-        fitView();
-        return { fit: true };
-      }
-      if (
-        ![a.x, a.y, a.scale].every(Number.isFinite) ||
-        a.scale < 0.05 ||
-        a.scale > 12
-      )
-        throw Error('view 需要 x、y 和 0.05–12 的 scale');
-      setView({ x: a.x, y: a.y, s: a.scale });
-      return a;
-    },
-    select_path: (a: any) => {
-      if (!pr.current.paths.some((p) => p.id === a.id))
-        throw Error('路径不存在');
-      chooseGroup([a.id], false);
-      return { id: a.id };
-    },
-    set_point: (a: any) => {
-      if (busyRef.current || drag.current) throw Error('请先完成当前操作');
-      const path = pr.current.paths.find((p) => p.id === a.pathId);
-      if (
-        !path ||
-        !Number.isInteger(a.curve) ||
-        !path.curves[a.curve] ||
-        ![1, 2].includes(a.point)
-      )
-        throw Error('set_point 支持现有曲线的控制柄 1 或 2');
-      const point = validPoint(a.position);
-      transact((p) => {
-        moveHandle(
-          p.paths.find((q) => q.id === a.pathId)!,
-          a.curve,
-          a.point,
-          point,
-        );
-      });
-      return { updated: true };
-    },
-    export: (a: any) => {
-      if (a.format === 'svg')
-        return { filename: '角色轮廓.svg', content: svg(pr.current) };
-      if (a.format === 'blender')
-        return {
-          filename: '角色曲线_blender.py',
-          content: blender(pr.current),
-        };
-      if (a.format === 'json')
-        return {
-          filename: 'Splinelet工程.bezier.json',
-          content: JSON.stringify(pr.current),
-        };
-      throw Error('format 必须是 svg、blender 或 json');
-    },
-    load_project: (a: any) => {
-      if (busyRef.current || fileBusyRef.current)
-        throw Error('请等待拟合或保存完成');
-      const p = validateProject(a.project);
-      bindFile(null);
-      finish();
-      setActiveNow(null);
-      setDoc(p);
-      creationApi.current?.clear();
-      fitView();
-      return { paths: p.paths.length };
-    },
-    set_candidates_visible: (a: any) => {
-      setShowCandidates(!!a.visible);
-      return { visible: !!a.visible };
-    },
-  };
+  const apiRef = useRef<TraceApi | null>(null);
   useEffect(() => {
-    (window as any).traceStudio = {
+    apiRef.current = {
+      state: () => ({
+        ready,
+        busy: busyRef.current,
+        drawing: drawingRef.current
+          ? { pathId: ar.current, end: drawingEndRef.current }
+          : null,
+        image: {
+          name: pr.current.imageName,
+          width: pr.current.width,
+          height: pr.current.height,
+        },
+        widthMM: pr.current.widthMM,
+        depthMM: pr.current.depthMM,
+        storage: {
+          fileName: fileHandle.current?.name || null,
+          status: saved,
+          fileSystemSupported:
+            typeof window !== 'undefined' &&
+            !!(window as FilePickerWindow).showSaveFilePicker,
+        },
+        active: ar.current,
+        tool,
+        selectedPaths: pathsRef.current,
+        workspace,
+        model: modelApi.current?.state(),
+        creation: creationApi.current?.state(),
+        selectedNodes: nodesRef.current,
+        gesturing: !!drag.current,
+        view: vr.current,
+        modifiers: modifierRef.current,
+        mergeSource,
+        selection: selection
+          ? {
+              ...selection,
+              nodeIndex: selectedNode(
+                pr.current.paths.find((p) => p.id === ar.current),
+                selection,
+              ),
+            }
+          : null,
+        settings: sr.current,
+        paths: pr.current.paths.map(
+          ({
+            id,
+            name,
+            curves,
+            closed,
+            visible,
+            quality,
+            anchors,
+            fitting,
+            fitError,
+            groupId,
+            nodeModes,
+          }) => ({
+            id,
+            name,
+            groupId,
+            nodeModes,
+            segments: curves.length,
+            closed,
+            visible,
+            quality,
+            fitting,
+            fitError,
+            anchors,
+          }),
+        ),
+        groups: pr.current.groups || [],
+        candidates: cr.current,
+      }),
+      detect_candidates: detect,
+      set_workspace: (a: AgentWorkspaceArgs) => {
+        if (!['trace', 'faces', 'relief'].includes(a.mode))
+          throw Error('mode 必须为 trace、faces 或 relief');
+        finish();
+        setWorkspace(a.mode);
+        if (a.mode !== 'trace') setUnified(false);
+        return { workspace: a.mode };
+      },
+      ...Object.fromEntries(
+        [
+          'inspect_model',
+          'preview_region',
+          'commit_region_preview',
+          'discard_region_preview',
+          'select_regions',
+          'create_relief',
+          'set_relief',
+          'set_model_options',
+          'create_part',
+          'select_part',
+          'delete_model_object',
+          'validate_part',
+          'get_relief_mesh',
+          'export_model',
+        ].map((name) => [
+          name,
+          (a: unknown) => {
+            if (!modelApi.current) throw Error('建模工作空间未准备好');
+            return modelApi.current[name](a);
+          },
+        ]),
+      ),
+      creation_inspect: () => creationApi.current?.inspect(),
+      creation_focus: (a: AgentCreationFocusArgs) =>
+        creationApi.current?.focus(a.objectId),
+      creation_select: (a: AgentCreationSelectArgs) =>
+        creationApi.current?.select_cells(a.cellKeys),
+      creation_command: (a: AgentCreationCommandArgs) =>
+        creationApi.current?.command(a.action, a.args ?? {}, a.revision),
+      creation_view: (a: AgentCreationViewArgs) => {
+        if (!['flat', '3d'].includes(a.view))
+          throw Error('view 必须为 flat 或 3d');
+        setUnified(true);
+        setWorkspace('trace');
+        setCreationView(a.view);
+      },
+      creation_export: (a: AgentCreationExportArgs) =>
+        creationApi.current?.export(a.format, false),
+      create_path: createPath,
+      resume_path: (a: AgentPathEndArgs) => resumePath(a.pathId, a.end),
+      add_anchor: (a: { position: Point } & Partial<TraceSettings>) =>
+        addAnchor(a.position, a),
+      finish_path: () => {
+        finish();
+        return { finished: true };
+      },
+      close_path: (a: Partial<TraceSettings>) => closePath(a),
+      refit_path: requestRefit,
+      set_node_mode: changeNodeMode,
+      manage_group: manageGroup,
+      move_path: movePath,
+      select_paths: (a: AgentPathListArgs) => {
+        if (
+          !Array.isArray(a.pathIds) ||
+          a.pathIds.some(
+            (id: string) => !pr.current.paths.some((p) => p.id === id),
+          )
+        )
+          throw Error('pathIds 必须为现有路径 ID');
+        chooseGroup(a.pathIds, false);
+        return { selectedPaths: pathsRef.current };
+      },
+      move_paths: (a: AgentMovePathsArgs) => {
+        if (!Array.isArray(a.pathIds)) throw Error('需要 pathIds');
+        return movePathBatch(a.pathIds, a.groupId || '', a.targetId, !!a.after);
+      },
+      merge_paths: (a: AgentMergeArgs) => mergePaths(a),
+      straighten_span: (a: AgentSpanArgs) => straightenSpan(a.pathId, a.curve),
+      select_node: (a: AgentNodeArgs) => selectNode(a.pathId, a.nodeIndex),
+      delete_node: (a: AgentNodeArgs) => deleteNode(a.pathId, a.nodeIndex),
+      commit_preview: acceptPreview,
+      discard_preview: () => {
+        setProposed(null);
+        return { discarded: true };
+      },
+      get_project: () => cloneTraceValue(pr.current),
+      inspect_geometry: () => inspectGeometry(pr.current.paths),
+      undo: () => {
+        undo();
+        return { paths: pr.current.paths.length };
+      },
+      set_view: (a: AgentViewArgs) => {
+        if (a.fit) {
+          fitView();
+          return { fit: true };
+        }
+        if (
+          ![a.x, a.y, a.scale].every(Number.isFinite) ||
+          a.scale < 0.05 ||
+          a.scale > 12
+        )
+          throw Error('view 需要 x、y 和 0.05–12 的 scale');
+        setView({ x: a.x, y: a.y, s: a.scale });
+        return a;
+      },
+      select_path: (a: { id: string }) => {
+        if (!pr.current.paths.some((p) => p.id === a.id))
+          throw Error('路径不存在');
+        chooseGroup([a.id], false);
+        return { id: a.id };
+      },
+      set_point: (a: AgentPointArgs) => {
+        if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+        const path = pr.current.paths.find((p) => p.id === a.pathId);
+        if (
+          !path ||
+          !Number.isInteger(a.curve) ||
+          !path.curves[a.curve] ||
+          ![1, 2].includes(a.point)
+        )
+          throw Error('set_point 支持现有曲线的控制柄 1 或 2');
+        const point = validPoint(a.position);
+        transact((p) => {
+          moveHandle(
+            p.paths.find((q) => q.id === a.pathId)!,
+            a.curve,
+            a.point,
+            point,
+          );
+        });
+        return { updated: true };
+      },
+      export: (a: AgentExportArgs) => {
+        if (a.format === 'svg')
+          return { filename: '角色轮廓.svg', content: svg(pr.current) };
+        if (a.format === 'blender')
+          return {
+            filename: '角色曲线_blender.py',
+            content: blender(pr.current),
+          };
+        if (a.format === 'json')
+          return {
+            filename: 'Splinelet工程.bezier.json',
+            content: JSON.stringify(pr.current),
+          };
+        throw Error('format 必须是 svg、blender 或 json');
+      },
+      load_project: (a: AgentLoadProjectArgs) => {
+        if (busyRef.current || fileBusyRef.current)
+          throw Error('请等待拟合或保存完成');
+        const p = validateProject(a.project);
+        bindFile(null);
+        finish();
+        setActiveNow(null);
+        setDoc(p);
+        creationApi.current?.clear();
+        fitView();
+        return { paths: p.paths.length };
+      },
+      set_candidates_visible: (a: AgentVisibilityArgs) => {
+        setShowCandidates(!!a.visible);
+        return { visible: !!a.visible };
+      },
+    };
+  });
+  useEffect(() => {
+    const traceWindow = window as TraceStudioWindow;
+    traceWindow.traceStudio = {
       version: '4.0',
-      call: async (action: string, args: any = {}) => {
-        const fn = apiRef.current[action];
+      call: async (action: string, args: unknown = {}) => {
+        const fn = apiRef.current?.[action];
         if (!fn) throw Error('未知操作 ' + action);
         if (
           drag.current &&
@@ -2447,10 +2675,19 @@ export default function Home() {
           )
         )
           throw Error('请先完成或取消当前拖动');
-        return await fn(args);
+        return await fn(args as never);
       },
     };
-    const context = (document as any).modelContext,
+    const context = (
+        document as Document & {
+          modelContext?: {
+            registerTool: (
+              definition: unknown,
+              options: { signal: AbortSignal },
+            ) => Promise<unknown>;
+          };
+        }
+      ).modelContext,
       controller = new AbortController();
     const names = [
       ...Object.keys(modelTools),
@@ -2478,7 +2715,7 @@ export default function Home() {
       'inspect_geometry',
       'export',
     ];
-    const properties: any = {
+    const properties: Record<string, unknown> = {
       ...Object.fromEntries(
         Object.entries({ ...modelTools, ...creationTools }).map(([name, t]) => [
           name,
@@ -2640,7 +2877,7 @@ export default function Home() {
                       'Edit a cubic control handle by path, curve index, and handle index.',
                     export:
                       'Return SVG, Blender Python, or project JSON without downloading.',
-                  } as any
+                  } as Record<string, string>
                 )[name],
               inputSchema: {
                 type: 'object',
@@ -2697,8 +2934,8 @@ export default function Home() {
                   ].includes(name),
                 untrustedContentHint: true,
               },
-              execute: (args: any) =>
-                (window as any).traceStudio.call(name, args),
+              execute: (args: unknown) =>
+                traceWindow.traceStudio!.call(name, args),
             },
             { signal: controller.signal },
           ),
@@ -2706,29 +2943,41 @@ export default function Home() {
       } catch {}
     // Optional loopback companion, development only. Hosted app never connects.
     let stopped = false;
-    let timer: any;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       if (stopped) return;
       try {
         const r = await fetch('http://127.0.0.1:4318/next', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(apiRef.current.state()),
+          body: JSON.stringify(apiRef.current?.state()),
         });
         if (r.ok) {
-          const commands: any = await r.json();
-          for (const c of commands) {
+          const commands: unknown = await r.json();
+          if (!Array.isArray(commands)) return;
+          for (const command of commands) {
+            if (
+              typeof command !== 'object' ||
+              command === null ||
+              !('action' in command) ||
+              typeof command.action !== 'string'
+            )
+              continue;
+            const commandArgs = 'args' in command ? command.args : undefined;
             let result;
             try {
               result = {
-                id: c.id,
-                result: await (window as any).traceStudio.call(
-                  c.action,
-                  c.args,
+                id: 'id' in command ? command.id : undefined,
+                result: await traceWindow.traceStudio!.call(
+                  command.action,
+                  commandArgs,
                 ),
               };
-            } catch (e: any) {
-              result = { id: c.id, error: e.message };
+            } catch (error: unknown) {
+              result = {
+                id: 'id' in command ? command.id : undefined,
+                error: errorMessage(error),
+              };
             }
             await fetch('http://127.0.0.1:4318/result', {
               method: 'POST',
@@ -2740,15 +2989,16 @@ export default function Home() {
       } catch {}
       timer = setTimeout(tick, 700);
     };
-    if (location.hostname === 'localhost' && location.port === '3000') tick();
+    if (location.hostname === 'localhost' && location.port === '3000')
+      void tick();
     return () => {
       stopped = true;
       clearTimeout(timer);
       controller.abort();
-      delete (window as any).traceStudio;
+      delete traceWindow.traceStudio;
     };
   }, []);
-  const geometryReport =
+  const geometryReport: GeometryReportItem[] =
     dialog === 'export' ? inspectGeometry(project.paths) : [];
   const current = project.paths.find((p) => p.id === active),
     count = project.paths.reduce((s, p) => s + p.curves.length, 0);
@@ -2775,8 +3025,8 @@ export default function Home() {
         onMove={(...args) => {
           try {
             movePathBatch(...args);
-          } catch (e: any) {
-            setStatus(e.message);
+          } catch (error: unknown) {
+            setStatus(errorMessage(error));
           }
         }}
         onVisibility={setVisible}
@@ -2837,15 +3087,15 @@ export default function Home() {
                         selectedNodes.length +
                         ' 个节点的连接方式 · 可撤销',
                     );
-                  } catch (e: any) {
-                    setStatus(e.message);
+                  } catch (error: unknown) {
+                    setStatus(errorMessage(error));
                   }
                 }}
                 onStraighten={(curve) => {
                   try {
                     straightenSpan(current.id, curve);
-                  } catch (e: any) {
-                    setStatus(e.message);
+                  } catch (error: unknown) {
+                    setStatus(errorMessage(error));
                   }
                 }}
                 onMerge={startMerge}
@@ -2899,7 +3149,7 @@ export default function Home() {
               <p>
                 每两个落点仅生成一段贝塞尔。算法只调整两个控制柄，不自动增加中间锚点。
               </p>
-              <label>识别目标</label>
+              <span>识别目标</span>
               <Tabs
                 value={settings.mode}
                 onValueChange={(v) => {
@@ -3043,7 +3293,7 @@ export default function Home() {
                       if (!r.ok) throw Error('示例读取失败');
                       return r.json();
                     })
-                    .then((p) => apiRef.current.load_project({ project: p })),
+                    .then((p) => apiRef.current?.load_project({ project: p })),
                 )
               }
             >
@@ -3058,9 +3308,10 @@ export default function Home() {
   );
   return (
     <main
+      role="application"
       className={'studio ' + (unified ? 'creation-studio' : '')}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
+      onDragOverCapture={(e) => e.preventDefault()}
+      onDropCapture={(e) => {
         e.preventDefault();
         if (e.dataTransfer.files[0])
           report(importImage(e.dataTransfer.files[0]));
@@ -3168,7 +3419,7 @@ export default function Home() {
                 f
                   .text()
                   .then((t) =>
-                    apiRef.current.load_project({ project: JSON.parse(t) }),
+                    apiRef.current?.load_project({ project: JSON.parse(t) }),
                   ),
               );
             e.target.value = '';
@@ -3256,18 +3507,20 @@ export default function Home() {
         style={{ display: workspace === 'trace' ? 'flex' : 'none' }}
       >
         <nav className="toolrail" aria-label="绘图工具">
-          {[
-            [MousePointer2, 'select', '选择', 'V'],
-            [Spline, 'edit', '节点', 'A'],
-            [PenTool, 'trace', '描线', 'P'],
-            ...(unified
-              ? [
-                  [PaintBucket, 'paint', '上色', ''],
-                  [ArrowUpFromLine, 'height', '高低', ''],
-                ]
-              : []),
-            [Hand, 'pan', '平移', 'H'],
-          ].map(([Icon, value, label, key]: any) => (
+          {(
+            [
+              [MousePointer2, 'select', '选择', 'V'],
+              [Spline, 'edit', '节点', 'A'],
+              [PenTool, 'trace', '描线', 'P'],
+              ...(unified
+                ? [
+                    [PaintBucket, 'paint', '上色', ''],
+                    [ArrowUpFromLine, 'height', '高低', ''],
+                  ]
+                : []),
+              [Hand, 'pan', '平移', 'H'],
+            ] as Array<[typeof MousePointer2, string, string, string]>
+          ).map(([Icon, value, label, key]) => (
             <button
               key={value}
               title={key ? `${label} (${key})` : label}
@@ -3285,7 +3538,7 @@ export default function Home() {
             title="撤销 Ctrl Z"
             aria-label="撤销"
             onClick={undo}
-            disabled={!history.current.length || busy}
+            disabled={!historySize || busy}
           >
             <Undo2 size={19} />
           </button>
@@ -3293,7 +3546,7 @@ export default function Home() {
             title="重做 Ctrl Shift Z"
             aria-label="重做"
             onClick={redo}
-            disabled={!future.current.length || busy}
+            disabled={!futureSize || busy}
           >
             <Redo2 size={19} />
           </button>
@@ -3307,8 +3560,8 @@ export default function Home() {
               else
                 try {
                   detect();
-                } catch (e: any) {
-                  setStatus(e.message);
+                } catch (error: unknown) {
+                  setStatus(errorMessage(error));
                 }
             }}
             disabled={!ready}
@@ -3340,27 +3593,11 @@ export default function Home() {
             </button>
           </div>
         </nav>
-        <section
-          ref={stage}
-          tabIndex={0}
+        <div
+          role="application"
+          ref={setStage}
           aria-label="编辑画布"
           className={`stage tool-${tool} ${unified ? 'creation-stage' : ''} ${creationView === '3d' && unified ? 'creation-is-3d' : ''}`}
-          onPointerDown={pointerDown}
-          onPointerMove={pointerMove}
-          onPointerUp={pointerUp}
-          onPointerCancel={() => cancelGesture()}
-          onPointerLeave={() => {
-            if (!drag.current) {
-              setPreview([]);
-              previewToken.current++;
-            }
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            if (drag.current) cancelGesture();
-            else if (tool === 'trace') finish();
-            else if (mergeSource) setMergeSource(null);
-          }}
         >
           <div className="stage-top">
             <span>
@@ -3384,6 +3621,22 @@ export default function Home() {
           <svg
             className="drawing-canvas"
             aria-label="贝塞尔绘图画布"
+            onPointerDown={pointerDown}
+            onPointerMove={pointerMove}
+            onPointerUp={pointerUp}
+            onPointerCancel={() => cancelGesture()}
+            onPointerLeave={() => {
+              if (!drag.current) {
+                setPreview([]);
+                previewToken.current++;
+              }
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              if (drag.current) cancelGesture();
+              else if (tool === 'trace') finish();
+              else if (mergeSource) setMergeSource(null);
+            }}
             width="100%"
             height="100%"
           >
@@ -3412,7 +3665,8 @@ export default function Home() {
                     p.visible &&
                     (!unified ||
                       !project.creation?.objects.some(
-                        (o: any) => o.pathIds.includes(p.id) && !o.visible,
+                        (o: { pathIds: string[]; visible: boolean }) =>
+                          o.pathIds.includes(p.id) && !o.visible,
                       )),
                 )
                 .map((path) => (
@@ -3544,11 +3798,10 @@ export default function Home() {
                         const selected = selectedNodes.includes(index);
                         const item = nodeSelection(current, index);
                         return (
-                          <g
+                          <a
                             key={'node-' + index}
-                            role="button"
+                            href={'#node-' + index}
                             aria-label={'节点 ' + (index + 1)}
-                            aria-pressed={selected}
                             data-node-index={index}
                             data-node-mode={nodeModes(current)[index]}
                             onPointerDown={(e) =>
@@ -3603,7 +3856,7 @@ export default function Home() {
                                   {index === 0 ? '头' : '尾'}
                                 </text>
                               )}
-                          </g>
+                          </a>
                         );
                       })}
                     </>
@@ -3679,9 +3932,9 @@ export default function Home() {
                         const p =
                           end === 'start' ? path.start : path.curves.at(-1)![3];
                         return (
-                          <g
+                          <a
                             key={path.id + end}
-                            role="button"
+                            href={'#merge-' + path.id + '-' + end}
                             aria-label={
                               '合并到 ' +
                               path.name +
@@ -3689,20 +3942,11 @@ export default function Home() {
                               (end === 'start' ? '起点' : '终点')
                             }
                             data-merge-endpoint={path.id + ':' + end}
-                            onPointerDown={(e) => {
-                              if (e.button !== 0 || space.current) return;
-                              e.stopPropagation();
-                              e.preventDefault();
-                              try {
-                                mergePaths({
-                                  firstId: mergeSource.pathId,
-                                  firstEnd: mergeSource.end,
-                                  secondId: path.id,
-                                  secondEnd: end,
-                                });
-                              } catch (e: any) {
-                                setStatus(e.message);
-                              }
+                            onPointerDown={(event) => {
+                              if (event.button !== 0 || isSpaceDown) return;
+                              event.stopPropagation();
+                              event.preventDefault();
+                              setMergeTarget({ pathId: path.id, end });
                             }}
                             style={{ cursor: 'crosshair' }}
                           >
@@ -3733,7 +3977,7 @@ export default function Home() {
                             >
                               {end === 'start' ? '起' : '终'}
                             </text>
-                          </g>
+                          </a>
                         );
                       }),
                     )}
@@ -3882,45 +4126,16 @@ export default function Home() {
               <button onClick={() => setProposed(null)}>丢弃</button>
             </div>
           )}
-        </section>
-        <div
+        </div>
+        <input
+          type="range"
           className="inspector-resizer"
-          role="separator"
           aria-label="调整右侧栏宽度"
-          aria-orientation="vertical"
-          aria-valuemin={240}
-          aria-valuemax={600}
-          aria-valuenow={inspectorWidth}
-          tabIndex={0}
-          onPointerDown={(e) => {
-            if (e.button !== 0) return;
-            e.preventDefault();
-            sidebarDrag.current = { x: e.clientX, width: inspectorWidth };
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (sidebarDrag.current)
-              setInspectorWidth(
-                clampInspector(
-                  sidebarDrag.current.width + sidebarDrag.current.x - e.clientX,
-                ),
-              );
-          }}
-          onPointerUp={() => {
-            sidebarDrag.current = null;
-          }}
-          onPointerCancel={() => {
-            sidebarDrag.current = null;
-          }}
+          min={240}
+          max={600}
+          value={inspectorWidth}
+          onChange={(e) => setInspectorWidth(Number(e.target.value))}
           onDoubleClick={() => setInspectorWidth(320)}
-          onKeyDown={(e) => {
-            if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
-              e.preventDefault();
-              setInspectorWidth((w) =>
-                clampInspector(w + (e.key === 'ArrowLeft' ? 20 : -20)),
-              );
-            }
-          }}
         />
         <>
           <CreationWorkspace
@@ -3936,7 +4151,7 @@ export default function Home() {
               creationApi.current = api;
             }}
             layer={creationLayer}
-            stage={stage.current}
+            stage={stageElement}
             scale={view.s}
             width={inspectorWidth}
             selectedPaths={selectedPaths}
@@ -3982,16 +4197,20 @@ export default function Home() {
         status={setStatus}
       />
       <footer>
-        <span role="status">
+        <output>
           <span className="live-dot" />
           {status}
-        </span>
+        </output>
         <span className="storage-status" aria-live="polite" title={saved}>
           {saved}
         </span>
         <span>
           {count} 段
-          {coords && inside(coords)
+          {coords &&
+          coords.x >= 0 &&
+          coords.y >= 0 &&
+          coords.x < project.width &&
+          coords.y < project.height
             ? ` · X ${Math.round(coords.x)} Y ${Math.round(coords.y)}`
             : ''}{' '}
           · 滚轮缩放 · 空格平移
@@ -4011,7 +4230,7 @@ export default function Home() {
             Ctrl+Z 撤销。
           </DialogDescription>
           <div className="confirm-actions">
-            <button autoFocus onClick={() => setPendingRefit(null)}>
+            <button onClick={() => setPendingRefit(null)}>
               取消，保留现有曲线
             </button>
             <button
@@ -4123,19 +4342,15 @@ export default function Home() {
               </div>
               <p className="export-note">
                 抽样几何检查：
+                {geometryReport.reduce((n, p) => n + p.gaps, 0)} 处缺口，
                 {geometryReport.reduce(
-                  (n: number, p: any) => n + p.gaps,
-                  0,
-                )}{' '}
-                处缺口，
-                {geometryReport.reduce(
-                  (n: number, p: any) => n + p.selfIntersections.length,
+                  (n, p) => n + p.selfIntersections.length,
                   0,
                 )}{' '}
                 处自交。
                 {geometryReport
-                  .filter((p: any) => p.selfIntersections.length)
-                  .map((p: any) => p.name)
+                  .filter((p) => p.selfIntersections.length)
+                  .map((p) => p.name)
                   .join('、')}
                 <br />
                 当前{' '}

@@ -66,4 +66,4 @@ await call('export_model', { format: 'blender' });
 
 例子包含 140 个有来源关联的面和 64 个体块；其中 7 条头发分界线生成 11 个区域，面部扣除嘴和眉，头饰由成对开放曲线围面，边框由外轮廓相减。成品约 80.35 × 97.32 × 4.55 mm，1 个连通实体，18,662 个三角面，非流形边和退化面为 0。保留全部 71 条源路径和 547 段三次贝塞尔。杯身尚未绘制的底图花纹没有被自动补入。
 
-几何测试：`node scripts/tests/unit/test-model.mjs`。浏览器脚本供 Playwright CLI `run-code --filename` 使用，**只在隔离测试浏览器运行**：`scripts/tests/browser/test-model-browser.js` 验证构面、扣孔、选区、撤销、依附高度、实际下载和刷新恢复。`scripts/validation/verify-relief-blender.py` 在独立 Blender 进程中验证导出源曲线、实体和实际下载的 STL。依赖私人 Sandrone 工程的旧浏览器验收已移除，历史结论仅保留在 `docs/qa/`。
+几何测试：`node scripts/tests/unit/test-model.mjs`。跨 UI/Worker 的实时曲面回归使用 `scripts/tests/browser/test-live-surfaces-browser.cjs` 与已提交 fixture，只能在隔离测试浏览器运行。`scripts/validation/verify-relief-blender.py` 在独立 Blender 进程中验证导出源曲线、实体和实际下载的 STL。依赖当前页面、前序脚本或私人 Sandrone 工程的旧浏览器验收已移除，历史结论仅保留在 `docs/qa/`。

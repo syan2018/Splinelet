@@ -49,8 +49,189 @@ import {
   pathsForRegions,
 } from '@/lib/creation-selection.mjs';
 import { useCreationSelection } from '@/hooks/use-creation-selection';
-// @ts-expect-error Vite worker asset.
-import ModelWorker from '../../lib/model-worker.ts?worker';
+import type {
+  ModifierObject,
+  ModifierScene,
+  SurfaceModifier,
+} from '@/lib/modifier-types';
+import * as modelWorkerModule from '../../lib/model-worker.ts?worker';
+type Swatch = { id: string; name: string; color: string };
+type CreationObject = ModifierObject & {
+  id: string;
+  name: string;
+  pathIds: string[];
+  roles: Record<string, string>;
+  visible: boolean;
+  swatchId: string;
+  heightMM: number;
+  zMM: number;
+  printable: boolean;
+  attachId?: string;
+  printLayerId?: string;
+  joinMM?: number;
+  disabledClosureFeatureIds?: string[];
+  modifiers?: SurfaceModifier[];
+  surfaceGraph?: { outputs: { key: string; signature: string }[] };
+};
+type CreationDocument = {
+  objects: CreationObject[];
+  swatches: Swatch[];
+  printStack?: {
+    layerHeightMM: number;
+    layers: { id: string; name: string }[];
+  };
+};
+type RegionGeometry = {
+  type: 'Polygon' | 'MultiPolygon';
+  coordinates: Point[][] | Point[][][];
+};
+type CreationCell = {
+  key: string;
+  objectId: string;
+  name?: string;
+  painted: boolean;
+  color: string;
+  geometry: RegionGeometry;
+  heightMM: number;
+  bottomMM?: number;
+  zMM?: number;
+  printLayerId?: string;
+  mode?: string;
+  enabled?: boolean;
+  conflict?: boolean;
+  from?: Point;
+  to?: Point;
+  flatOnly?: boolean;
+  featureId?: string;
+  regionId?: string;
+  boundaryPathIds?: string[];
+  modifierResult?: { id: string };
+  targetTopology?: string;
+};
+type Point = [number, number];
+type SceneError = {
+  objectId: string;
+  message: string;
+  kind?: string;
+  modifierId?: string;
+  pathIds?: string[];
+  pending?: boolean;
+};
+type Connection = {
+  objectId: string;
+  pathId: string;
+  endpoint: number;
+  from?: Point;
+  to?: Point;
+  coordinates?: Point[];
+  featureId?: string;
+};
+type ConnectionHighlight = {
+  objectId: string;
+  pathId?: string;
+  featureId?: string;
+  from?: Point;
+  to?: Point;
+  coordinates?: Point[];
+};
+type Diagnostic = {
+  objectId: string;
+  pathId?: string;
+  status?: string;
+  message?: string;
+};
+type CreationScene = Omit<
+  ModifierScene,
+  'creation' | 'cells' | 'errors' | 'modifierStatus'
+> & {
+  creation: CreationDocument;
+  cells: CreationCell[];
+  errors: SceneError[];
+  connections?: Connection[];
+  diagnostics: Diagnostic[];
+  printLevels?: {
+    id: string;
+    state: string;
+    bottomLayers: number;
+    topLayers: number;
+    heightLayers: number;
+    bottomMM: number;
+    topMM: number;
+    message?: string;
+  }[];
+  modifierStatus?: {
+    objectId: string;
+    modifierId: string;
+    inputOptions: {
+      ref: { key: string; name: string; topology?: string };
+      name: string;
+    }[];
+    error?: string;
+    note?: string;
+  }[];
+};
+type SolidReport = {
+  valid: boolean;
+  components: number;
+  triangles: number;
+  volumeMM3?: number;
+};
+type ModelResult = CreationScene & {
+  report: SolidReport;
+  warnings: string[];
+  mesh: { positions: number[]; triangles: number[] };
+  bytes: ArrayBuffer;
+  mimeType: string;
+  filename: string;
+  project: Project;
+  scene: CreationScene;
+  objectId: string;
+};
+type CommandResult = Project & { creation: CreationDocument };
+type BasePreview = {
+  scene: CreationScene;
+  project: Project;
+  revision: Project;
+  objectId: string;
+};
+type RoleArgs = { objectId: string; pathIds: string[]; role: string };
+type PendingRoleResult = {
+  project: Project;
+  message: string;
+  objectId: string;
+};
+type DragState = { y: number; value: number } | { slider: true };
+type PaintDrag = { keys: Set<string>; swatchId: string };
+type MoveState = { paths?: string[]; objects?: string[] };
+type WorkerRequest = {
+  resolve: (value: ModelResult) => void;
+  reject: (reason?: unknown) => void;
+};
+type CreationApi = {
+  state: () => unknown;
+  inspect: () => Promise<unknown>;
+  command: (
+    action: string,
+    args: Record<string, unknown>,
+    expectedRevision?: number,
+  ) => unknown;
+  focus: (id: string) => void;
+  select_paths: (ids: string[]) => void;
+  select_cells: (keys: string[]) => void;
+  new_path: (path: { id: string }) => CreationDocument | undefined;
+  show_output: () => void;
+  export: (format: string, save?: boolean) => Promise<unknown>;
+  clear: () => void;
+};
+type EyeDropperWindow = Window &
+  typeof globalThis & {
+    EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> };
+  };
+const ModelWorker = (
+  modelWorkerModule as unknown as { default: new () => Worker }
+).default;
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
 type Props = {
   project: Project;
   enabled: boolean;
@@ -60,7 +241,7 @@ type Props = {
   onView: (v: string) => void;
   onProject: (p: Project, record?: boolean) => void;
   onStatus: (s: string) => void;
-  onApi: (a: any) => void;
+  onApi: (a: CreationApi) => void;
   layer: SVGGElement | null;
   stage: HTMLDivElement | null;
   scale: number;
@@ -91,8 +272,15 @@ function Name({
   label: string;
   onRename: (s: string) => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null),
+  const input = useRef<HTMLInputElement>(null),
+    [draft, setDraft] = useState<string | null>(null),
     done = useRef(false);
+  useEffect(() => {
+    if (draft !== null) {
+      input.current?.focus();
+      input.current?.select();
+    }
+  }, [draft]);
   const commit = () => {
     if (done.current) return;
     done.current = true;
@@ -113,7 +301,7 @@ function Name({
     </span>
   ) : (
     <input
-      autoFocus
+      ref={input}
       aria-label={label}
       value={draft}
       maxLength={120}
@@ -134,21 +322,26 @@ function Name({
 }
 export default function CreationWorkspace(p: Props) {
   const ref = useRef(p);
-  ref.current = p;
-  const doc = creationDocument(p.project),
-    [scene, setScene] = useState<any>(null),
-    sceneRef = useRef<any>(null),
+  useEffect(() => {
+    ref.current = p;
+  });
+  const doc = creationDocument(p.project) as CreationDocument,
+    [scene, setScene] = useState<CreationScene | null>(null),
+    sceneRef = useRef<CreationScene | null>(null),
     revision = useRef<Project | null>(null),
     roleChecking = useRef(false),
-    pendingRoleResult = useRef<any>(null),
+    applyRolesRef = useRef<(args: RoleArgs) => Promise<unknown>>(async () => {
+      throw Error('区域引擎尚未准备好');
+    }),
+    pendingRoleResult = useRef<PendingRoleResult | null>(null),
     sequence = useRef(0),
     worker = useRef<Worker | null>(null),
-    requests = useRef(new Map<number, any>());
+    requests = useRef(new Map<number, WorkerRequest>());
   const [boot, setBoot] = useState(false),
     [calculating, setCalculating] = useState(false),
     [checkingRole, setCheckingRole] = useState(false),
-    [roleIssue, setRoleIssue] = useState<any>(null),
-    [roleResult, setRoleResult] = useState<any>(null),
+    [roleIssue, setRoleIssue] = useState<SceneError | null>(null),
+    [roleResult, setRoleResult] = useState<PendingRoleResult | null>(null),
     [error, setError] = useState('');
   const [tab, setTab] = useState('object'),
     [brush, setBrush] = useState('cream'),
@@ -156,12 +349,14 @@ export default function CreationWorkspace(p: Props) {
     [search, setSearch] = useState(''),
     [dragTarget, setDragTarget] = useState('');
   const [draftHeight, setDraftHeight] = useState<number | null>(null),
-    heightDrag = useRef<any>(null),
-    paintDrag = useRef<any>(null),
+    heightDrag = useRef<DragState | null>(null),
+    paintDrag = useRef<PaintDrag | null>(null),
     [paintKeys, setPaintKeys] = useState<string[]>([]),
-    [joinPreview, setJoinPreview] = useState<any>(null),
-    [connectionHighlight, setConnectionHighlight] = useState<any[]>([]),
-    [report, setReport] = useState<any>(null),
+    [joinPreview, setJoinPreview] = useState<CreationScene | null>(null),
+    [connectionHighlight, setConnectionHighlight] = useState<
+      ConnectionHighlight[]
+    >([]),
+    [report, setReport] = useState<ModelResult | null>(null),
     [exporting, setExporting] = useState(false),
     [showLines, setShowLines] = useState(true),
     [displayMode, setDisplayMode] = useState('reference');
@@ -173,7 +368,7 @@ export default function CreationWorkspace(p: Props) {
       pointerId: number;
       moved: boolean;
     } | null>(null),
-    moving = useRef<any>(null),
+    moving = useRef<MoveState | null>(null),
     root = useRef<HTMLElement>(null),
     nextRole = useRef('boundary'),
     revisionId = useRef(0);
@@ -206,45 +401,53 @@ export default function CreationWorkspace(p: Props) {
     setExpandedCells,
   } = selectionState;
   useEffect(
-    () => p.onSelectionKind(selection.kind),
-    [selection.kind, p.onSelectionKind],
+    () => ref.current.onSelectionKind(selection.kind),
+    [selection.kind],
   );
-  const [basePreview, setBasePreview] = useState<any>(null),
+  const [basePreview, setBasePreview] = useState<BasePreview | null>(null),
     [baseMargin, setBaseMargin] = useState(1),
     [baseHeight, setBaseHeight] = useState(2);
   const connectionRequest = useRef(0),
     focusedObject = useRef<string | undefined>(undefined);
-  const current = doc.objects.find((o: any) => o.id === objects.at(-1)),
-    cell = scene?.cells.find((c: any) => c.key === cellKeys.at(-1)),
-    swatch = doc.swatches.find((s: any) => s.id === brush) || doc.swatches[0];
-  focusedObject.current = current?.id;
+  const current = doc.objects.find((o) => o.id === objects.at(-1)),
+    cell = scene?.cells.find((c) => c.key === cellKeys.at(-1)),
+    swatch = doc.swatches.find((s) => s.id === brush) || doc.swatches[0];
+  useEffect(() => {
+    focusedObject.current = current?.id;
+  }, [current?.id]);
   const clearConnectionPreview = () => {
     connectionRequest.current++;
     setJoinPreview(null);
     setConnectionHighlight([]);
   };
   useEffect(() => {
-    clearConnectionPreview();
-    setRoleIssue(null);
-    setRoleResult(null);
+    const timer = window.setTimeout(() => {
+      clearConnectionPreview();
+      setRoleIssue(null);
+      setRoleResult(null);
+    });
+    return () => window.clearTimeout(timer);
   }, [current?.id]);
-  const failedSelection = scene?.errors.some((e: any) =>
+  const failedSelection = scene?.errors.some((e) =>
     objects.includes(e.objectId),
   );
   const sourceOnly =
     current &&
     scene &&
     !calculating &&
-    !scene.cells.some((c: any) => objects.includes(c.objectId));
-  useEffect(() => {
-    if (['trace', 'edit'].includes(p.tool)) chooseDisplay('reference');
-    else if (p.tool === 'paint') chooseDisplay('overlay');
-    else if (p.tool === 'height') chooseDisplay('color');
-  }, [p.tool]);
-  function chooseDisplay(mode: string) {
+    !scene.cells.some((c) => objects.includes(c.objectId));
+  const chooseDisplay = (mode: string) => {
     setDisplayMode(mode);
     setShowLines(mode !== 'color');
-  }
+  };
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (['trace', 'edit'].includes(p.tool)) chooseDisplay('reference');
+      else if (p.tool === 'paint') chooseDisplay('overlay');
+      else if (p.tool === 'height') chooseDisplay('color');
+    });
+    return () => window.clearTimeout(timer);
+  }, [p.tool]);
   useEffect(() => {
     p.stage?.setAttribute(
       'data-creation-lines',
@@ -262,10 +465,10 @@ export default function CreationWorkspace(p: Props) {
   }, [p.stage, p.enabled, displayMode]);
   const call = (
     action: string,
-    args: any = {},
+    args: Record<string, unknown> = {},
     project = ref.current.project,
   ) =>
-    new Promise<any>((resolve, reject) => {
+    new Promise<ModelResult>((resolve, reject) => {
       if (!worker.current) {
         reject(Error('几何引擎尚未准备好'));
         return;
@@ -281,47 +484,47 @@ export default function CreationWorkspace(p: Props) {
     });
   useEffect(() => {
     const w = new ModelWorker() as Worker;
+    const pendingRequests = requests.current;
     worker.current = w;
     w.onmessage = ({ data }) => {
-      const r = requests.current.get(data.id);
+      const r = pendingRequests.get(data.id);
       if (!r) return;
-      requests.current.delete(data.id);
-      if (data.error) r.reject(Error(data.error));
-      else r.resolve(data.result);
+      pendingRequests.delete(data.id);
+      if (data.error) r.reject(Error(String(data.error)));
+      else r.resolve(data.result as ModelResult);
     };
     w.onerror = () => {
       setError('区域引擎加载失败，请刷新后重试');
-      for (const r of requests.current.values())
-        r.reject(Error('引擎加载失败'));
-      requests.current.clear();
+      for (const r of pendingRequests.values()) r.reject(Error('引擎加载失败'));
+      pendingRequests.clear();
     };
-    setBoot(true);
+    const timer = window.setTimeout(() => setBoot(true));
     return () => {
+      window.clearTimeout(timer);
       w.terminate();
       worker.current = null;
-      for (const r of requests.current.values())
-        r.reject(Error('工作台已关闭'));
-      requests.current.clear();
+      for (const r of pendingRequests.values()) r.reject(Error('工作台已关闭'));
+      pendingRequests.clear();
     };
   }, []);
   useEffect(() => {
     if (!boot) return;
     let cancelled = false;
     const snapshot = p.project;
-    setRoleIssue(null);
-    setRoleResult(null);
-    revisionId.current++;
-    setCalculating(true);
-    clearConnectionPreview();
-    setBasePreview(null);
-    setReport(null);
     const timer = setTimeout(() => {
+      setRoleIssue(null);
+      setRoleResult(null);
+      revisionId.current++;
+      setCalculating(true);
+      clearConnectionPreview();
+      setBasePreview(null);
+      setReport(null);
       call('creation', {}, snapshot)
         .then((result) => {
           if (cancelled || ref.current.project !== snapshot) return;
-          const bound = bindSurfaceGraphs(snapshot, result);
+          const bound = bindSurfaceGraphs(snapshot, result) as Project;
           if (bound !== snapshot && !ref.current.busy) {
-            p.onProject(bound, false);
+            ref.current.onProject(bound, false);
             return;
           }
           setScene(result);
@@ -329,12 +532,12 @@ export default function CreationWorkspace(p: Props) {
           revision.current = snapshot;
           setError('');
         })
-        .catch((e) => {
+        .catch((error: unknown) => {
           if (!cancelled) {
             setScene(null);
             sceneRef.current = null;
             revision.current = null;
-            setError(e.message);
+            setError(errorMessage(error));
           }
         })
         .finally(() => {
@@ -350,7 +553,7 @@ export default function CreationWorkspace(p: Props) {
     setError('');
     p.onStatus(message);
   };
-  const run = (action: string, args: any = {}) => {
+  const run = (action: string, args: Record<string, unknown> = {}) => {
     if (ref.current.busy) throw Error('请先完成当前拖动或描线');
     if (
       (['paint', 'height', 'continue_partition', 'rebuild_surfaces'].includes(
@@ -366,7 +569,7 @@ export default function CreationWorkspace(p: Props) {
       action,
       args,
       sceneRef.current,
-    );
+    ) as CommandResult;
     p.onProject(next);
     clearConnectionPreview();
     notify(
@@ -382,17 +585,17 @@ export default function CreationWorkspace(p: Props) {
     );
     return next;
   };
-  const safely = (fn: () => any) => {
+  const safely = (fn: () => unknown) => {
     try {
-      const value = fn();
-      if (value?.catch)
-        value.catch((e: any) => {
-          setError(e.message);
-          p.onStatus(e.message);
-        });
-    } catch (e: any) {
-      setError(e.message);
-      p.onStatus(e.message);
+      Promise.resolve(fn()).catch((error: unknown) => {
+        const message = errorMessage(error);
+        setError(message);
+        p.onStatus(message);
+      });
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      setError(message);
+      p.onStatus(message);
     }
   };
   function selectObject(
@@ -517,7 +720,7 @@ export default function CreationWorkspace(p: Props) {
         e.stopImmediatePropagation();
         selectionState.commit({
           kind: 'object',
-          ids: doc.objects.map((o: any) => o.id),
+          ids: doc.objects.map((o) => o.id),
         });
       }
       if (
@@ -576,8 +779,9 @@ export default function CreationWorkspace(p: Props) {
     };
   });
   const svgExport = () => {
-    const invalid = scene?.errors.find((e: any) =>
-      scene.creation.objects.some((o: any) => o.id === e.objectId && o.visible),
+    if (!scene) throw Error('请等待区域更新后导出');
+    const invalid = scene?.errors.find((e) =>
+      scene.creation.objects.some((o) => o.id === e.objectId && o.visible),
     );
     if (invalid) throw Error('请先修复区域：' + invalid.message);
     if (revision.current !== p.project) throw Error('请等待区域更新后导出');
@@ -596,31 +800,31 @@ export default function CreationWorkspace(p: Props) {
     const body = scene.creation.printStack
       ? scene.creation.printStack.layers
           .map(
-            (layer: any) =>
+            (layer) =>
               `<g id="${escape(layer.id)}" data-name="${escape(layer.name)}">${scene.cells
                 .filter(
-                  (c: any) =>
+                  (c) =>
                     c.printLayerId === layer.id &&
                     c.painted &&
                     c.mode !== 'cut' &&
                     c.mode !== 'through' &&
-                    scene.creation.objects.find((o: any) => o.id === c.objectId)
+                    scene.creation.objects.find((o) => o.id === c.objectId)
                       ?.visible,
                 )
                 .map(
-                  (c: any) =>
+                  (c) =>
                     `<path data-object-id="${escape(c.objectId)}" data-name="${escape(c.name || c.key)}" d="${regionSVGPath(c.geometry, p.project)}" fill="${c.color}" fill-rule="evenodd"/>`,
                 )
                 .join('')}</g>`,
           )
           .join('\n')
       : scene.creation.objects
-          .filter((o: any) => o.visible)
+          .filter((o) => o.visible)
           .map(
-            (o: any) =>
+            (o) =>
               `<g id="${escape(o.id)}" data-name="${escape(o.name)}">${scene.cells
-                .filter((c: any) => c.objectId === o.id && c.painted)
-                .map((c: any) => {
+                .filter((c) => c.objectId === o.id && c.painted)
+                .map((c) => {
                   if (c.conflict) throw Error('请先处理标记的颜色冲突');
                   return `<path d="${regionSVGPath(c.geometry, p.project)}" fill="${c.color}" fill-rule="evenodd"/>`;
                 })
@@ -713,8 +917,7 @@ export default function CreationWorkspace(p: Props) {
         calculating,
         errors: scene?.errors || [],
         conflicts:
-          scene?.cells.filter((c: any) => c.conflict).map((c: any) => c.key) ||
-          [],
+          scene?.cells.filter((c) => c.conflict).map((c) => c.key) || [],
         view: p.viewMode,
         displayMode,
       }),
@@ -725,24 +928,30 @@ export default function CreationWorkspace(p: Props) {
           throw Error('作品已变化，请重新读取候选区域');
         return { ...result, revision: revisionId.current };
       },
-      command: (action: string, args: any, expectedRevision?: number) => {
+      command: (
+        action: string,
+        args: Record<string, unknown>,
+        expectedRevision?: number,
+      ) => {
         if (
           ['paint', 'height'].includes(action) &&
           expectedRevision !== revisionId.current
         )
           throw Error('候选区域修订号已过期，请重新调用 creation_inspect');
-        return action === 'roles' ? applyRoles(args) : run(action, args);
+        return action === 'roles'
+          ? applyRolesRef.current(args as RoleArgs)
+          : run(action, args);
       },
       focus: (id: string) => selectObject(id, {}, true),
       select_paths: selectionState.selectPaths,
       select_cells: (keys: string[]) => {
-        if (keys.some((k) => !scene?.cells.some((c: any) => c.key === k)))
+        if (keys.some((k) => !scene?.cells.some((c) => c.key === k)))
           throw Error('选区已变化');
         selectionState.commit({ kind: 'cell', ids: keys });
       },
-      new_path: (path: any) => {
-        const c = creationDocument(ref.current.project),
-          o = c.objects.find((o: any) => o.id === objects.at(-1));
+      new_path: (path: { id: string }) => {
+        const c = creationDocument(ref.current.project) as CreationDocument,
+          o = c.objects.find((o) => o.id === objects.at(-1));
         if (o) {
           acceptDividerGraph(o);
           o.pathIds.push(path.id);
@@ -755,13 +964,13 @@ export default function CreationWorkspace(p: Props) {
       clear,
     });
   });
-  async function applyRoles(args: any) {
+  const applyRoles = async (args: RoleArgs) => {
     if (ref.current.busy || roleChecking.current)
       throw Error('请先完成当前操作');
     const snapshot = ref.current.project;
     const next = creationCommand(snapshot, 'roles', args, sceneRef.current);
     const beforeCount =
-      sceneRef.current?.cells.filter((c: any) => c.objectId === args.objectId)
+      sceneRef.current?.cells.filter((c) => c.objectId === args.objectId)
         .length || 0;
     setCheckingRole(true);
     roleChecking.current = true;
@@ -772,7 +981,7 @@ export default function CreationWorkspace(p: Props) {
       if (ref.current.project !== snapshot)
         throw Error('线条已变化，请重新设置用途');
       const failure = result.errors.find(
-        (e: any) => e.objectId === args.objectId,
+        (e: SceneError) => e.objectId === args.objectId,
       );
       if (failure && failure.kind !== 'pipeline' && args.role !== 'guide') {
         const issue = { ...failure, pathIds: args.pathIds };
@@ -787,13 +996,13 @@ export default function CreationWorkspace(p: Props) {
         return { applied: true, blocked: true, issue: failure };
       }
       const afterCount = result.cells.filter(
-        (c: any) => c.objectId === args.objectId,
+        (c) => c.objectId === args.objectId,
       ).length;
       const message =
         args.role === 'divider'
           ? args.pathIds.every((id: string) =>
               result.diagnostics.some(
-                (d: any) =>
+                (d: Diagnostic) =>
                   d.objectId === args.objectId &&
                   d.pathId === id &&
                   d.status === 'existing_boundary',
@@ -818,7 +1027,10 @@ export default function CreationWorkspace(p: Props) {
       roleChecking.current = false;
       setCheckingRole(false);
     }
-  }
+  };
+  useEffect(() => {
+    applyRolesRef.current = applyRoles;
+  });
   useEffect(() => {
     const result = pendingRoleResult.current;
     if (result?.project === p.project) setRoleResult(result);
@@ -827,8 +1039,8 @@ export default function CreationWorkspace(p: Props) {
   const chooseRole = (role: string) =>
     safely(() =>
       applyRoles({
-        objectId: current.id,
-        pathIds: p.selectedPaths.filter((id) => current.pathIds.includes(id)),
+        objectId: current?.id || '',
+        pathIds: p.selectedPaths.filter((id) => current?.pathIds.includes(id)),
         role,
       }),
     );
@@ -844,7 +1056,7 @@ export default function CreationWorkspace(p: Props) {
     effectiveScene && draftHeight !== null
       ? {
           ...effectiveScene,
-          cells: effectiveScene.cells.map((c: any) =>
+          cells: effectiveScene.cells.map((c) =>
             (
               scope === 'object'
                 ? objects.includes(c.objectId)
@@ -860,15 +1072,15 @@ export default function CreationWorkspace(p: Props) {
           ),
         }
       : effectiveScene;
-  const draftScene =
+  const draftScene: CreationScene | null =
     editedDraft && draftHeight !== null && printHeight
       ? {
           ...editedDraft,
-          ...resolvePrintStack(
+          ...(resolvePrintStack(
             editedDraft.creation,
             editedDraft.cells,
             editedDraft.errors,
-          ),
+          ) as unknown as Partial<CreationScene>),
         }
       : editedDraft;
   if (!p.enabled) return null;
@@ -882,9 +1094,9 @@ export default function CreationWorkspace(p: Props) {
         rendered &&
         createPortal(
           <g className={'creation-fills ' + (showLines ? '' : 'without-lines')}>
-            {rendered.cells.map((c: any) => {
+            {rendered.cells.map((c) => {
               const o = rendered.creation.objects.find(
-                (o: any) => o.id === c.objectId,
+                (o) => o.id === c.objectId,
               );
               if (
                 !o?.visible ||
@@ -1005,16 +1217,16 @@ export default function CreationWorkspace(p: Props) {
             })}
             {(
               joinPreview?.connections?.filter(
-                (c: any) => c.objectId === current?.id,
+                (c) => c.objectId === current?.id,
               ) || connectionHighlight
             )
-              .filter((c: any) => c.from && c.to)
-              .map((c: any, i: number) => (
+              .filter((c) => c.from && c.to)
+              .map((c, i: number) => (
                 <path
                   key={i}
-                  d={(c.coordinates || [c.from, c.to])
+                  d={(c.coordinates || (c.from && c.to ? [c.from, c.to] : []))
                     .map(
-                      ([x, y]: number[], index: number) =>
+                      ([x, y], index: number) =>
                         `${index ? 'L' : 'M'} ${p.project.width / 2 + (x * p.project.width) / p.project.widthMM} ${p.project.height / 2 - (y * p.project.width) / p.project.widthMM}`,
                     )
                     .join(' ')}
@@ -1034,12 +1246,12 @@ export default function CreationWorkspace(p: Props) {
           <>
             {p.viewMode === '3d' && (
               <CreationView
-                scene={draftScene}
+                scene={draftScene as never}
                 selected={
                   scope === 'object'
                     ? (draftScene?.cells || [])
-                        .filter((c: any) => objects.includes(c.objectId))
-                        .map((c: any) => c.key)
+                        .filter((c) => objects.includes(c.objectId))
+                        .map((c) => c.key)
                     : cellKeys
                 }
                 tool={p.tool}
@@ -1076,9 +1288,8 @@ export default function CreationWorkspace(p: Props) {
                       : ''}
               </span>
               {p.viewMode === 'flat' && (
-                <div
+                <fieldset
                   className="creation-display-switch"
-                  role="group"
                   aria-label="平面显示"
                 >
                   {[
@@ -1095,7 +1306,7 @@ export default function CreationWorkspace(p: Props) {
                       {label}
                     </button>
                   ))}
-                </div>
+                </fieldset>
               )}
               {p.viewMode === 'flat' && (
                 <label>
@@ -1126,11 +1337,13 @@ export default function CreationWorkspace(p: Props) {
             {scope !== 'source' &&
               (objects.length > 0 || cellKeys.length > 0) &&
               p.tool === 'height' && (
-                <div
+                <button
+                  type="button"
                   className="creation-height-handle"
                   onPointerDown={startHeight}
                   onPointerMove={(e) => {
-                    if (heightDrag.current)
+                    const drag = heightDrag.current;
+                    if (drag && 'value' in drag && 'y' in drag)
                       setDraftHeight(
                         Math.max(
                           heightMinimum,
@@ -1138,12 +1351,10 @@ export default function CreationWorkspace(p: Props) {
                             heightMaximum,
                             printHeight
                               ? Math.round(
-                                  heightDrag.current.value +
-                                    (heightDrag.current.y - e.clientY) / 8,
+                                  drag.value + (drag.y - e.clientY) / 8,
                                 )
                               : Math.round(
-                                  (heightDrag.current.value +
-                                    (heightDrag.current.y - e.clientY) * 0.02) *
+                                  (drag.value + (drag.y - e.clientY) * 0.02) *
                                     100,
                                 ) / 100,
                           ),
@@ -1158,12 +1369,7 @@ export default function CreationWorkspace(p: Props) {
                     if (n !== null) safely(() => applyHeight(n));
                   }}
                   onPointerCancel={cancel}
-                  role="slider"
-                  tabIndex={0}
                   aria-label="拖动区域高度"
-                  aria-valuemin={heightMinimum}
-                  aria-valuemax={heightMaximum}
-                  aria-valuenow={displayedHeight}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') {
                       cancel();
@@ -1192,7 +1398,7 @@ export default function CreationWorkspace(p: Props) {
                     {printHeight ? displayedHeight : displayedHeight.toFixed(2)}
                   </b>
                   <small>{printHeight ? '打印层' : 'mm'}</small>
-                </div>
+                </button>
               )}
             <div
               className="creation-palette"
@@ -1200,7 +1406,7 @@ export default function CreationWorkspace(p: Props) {
             >
               <span>项目色</span>
               <div className="creation-swatches">
-                {doc.swatches.map((s: any) => (
+                {doc.swatches.map((s) => (
                   <button
                     key={s.id}
                     title={s.name + ' · ' + s.color}
@@ -1231,7 +1437,7 @@ export default function CreationWorkspace(p: Props) {
                       color: swatch?.color || '#d2b777',
                       name: '新颜色',
                     });
-                    setBrush(next.creation.swatches.at(-1).id);
+                    setBrush(next.creation.swatches.at(-1)!.id);
                     setEditingSwatch(true);
                   })
                 }
@@ -1299,7 +1505,7 @@ export default function CreationWorkspace(p: Props) {
             onClick={() =>
               safely(() => {
                 const next = run('new_object');
-                const id = next.creation.objects.at(-1).id;
+                const id = next.creation.objects.at(-1)!.id;
                 selectionState.commit({ kind: 'object', ids: [id] });
               })
             }
@@ -1321,13 +1527,17 @@ export default function CreationWorkspace(p: Props) {
           className="creation-tree"
           role="tree"
           aria-label="创作对象"
+          tabIndex={-1}
           onClick={(e) => {
             if (e.target === e.currentTarget) clear();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') clear();
           }}
         >
           {doc.objects
             .filter(
-              (o: any) =>
+              (o) =>
                 !search ||
                 objects.includes(o.id) ||
                 o.name.includes(search) ||
@@ -1336,15 +1546,14 @@ export default function CreationWorkspace(p: Props) {
                     o.pathIds.includes(path.id) && path.name.includes(search),
                 ),
             )
-            .map((o: any) => {
+            .map((o) => {
               const open = expanded.includes(o.id),
                 paths = p.project.paths.filter((path) =>
                   o.pathIds.includes(path.id),
                 ),
-                local =
-                  scene?.cells.filter((c: any) => c.objectId === o.id) || [],
-                count = local.filter((c: any) => c.painted).length,
-                failed = scene?.errors.some((e: any) => e.objectId === o.id);
+                local = scene?.cells.filter((c) => c.objectId === o.id) || [],
+                count = local.filter((c) => c.painted).length,
+                failed = scene?.errors.some((e) => e.objectId === o.id);
               return (
                 <div
                   key={o.id}
@@ -1445,9 +1654,8 @@ export default function CreationWorkspace(p: Props) {
                       className="creation-object-swatch"
                       style={{
                         background:
-                          local.find((c: any) => c.painted)?.color ||
-                          doc.swatches.find((s: any) => s.id === o.swatchId)
-                            ?.color,
+                          local.find((c) => c.painted)?.color ||
+                          doc.swatches.find((s) => s.id === o.swatchId)?.color,
                       }}
                     />
                     <Name
@@ -1490,10 +1698,12 @@ export default function CreationWorkspace(p: Props) {
                     </button>
                   </div>
                   {open && (
-                    <div role="group" className="creation-tree-children">
+                    <fieldset className="creation-tree-children">
                       {paths.map((path) => (
                         <div
                           key={path.id}
+                          role="treeitem"
+                          tabIndex={0}
                           data-tree-path={path.id}
                           className={
                             'creation-path-row ' +
@@ -1530,6 +1740,12 @@ export default function CreationWorkspace(p: Props) {
                               e,
                             );
                             p.onFramePaths(selected.paths);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.currentTarget.click();
+                            }
                           }}
                         >
                           <GripVertical size={12} />
@@ -1579,7 +1795,7 @@ export default function CreationWorkspace(p: Props) {
                         >
                           <summary>内部区域 · {local.length}</summary>
                           <div className="creation-cell-list">
-                            {local.map((c: any) => (
+                            {local.map((c) => (
                               <button
                                 key={c.key}
                                 data-tree-cell={c.key}
@@ -1602,7 +1818,7 @@ export default function CreationWorkspace(p: Props) {
                           </div>
                         </details>
                       )}
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               );
@@ -1640,8 +1856,8 @@ export default function CreationWorkspace(p: Props) {
               key={current?.id || 'none'}
               object={current}
               project={p.project}
-              scene={scene}
-              busy={calculating || revision.current !== p.project}
+              scene={scene || undefined}
+              busy={calculating}
               cellKeys={selection.kind === 'cell' ? selection.ids : []}
               onLocate={(ids) => {
                 selectionState.selectPaths(ids);
@@ -1649,7 +1865,7 @@ export default function CreationWorkspace(p: Props) {
                 p.onTool('edit');
                 p.onFramePaths(ids, { force: true });
               }}
-              onCommand={(action: string, args: any) =>
+              onCommand={(action: string, args: Record<string, unknown>) =>
                 safely(() => run(action, args))
               }
             />
@@ -1663,20 +1879,20 @@ export default function CreationWorkspace(p: Props) {
             </div>
           )}
           {[
-            ...(scene?.errors || []).filter((e: any) =>
+            ...(scene?.errors || []).filter((e) =>
               objects.includes(e.objectId),
             ),
             ...(roleIssue && objects.includes(roleIssue.objectId)
               ? [{ ...roleIssue, pending: true }]
               : []),
-          ].map((e: any, i: number) => {
-            const owner = doc.objects.find((o: any) => o.id === e.objectId);
-            if (e.kind === 'pipeline' && !e.modifierId)
+          ].map((e, i: number) => {
+            const owner = doc.objects.find((o) => o.id === e.objectId);
+            if (e.kind === 'pipeline' && !e.modifierId && owner)
               return (
                 <ConstructionPipeline
                   key={i}
                   object={owner}
-                  scene={scene}
+                  scene={scene || undefined}
                   busy={calculating || p.busy}
                   onCommand={(action, args) => safely(() => run(action, args))}
                   onLocate={(ids) => {
@@ -1689,7 +1905,7 @@ export default function CreationWorkspace(p: Props) {
               );
             if (e.kind === 'modifier' || e.modifierId) {
               const inline = scene?.modifierStatus?.some(
-                (status: any) => status.objectId === e.objectId && status.error,
+                (status) => status.objectId === e.objectId && status.error,
               );
               if (tab === 'modifiers' && inline) return null;
               return (
@@ -1734,7 +1950,7 @@ export default function CreationWorkspace(p: Props) {
                   p.onFramePaths(ids, { force: true });
                 }}
                 onDisable={
-                  !e.pending && ids.length
+                  !e.pending && ids.length && owner
                     ? () =>
                         safely(() =>
                           applyRoles({
@@ -1852,8 +2068,8 @@ export default function CreationWorkspace(p: Props) {
                         printHeight && (
                           <p className="creation-muted">
                             {
-                              doc.printStack.layers.find(
-                                (l: any) => l.id === current?.printLayerId,
+                              doc.printStack!.layers.find(
+                                (l) => l.id === current?.printLayerId,
                               )?.name
                             }{' '}
                             · 从 {cell?.bottomMM ?? 0} mm 开始，跟随下层抬升
@@ -1873,19 +2089,19 @@ export default function CreationWorkspace(p: Props) {
                           sourceOnly
                             ? [
                                 doc.swatches.find(
-                                  (s: any) => s.id === current.swatchId,
+                                  (s) => s.id === current.swatchId,
                                 )?.color || swatch.color,
                               ]
                             : (scene?.cells || [])
-                                .filter((c: any) =>
+                                .filter((c) =>
                                   scope === 'local'
                                     ? cellKeys.includes(c.key)
                                     : objects.includes(c.objectId),
                                 )
-                                .map((c: any) => c.color)
+                                .map((c) => c.color)
                         }
                         swatches={doc.swatches}
-                        disabled={calculating || p.busy || failedSelection}
+                        disabled={calculating || p.busy || !!failedSelection}
                         onPaint={(args) =>
                           safely(() => run('paint', { ...targets(), ...args }))
                         }
@@ -1963,7 +2179,7 @@ export default function CreationWorkspace(p: Props) {
                       </summary>
                       {!printHeight && (
                         <>
-                          <label>
+                          <div>
                             起始高度 mm
                             <NumberEdit
                               label="对象起始高度"
@@ -1977,7 +2193,7 @@ export default function CreationWorkspace(p: Props) {
                                 )
                               }
                             />
-                          </label>
+                          </div>
                           <label>
                             放到对象上
                             <select
@@ -1994,8 +2210,8 @@ export default function CreationWorkspace(p: Props) {
                             >
                               <option value="">平台 · Z = 0</option>
                               {doc.objects
-                                .filter((o: any) => o.id !== current.id)
-                                .map((o: any) => (
+                                .filter((o) => o.id !== current.id)
+                                .map((o) => (
                                   <option key={o.id} value={o.id}>
                                     {o.name}
                                   </option>
@@ -2082,20 +2298,26 @@ export default function CreationWorkspace(p: Props) {
                     <button
                       onClick={() =>
                         safely(async () => {
-                          if (!(window as any).EyeDropper)
+                          const eyedropper = window as EyeDropperWindow;
+                          if (!eyedropper.EyeDropper)
                             throw Error(
                               '此浏览器不支持屏幕取色，请使用色值输入',
                             );
                           try {
-                            const value = await new (
-                              window as any
-                            ).EyeDropper().open();
+                            const value =
+                              await new eyedropper.EyeDropper().open();
                             run('swatch', {
                               id: swatch.id,
                               color: value.sRGBHex,
                             });
-                          } catch (e: any) {
-                            if (e.name !== 'AbortError') throw e;
+                          } catch (error: unknown) {
+                            if (
+                              !(
+                                error instanceof DOMException &&
+                                error.name === 'AbortError'
+                              )
+                            )
+                              throw error;
                           }
                         })
                       }
@@ -2138,7 +2360,7 @@ export default function CreationWorkspace(p: Props) {
                 selection.kind === 'path' &&
                 p.selectedPaths.some((id) => current.pathIds.includes(id)) && (
                   <div className="creation-role">
-                    <label>选中线条的用途</label>
+                    <span>选中线条的用途</span>
                     <div>
                       {[
                         ['boundary', '轮廓'],
@@ -2169,13 +2391,11 @@ export default function CreationWorkspace(p: Props) {
                     <small>
                       分区保留共享边界；挖洞使用闭合线。参考线不参与填色。
                     </small>
-                    {checkingRole && (
-                      <p role="status">正在检查分区，完成后应用…</p>
-                    )}
+                    {checkingRole && <output>正在检查分区，完成后应用…</output>}
                     {roleResult?.objectId === current.id && (
-                      <p role="status" className="creation-role-result">
+                      <output className="creation-role-result">
                         {roleResult.message}
-                      </p>
+                      </output>
                     )}
                   </div>
                 )}
@@ -2183,9 +2403,9 @@ export default function CreationWorkspace(p: Props) {
                 <CreationConnections
                   key={current.id}
                   object={current}
-                  scene={scene}
+                  scene={scene as never}
                   project={p.project}
-                  preview={joinPreview}
+                  preview={joinPreview as never}
                   onCancel={clearConnectionPreview}
                   onModifiers={() => setTab('modifiers')}
                   onPreview={(joinMM) =>
@@ -2235,7 +2455,7 @@ export default function CreationWorkspace(p: Props) {
                 <b>制作成品</b>
                 <span>毫米</span>
               </div>
-              <label className="creation-dimension">
+              <div className="creation-dimension">
                 作品宽度
                 <NumberEdit
                   label="创作作品宽度"
@@ -2247,13 +2467,13 @@ export default function CreationWorkspace(p: Props) {
                     notify('已调整作品比例');
                   }}
                 />
-              </label>
+              </div>
               <details className="creation-base">
                 <summary>生成承托部件 · 可选</summary>
                 <p className="creation-muted">
                   已有完整底层轮廓时无需添加。此工具只根据所选部件的外形生成新的承托部件，可在普通修改器中继续编辑。
                 </p>
-                <label>
+                <div>
                   外扩边距 mm
                   <NumberEdit
                     label="底板外扩边距"
@@ -2265,7 +2485,7 @@ export default function CreationWorkspace(p: Props) {
                       setBasePreview(null);
                     }}
                   />
-                </label>
+                </div>
                 <label>
                   底板厚度 {printHeight ? '打印层' : 'mm'}
                   <NumberEdit
@@ -2378,7 +2598,16 @@ export default function CreationWorkspace(p: Props) {
                 onChange={(slicerTemplate) =>
                   p.onProject({
                     ...p.project,
-                    model: { ...p.project.model, slicerTemplate },
+                    model: {
+                      ...(p.project.model || {
+                        version: 1,
+                        toleranceMM: 0.015,
+                        regions: [],
+                        features: [],
+                        parts: [{ id: 'main', name: '零件 1' }],
+                      }),
+                      slicerTemplate,
+                    },
                   })
                 }
               />

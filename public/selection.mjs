@@ -1,6 +1,12 @@
 import { pathNodes, removeNode } from './node-edit.mjs';
 import { evaluate } from './geometry.mjs';
 
+/**
+ * @param {string[]} existing
+ * @param {string} id
+ * @param {string[]} ordered
+ * @param {{ toggle?: boolean, range?: boolean, anchor?: string | null }} [options]
+ */
 export function pickSelection(
   existing,
   id,

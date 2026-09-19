@@ -19,7 +19,7 @@ Camera fix: reproduced unchanged rendered pixels on right drag; the canvas recei
 | Draw a closed source and click to fill    | Real pointer drawing, source anchor count unchanged, candidate hover, filled state                                                                       |
 | One object contains several colour blocks | Draw/select divider, local paint, object tree remains one item, local height                                                                             |
 | Shared project colours                    | Palette selects brush, colour edit updates references, local override stays local                                                                        |
-| Editing and topology                      | At this snapshot, split inherited styles and mixed-style merges showed a stripe conflict; current builds no longer generate that conflict stripe          |
+| Editing and topology                      | At this snapshot, split inherited styles and mixed-style merges showed a stripe conflict; current builds no longer generate that conflict stripe         |
 | Undo and cancel                           | Swept paint is one undo; height drag commit once; Esc/blur restores draft; gap preview cancel                                                            |
 | Selection and tree                        | Plain/Ctrl/Shift, empty deselection, arrows alone expand, double-click rename, multi drag reorder, path ownership drag                                   |
 | Same object in flat and 3D                | Selection and palette preserved; exact height input, preview visible, no extra creation step                                                             |

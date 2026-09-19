@@ -14,14 +14,16 @@
 
 ```sh
 npm run typecheck
+npm run lint
 npm test
+npm run format:check
 npm run build
 ```
 
 - 使用 `npm run test:core` 检查构造链、修改器与打印分层。
 - 使用 `npm run test:export` 检查通用 3MF 与 Bambu 3MF。
 - `npm run format` 会直接修改文件；只读检查使用 `npm run format:check`。
-- 当前全库 lint 有历史诊断。不要用放宽产品代码规则来掩盖问题；浏览器注入脚本和 `.cjs` 应使用适合其运行环境的独立规则。
+- 全库 lint 与格式检查应保持通过。不要用放宽产品代码规则来掩盖问题；浏览器注入脚本和 `.cjs` 应使用适合其运行环境的独立规则。
 
 ## 高风险区域
 

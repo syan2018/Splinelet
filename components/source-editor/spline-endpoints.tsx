@@ -1,5 +1,6 @@
 'use client';
 import type { TracePath } from '@/lib/project';
+type TraceActivationEvent = React.PointerEvent | React.MouseEvent;
 
 export default function SplineEndpoints({
   path,
@@ -17,7 +18,7 @@ export default function SplineEndpoints({
   end: 'start' | 'end';
   disabled: boolean;
   onResume: (end: 'start' | 'end') => void;
-  onClose: (e: React.PointerEvent) => void;
+  onClose: (e: TraceActivationEvent) => void;
   isPanning: () => boolean;
 }) {
   if (path.closed) return null;
@@ -41,29 +42,25 @@ export default function SplineEndpoints({
           : closing
             ? `闭合到${label}端点`
             : `从${label}端点续画`;
+        const activate = (event: TraceActivationEvent) => {
+          event.stopPropagation();
+          event.preventDefault();
+          if (disabled || active) return;
+          if (closing) onClose(event);
+          else onResume(side);
+        };
+        const hitWidth =
+          26 + (label.length + (closing ? 5 : active ? 6 : 5)) * 12;
         return (
           <g
             key={side}
-            role="button"
-            aria-label={action}
-            aria-disabled={disabled || active}
-            data-trace-endpoint={side}
             transform={`translate(${p.x},${p.y}) scale(${1 / scale})`}
-            style={{ cursor: disabled || active ? 'default' : 'crosshair' }}
-            onPointerDown={(e) => {
-              if (e.button !== 0 || isPanning()) return;
-              e.stopPropagation();
-              e.preventDefault();
-              if (disabled || active) return;
-              if (closing) onClose(e);
-              else onResume(side);
-            }}
           >
             <title>{action}</title>
             <rect
               x="-13"
               y="-25"
-              width={26 + (label.length + (closing ? 5 : active ? 6 : 5)) * 12}
+              width={hitWidth}
               height="38"
               fill="transparent"
             />
@@ -96,6 +93,27 @@ export default function SplineEndpoints({
               {label}
               {closing ? ' · 闭合' : active ? ' · 续画中' : ' · 续画'}
             </text>
+            <foreignObject x="-13" y="-25" width={hitWidth} height="38">
+              <button
+                type="button"
+                data-trace-endpoint={side}
+                aria-label={action}
+                disabled={disabled || active}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0,
+                  cursor: disabled || active ? 'default' : 'crosshair',
+                }}
+                onPointerDown={(event) => {
+                  if (event.button !== 0 || isPanning()) return;
+                  activate(event);
+                }}
+                onClick={(event) => {
+                  if (event.detail === 0) activate(event);
+                }}
+              />
+            </foreignObject>
           </g>
         );
       })}

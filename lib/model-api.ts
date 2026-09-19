@@ -1,7 +1,9 @@
-const id = { type: 'string' },
-  ids = { type: 'array', items: id },
-  number = { type: 'number' };
-export const modelTools: Record<string, any> = {
+import type { ToolCatalog, ToolProperty } from './tool-schema';
+
+const id: ToolProperty = { type: 'string' },
+  ids: ToolProperty = { type: 'array', items: id },
+  number: ToolProperty = { type: 'number' };
+export const modelTools: ToolCatalog = {
   set_workspace: {
     description:
       'Switch between editable Bezier sources, derived 2D faces, and 3D relief. Does not modify geometry.',

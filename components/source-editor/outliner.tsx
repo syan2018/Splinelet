@@ -46,9 +46,8 @@ export function Outliner(p: Props) {
     } | null>(null),
     [target, setTarget] = useState(''),
     [dragCount, setDragCount] = useState(0);
-  const draft = useRef(rename);
-  draft.current = rename;
-  const moving = useRef<string[]>([]),
+  const renameCancelled = useRef(false),
+    moving = useRef<string[]>([]),
     expand = useRef<ReturnType<typeof setTimeout> | null>(null);
   const groups = [...(p.project.groups || []), { id: '', name: '未分组' }];
   const ordered = groups.flatMap((g) =>
@@ -59,16 +58,19 @@ export function Outliner(p: Props) {
           .map((v) => v.id),
   );
   const commit = () => {
-    const r = draft.current;
-    draft.current = null;
+    const r = rename;
     setRename(null);
-    if (r?.name.trim()) p.onRename(r.kind, r.id, r.name.trim());
+    if (!renameCancelled.current && r?.name.trim())
+      p.onRename(r.kind, r.id, r.name.trim());
+    renameCancelled.current = false;
   };
   const editor = (kind: 'path' | 'group', id: string, name: string) =>
     rename?.id === id && rename.kind === kind ? (
       <input
         aria-label={kind === 'path' ? '重命名路径' : '重命名分组'}
-        autoFocus
+        ref={(element) => {
+          element?.focus();
+        }}
         value={rename.name}
         maxLength={kind === 'path' ? 120 : 80}
         onFocus={(e) => e.target.select()}
@@ -83,7 +85,7 @@ export function Outliner(p: Props) {
           }
           if (e.key === 'Escape') {
             e.preventDefault();
-            draft.current = null;
+            renameCancelled.current = true;
             setRename(null);
           }
         }}
@@ -95,7 +97,10 @@ export function Outliner(p: Props) {
         onDoubleClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
-          if (kind !== 'group' || id) setRename({ kind, id, name });
+          if (kind !== 'group' || id) {
+            renameCancelled.current = false;
+            setRename({ kind, id, name });
+          }
         }}
       >
         {name}
@@ -138,57 +143,48 @@ export function Outliner(p: Props) {
   };
   const allSelected =
     p.project.paths.length > 0 && p.selected.length === p.project.paths.length;
+  const handlePathKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const id =
+      e.currentTarget.closest<HTMLElement>('[data-path-id]')?.dataset.pathId;
+    if (!id) return;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      e.stopPropagation();
+      p.onSelect(id, { ctrlKey: true }, ordered);
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const index = ordered.indexOf(id);
+      const next =
+        ordered[
+          Math.max(
+            0,
+            Math.min(
+              ordered.length - 1,
+              index + (e.key === 'ArrowDown' ? 1 : -1),
+            ),
+          )
+        ];
+      if (!next) return;
+      p.onSelect(next, e, ordered);
+      e.currentTarget
+        .closest('.outliner')
+        ?.querySelector<HTMLElement>(`[data-path-id="${next}"] .path-select`)
+        ?.focus();
+    }
+    if (e.key === 'F2') {
+      e.preventDefault();
+      const path = p.project.paths.find((candidate) => candidate.id === id);
+      if (path) setRename({ kind: 'path', id: path.id, name: path.name });
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      p.onEdit();
+    }
+  };
   return (
-    <section
-      className="outliner"
-      aria-label="路径树"
-      onKeyDown={(e) => {
-        if ((e.target as HTMLElement).closest('input,button')) return;
-        if (
-          e.code === 'Space' &&
-          (e.target as HTMLElement).hasAttribute('data-path-id')
-        ) {
-          e.preventDefault();
-          e.stopPropagation();
-          p.onSelect(
-            (e.target as HTMLElement).getAttribute('data-path-id')!,
-            { ctrlKey: true },
-            ordered,
-          );
-          return;
-        }
-        if (['ArrowDown', 'ArrowUp'].includes(e.key)) {
-          e.preventDefault();
-          e.stopPropagation();
-          const i = ordered.indexOf(p.active || '');
-          const id =
-            ordered[
-              Math.max(
-                0,
-                Math.min(
-                  ordered.length - 1,
-                  i + (e.key === 'ArrowDown' ? 1 : -1),
-                ),
-              )
-            ];
-          if (id) {
-            p.onSelect(id, e, ordered);
-            e.currentTarget
-              .querySelector<HTMLElement>('[data-path-id="' + id + '"]')
-              ?.focus();
-          }
-        }
-        if (e.key === 'F2' && p.selected.length === 1) {
-          e.preventDefault();
-          const path = p.project.paths.find((v) => v.id === p.selected[0]);
-          if (path) setRename({ kind: 'path', id: path.id, name: path.name });
-        }
-        if (e.key === 'Enter' && p.selected.length === 1) {
-          e.preventDefault();
-          p.onEdit();
-        }
-      }}
-    >
+    <section className="outliner" aria-label="路径树">
       <div className="outliner-heading">
         <b>路径与分组</b>
         <span>{p.project.paths.length}</span>
@@ -261,15 +257,7 @@ export function Outliner(p: Props) {
           </>
         )}
       </div>
-      <div
-        className="outliner-scroll"
-        role="listbox"
-        aria-label="路径列表"
-        aria-multiselectable="true"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) p.onClear();
-        }}
-      >
+      <fieldset className="outliner-scroll" aria-label="路径列表">
         {groups.map((g) => {
           const members = p.project.paths.filter(
               (v) => (v.groupId || '') === g.id,
@@ -284,10 +272,12 @@ export function Outliner(p: Props) {
               }
               data-group-id={g.id}
               open={!collapsed[g.id]}
-              onDragOver={(e) => over(e, 'g:' + g.id)}
-              onDrop={(e) => drop(e, g.id)}
             >
-              <summary onClick={(e) => e.preventDefault()}>
+              <summary
+                onClick={(e) => e.preventDefault()}
+                onDragOver={(e) => over(e, 'g:' + g.id)}
+                onDrop={(e) => drop(e, g.id)}
+              >
                 <button
                   className="group-toggle"
                   aria-label={
@@ -314,15 +304,24 @@ export function Outliner(p: Props) {
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => p.onGroupSelect(ids, true)}
                 />
-                <div
-                  className="group-name"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    p.onGroupSelect(ids, e.ctrlKey || e.metaKey || e.shiftKey);
-                  }}
-                >
-                  {editor('group', g.id, g.name)}
-                </div>
+                {rename?.id === g.id && rename.kind === 'group' ? (
+                  <div className="group-name">
+                    {editor('group', g.id, g.name)}
+                  </div>
+                ) : (
+                  <button
+                    className="group-name"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      p.onGroupSelect(
+                        ids,
+                        e.ctrlKey || e.metaKey || e.shiftKey,
+                      );
+                    }}
+                  >
+                    {editor('group', g.id, g.name)}
+                  </button>
+                )}
                 <div className="group-controls">
                   <small>{members.length}</small>
                   <button
@@ -361,16 +360,8 @@ export function Outliner(p: Props) {
                 <div
                   key={path.id}
                   data-path-id={path.id}
-                  tabIndex={path.id === (p.active || ordered[0]) ? 0 : -1}
-                  role="option"
-                  aria-selected={p.selected.includes(path.id)}
-                  aria-label={path.name}
                   draggable={!p.busy && rename?.id !== path.id}
                   className={`path-row ${p.selected.includes(path.id) ? 'selected' : ''} ${path.id === p.active ? 'active' : ''} ${path.visible ? '' : 'is-hidden'} ${target === 'b:' + path.id ? 'drop-before' : target === 'a:' + path.id ? 'drop-after' : ''}`}
-                  onClick={(e) => {
-                    if (!(e.target as HTMLElement).closest('button,input'))
-                      p.onSelect(path.id, e, ordered);
-                  }}
                   onDragStart={(e) => {
                     const ids = p.selected.includes(path.id)
                       ? p.selected
@@ -403,13 +394,26 @@ export function Outliner(p: Props) {
                     className="path-swatch"
                     style={{ background: path.color }}
                   />
-                  <div className="path-select">
-                    {editor('path', path.id, path.name)}
-                    <small>
-                      {path.closed ? '闭合' : '开放'} · {path.curves.length} 段
-                      {path.quality < 0.35 ? ' · 待检查' : ''}
-                    </small>
-                  </div>
+                  {rename?.id === path.id && rename.kind === 'path' ? (
+                    <div className="path-select">
+                      {editor('path', path.id, path.name)}
+                    </div>
+                  ) : (
+                    <button
+                      className="path-select"
+                      tabIndex={path.id === (p.active || ordered[0]) ? 0 : -1}
+                      aria-pressed={p.selected.includes(path.id)}
+                      aria-label={path.name}
+                      onClick={(e) => p.onSelect(path.id, e, ordered)}
+                      onKeyDown={handlePathKeyDown}
+                    >
+                      {editor('path', path.id, path.name)}
+                      <small>
+                        {path.closed ? '闭合' : '开放'} · {path.curves.length}{' '}
+                        段{path.quality < 0.35 ? ' · 待检查' : ''}
+                      </small>
+                    </button>
+                  )}
                   <button
                     aria-label={'切换可见性 ' + path.name}
                     title="显示 / 隐藏"
@@ -428,7 +432,7 @@ export function Outliner(p: Props) {
             </details>
           );
         })}
-      </div>
+      </fieldset>
     </section>
   );
 }

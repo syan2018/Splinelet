@@ -4,7 +4,6 @@
 
 「Bambu 工程导出 · 可选」默认折叠，只有明确点击其中的导出按钮才使用模板。模板随工程保存、可以更换或移除，不参与默认导出。API 的 `3mf` 和兼容别名 `3mf-generic` 均为通用模型；`3mf-bambu` 才要求模板。底层 `export3MF` 默认不读取工程模板，需要显式传入 `slicerTemplate`。
 
-
 ## Bambu 兼容层
 
 旧版只有 Core 3MF 的 base materials 和几何，Bambu Studio 2.8.2.61 会提示「配置无效，仅加载几何数据」。修复依据对应版本的 [Plater.cpp](https://github.com/bambulab/BambuStudio/blob/v02.08.02.61/src/slic3r/GUI/Plater.cpp)、[bbs_3mf.cpp](https://github.com/bambulab/BambuStudio/blob/v02.08.02.61/src/libslic3r/Format/bbs_3mf.cpp) 和 [Preset.cpp](https://github.com/bambulab/BambuStudio/blob/v02.08.02.61/src/libslic3r/Preset.cpp)。
@@ -34,7 +33,7 @@
 - 实际 GUI 载入修复文件：不再出现配置无效提示，5 种颜色显示正确，作品居中，层高和首层层高均为 0.2 mm。
 - 实际 Bambu CLI 原生读入并重新导出：保留 **69 个部件、5 种颜色、耗材编号 1–5、0.2 mm 层高**。最终文件基于当前 workspace 的 Sandrone-new 工程生成，未覆盖其源文件。
 - 浏览器点击打印按钮：下载的包包含 Bambu 配置、69 个部件和 5 个耗材。模板移除、重新载入和从描线工程恢复通过；无页面脚本错误；1440×1000 视口无横向溢出。
-- 官方 Core XSD 验证通过；新的模板/分色/多喷嘴隔离/层高/定位检查、TypeScript、生产构建通过。新增模块 scoped lint 通过；旧大型 UI 模块仍有既存 any/React 等 lint 报错，本次没有扩大修复范围。
+- 官方 Core XSD 验证通过；模板、分色、多喷嘴隔离、层高与定位检查，以及全库 TypeScript、lint 和生产构建均应通过。
 - 未发送打印任务；实际耗材槽位、排盘、清料和切片质量仍需按打印机检查。
 
 复现：`node scripts/tests/unit/test-3mf.mjs`，随后 `node scripts/tests/unit/test-bambu-3mf.mjs`；`python scripts/validation/validate-3mf.py 文件.3mf`。schema 验证使用隔离安装在 workspace `outputs/3mf/validation-deps` 的 xmlschema。

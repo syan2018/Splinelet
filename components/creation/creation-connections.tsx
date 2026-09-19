@@ -1,61 +1,102 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import type { Project } from '@/lib/project';
 
-// Construction controls are deliberately separate from source editing: these
-// connections close derived faces and never append anchors to the drawn paths.
-export default function CreationConnections(p: {
-  object: any;
-  scene: any;
-  project: any;
-  preview: any;
+type Connection = {
+  objectId: string;
+  pathId: string;
+  endpoint: number;
+  status?: string;
+};
+type Diagnostic = Connection & { message?: string; gapMM: number };
+type BoundaryOption = { id: string; name: string; gapMM: number };
+type Closure = {
+  objectId: string;
+  featureId: string;
+  regionId: string;
+  boundaryRegionId?: string;
+  boundaryOptions?: BoundaryOption[];
+  disabled?: boolean;
+  pathIds: string[];
+};
+type CreationObject = {
+  id: string;
+  joinMM?: number;
+  disabledClosureFeatureIds?: string[];
+  roles: Record<string, string>;
+  modifiers?: { type: string; rolePathId?: string }[];
+};
+type CreationScene = {
+  diagnostics?: Diagnostic[];
+  connections: Connection[];
+  closures?: Closure[];
+};
+type ConnectionProps = {
+  object: CreationObject;
+  scene: CreationScene;
+  project: Project;
+  preview?: CreationScene;
   onPreview: (distance: number) => void;
   onCancel: () => void;
   onApply: (distance: number) => void;
   onModifiers?: () => void;
-  onCommand: (action: string, args: any) => void;
-  onLocate: (paths: string[], connections?: any[]) => void;
-}) {
+  onCommand: (action: string, args: Record<string, unknown>) => void;
+  onLocate: (paths: string[], connections?: (Connection | Closure)[]) => void;
+};
+
+// Construction controls are deliberately separate from source editing: these
+// connections close derived faces and never append anchors to the drawn paths.
+export default function CreationConnections(p: ConnectionProps) {
   const o = p.object;
-  const [distance, setDistance] = useState(o.joinMM || 0.15);
-  useEffect(() => setDistance(o.joinMM || 0.15), [o.id, o.joinMM]);
+  const sourceDistance = o.joinMM || 0.15;
+  const [draft, setDraft] = useState<{
+    objectId: string;
+    source: number;
+    value: number;
+  }>();
+  const distance =
+    draft?.objectId === o.id && draft.source === sourceDistance
+      ? draft.value
+      : sourceDistance;
+  const setDistance = (value: number) =>
+    setDraft({ objectId: o.id, source: sourceDistance, value });
   const diagnostics = (p.scene?.diagnostics || []).filter(
-    (d: any) => d.objectId === o.id,
+    (d) => d.objectId === o.id,
   );
   const gaps = diagnostics.filter(
-    (d: any) => d.status === 'unconnected' && d.pathId,
+    (d) => d.status === 'unconnected' && d.pathId,
   );
   const connections =
-    (p.preview || p.scene)?.connections.filter(
-      (c: any) => c.objectId === o.id,
-    ) || [];
-  const disabled = diagnostics.filter((d: any) => d.status === 'disabled');
+    (p.preview || p.scene)?.connections.filter((c) => c.objectId === o.id) ||
+    [];
+  const disabled = diagnostics.filter((d) => d.status === 'disabled');
   const closures = (p.scene?.closures || []).filter(
-    (c: any) => c.objectId === o.id && !c.disabled,
+    (c) => c.objectId === o.id && !c.disabled,
   );
   const features: string[] = [
-    ...new Set<string>(closures.map((c: any) => c.featureId)),
+    ...new Set<string>(closures.map((c) => c.featureId)),
   ];
   const disabledFeatures: string[] = o.disabledClosureFeatureIds || [];
   const name = (id: string) =>
-    p.project.paths.find((path: any) => path.id === id)?.name || '线条';
+    p.project.paths.find((path) => path.id === id)?.name || '线条';
   const featureName = (id: string) =>
-    p.project.model?.features.find((f: any) => f.id === id)?.name || '带状面';
-  const existing = diagnostics.filter(
-    (d: any) => d.status === 'existing_boundary',
-  );
+    p.project.model?.features.find(
+      (f: { id: string; name: string }) => f.id === id,
+    )?.name || '带状面';
+  const existing = diagnostics.filter((d) => d.status === 'existing_boundary');
   const divider = Object.entries(o.roles).some(
     ([id, role]) =>
       role === 'divider' &&
-      !existing.some((d: any) => d.pathId === id) &&
-      !o.modifiers?.some((m: any) => m.type === 'split' && m.rolePathId === id),
+      !existing.some((d) => d.pathId === id) &&
+      !o.modifiers?.some((m) => m.type === 'split' && m.rolePathId === id),
   );
   const valid = Number.isFinite(distance) && distance >= 0 && distance <= 5;
   return (
     <div className="creation-constructions">
-      {o.modifiers?.some((m: any) => m.type === 'split' && m.rolePathId) && (
+      {o.modifiers?.some((m) => m.type === 'split' && m.rolePathId) && (
         <button onClick={p.onModifiers}>分区连接设置 · 修改器</button>
       )}
-      {existing.map((d: any) => (
+      {existing.map((d) => (
         <p className="creation-source-note" key={d.pathId}>
           {d.message}
         </p>
@@ -70,15 +111,14 @@ export default function CreationConnections(p: {
           </summary>
           {gaps.length > 0 && (
             <p className="creation-source-note">
-              端点与边界仍差{' '}
-              {Math.min(...gaps.map((d: any) => d.gapMM)).toFixed(3)}–
-              {Math.max(...gaps.map((d: any) => d.gapMM)).toFixed(3)} mm。
+              端点与边界仍差 {Math.min(...gaps.map((d) => d.gapMM)).toFixed(3)}–
+              {Math.max(...gaps.map((d) => d.gapMM)).toFixed(3)} mm。
               线条看似相接，也可能留有不足一个像素的缺口。预览补齐后再接受。
             </p>
           )}
           {diagnostics
-            .filter((d: any) => d.message && d.status !== 'existing_boundary')
-            .map((d: any, i: number) => (
+            .filter((d) => d.message && d.status !== 'existing_boundary')
+            .map((d, i: number) => (
               <p key={i} className="creation-source-note">
                 {d.message}
               </p>
@@ -110,8 +150,7 @@ export default function CreationConnections(p: {
                   const d = Math.min(
                     5,
                     Math.ceil(
-                      (Math.max(...gaps.map((d: any) => d.gapMM)) + 0.001) *
-                        100,
+                      (Math.max(...gaps.map((d) => d.gapMM)) + 0.001) * 100,
                     ) / 100,
                   );
                   setDistance(d);
@@ -140,7 +179,7 @@ export default function CreationConnections(p: {
             </p>
           )}
           {!p.preview &&
-            [...connections, ...disabled].map((c: any) => (
+            [...connections, ...disabled].map((c) => (
               <div
                 className="creation-connection-row"
                 key={c.pathId + ':' + c.endpoint}
@@ -178,27 +217,26 @@ export default function CreationConnections(p: {
             <div className="creation-closure" key={id}>
               <span>
                 {featureName(id)}
-                {closures.some(
-                  (c: any) => c.featureId === id && c.boundaryRegionId,
-                )
+                {closures.some((c) => c.featureId === id && c.boundaryRegionId)
                   ? ' · 沿轮廓封口'
                   : ' · 端点直连'}
               </span>
               {[
-                ...new Map<string, any>(
+                ...new Map<string, Closure>(
                   closures
-                    .filter((c: any) => c.featureId === id)
-                    .map((c: any) => [c.regionId, c]),
+                    .filter((c) => c.featureId === id)
+                    .map((c) => [c.regionId, c]),
                 ).values(),
-              ].map((closure: any) => (
+              ].map((closure) => (
                 <label key={closure.regionId}>
                   封口方式
                   <select
                     aria-label={'封口方式 ' + featureName(id)}
                     value={
                       closure.boundaryRegionId ||
-                      p.project.model.regions.find(
-                        (r: any) => r.id === closure.regionId,
+                      p.project.model?.regions.find(
+                        (r: { id: string; boundaryRegionId?: string }) =>
+                          r.id === closure.regionId,
                       )?.boundaryRegionId ||
                       ''
                     }
@@ -213,7 +251,7 @@ export default function CreationConnections(p: {
                     }
                   >
                     <option value="">端点直连</option>
-                    {(closure.boundaryOptions || []).map((boundary: any) => (
+                    {(closure.boundaryOptions || []).map((boundary) => (
                       <option
                         key={boundary.id}
                         value={boundary.id}
@@ -229,11 +267,9 @@ export default function CreationConnections(p: {
               <div className="creation-connection-actions">
                 <button
                   onClick={() => {
-                    const list = closures.filter(
-                      (c: any) => c.featureId === id,
-                    );
+                    const list = closures.filter((c) => c.featureId === id);
                     p.onLocate(
-                      [...new Set<string>(list.flatMap((c: any) => c.pathIds))],
+                      [...new Set<string>(list.flatMap((c) => c.pathIds))],
                       list,
                     );
                   }}

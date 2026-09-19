@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export default function CreationColor({
   colors,
@@ -16,8 +16,9 @@ export default function CreationColor({
 }) {
   const unique = [...new Set(colors.map((c) => c.toLowerCase()))];
   const color = unique.length === 1 ? unique[0] : '';
-  const [draft, setDraft] = useState(color);
-  useEffect(() => setDraft(color), [color]);
+  const [draftState, setDraftState] = useState({ source: color, value: color });
+  const draft = draftState.source === color ? draftState.value : color;
+  const setDraft = (value: string) => setDraftState({ source: color, value });
   const valid = /^#[a-f0-9]{6}$/i.test(draft);
   const changed = valid && draft.toLowerCase() !== color;
   const commit = () => {

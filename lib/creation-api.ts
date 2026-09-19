@@ -1,4 +1,6 @@
-export const creationTools: Record<string, any> = {
+import type { ToolCatalog } from './tool-schema';
+
+export const creationTools: ToolCatalog = {
   creation_inspect: {
     description:
       'Read unified objects, creation.printStack (ordered bottom-to-top manufacturing layers), printLevels (resolved slice counts and mm bounds; blocked levels have null bounds), pipelineStatus, surfaceGraphs, surfaceGraphCandidates, live cells, modifierStatus, modifierBaseCells, divider diagnostics and face closures. Cells include printLayerId and heightLayers when printing is enabled. Objects include modifiers and nested sources[featureId]. Call again after edits before selecting targets or painting.',

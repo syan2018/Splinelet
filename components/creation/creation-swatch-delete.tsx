@@ -9,19 +9,26 @@ import {
 } from '@/components/ui/dialog';
 import { swatchOwners } from '@/lib/creation-colors.mjs';
 
+type Swatch = { id: string; name: string; color: string };
+type CreationDocument = { swatches: Swatch[] };
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
 export default function CreationSwatchDelete({
   creation,
   swatch,
   disabled,
   onDelete,
 }: {
-  creation: any;
-  swatch: any;
+  creation: CreationDocument;
+  swatch: Swatch;
   disabled: boolean;
   onDelete: (replacementId?: string) => void;
 }) {
-  const alternatives = creation.swatches.filter((s: any) => s.id !== swatch.id);
-  const owners = swatchOwners(creation, swatch.id);
+  const alternatives = creation.swatches.filter(
+    (candidate) => candidate.id !== swatch.id,
+  );
+  const owners = swatchOwners(creation, swatch.id) as { name: string }[];
   const [open, setOpen] = useState(false);
   const [replacement, setReplacement] = useState(alternatives[0]?.id || '');
   const [error, setError] = useState('');
@@ -29,8 +36,8 @@ export default function CreationSwatchDelete({
     try {
       onDelete(replacementId);
       setOpen(false);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error: unknown) {
+      setError(errorMessage(error));
     }
   };
   return (
@@ -60,7 +67,7 @@ export default function CreationSwatchDelete({
             Ctrl+Z 撤销。
           </DialogDescription>
           <p className="creation-muted">
-            {owners.map((o: any) => o.name).join('、')}
+            {owners.map((owner) => owner.name).join('、')}
           </p>
           <label>
             替换为
@@ -69,9 +76,9 @@ export default function CreationSwatchDelete({
               value={replacement}
               onChange={(e) => setReplacement(e.target.value)}
             >
-              {alternatives.map((s: any) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {s.color.toUpperCase()}
+              {alternatives.map((alternative) => (
+                <option key={alternative.id} value={alternative.id}>
+                  {alternative.name} · {alternative.color.toUpperCase()}
                 </option>
               ))}
             </select>
@@ -82,7 +89,8 @@ export default function CreationSwatchDelete({
             <button
               className="primary"
               disabled={
-                disabled || !alternatives.some((s: any) => s.id === replacement)
+                disabled ||
+                !alternatives.some((candidate) => candidate.id === replacement)
               }
               onClick={() => remove(replacement)}
             >

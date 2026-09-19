@@ -1,19 +1,93 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-export default function ReliefView({ result }: { result: any }) {
+type MeshData = { positions: number[]; triangles: number[] };
+type ReliefResult = {
+  mesh?: MeshData;
+  report?: { bounds?: [[number, number, number], [number, number, number]] };
+};
+type SceneState = {
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  controls: OrbitControls;
+  renderer: THREE.WebGLRenderer;
+  mesh: THREE.Mesh | null;
+  grid: THREE.GridHelper;
+  framed: boolean;
+};
+type ViewKind = 'iso' | 'top' | 'side';
+
+const disposeRenderable = (object: THREE.Object3D) => {
+  if (
+    !(
+      object instanceof THREE.Mesh ||
+      object instanceof THREE.Line ||
+      object instanceof THREE.Points
+    )
+  )
+    return;
+  object.geometry.dispose();
+  const materials = Array.isArray(object.material)
+    ? object.material
+    : [object.material];
+  materials.forEach((material) => material.dispose());
+};
+
+const frameScene = (
+  state: SceneState | null,
+  result: ReliefResult | null,
+  kind: ViewKind,
+) => {
+  if (!state) return;
+  const bounds = result?.report?.bounds || [
+      [-50, -50, 0],
+      [50, 50, 5],
+    ],
+    center = new THREE.Vector3(...bounds[0])
+      .add(new THREE.Vector3(...bounds[1]))
+      .multiplyScalar(0.5),
+    span = Math.max(
+      bounds[1][0] - bounds[0][0],
+      bounds[1][1] - bounds[0][1],
+      10,
+    ),
+    distance = span * 2.1;
+  state.controls.target.copy(center);
+  state.camera.position
+    .copy(center)
+    .add(
+      kind === 'top'
+        ? new THREE.Vector3(0, -0.001, distance)
+        : kind === 'side'
+          ? new THREE.Vector3(0, -distance, 0)
+          : new THREE.Vector3(distance * 0.12, -distance * 0.6, distance),
+    );
+  state.controls.update();
+};
+
+export default function ReliefView({
+  result,
+}: {
+  result: ReliefResult | null;
+}) {
   const host = useRef<HTMLDivElement>(null),
-    sceneRef = useRef<any>(null),
+    sceneRef = useRef<SceneState | null>(null),
     [error, setError] = useState(''),
     [heightColor, setHeightColor] = useState(false);
+  const frameView = useCallback(
+    (kind: ViewKind) => frameScene(sceneRef.current, result, kind),
+    [result],
+  );
   useEffect(() => {
     if (!host.current) return;
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     } catch {
-      setError('三维显示不可用，请启用浏览器硬件加速。构面和导出仍可使用。');
+      queueMicrotask(() =>
+        setError('三维显示不可用，请启用浏览器硬件加速。构面和导出仍可使用。'),
+      );
       return;
     }
     const el = host.current;
@@ -75,10 +149,7 @@ export default function ReliefView({ result }: { result: any }) {
       cancelAnimationFrame(frame);
       ro.disconnect();
       controls.dispose();
-      scene.traverse((o: any) => {
-        o.geometry?.dispose();
-        if (o.material) o.material.dispose();
-      });
+      scene.traverse(disposeRenderable);
       renderer.dispose();
       el.replaceChildren();
       sceneRef.current = null;
@@ -89,8 +160,7 @@ export default function ReliefView({ result }: { result: any }) {
     if (!s) return;
     if (s.mesh) {
       s.scene.remove(s.mesh);
-      s.mesh.geometry.dispose();
-      s.mesh.material.dispose();
+      disposeRenderable(s.mesh);
       s.mesh = null;
     }
     if (!result?.mesh) return;
@@ -107,7 +177,7 @@ export default function ReliefView({ result }: { result: any }) {
     if (heightColor) {
       const p = geometry.attributes.position,
         colors = [];
-      const max = result.report.bounds[1][2] || 1;
+      const max = result.report?.bounds?.[1][2] || 1;
       for (let i = 0; i < p.count; i++) {
         const color = new THREE.Color().setHSL(
           0.58 - (0.45 * p.getZ(i)) / max,
@@ -130,34 +200,10 @@ export default function ReliefView({ result }: { result: any }) {
     s.mesh = new THREE.Mesh(geometry, material);
     s.scene.add(s.mesh);
     if (!s.framed) {
-      frameView('iso');
+      frameScene(s, result, 'iso');
       s.framed = true;
     }
   }, [result, heightColor]);
-  function frameView(kind: string) {
-    const s = sceneRef.current;
-    if (!s) return;
-    const b = result?.report?.bounds || [
-        [-50, -50, 0],
-        [50, 50, 5],
-      ],
-      center = new THREE.Vector3(...b[0])
-        .add(new THREE.Vector3(...b[1]))
-        .multiplyScalar(0.5),
-      span = Math.max(b[1][0] - b[0][0], b[1][1] - b[0][1], 10),
-      d = span * 2.1;
-    s.controls.target.copy(center);
-    s.camera.position
-      .copy(center)
-      .add(
-        kind === 'top'
-          ? new THREE.Vector3(0, -0.001, d)
-          : kind === 'side'
-            ? new THREE.Vector3(0, -d, 0)
-            : new THREE.Vector3(d * 0.12, -d * 0.6, d),
-      );
-    s.controls.update();
-  }
   return (
     <div className="relief-view">
       <div className="relief-view-toolbar">

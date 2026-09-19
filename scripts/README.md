@@ -8,7 +8,9 @@
 
 ```sh
 npm run typecheck
+npm run lint
 npm test
+npm run format:check
 npm run build
 ```
 
@@ -20,7 +22,7 @@ npm run build
 ## 目录
 
 - `tests/unit/`：可直接用 Node 运行的核心、几何和导出回归。
-- `tests/browser/`：隔离浏览器或 Playwright 注入脚本；不要在日常工程标签页运行。
+- `tests/browser/`：隔离浏览器或 Playwright 注入脚本；每个脚本必须自建测试数据或接收 `tests/fixtures/` 中的已提交 fixture，不能依赖先前脚本、当前页面工程或本机私有文件。不要在日常工程标签页运行。
 - `tests/fixtures/`：进入版本库的最小可复现测试数据。
 - `examples/`：样例构建与导出工具。
 - `validation/`：Python、Blender 或外部格式验证。

@@ -29,8 +29,8 @@ await traceStudio.call('creation_command', {
     operation: 'difference', // union / intersection
     input: { kind: 'object', id: toolObjectId }, // 或 path / region
     targets: { kind: 'selected', refs: [inputOptions[0].ref] },
-    name: '局部凹槽'
-  }
+    name: '局部凹槽',
+  },
 });
 ```
 

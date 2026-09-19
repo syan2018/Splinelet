@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { FileWriter } from '../../../public/persistence.mjs';
-const writer = new FileWriter(),
-  events = [];
+const deferred = () => {
+  let resolve;
+  return { promise: new Promise((done) => (resolve = done)), resolve };
+};
+const writer = new FileWriter();
+const events = [];
+const permits = { old: deferred(), new: deferred() };
+const started = { old: deferred(), new: deferred() };
 let stored = 'original';
 const handle = {
   async createWritable() {
@@ -9,7 +15,11 @@ const handle = {
     events.push('open');
     return {
       async write(v) {
-        await new Promise((r) => setTimeout(r, v === 'old' ? 25 : 1));
+        events.push('write:start:' + v);
+        if (started[v]) {
+          started[v].resolve();
+          await permits[v].promise;
+        }
         pending = v;
         events.push('write:' + v);
       },
@@ -23,13 +33,24 @@ const handle = {
     };
   },
 };
-await Promise.all([writer.write(handle, 'old'), writer.write(handle, 'new')]);
+const old = writer.write(handle, 'old');
+await started.old.promise;
+const newer = writer.write(handle, 'new');
+await Promise.resolve();
+assert.deepEqual(events, ['open', 'write:start:old']);
+permits.old.resolve();
+await old;
+await started.new.promise;
+permits.new.resolve();
+await newer;
 assert.equal(stored, 'new');
 assert.deepEqual(events, [
   'open',
+  'write:start:old',
   'write:old',
   'close',
   'open',
+  'write:start:new',
   'write:new',
   'close',
 ]);

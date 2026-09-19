@@ -1,15 +1,60 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { pickVisibleIntersection } from '@/public/creation-pick.mjs';
+
+type Coordinate = [number, number];
+type CreationCell = {
+  key: string;
+  objectId: string;
+  painted?: boolean;
+  flatOnly?: boolean;
+  conflict?: boolean;
+  mode?: string;
+  enabled?: boolean;
+  geometry:
+    | { type: 'Polygon'; coordinates: Coordinate[][] }
+    | { type: 'MultiPolygon'; coordinates: Coordinate[][][] };
+  heightMM: number;
+  bottomMM?: number;
+  zMM?: number;
+  color: string;
+};
+type CreationScene = {
+  cells: CreationCell[];
+  creation: { objects: { id: string; visible: boolean }[] };
+};
+type PointerStart = {
+  pointerId: number;
+  x: number;
+  y: number;
+  moved: boolean;
+};
+type ViewState = {
+  renderer: THREE.WebGLRenderer;
+  world: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  controls: OrbitControls;
+  content: THREE.Group;
+  framed: boolean;
+  interaction: {
+    tool: string;
+    spaceDown: boolean;
+    down: PointerStart | null;
+    pointers: Set<number>;
+  };
+};
+const setLeftMouseAction = (controls: OrbitControls, action: THREE.MOUSE) => {
+  controls.mouseButtons.LEFT = action;
+};
 export default function CreationView({
   scene,
   selected,
   onSelect,
   tool,
 }: {
-  scene: any;
+  scene: CreationScene | null;
   selected: string[];
   onSelect: (
     key: string,
@@ -18,10 +63,42 @@ export default function CreationView({
   tool: string;
 }) {
   const host = useRef<HTMLDivElement>(null),
-    state = useRef<any>(null),
+    state = useRef<ViewState | null>(null),
     callback = useRef(onSelect),
     [error, setError] = useState('');
-  callback.current = onSelect;
+  useEffect(() => {
+    callback.current = onSelect;
+  }, [onSelect]);
+  const frameView = useCallback((kind: string) => {
+    const s = state.current;
+    if (!s) return;
+    const box = new THREE.Box3().setFromObject(s.content),
+      center = new THREE.Vector3(),
+      size = new THREE.Vector3();
+    if (box.isEmpty()) {
+      center.set(0, 0, 0);
+      size.set(100, 100, 5);
+    } else {
+      box.getCenter(center);
+      box.getSize(size);
+    }
+    const span = Math.max(size.x, size.y, size.z, 10),
+      d = (span * 1.9) / Math.min(1, s.camera.aspect);
+    s.camera.near = Math.max(0.01, span / 1000);
+    s.camera.far = Math.max(1000, span * 10);
+    s.camera.updateProjectionMatrix();
+    s.controls.target.copy(center);
+    s.camera.position
+      .copy(center)
+      .add(
+        kind === 'top'
+          ? new THREE.Vector3(0, -0.001, d)
+          : kind === 'side'
+            ? new THREE.Vector3(0, -d, 0)
+            : new THREE.Vector3(d * 0.12, -d * 0.6, d),
+      );
+    s.controls.update();
+  }, []);
   useEffect(() => {
     const el = host.current;
     if (!el) return;
@@ -29,7 +106,9 @@ export default function CreationView({
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true });
     } catch {
-      setError('三维显示不可用，请启用硬件加速；仍可编辑平面和导出。');
+      queueMicrotask(() =>
+        setError('三维显示不可用，请启用硬件加速；仍可编辑平面和导出。'),
+      );
       return;
     }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -55,7 +134,7 @@ export default function CreationView({
     world.add(grid);
     const content = new THREE.Group();
     world.add(content);
-    const s = {
+    const s: ViewState = {
       renderer,
       world,
       camera,
@@ -63,9 +142,9 @@ export default function CreationView({
       content,
       framed: false,
       interaction: {
-        tool,
+        tool: 'select',
         spaceDown: false,
-        down: null as any,
+        down: null,
         pointers: new Set<number>(),
       },
     };
@@ -161,9 +240,13 @@ export default function CreationView({
       cancelAnimationFrame(frame);
       ro.disconnect();
       controls.dispose();
-      world.traverse((o: any) => {
-        o.geometry?.dispose();
-        o.material?.dispose();
+      world.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.geometry.dispose();
+        const materials = Array.isArray(object.material)
+          ? object.material
+          : [object.material];
+        materials.forEach((material) => material.dispose());
       });
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointermove', pointerMove);
@@ -179,15 +262,17 @@ export default function CreationView({
     };
   }, []);
   useEffect(() => {
-    const controls = state.current?.controls;
-    if (!controls) return;
-    const interaction = state.current.interaction;
+    const current = state.current;
+    if (!current) return;
+    const { controls, interaction } = current;
     interaction.tool = tool;
     interaction.down = null;
     interaction.pointers.clear();
     const restore = () => {
-      controls.mouseButtons.LEFT =
-        tool === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+      setLeftMouseAction(
+        controls,
+        tool === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+      );
     };
     restore();
     const down = (e: KeyboardEvent) => {
@@ -196,7 +281,7 @@ export default function CreationView({
         !(e.target as HTMLElement).closest('input,textarea,select')
       ) {
         e.preventDefault();
-        controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+        setLeftMouseAction(controls, THREE.MOUSE.PAN);
         interaction.spaceDown = true;
         interaction.down = null;
       }
@@ -225,15 +310,20 @@ export default function CreationView({
   useEffect(() => {
     const s = state.current;
     if (!s) return;
-    for (const mesh of [...s.content.children]) {
+    for (const child of s.content.children.slice()) {
+      if (!(child instanceof THREE.Mesh)) continue;
+      const mesh = child;
       mesh.geometry.dispose();
-      mesh.material.dispose();
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      materials.forEach((material) => material.dispose());
       s.content.remove(mesh);
     }
     if (!scene) return;
     let renderIndex = 0;
     for (const cell of scene.cells.filter(
-      (c: any) =>
+      (c) =>
         c.painted &&
         !c.flatOnly &&
         !c.conflict &&
@@ -241,7 +331,7 @@ export default function CreationView({
         c.mode !== 'through' &&
         c.enabled !== false,
     )) {
-      const o = scene.creation.objects.find((o: any) => o.id === cell.objectId);
+      const o = scene.creation.objects.find((o) => o.id === cell.objectId);
       if (!o?.visible) continue;
       const polygons =
         cell.geometry.type === 'Polygon'
@@ -250,13 +340,13 @@ export default function CreationView({
       for (const rings of polygons) {
         const pickOrder = renderIndex++;
         const shape = new THREE.Shape(
-          rings[0].map(([x, y]: number[]) => new THREE.Vector2(x, y)),
+          rings[0].map(([x, y]) => new THREE.Vector2(x, y)),
         );
         shape.holes = rings
           .slice(1)
           .map(
-            (r: number[][]) =>
-              new THREE.Path(r.map(([x, y]) => new THREE.Vector2(x, y))),
+            (ring) =>
+              new THREE.Path(ring.map(([x, y]) => new THREE.Vector2(x, y))),
           );
         const geometry = new THREE.ExtrudeGeometry(shape, {
           depth: cell.heightMM,
@@ -286,37 +376,7 @@ export default function CreationView({
       frameView('iso');
       s.framed = true;
     }
-  }, [scene, selected]);
-  function frameView(kind: string) {
-    const s = state.current;
-    if (!s) return;
-    const box = new THREE.Box3().setFromObject(s.content),
-      center = new THREE.Vector3(),
-      size = new THREE.Vector3();
-    if (box.isEmpty()) {
-      center.set(0, 0, 0);
-      size.set(100, 100, 5);
-    } else {
-      box.getCenter(center);
-      box.getSize(size);
-    }
-    const span = Math.max(size.x, size.y, size.z, 10),
-      d = (span * 1.9) / Math.min(1, s.camera.aspect);
-    s.camera.near = Math.max(0.01, span / 1000);
-    s.camera.far = Math.max(1000, span * 10);
-    s.camera.updateProjectionMatrix();
-    s.controls.target.copy(center);
-    s.camera.position
-      .copy(center)
-      .add(
-        kind === 'top'
-          ? new THREE.Vector3(0, -0.001, d)
-          : kind === 'side'
-            ? new THREE.Vector3(0, -d, 0)
-            : new THREE.Vector3(d * 0.12, -d * 0.6, d),
-      );
-    s.controls.update();
-  }
+  }, [frameView, scene, selected]);
   // OrbitControls receives captured drag and release events on document.
   // Only isolate pointer-down; movement and pointer-up must keep bubbling.
   return (
@@ -336,7 +396,7 @@ export default function CreationView({
         <span>分色预览 · 导出时合并并检查实体</span>
       </div>
       {error && <p className="model-empty">{error}</p>}
-      {!scene?.cells.some((c: any) => c.painted) && (
+      {!scene?.cells.some((cell) => cell.painted) && (
         <p className="model-empty">先给轮廓填色，就能看到它的厚度</p>
       )}
     </div>

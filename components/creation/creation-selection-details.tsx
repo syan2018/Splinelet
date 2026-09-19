@@ -1,6 +1,18 @@
 'use client';
 import { regionLabel, regionsForPaths } from '@/lib/creation-selection.mjs';
 import type { CreationSelection } from '@/hooks/use-creation-selection';
+import type { Project } from '@/lib/project';
+
+type CreationCell = {
+  key: string;
+  objectId: string;
+  painted?: boolean;
+};
+type CreationObject = { id: string; name: string };
+type CreationScene = {
+  cells: CreationCell[];
+  creation: { objects: CreationObject[] };
+};
 
 export default function CreationSelectionDetails({
   selection,
@@ -13,23 +25,24 @@ export default function CreationSelectionDetails({
 }: {
   selection: CreationSelection;
   objects: string[];
-  project: any;
-  scene: any;
+  project: Project;
+  scene: CreationScene | null;
   onSelect: (selection: CreationSelection) => void;
   onEdit: () => void;
   onEnable: () => void;
 }) {
   const cells = (scene?.cells || []).filter(
-    (c: any) => selection.kind === 'cell' && selection.ids.includes(c.key),
+    (c) => selection.kind === 'cell' && selection.ids.includes(c.key),
   );
-  const owned = (scene?.cells || []).filter((c: any) =>
+  const owned = (scene?.cells || []).filter((c) =>
     objects.includes(c.objectId),
   );
   const paths = project.paths.filter(
-    (p: any) => selection.kind === 'path' && selection.ids.includes(p.id),
+    (path) => selection.kind === 'path' && selection.ids.includes(path.id),
   );
   const owners =
-    scene?.creation.objects.filter((o: any) => objects.includes(o.id)) || [];
+    scene?.creation.objects.filter((object) => objects.includes(object.id)) ||
+    [];
   const label =
     selection.kind === 'path'
       ? paths.length === 1
@@ -44,7 +57,7 @@ export default function CreationSelectionDetails({
           : `${owners.length} 个部件`;
   const related =
     selection.kind === 'path'
-      ? regionsForPaths(project, scene, selection.ids)
+      ? (regionsForPaths(project, scene, selection.ids) as CreationCell[])
       : [];
   const choose = (e: React.MouseEvent, next: CreationSelection) => {
     const details = e.currentTarget.closest('details');
@@ -74,7 +87,7 @@ export default function CreationSelectionDetails({
             <button
               disabled={!owned.length}
               onClick={(e) =>
-                choose(e, { kind: 'cell', ids: owned.map((c: any) => c.key) })
+                choose(e, { kind: 'cell', ids: owned.map((c) => c.key) })
               }
             >
               选择全部内部区域
@@ -85,20 +98,20 @@ export default function CreationSelectionDetails({
           </div>
         </details>
       </div>
-      <p className="creation-edit-scope" role="status">
+      <output className="creation-edit-scope">
         {selection.kind === 'path'
           ? '线条 · 编辑节点与形状'
           : selection.kind === 'cell'
-            ? `${cells.length === 1 ? '单个区域' : `仅选中的 ${cells.length} 个区域`} · ${owners.map((o: any) => o.name).join('、')}`
+            ? `${cells.length === 1 ? '单个区域' : `仅选中的 ${cells.length} 个区域`} · ${owners.map((object) => object.name).join('、')}`
             : `整个部件 · 修改将应用到 ${owned.length} 个区域`}
-      </p>
+      </output>
       {selection.kind === 'path' && (
         <div className="creation-source-note">
           <p>颜色和厚度属于区域。先选择线条围成的区域，再调整这些属性。</p>
           {related.length > 0 && (
             <button
               onClick={() =>
-                onSelect({ kind: 'cell', ids: related.map((c: any) => c.key) })
+                onSelect({ kind: 'cell', ids: related.map((cell) => cell.key) })
               }
             >
               {related.length === 1
@@ -108,7 +121,7 @@ export default function CreationSelectionDetails({
           )}
         </div>
       )}
-      {cells.some((c: any) => !c.painted) && (
+      {cells.some((cell) => !cell.painted) && (
         <div className="creation-candidate-note">
           <p>
             闭合轮廓已识别。虚线表示尚未加入成品；可直接启用，也可上色或设置厚度。

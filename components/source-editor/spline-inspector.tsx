@@ -15,7 +15,7 @@ export function SplineEnds({
   onResume: Resume;
 }) {
   return (
-    <div className="spline-end-actions" role="group" aria-label="选择续画端点">
+    <fieldset className="spline-end-actions" aria-label="选择续画端点">
       <button disabled={disabled} onClick={() => onResume('start')}>
         <CornerDownLeft size={14} />
         从头续画
@@ -24,7 +24,7 @@ export function SplineEnds({
         <CornerDownLeft size={14} className="spline-tail-icon" />
         从尾续画
       </button>
-    </div>
+    </fieldset>
   );
 }
 
