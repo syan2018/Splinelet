@@ -38,10 +38,10 @@ const v1Sketch = Object.values(v1.document.sketches)[0];
 const curveResult = resolveSketch(v1.document, v1Sketch.id);
 assert.equal(curveResult.status, 'ready');
 assert.deepEqual(curveResult.value.curves[0].edges[0].cubic, [
-  [5, 30],
-  [10, 30],
-  [15, 30],
-  [20, 30],
+  [-20, 10],
+  [-15, 10],
+  [-10, 10],
+  [-5, 10],
 ]);
 assert.equal(curveResult.value.curves[0].closed, true);
 assert.equal(Object.keys(v1.assets).length, 1);

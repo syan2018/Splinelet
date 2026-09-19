@@ -86,6 +86,8 @@
 
 ## 实施检查记录 · 2026-09-19
 
+原工作区适配阶段后续复验：67 单元测试与 `check:all` 通过，两份 Sandrone 初始区域及容器往返通过；共享源、路径组、smooth 编辑语义及原 UI 后端接线仍未签收。具体边界见[阶段快照](../../docs/qa/v4-original-workspace-adapters-2026-09-19.md)，不能沿用候选简化界面的历史通过结果代替。
+
 当前模块证据：`test-v4-program-interop.mjs` 使用真实 Document 的 Source → Mirror → Array → Join → Fill，覆盖开放母线、中心孔、pose 移动、重设原点、断缝与空输入；`test-v4-full-pipeline.mjs` 接通区域 → 浮雕 → 制造放置 → Manifold 实体及 SVG/STL/3MF。`test-v4-authoring.mjs` 覆盖普通绘制、显式闭合、首次上色、厚度与重着色、一次撤销、失效区域拒绝和高级程序保护。
 
 本轮 `pnpm check:all` 通过：51 个隔离单元测试、全库类型/lint/格式、Rust format/check、Web 与桌面前端生产构建。此后增量修改仍须按当前提交复验。浏览器旧产品基线仍有 5 项失败，见[基线快照](../../docs/qa/v4-foundation-baseline-2026-09-19.md)；不能把模块测试通过当作 U/A 全部通过。

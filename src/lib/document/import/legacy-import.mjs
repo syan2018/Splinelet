@@ -1,5 +1,9 @@
 import { sha256 } from '../../project-container.mjs';
 import { evaluatePlanar } from '../../construction/document-evaluation.mjs';
+import { creationDocument, regionSources } from '../../creation-schema.mjs';
+import { evaluateCreation } from '../../creation-engine.mjs';
+import { evaluatePartition } from '../../partition-engine.mjs';
+import { readGeometry } from '../../region-engine.mjs';
 import { createDocument, validateDocument } from '../schema.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
@@ -98,8 +102,10 @@ function makeContext(project, suppliedAssets) {
     idMap: {},
   };
   context.id = (kind, legacyId) => {
-    const safeLegacyId = encodeURIComponent(String(legacyId));
-    const stem = `${kind}:${safeLegacyId}`;
+    const digest = sha256(
+      new TextEncoder().encode(`${kind}\u0000${String(legacyId)}`),
+    ).slice(0, 20);
+    const stem = `${kind}:${digest}`;
     let result = stem;
     for (let suffix = 2; context.used.has(result); suffix++)
       result = `${stem}:${suffix}`;
@@ -317,7 +323,14 @@ function dataAsset(context, document, assets) {
     name: context.project.imageName || '参考图',
     pixelWidth: context.project.width,
     pixelHeight: context.project.height,
-    pixelToWorld: [scale, 0, 0, -scale, 0, context.project.height * scale],
+    pixelToWorld: [
+      scale,
+      0,
+      0,
+      -scale,
+      (-context.project.width / 2) * scale,
+      (context.project.height / 2) * scale,
+    ],
     visible: true,
     locked: true,
     opacity: 1,
@@ -329,8 +342,11 @@ function dataAsset(context, document, assets) {
 
 function copyPath(context, state, path) {
   const scale = context.project.widthMM / context.project.width;
-  const point = (p) => [p.x * scale, (context.project.height - p.y) * scale];
-  const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+  const point = (p) => [
+    (p.x - context.project.width / 2) * scale,
+    (context.project.height / 2 - p.y) * scale,
+  ];
+  const same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-9;
   const pathId = context.id('path', `${state.owner.id}:${path.id}`),
     uses = [];
   let firstId, previousId, previousPoint;
@@ -424,49 +440,40 @@ function operator(context, state, kind, legacyId, fields) {
 
 function source(context, state, legacyPathId) {
   if (state.sources.has(legacyPathId)) return state.sources.get(legacyPathId);
-  const copied = state.paths.get(legacyPathId);
+  let copied = state.paths.get(legacyPathId);
   if (!copied) {
-    const candidates = [...context.states.values()].filter((candidate) =>
-      candidate.paths.has(legacyPathId),
-    );
-    if (candidates.length !== 1)
-      fail(
-        context,
-        'ambiguous-cross-owner-source',
-        '旧构造的跨 Shape 路径来源不唯一；拒绝猜测归属',
-        { kind: 'path', id: legacyPathId },
-        {
-          ownerId: state.owner.id,
-          candidateObjectIds: candidates.map((candidate) => candidate.owner.id),
-        },
-      );
-    const remote = source(context, candidates[0], legacyPathId);
-    const reference = operator(context, state, 'path-reference', legacyPathId, {
-      type: 'curve-reference',
-      name: `${candidates[0].owner.name || candidates[0].owner.id} · 引用线`,
-      enabled: true,
-      inputs: {
-        input: [
-          {
-            ...remote,
-            space: 'world-result',
-            transform: identity(),
-          },
-        ],
-      },
-      params: {},
+    const legacyPath = context.paths.get(legacyPathId);
+    if (!legacyPath)
+      fail(context, 'missing-path', '旧构造引用的路径不存在', {
+        kind: 'path',
+        id: legacyPathId,
+      });
+    copyPath(context, state, legacyPath);
+    copied = state.paths.get(legacyPathId);
+    const count = (context.copies.get(legacyPathId) || 0) + 1;
+    context.copies.set(legacyPathId, count);
+    context.report.copiedSources.push({
+      code: count > 1 ? 'shared-source-copied' : 'source-copied',
+      pathId: legacyPathId,
+      ownerId: state.owner.id,
+      sketchId: state.sketch.id,
     });
-    const result = port(state.shape.id, reference.id, 'curves');
-    state.sources.set(legacyPathId, result);
+    addIssue(
+      context.report,
+      'info',
+      'shared-source-copied',
+      '旧构造的共享或非归属路径已复制为该 Shape 的独立可写源',
+      { kind: 'path', id: legacyPathId },
+      { ownerId: state.owner.id, sketchId: state.sketch.id },
+    );
     addIssue(
       context.report,
       'info',
       'cross-owner-source-referenced',
-      '旧 region 的跨 Shape 路径已编译为显式 curve-reference',
+      '旧跨对象来源已解析为该 Shape 内的独立源副本',
       { kind: 'path', id: legacyPathId },
-      { ownerId: state.owner.id, sourceOwnerId: candidates[0].owner.id },
+      { ownerId: state.owner.id, sketchId: state.sketch.id },
     );
-    return result;
   }
   const op = operator(context, state, 'path-source', legacyPathId, {
     type: 'source',
@@ -482,6 +489,81 @@ function source(context, state, legacyPathId) {
   const result = port(state.shape.id, op.id, 'curves');
   state.sources.set(legacyPathId, result);
   return result;
+}
+
+function openPathRegion(context, state, old, regionId) {
+  source(context, state, old.pathId);
+  const copied = state.paths.get(old.pathId),
+    sourcePath = state.sketch.paths[copied.pathId];
+  if (copied.path.closed || !sourcePath.edges.length) return null;
+  const firstEdge = state.sketch.edges[sourcePath.edges[0].edgeId],
+    startVertexId = firstEdge.startVertexId,
+    markerEdgeId = context.id(
+      'edge',
+      `${state.owner.id}:${old.pathId}:region-close-marker:${regionId}`,
+    ),
+    markerPathId = context.id(
+      'path',
+      `${state.owner.id}:${old.pathId}:region-close-marker:${regionId}`,
+    );
+  state.sketch.edges[markerEdgeId] = {
+    id: markerEdgeId,
+    startVertexId,
+    endVertexId: startVertexId,
+    startHandle: { kind: 'free', vector: [0, 0] },
+    endHandle: { kind: 'free', vector: [0, 0] },
+  };
+  state.sketch.paths[markerPathId] = {
+    id: markerPathId,
+    name: `${copied.path.name || old.pathId} · 动态直线封口标记`,
+    edges: [{ edgeId: markerEdgeId, reversed: false }],
+    visible: false,
+  };
+  const src = operator(context, state, 'region-closure-source', regionId, {
+    type: 'source',
+    name: `${copied.path.name || old.pathId} · 动态直线封口来源`,
+    enabled: true,
+    inputs: {
+      paths: [
+        {
+          kind: 'sketch',
+          sketchId: state.sketch.id,
+          pathIds: [copied.pathId],
+        },
+        {
+          kind: 'sketch',
+          sketchId: state.sketch.id,
+          pathIds: [markerPathId],
+        },
+      ],
+    },
+    params: {},
+  });
+  const op = operator(context, state, 'region', regionId, {
+    type: 'between',
+    name: old.name || regionId,
+    enabled: true,
+    inputs: {
+      input: [inputPort(port(state.shape.id, src.id, 'curves'))],
+    },
+    params: {
+      curveKeys: [
+        `${copied.pathId}@${src.id}:0`,
+        `${markerPathId}@${src.id}:1`,
+      ],
+      boundaryJoinMM: 0,
+      repair: old.repair === true,
+    },
+  });
+  addIssue(
+    context.report,
+    'info',
+    'implicit-region-closure-compiled',
+    '旧 path region 的隐式封口已编译为随首末端点求值的显式直线连接',
+    { kind: 'region', id: regionId },
+    { pathId: old.pathId, operatorId: op.id, markerPathId },
+  );
+  return op;
 }
 
 function region(context, state, id) {
@@ -500,11 +582,14 @@ function region(context, state, id) {
   state.visiting.add(id);
   let op;
   if (old.kind === 'path' || old.kind === 'stroke') {
-    op = operator(context, state, 'region', id, {
+    op = old.kind === 'path' ? openPathRegion(context, state, old, id) : null;
+    op ||= operator(context, state, 'region', id, {
       type: old.kind,
       name: old.name || id,
-      enabled: old.visible !== false,
-      inputs: { input: [inputPort(source(context, state, old.pathId))] },
+      enabled: true,
+      inputs: {
+        input: [inputPort(source(context, state, old.pathId))],
+      },
       params:
         old.kind === 'stroke' ? { widthMM: old.widthMM } : { rule: 'even-odd' },
     });
@@ -534,8 +619,12 @@ function region(context, state, id) {
       input: [inputPort(port(state.shape.id, src.id, 'curves'))],
     };
     const params = {
-      curveKeys: old.pathIds.map((pathId) => state.paths.get(pathId).pathId),
+      curveKeys: old.pathIds.map(
+        (pathId, index) =>
+          `${state.paths.get(pathId).pathId}@${src.id}:${index}`,
+      ),
       boundaryJoinMM: old.boundaryJoinMM ?? old.joinMM ?? 0,
+      repair: old.repair === true,
     };
     if (old.boundaryRegionId) {
       const boundary = region(context, state, old.boundaryRegionId);
@@ -545,7 +634,7 @@ function region(context, state, id) {
     op = operator(context, state, 'region', id, {
       type: 'between',
       name: old.name || id,
-      enabled: old.visible !== false,
+      enabled: true,
       inputs,
       params,
     });
@@ -570,7 +659,7 @@ function region(context, state, id) {
     op = operator(context, state, 'region', id, {
       type: 'partition',
       name: old.name || id,
-      enabled: old.visible !== false,
+      enabled: true,
       inputs: {
         input: [inputPort(base.port)],
         cutter: [inputPort(port(state.shape.id, cutter.id, 'curves'))],
@@ -583,7 +672,7 @@ function region(context, state, id) {
     op = operator(context, state, 'region', id, {
       type: 'boolean',
       name: old.name || id,
-      enabled: old.visible !== false,
+      enabled: true,
       inputs: {
         input: [inputPort(base.port)],
         operand: [inputPort(operand.port)],
@@ -591,6 +680,10 @@ function region(context, state, id) {
       params: { operation: old.kind, scope: { kind: 'all' } },
     });
   }
+  context.legacyRegionByOperator.set(op.id, {
+    id,
+    kind: old.kind,
+  });
   const key = `legacy-region:${id}`;
   const target = outputRef(state.shape.id, op.id, key, [key]);
   op.outputContract = {
@@ -627,6 +720,11 @@ function selectedScope(context, state, modifier, current) {
   return {
     kind: 'selected',
     refs: modifier.targets.refs.map((ref) => {
+      const featureId = ref.key?.startsWith('feature:')
+        ? ref.key.slice('feature:'.length)
+        : null;
+      if (featureId && context.featureTargets.has(featureId))
+        return clone(context.featureTargets.get(featureId));
       let member = members.find((entry) => entry.key === ref.key);
       if (!member) {
         member = {
@@ -648,12 +746,29 @@ function selectedScope(context, state, modifier, current) {
   };
 }
 
-function modifierOperand(context, state, modifier) {
-  if (modifier.input?.kind === 'path')
+function modifierOperand(context, state, modifier, expectedDomain) {
+  if (modifier.input?.kind === 'path') {
+    const curves = source(context, state, modifier.input.id);
+    if (expectedDomain === 'curves') return { domain: 'curves', port: curves };
+    const fill = operator(
+      context,
+      state,
+      'modifier-operand-fill',
+      modifier.id,
+      {
+        type: 'path',
+        name: `${modifier.name || modifier.id} · 操作面`,
+        enabled: true,
+        inputs: { input: [inputPort(curves)] },
+        params: { rule: 'even-odd' },
+      },
+    );
     return {
-      domain: 'curves',
-      port: source(context, state, modifier.input.id),
+      domain: 'regions',
+      operator: fill,
+      port: port(state.shape.id, fill.id, 'regions'),
     };
+  }
   if (modifier.input?.kind === 'region')
     return region(context, state, modifier.input.id);
   if (modifier.input?.kind === 'object') {
@@ -670,6 +785,212 @@ function modifierOperand(context, state, modifier) {
   fail(context, 'missing-modifier-input', 'modifier 缺少明确输入', {
     kind: 'modifier',
     id: modifier.id,
+  });
+}
+
+function compileRepeatedJoin(context, state, current, modifier) {
+  const stage = evaluatePlanar(context.document).components[
+    `operator:${current.operator.id}`
+  ]?.ports?.curves;
+  if (stage?.status !== 'ready')
+    fail(
+      context,
+      'tolerance-fill-input-unavailable',
+      '旧容差 Fill 的曲线上游无法求值，不能生成显式 Join',
+      { kind: 'modifier', id: modifier.id },
+      { ownerId: state.owner.id, stageStatus: stage?.status || 'absent' },
+    );
+  const arrayOperator =
+      current.operator.type === 'curve-array' ? current.operator : null,
+    count = arrayOperator?.params?.count,
+    tolerance = modifier.joinMM,
+    distance = (left, right) =>
+      Math.hypot(
+        left.point[0] - right.point[0],
+        left.point[1] - right.point[1],
+      ),
+    endpoints = stage.value.curves.flatMap((curve) => {
+      if (curve.closed || !curve.edges.length) return [];
+      const first = curve.edges[0],
+        last = curve.edges.at(-1);
+      return [
+        { edge: first, end: 'start', point: first.cubic[0] },
+        { edge: last, end: 'end', point: last.cubic[3] },
+      ];
+    }),
+    pairs = [],
+    paired = new Set();
+  for (let index = 0; index < endpoints.length; index++) {
+    if (paired.has(index)) continue;
+    const candidates = endpoints
+      .map((endpoint, candidateIndex) => ({ endpoint, candidateIndex }))
+      .filter(
+        ({ endpoint, candidateIndex }) =>
+          candidateIndex !== index &&
+          !paired.has(candidateIndex) &&
+          distance(endpoints[index], endpoint) <= tolerance,
+      );
+    if (candidates.length !== 1)
+      fail(
+        context,
+        'ambiguous-tolerance-join',
+        candidates.length
+          ? '旧容差 Fill 的端点在连接距离内存在多个候选，拒绝猜测 Join'
+          : '旧容差 Fill 存在未连接端点，无法生成完整 Join',
+        { kind: 'modifier', id: modifier.id },
+        {
+          ownerId: state.owner.id,
+          endpoint: {
+            edgeId: endpoints[index].edge.source.id,
+            end: endpoints[index].end,
+          },
+          candidateCount: candidates.length,
+        },
+      );
+    paired.add(index);
+    paired.add(candidates[0].candidateIndex);
+    pairs.push([endpoints[index], candidates[0].endpoint]);
+  }
+  if (!pairs.length)
+    fail(
+      context,
+      'empty-tolerance-join',
+      '旧容差 Fill 没有可编译的开放端点连接',
+      { kind: 'modifier', id: modifier.id },
+      { ownerId: state.owner.id },
+    );
+
+  const endpointDescriptor = (endpoint, selectorOperatorId) => ({
+      edgeEnd: {
+        kind: 'edge-end',
+        sketchId: endpoint.edge.source.sketchId,
+        edgeId: endpoint.edge.source.id,
+        end: endpoint.end,
+      },
+      instances: (endpoint.edge.instances || [])
+        .filter((instance) => instance.operatorId !== selectorOperatorId)
+        .map(clone),
+    }),
+    instanceIndex = (endpoint, operatorId) =>
+      endpoint.edge.instances?.find(
+        (instance) => instance.operatorId === operatorId,
+      )?.index;
+  if (!arrayOperator)
+    return pairs.map(([left, right]) => {
+      const selectorOperatorId = current.operator.id,
+        leftIndex = instanceIndex(left, selectorOperatorId),
+        rightIndex = instanceIndex(right, selectorOperatorId);
+      if (!Number.isInteger(leftIndex) || !Number.isInteger(rightIndex))
+        fail(
+          context,
+          'unsupported-tolerance-join',
+          '旧容差 Fill 的上游实例无法用稳定 selector 表达',
+          { kind: 'modifier', id: modifier.id },
+        );
+      return {
+        a: {
+          ...endpointDescriptor(left, selectorOperatorId),
+          selector: {
+            operatorId: selectorOperatorId,
+            index: leftIndex,
+            wrap: false,
+          },
+        },
+        b: {
+          ...endpointDescriptor(right, selectorOperatorId),
+          selector: {
+            operatorId: selectorOperatorId,
+            index: rightIndex,
+            wrap: false,
+          },
+        },
+      };
+    });
+  if (!Number.isInteger(count) || count < 1)
+    fail(
+      context,
+      'unsupported-tolerance-join',
+      '旧容差 Fill 的 Array 数量不是可编译整数',
+      { kind: 'modifier', id: modifier.id },
+    );
+  const groups = new Map();
+  for (const pair of pairs) {
+    let [left, right] = pair;
+    let leftIndex = instanceIndex(left, arrayOperator.id),
+      rightIndex = instanceIndex(right, arrayOperator.id),
+      leftDescriptor = endpointDescriptor(left, arrayOperator.id),
+      rightDescriptor = endpointDescriptor(right, arrayOperator.id),
+      leftKey = JSON.stringify(leftDescriptor),
+      rightKey = JSON.stringify(rightDescriptor);
+    if (!Number.isInteger(leftIndex) || !Number.isInteger(rightIndex))
+      fail(
+        context,
+        'unsupported-tolerance-join',
+        '旧容差 Fill 的端点缺少 Array 实例身份',
+        { kind: 'modifier', id: modifier.id },
+      );
+    if (leftKey > rightKey) {
+      [left, right] = [right, left];
+      [leftIndex, rightIndex] = [rightIndex, leftIndex];
+      [leftDescriptor, rightDescriptor] = [rightDescriptor, leftDescriptor];
+      [leftKey, rightKey] = [rightKey, leftKey];
+    }
+    const delta = (rightIndex - leftIndex + count) % count,
+      key = JSON.stringify([leftKey, rightKey, delta]);
+    if (!groups.has(key))
+      groups.set(key, {
+        left: leftDescriptor,
+        right: rightDescriptor,
+        delta,
+        iterations: new Set(),
+      });
+    groups.get(key).iterations.add(leftIndex);
+  }
+  return [...groups.values()].map((group) => {
+    if (
+      group.iterations.size !== count ||
+      ![...Array(count).keys()].every((index) => group.iterations.has(index))
+    )
+      fail(
+        context,
+        'non-repeating-tolerance-join',
+        '旧容差 Fill 的连接不能按 Array 实例稳定重复',
+        { kind: 'modifier', id: modifier.id },
+      );
+    const rightIndex =
+      group.delta === 0
+        ? 'each'
+        : group.delta === 1
+          ? 'next'
+          : group.delta === count - 1
+            ? 'previous'
+            : null;
+    if (!rightIndex)
+      fail(
+        context,
+        'unsupported-array-join-offset',
+        '旧容差 Fill 的跨实例连接超出现有 Join 的 each/next/previous 合同',
+        { kind: 'modifier', id: modifier.id },
+        { ownerId: state.owner.id, delta: group.delta, count },
+      );
+    return {
+      a: {
+        ...group.left,
+        selector: {
+          operatorId: arrayOperator.id,
+          index: 'each',
+          wrap: true,
+        },
+      },
+      b: {
+        ...group.right,
+        selector: {
+          operatorId: arrayOperator.id,
+          index: rightIndex,
+          wrap: true,
+        },
+      },
+    };
   });
 }
 
@@ -708,6 +1029,29 @@ function modifiers(context, state, current, list) {
           kind: 'modifier',
           id: old.id,
         });
+      if (old.joinMM > 0) {
+        const connections = compileRepeatedJoin(context, state, current, old),
+          join = operator(context, state, 'modifier-join', old.id, {
+            type: 'join',
+            name: `${old.name || old.id} · 显式连接`,
+            enabled: old.enabled !== false,
+            inputs: { input: [inputPort(current.port)] },
+            params: { connections },
+          });
+        addIssue(
+          context.report,
+          'info',
+          'tolerance-fill-join-compiled',
+          '旧 Fill 的端点容差连接已编译为稳定 edgeEnd/instance Join',
+          { kind: 'modifier', id: old.id },
+          { ownerId: state.owner.id, connectionCount: connections.length },
+        );
+        current = {
+          domain: 'curves',
+          operator: join,
+          port: port(state.shape.id, join.id, 'curves'),
+        };
+      }
       op = operator(context, state, 'modifier', old.id, {
         type: 'fill',
         name: old.name || old.id,
@@ -741,7 +1085,12 @@ function modifiers(context, state, current, list) {
                 },
         });
       else {
-        const operand = modifierOperand(context, state, old);
+        const operand = modifierOperand(
+          context,
+          state,
+          old,
+          old.type === 'split' ? 'curves' : 'regions',
+        );
         op = operator(context, state, 'modifier', old.id, {
           type: old.type === 'split' ? 'partition' : 'boolean',
           name: old.name || old.id,
@@ -773,6 +1122,26 @@ function modifiers(context, state, current, list) {
           ...(entry.signature ? { topology: entry.signature } : {}),
         })),
       };
+    if (old.type === 'fill' && Array.isArray(old.outputContract))
+      for (const entry of old.outputContract) {
+        const target = outputRef(state.shape.id, op.id, entry.key, [
+          `legacy-modifier:${old.id}`,
+          entry.key,
+        ]);
+        context.map('modifier-output', entry.key, target, {
+          ownerId: state.owner.id,
+        });
+        context.map('surface-output', entry.key, target, {
+          ownerId: state.owner.id,
+        });
+        const style = old.styles?.find((value) => value.key === entry.key);
+        if (style)
+          context.pendingOutputAssignments.push({
+            state,
+            target: clone(target),
+            style,
+          });
+      }
     if (old.enabled === false && old.type !== 'fill') {
       addIssue(
         context.report,
@@ -793,11 +1162,57 @@ function modifiers(context, state, current, list) {
   return current;
 }
 
+function bindSingletonOperatorRefs(document) {
+  for (const program of Object.values(document.programs))
+    for (const operator of Object.values(program.operators))
+      if (operator.type === 'region-collect') delete operator.outputContract;
+  const evaluation = evaluatePlanar(document),
+    singleton = new Map();
+  for (const component of Object.values(evaluation.components)) {
+    const stage = component.ports?.regions;
+    if (stage?.status === 'ready' && stage.value.regions.length === 1)
+      singleton.set(
+        stage.value.regions[0].ref.operatorId,
+        stage.value.regions[0].ref,
+      );
+  }
+  const replace = (ref) =>
+    ref?.kind === 'output' && singleton.has(ref.operatorId)
+      ? clone(singleton.get(ref.operatorId))
+      : ref;
+  for (const program of Object.values(document.programs))
+    for (const operator of Object.values(program.operators)) {
+      if (operator.params?.boundaryRef)
+        operator.params.boundaryRef = replace(operator.params.boundaryRef);
+      if (operator.params?.scope?.kind === 'selected')
+        operator.params.scope.refs = operator.params.scope.refs.map(replace);
+    }
+}
+
 function bindEvaluatedOutputs(context, document) {
+  bindSingletonOperatorRefs(document);
+  const initialEvaluation = evaluatePlanar(document);
+  for (const program of Object.values(document.programs))
+    for (const operator of Object.values(program.operators))
+      if (operator.params?.scope?.kind === 'selected')
+        operator.params.scope.refs = operator.params.scope.refs.flatMap(
+          (ref) => {
+            const key = `${ref.operatorId}\u0000${ref.key}`,
+              stage =
+                initialEvaluation.components[`operator:${ref.operatorId}`]
+                  ?.ports?.regions,
+              actual = stage?.status === 'ready' ? stage.value.regions : [];
+            return context.wholeOutputs.has(key) && actual.length
+              ? actual.map((item) => clone(item.ref))
+              : [ref];
+          },
+        );
   const evaluation = evaluatePlanar(document);
   const replacements = new Map();
   const singleton = new Map();
   const actualByOperator = new Map();
+  const actualItemsByOperator = new Map();
+  const proposedContracts = new Map();
   for (const component of Object.values(evaluation.components)) {
     const stage = component.ports?.regions;
     const componentOperatorId = component.id.startsWith('operator:')
@@ -811,7 +1226,56 @@ function bindEvaluatedOutputs(context, document) {
       stage?.status === 'ready'
         ? stage.value.regions.map((item) => item.ref)
         : [];
+    actualItemsByOperator.set(
+      componentOperatorId,
+      stage?.status === 'ready' ? stage.value.regions : [],
+    );
+    proposedContracts.set(
+      componentOperatorId,
+      stage?.status === 'ready'
+        ? stage.value.provenance?.find(
+            (entry) => entry.kind === 'output-contract-proposal',
+          )?.members
+        : undefined,
+    );
     actualByOperator.set(componentOperatorId, actual.map(clone));
+    const legacyRegion =
+      context.legacyRegionByOperator.get(componentOperatorId);
+    if (op?.type === 'path' && members?.length === 1 && actual.length > 1) {
+      const expectedKey = `${componentOperatorId}\u0000${members[0].key}`,
+        bindingRequired =
+          context.wholeOutputs.has(expectedKey) ||
+          context.spatialBindings.some(
+            (binding) => binding.target.operatorId === componentOperatorId,
+          );
+      addIssue(
+        context.report,
+        'warning',
+        'path-fill-multi-output',
+        '旧 path 区域的实时 Fill 产生多个独立输出；已作为完整 RegionSet 继续参与后续动态构造',
+        {
+          kind: 'region',
+          id: legacyRegion?.id || componentOperatorId,
+        },
+        {
+          operatorId: componentOperatorId,
+          outputCount: actual.length,
+          stableSingleOutputBinding: false,
+        },
+      );
+      delete op.outputContract;
+      if (bindingRequired)
+        fail(
+          context,
+          'path-fill-output-binding-ambiguous',
+          '旧 path 区域直接发布为一个稳定输出，但实时 Fill 产生多个输出；拒绝猜测样式或浮雕绑定',
+          {
+            kind: 'region',
+            id: legacyRegion?.id || componentOperatorId,
+          },
+          { operatorId: componentOperatorId, outputCount: actual.length },
+        );
+    }
     if (actual.length === 1)
       singleton.set(componentOperatorId, clone(actual[0]));
     if (members?.length === 1 && actual.length === 1) {
@@ -831,13 +1295,137 @@ function bindEvaluatedOutputs(context, document) {
       };
     }
   }
+  const scaleGeometry = (geometry, factor) => {
+    const coordinates = (value) =>
+      typeof value?.[0] === 'number'
+        ? value.map((coordinate) => coordinate * factor)
+        : value.map(coordinates);
+    if (geometry.coordinates)
+      return { ...geometry, coordinates: coordinates(geometry.coordinates) };
+    return {
+      ...geometry,
+      geometries: geometry.geometries?.map((item) =>
+        scaleGeometry(item, factor),
+      ),
+    };
+  };
+  const spatialByOperator = Map.groupBy(
+    context.spatialBindings,
+    (binding) => binding.target.operatorId,
+  );
+  for (const [operatorId, bindings] of spatialByOperator) {
+    const candidates = actualItemsByOperator.get(operatorId) || [];
+    const unmatched = new Set(candidates);
+    const failures = [];
+    for (const binding of bindings) {
+      const frozen = readGeometry(
+          scaleGeometry(
+            binding.geometry,
+            binding.normalized === false ? 1 : context.project.widthMM,
+          ),
+        ),
+        available = [...unmatched].map((candidate) => ({
+          candidate,
+          geometry: readGeometry(candidate.geometry),
+        })),
+        ranked = available
+          .map((entry) => ({
+            ...entry,
+            differenceMM2: frozen.symDifference(entry.geometry).getArea(),
+          }))
+          .sort((left, right) => left.differenceMM2 - right.differenceMM2),
+        best = ranked[0],
+        bestArea = Math.max(frozen.getArea(), best?.geometry.getArea() || 0),
+        bestTolerance = Math.max(0.001, bestArea * 0.00001),
+        contained = available.filter(({ geometry }) =>
+          frozen.covers(geometry.getInteriorPoint()),
+        ),
+        selected =
+          best?.differenceMM2 <= bestTolerance
+            ? [best]
+            : contained.length
+              ? contained
+              : best
+                ? [best]
+                : [];
+      const merged = selected
+        .map((entry) => entry.geometry)
+        .reduce(
+          (result, geometry) => (result ? result.union(geometry) : geometry),
+          null,
+        );
+      const differenceMM2 = merged
+          ? frozen.symDifference(merged).getArea()
+          : Infinity,
+        referenceAreaMM2 = Math.max(frozen.getArea(), merged?.getArea() || 0),
+        toleranceMM2 = Math.max(0.001, referenceAreaMM2 * 0.00001);
+      if (!selected.length || differenceMM2 > toleranceMM2) {
+        failures.push({
+          paintId: binding.paintId,
+          candidateIndices: selected.map((entry) =>
+            candidates.indexOf(entry.candidate),
+          ),
+          differenceMM2,
+          referenceAreaMM2,
+        });
+        continue;
+      }
+      selected.forEach((entry) => unmatched.delete(entry.candidate));
+      const targets = selected.map((entry) => clone(entry.candidate.ref));
+      replacements.set(
+        `${operatorId}\u0000${binding.target.key}`,
+        targets.length === 1 ? targets[0] : targets,
+      );
+    }
+    if (failures.length)
+      fail(
+        context,
+        'spatial-paint-ambiguous',
+        '旧 paint 冻结几何无法唯一匹配 V4 实时输出',
+        { kind: 'operator', id: operatorId },
+        {
+          ownerId: bindings[0]?.ownerId,
+          paintIds: failures.map((failure) => failure.paintId),
+          candidateKeys: candidates.map((candidate) => candidate.ref.key),
+          bestMatches: failures,
+          diagnostics: clone(
+            evaluation.components[`operator:${operatorId}`]?.ports?.regions
+              ?.diagnostics || [],
+          ),
+        },
+      );
+    const op = Object.values(document.programs)
+      .flatMap((program) => Object.values(program.operators))
+      .find((candidate) => candidate.id === operatorId);
+    if (op)
+      op.outputContract = {
+        version: 1,
+        members:
+          clone(proposedContracts.get(operatorId)) ||
+          candidates.map((candidate) => contractMember(candidate.ref)),
+      };
+  }
   const replace = (ref) => {
     if (ref?.kind !== 'output') return ref;
+    const replacement = replacements.get(`${ref.operatorId}\u0000${ref.key}`);
     return clone(
-      replacements.get(`${ref.operatorId}\u0000${ref.key}`) ||
+      (Array.isArray(replacement) ? null : replacement) ||
         singleton.get(ref.operatorId) ||
         ref,
     );
+  };
+  const expandSpatialAssignments = (table, kind) => {
+    for (const [id, item] of Object.entries(table)) {
+      const replacement = replacements.get(
+        `${item.target?.operatorId}\u0000${item.target?.key}`,
+      );
+      if (!Array.isArray(replacement)) continue;
+      delete table[id];
+      replacement.forEach((target, index) => {
+        const nextId = context.id(kind, `${id}:spatial:${index}`);
+        table[nextId] = { ...clone(item), id: nextId, target: clone(target) };
+      });
+    }
   };
   const expandWholeAssignments = (table, kind) => {
     for (const [id, item] of Object.entries(table)) {
@@ -851,6 +1439,12 @@ function bindEvaluatedOutputs(context, document) {
       });
     }
   };
+  expandSpatialAssignments(document.appearances.overrides, 'appearance');
+  expandSpatialAssignments(document.reliefDefinitions.overrides, 'relief');
+  expandSpatialAssignments(
+    document.manufacturing.assignments,
+    'manufacturing-assignment',
+  );
   expandWholeAssignments(document.appearances.overrides, 'appearance');
   expandWholeAssignments(document.reliefDefinitions.overrides, 'relief');
   expandWholeAssignments(
@@ -871,7 +1465,9 @@ function bindEvaluatedOutputs(context, document) {
   const replaceReportRef = (ref) => {
     if (ref?.kind !== 'output') return ref;
     const key = `${ref.operatorId}\u0000${ref.key}`;
-    const actual = actualByOperator.get(ref.operatorId) || [];
+    const replacement = replacements.get(key),
+      actual = actualByOperator.get(ref.operatorId) || [];
+    if (Array.isArray(replacement)) return replacement.map(clone);
     return context.wholeOutputs.has(key) && actual.length > 1
       ? actual.map(clone)
       : replace(ref);
@@ -886,6 +1482,19 @@ function bindEvaluatedOutputs(context, document) {
   }
   for (const mapping of context.report.mappings)
     mapping.target = replaceReportRef(mapping.target);
+  for (const table of [
+    document.appearances.overrides,
+    document.reliefDefinitions.overrides,
+    document.manufacturing.assignments,
+  ])
+    for (const item of Object.values(table))
+      if (item.target?.key?.startsWith('feature:')) {
+        const mapped =
+          context.idMap[
+            `feature-output:${item.target.key.slice('feature:'.length)}`
+          ];
+        if (mapped && !Array.isArray(mapped)) item.target = clone(mapped);
+      }
   const assigned = [
     ...Object.values(document.appearances.overrides).map((item) => item.target),
     ...Object.values(document.reliefDefinitions.overrides).map(
@@ -942,17 +1551,55 @@ function relief(context, object, feature) {
   const attach = feature?.attachId ?? object.attachId;
   let placement;
   if (attach) {
-    const target = context.states.get(attach);
-    if (!target)
+    let target = feature
+      ? context.featureTargets.get(attach)
+      : context.states.get(attach)
+        ? { kind: 'node', id: context.states.get(attach).shape.id }
+        : null;
+    if (feature && (!target || !context.publishedFeatureIds.has(attach))) {
+      const parent = context.features.get(attach);
+      if (parent) {
+        const bottom = (value, seen = new Set()) => {
+          if (seen.has(value.id))
+            fail(context, 'attachment-cycle', '旧高度依附形成环', {
+              kind: 'feature',
+              id: value.id,
+            });
+          seen.add(value.id);
+          const ancestor = value.attachId
+            ? context.features.get(value.attachId)
+            : null;
+          return (
+            (value.zMM || 0) +
+            (ancestor ? bottom(ancestor, seen) + (ancestor.heightMM || 0) : 0)
+          );
+        };
+        placement = {
+          kind: 'free',
+          zMM: bottom(parent) + (parent.heightMM || 0) + (feature.zMM || 0),
+        };
+        addIssue(
+          context.report,
+          'warning',
+          'attachment-flattened-unpublished-target',
+          '旧 feature 依附目标不在任何可发布 RegionSet 中；已保留当前 Z，但该未发布支撑的后续厚度编辑无法联动',
+          { kind: 'feature', id: feature.id },
+          { attachId: attach, zMM: placement.zMM },
+        );
+        target = null;
+      }
+    }
+    if (target)
+      placement = {
+        kind: 'attached',
+        target: clone(target),
+        offsetMM: feature?.zMM ?? object.zMM ?? 0,
+      };
+    else if (!placement)
       fail(context, 'missing-attachment', '旧高度依附对象不存在', {
-        kind: 'object',
+        kind: 'feature-or-object',
         id: attach,
       });
-    placement = {
-      kind: 'attached',
-      target: { kind: 'node', id: target.shape.id },
-      offsetMM: feature?.zMM ?? object.zMM ?? 0,
-    };
   } else if (object.printLayerId) {
     const layerId = context.layers.get(object.printLayerId);
     if (!layerId)
@@ -1084,6 +1731,17 @@ function compileOwner(context, document, state) {
     (context.project.model?.features || []).map((value) => [value.id, value]),
   );
   let current = null;
+  let partitionOutput = null;
+  const featureResults = [];
+  const publishResults = [];
+  const publishedFeatures = [];
+  const replacedFeatures = new Set(state.owner.replacedFeatureIds || []);
+  const dividerPathIds = [...state.paths.keys()].filter(
+    (pathId) => state.owner.roles?.[pathId] === 'divider',
+  );
+  const automaticPartition =
+    (dividerPathIds.length > 0 || state.owner.legacyPartition === true) &&
+    replacedFeatures.size === 0;
   for (const featureId of state.owner.featureIds || []) {
     const feature = features.get(featureId);
     if (!feature)
@@ -1093,43 +1751,491 @@ function compileOwner(context, document, state) {
         'creation object 引用的 feature 不存在',
         { kind: 'feature', id: featureId },
       );
-    current = region(
+    let featureResult = region(
       context,
       state,
       state.owner.sources?.[featureId]?.regionId || feature.regionId,
     );
     if (state.owner.sources?.[featureId])
-      current = modifiers(
+      featureResult = modifiers(
         context,
         state,
-        current,
+        featureResult,
         state.owner.sources[featureId].modifiers,
       );
+    if (feature.enabled !== false) featureResults.push(featureResult);
     const target =
-      current.target ||
+      featureResult.target ||
       outputRef(
         state.shape.id,
-        current.operator.id,
+        featureResult.operator.id,
         `legacy-feature:${feature.id}`,
         [`legacy-region:${feature.regionId}`, `legacy-feature:${feature.id}`],
       );
-    const members = current.operator.outputContract?.members || [];
+    const members = featureResult.operator.outputContract?.members || [];
     if (!members.some((member) => member.key === target.key))
-      current.operator.outputContract = {
+      featureResult.operator.outputContract = {
         version: 1,
         members: [...members, contractMember(target)],
       };
     context.map('feature-output', feature.id, target, {
       ownerId: state.owner.id,
     });
-    context.wholeOutputs.add(`${target.operatorId}\u0000${target.key}`);
-    assignment(context, document, state, feature, target, {
-      swatchId: state.owner.featureSwatches?.[feature.id],
+    context.featureTargets.set(feature.id, clone(target));
+    if (
+      feature.enabled !== false &&
+      !replacedFeatures.has(feature.id) &&
+      !automaticPartition
+    ) {
+      publishResults.push(featureResult);
+      context.publishedFeatureIds.add(feature.id);
+      context.wholeOutputs.add(`${target.operatorId}\u0000${target.key}`);
+      context.pendingFeatureAssignments.push({
+        state,
+        feature,
+        target: clone(target),
+        style: { swatchId: state.owner.featureSwatches?.[feature.id] },
+      });
+      publishedFeatures.push({ feature, result: featureResult, target });
+    }
+  }
+  for (const regionId of state.owner.regionIds || []) {
+    if ([...features.values()].some((feature) => feature.regionId === regionId))
+      continue;
+    if (!state.regions.has(regionId)) {
+      addIssue(
+        context.report,
+        'info',
+        'stale-region-id-ignored',
+        '旧 creation.regionIds 含有已删除的兼容 ID；保持旧引擎的无操作语义',
+        { kind: 'region', id: regionId },
+        { ownerId: state.owner.id },
+      );
+      continue;
+    }
+    current = region(context, state, regionId);
+    publishResults.push(current);
+  }
+
+  const baseRegionIds = state.owner.baseRegionIds || [];
+  let partitionBases = baseRegionIds.length
+    ? baseRegionIds.map((regionId) => region(context, state, regionId))
+    : automaticPartition
+      ? featureResults
+      : [];
+  if (
+    state.owner.surfaceGraph &&
+    baseRegionIds.length > 1 &&
+    !dividerPathIds.length
+  ) {
+    context.legacyEvaluation ||= evaluateCreation(clone(context.project));
+    const cells = context.legacyEvaluation.modifierBaseCells.filter(
+      (cell) => cell.objectId === state.owner.id,
+    );
+    if (!cells.length)
+      fail(
+        context,
+        'surface-base-missing',
+        '旧 surfaceGraph 没有可用于迁移的求值底面',
+        { kind: 'object', id: state.owner.id },
+      );
+    const sourceBases = partitionBases,
+      baseEvaluation = evaluatePlanar(document),
+      baseGeometries = sourceBases.map((base) => {
+        const stage =
+          baseEvaluation.components[`operator:${base.operator.id}`]?.ports
+            ?.regions;
+        if (stage?.status !== 'ready' || !stage.value.regions.length)
+          fail(
+            context,
+            'surface-arrangement-base-unavailable',
+            '旧 surfaceGraph 的动态底面无法求值',
+            { kind: 'object', id: state.owner.id },
+            {
+              operatorId: base.operator.id,
+              status: stage?.status || 'absent',
+              diagnostics: clone(stage?.diagnostics || []),
+            },
+          );
+        return stage.value.regions
+          .map((item) => readGeometry(item.geometry))
+          .reduce((sum, geometry) => (sum ? sum.union(geometry) : geometry));
+      }),
+      membershipKeys = new Map(),
+      cellTolerances = new Map();
+    const arrangedBases = cells.map((cell) => {
+      const frozen = readGeometry(cell.geometry),
+        toleranceMM2 = Math.max(0.001, frozen.getArea() * 0.00001),
+        included = [],
+        excluded = [];
+      cellTolerances.set(cell.key, toleranceMM2);
+      baseGeometries.forEach((geometry, index) => {
+        const overlapMM2 = frozen.intersection(geometry).getArea(),
+          missingMM2 = frozen.difference(geometry).getArea();
+        if (missingMM2 <= toleranceMM2) included.push(index);
+        else if (overlapMM2 <= toleranceMM2) excluded.push(index);
+        else
+          fail(
+            context,
+            'surface-arrangement-partial-membership',
+            '旧 surfaceGraph 输出与动态底面只有部分重叠，无法编译稳定的集合关系',
+            { kind: 'surface-output', id: cell.key },
+            {
+              ownerId: state.owner.id,
+              baseRegionId: baseRegionIds[index],
+              overlapMM2,
+              missingMM2,
+              toleranceMM2,
+            },
+          );
+      });
+      const membership = included
+          .map((index) => baseRegionIds[index])
+          .sort((left, right) => left.localeCompare(right)),
+        membershipKey = membership.join('\u0000');
+      if (!included.length)
+        fail(
+          context,
+          'surface-arrangement-unbound-cell',
+          '旧 surfaceGraph 输出不在任何动态底面内',
+          { kind: 'surface-output', id: cell.key },
+          { ownerId: state.owner.id },
+        );
+      if (membershipKeys.has(membershipKey))
+        fail(
+          context,
+          'surface-arrangement-membership-ambiguous',
+          '多个旧 surfaceGraph 输出具有相同底面成员关系，现有布尔算子无法稳定区分轮廓身份',
+          { kind: 'surface-output', id: cell.key },
+          {
+            ownerId: state.owner.id,
+            conflictingOutputId: membershipKeys.get(membershipKey),
+            baseRegionIds: membership,
+          },
+        );
+      membershipKeys.set(membershipKey, cell.key);
+      let result = sourceBases[included[0]];
+      for (const index of included.slice(1)) {
+        const op = operator(
+          context,
+          state,
+          'surface-arrangement-intersection',
+          `${cell.key}:${baseRegionIds[index]}`,
+          {
+            type: 'boolean',
+            name: `${state.owner.name || state.owner.id} · ${cell.key} · 交集`,
+            enabled: true,
+            inputs: {
+              input: [inputPort(result.port)],
+              operand: [inputPort(sourceBases[index].port)],
+            },
+            params: { operation: 'intersection', scope: { kind: 'all' } },
+          },
+        );
+        result = {
+          domain: 'regions',
+          operator: op,
+          port: port(state.shape.id, op.id, 'regions'),
+        };
+      }
+      for (const index of excluded) {
+        const op = operator(
+          context,
+          state,
+          'surface-arrangement-difference',
+          `${cell.key}:${baseRegionIds[index]}`,
+          {
+            type: 'boolean',
+            name: `${state.owner.name || state.owner.id} · ${cell.key} · 差集`,
+            enabled: true,
+            inputs: {
+              input: [inputPort(result.port)],
+              operand: [inputPort(sourceBases[index].port)],
+            },
+            params: { operation: 'difference', scope: { kind: 'all' } },
+          },
+        );
+        result = {
+          domain: 'regions',
+          operator: op,
+          port: port(state.shape.id, op.id, 'regions'),
+        };
+      }
+      addIssue(
+        context.report,
+        'info',
+        'surface-arrangement-compiled',
+        '旧 surfaceGraph 重叠底面已编译为动态布尔构造',
+        { kind: 'surface-output', id: cell.key },
+        { ownerId: state.owner.id, baseRegionIds: membership },
+      );
+      return result;
+    });
+    const arrangedEvaluation = evaluatePlanar(document);
+    arrangedBases.forEach((result, index) => {
+      const cell = cells[index],
+        stage =
+          arrangedEvaluation.components[`operator:${result.operator.id}`]?.ports
+            ?.regions;
+      if (stage?.status !== 'ready')
+        fail(
+          context,
+          'surface-arrangement-evaluation-failed',
+          '旧 surfaceGraph 的动态布尔构造无法求值',
+          { kind: 'surface-output', id: cell.key },
+          {
+            ownerId: state.owner.id,
+            operatorId: result.operator.id,
+            status: stage?.status || 'absent',
+            diagnostics: clone(stage?.diagnostics || []),
+          },
+        );
+      const actual = stage.value.regions
+          .map((item) => readGeometry(item.geometry))
+          .reduce((sum, geometry) => (sum ? sum.union(geometry) : geometry)),
+        differenceMM2 = readGeometry(cell.geometry)
+          .symDifference(actual)
+          .getArea(),
+        toleranceMM2 = cellTolerances.get(cell.key);
+      if (differenceMM2 > toleranceMM2)
+        fail(
+          context,
+          'surface-arrangement-geometry-mismatch',
+          '旧 surfaceGraph 输出的动态布尔构造与原几何不等价',
+          { kind: 'surface-output', id: cell.key },
+          {
+            ownerId: state.owner.id,
+            operatorId: result.operator.id,
+            differenceMM2,
+            toleranceMM2,
+          },
+        );
+    });
+    partitionBases = arrangedBases;
+  }
+  const usedPathIds = new Set(
+    [
+      ...(state.owner.featureIds || []),
+      ...(state.owner.regionIds || []),
+      ...baseRegionIds,
+    ].flatMap((id) => {
+      const feature = features.get(id);
+      return regionSources(context.project.model, feature?.regionId || id);
+    }),
+  );
+  const explicitBasePathIds = new Set(state.owner.basePathIds || []);
+  const boundaryBasePathIds = [...state.paths.entries()]
+    .filter(
+      ([pathId, entry]) =>
+        !explicitBasePathIds.has(pathId) &&
+        (state.owner.roles?.[pathId] ||
+          (entry.path.closed ? 'boundary' : 'guide')) === 'boundary' &&
+        !usedPathIds.has(pathId),
+    )
+    .map(([pathId]) => pathId);
+  for (const pathId of [...explicitBasePathIds, ...boundaryBasePathIds]) {
+    const curves = source(context, state, pathId);
+    const fill = operator(
+      context,
+      state,
+      'legacy-partition-base-path',
+      pathId,
+      {
+        type: 'path',
+        name: `${state.paths.get(pathId).path.name || pathId} · 分区底面`,
+        enabled: true,
+        inputs: { input: [inputPort(curves)] },
+        params: { rule: 'even-odd' },
+      },
+    );
+    partitionBases.push({
+      domain: 'regions',
+      operator: fill,
+      port: port(state.shape.id, fill.id, 'regions'),
     });
   }
-  for (const regionId of state.owner.regionIds || [])
-    current = region(context, state, regionId);
-  if (!current && state.paths.size) {
+  if (partitionBases.length) {
+    let partitionBase = partitionBases[0];
+    if (partitionBases.length > 1) {
+      const collect = operator(
+        context,
+        state,
+        'legacy-partition-base-collect',
+        state.owner.id,
+        {
+          type: 'region-collect',
+          name: `${state.owner.name || state.owner.id} · 分区底面集合`,
+          enabled: true,
+          inputs: {
+            input: partitionBases.map((result) => inputPort(result.port)),
+          },
+          params: {},
+        },
+      );
+      partitionBase = {
+        domain: 'regions',
+        operator: collect,
+        port: port(state.shape.id, collect.id, 'regions'),
+      };
+    }
+    for (const clipRegionId of state.owner.clipRegionIds || []) {
+      const operand = region(context, state, clipRegionId);
+      const clip = operator(
+        context,
+        state,
+        'legacy-partition-clip',
+        clipRegionId,
+        {
+          type: 'boolean',
+          name: `${state.owner.name || state.owner.id} · 分区裁剪`,
+          enabled: true,
+          inputs: {
+            input: [inputPort(partitionBase.port)],
+            operand: [inputPort(operand.port)],
+          },
+          params: { operation: 'intersection', scope: { kind: 'all' } },
+        },
+      );
+      partitionBase = {
+        domain: 'regions',
+        operator: clip,
+        port: port(state.shape.id, clip.id, 'regions'),
+      };
+    }
+    if (dividerPathIds.length) {
+      const connections = evaluatePartition(
+        context.project,
+        state.owner,
+        state.owner.joinMM || 0,
+      ).connections;
+      const cutterPathIds = dividerPathIds.map((pathId) => {
+        source(context, state, pathId);
+        const sourcePath = state.paths.get(pathId),
+          uses = sourcePath
+            ? state.sketch.paths[sourcePath.pathId].edges.map(clone)
+            : [];
+        for (const connection of connections.filter(
+          (item) => item.pathId === pathId,
+        )) {
+          const extra = Math.min(0.005, (state.owner.joinMM || 0) / 100),
+            extended = connection.to.map(
+              (value, index) =>
+                value +
+                ((value - connection.from[index]) / connection.gapMM) * extra,
+            ),
+            first = connection.endpoint === 0,
+            adjacentUse = first ? uses[0] : uses.at(-1),
+            adjacentEdge = state.sketch.edges[adjacentUse.edgeId],
+            adjacentVertexId = first
+              ? adjacentEdge.startVertexId
+              : adjacentEdge.endVertexId,
+            adjacent = state.sketch.vertices[adjacentVertexId].position.value,
+            vertexId = context.id(
+              'vertex',
+              `${state.owner.id}:${pathId}:partition-join:${connection.endpoint}`,
+            ),
+            edgeId = context.id(
+              'edge',
+              `${state.owner.id}:${pathId}:partition-join:${connection.endpoint}`,
+            ),
+            start = first ? extended : adjacent,
+            end = first ? adjacent : extended;
+          state.sketch.vertices[vertexId] = {
+            id: vertexId,
+            position: { kind: 'free', value: extended },
+          };
+          state.sketch.edges[edgeId] = {
+            id: edgeId,
+            startVertexId: first ? vertexId : adjacentVertexId,
+            endVertexId: first ? adjacentVertexId : vertexId,
+            startHandle: {
+              kind: 'free',
+              vector: [(end[0] - start[0]) / 3, (end[1] - start[1]) / 3],
+            },
+            endHandle: {
+              kind: 'free',
+              vector: [(start[0] - end[0]) / 3, (start[1] - end[1]) / 3],
+            },
+          };
+          const use = { edgeId, reversed: false };
+          if (first) uses.unshift(use);
+          else uses.push(use);
+        }
+        if (!connections.some((item) => item.pathId === pathId))
+          return sourcePath.pathId;
+        const derivedPathId = context.id(
+          'path',
+          `${state.owner.id}:${pathId}:partition-connected`,
+        );
+        state.sketch.paths[derivedPathId] = {
+          id: derivedPathId,
+          name: `${sourcePath.path.name || pathId} · 分区连接`,
+          edges: uses,
+          visible: false,
+        };
+        return derivedPathId;
+      });
+      const cutter = operator(
+        context,
+        state,
+        'legacy-partition-cutters',
+        state.owner.id,
+        {
+          type: 'source',
+          name: `${state.owner.name || state.owner.id} · 分区线`,
+          enabled: true,
+          inputs: {
+            paths: cutterPathIds.map((pathId) => {
+              return {
+                kind: 'sketch',
+                sketchId: state.sketch.id,
+                pathIds: [pathId],
+              };
+            }),
+          },
+          params: {},
+        },
+      );
+      const partition = operator(
+        context,
+        state,
+        'legacy-partition',
+        state.owner.id,
+        {
+          type: 'partition',
+          name: `${state.owner.name || state.owner.id} · 旧分区`,
+          enabled: true,
+          inputs: {
+            input: [inputPort(partitionBase.port)],
+            cutter: [inputPort(port(state.shape.id, cutter.id, 'curves'))],
+          },
+          params: { scope: { kind: 'all' } },
+        },
+      );
+      current = {
+        domain: 'regions',
+        operator: partition,
+        port: port(state.shape.id, partition.id, 'regions'),
+        target: outputRef(
+          state.shape.id,
+          partition.id,
+          `legacy-partition:${state.owner.id}`,
+        ),
+      };
+      partitionOutput = current;
+      context.wholeOutputs.add(
+        `${current.target.operatorId}\u0000${current.target.key}`,
+      );
+    } else current = partitionBase;
+    if (
+      !partitionOutput &&
+      (explicitBasePathIds.size || boundaryBasePathIds.length) &&
+      !state.owner.modifiers?.length
+    )
+      partitionOutput = current;
+    publishResults.push(current);
+  }
+  if (!publishResults.length && state.paths.size) {
     const regionFirst = ['boolean', 'split', 'offset', 'radial_array'].includes(
       state.owner.modifiers?.[0]?.type,
     );
@@ -1190,90 +2296,274 @@ function compileOwner(context, document, state) {
         ),
       };
     }
+    publishResults.push(current);
   }
+  if (publishResults.length === 1) current = publishResults[0];
+  else if (publishResults.length > 1) {
+    const collect = operator(context, state, 'region-collect', state.owner.id, {
+      type: 'region-collect',
+      name: `${state.owner.name || state.owner.id} · 区域集合`,
+      enabled: true,
+      inputs: {
+        input: publishResults.map((result) => inputPort(result.port)),
+      },
+      params: {},
+    });
+    current = {
+      domain: 'regions',
+      operator: collect,
+      port: port(state.shape.id, collect.id, 'regions'),
+    };
+  }
+  const beforeObjectModifiers = current;
   current = modifiers(context, state, current, state.owner.modifiers);
+  if (current?.domain === 'regions')
+    for (const oldModifier of state.owner.modifiers || [])
+      for (const ref of oldModifier.targets?.refs || []) {
+        const featureId = ref.key?.startsWith('feature:')
+          ? ref.key.slice('feature:'.length)
+          : null;
+        if (!featureId) continue;
+        context.legacyEvaluation ||= evaluateCreation(clone(context.project));
+        const legacyCell = context.legacyEvaluation.cells.find(
+          (cell) =>
+            cell.objectId === state.owner.id && cell.featureId === featureId,
+        );
+        if (!legacyCell?.geometry) continue;
+        const target = outputRef(
+          state.shape.id,
+          current.operator.id,
+          `legacy-feature:${featureId}`,
+          [`legacy-feature:${featureId}`],
+        );
+        delete current.operator.outputContract;
+        context.spatialBindings.push({
+          paintId: `feature:${featureId}`,
+          ownerId: state.owner.id,
+          target: clone(target),
+          geometry: clone(legacyCell.geometry),
+          normalized: false,
+        });
+        context.featureTargets.set(featureId, clone(target));
+        // Keep the upstream whole-output marker: selected modifier scopes were
+        // authored against that feature and expand it before downstream bind.
+        const pending = context.pendingFeatureAssignments.find(
+          (item) => item.state === state && item.feature.id === featureId,
+        );
+        if (pending) pending.target = clone(target);
+        context.idMap[`feature-output:${featureId}`] = clone(target);
+        for (const mapping of context.report.mappings)
+          if (
+            mapping.legacy.kind === 'feature-output' &&
+            mapping.legacy.id === featureId &&
+            mapping.ownerId === state.owner.id
+          )
+            mapping.target = clone(target);
+      }
+  if (
+    publishResults.length === 1 &&
+    publishedFeatures.length === 1 &&
+    current?.target &&
+    current.operator.id !== beforeObjectModifiers?.operator?.id
+  ) {
+    const [{ feature, target }] = publishedFeatures;
+    context.featureTargets.set(feature.id, clone(current.target));
+    context.wholeOutputs.delete(`${target.operatorId}\u0000${target.key}`);
+    context.wholeOutputs.add(
+      `${current.target.operatorId}\u0000${current.target.key}`,
+    );
+    const pending = context.pendingFeatureAssignments.find(
+      (entry) => entry.state === state && entry.feature.id === feature.id,
+    );
+    if (pending) pending.target = clone(current.target);
+    context.idMap[`feature-output:${feature.id}`] = clone(current.target);
+    for (const mapping of context.report.mappings)
+      if (
+        mapping.legacy.kind === 'feature-output' &&
+        mapping.legacy.id === feature.id &&
+        mapping.ownerId === state.owner.id
+      )
+        mapping.target = clone(current.target);
+  }
   if (current?.domain === 'curves') state.program.outputs.curves = current.port;
   if (current?.domain === 'regions')
     state.program.outputs.regions = current.port;
   state.publishedRegion = current?.domain === 'regions' ? current : null;
-  const final = current?.operator;
+  const styledResult = partitionOutput || current;
+  const styledFinal = styledResult?.operator;
   if (state.owner.surfaceGraph?.outputs?.length) {
-    if (!final || current.domain !== 'regions')
+    if (!styledFinal || styledResult.domain !== 'regions')
       fail(
         context,
         'orphan-surface-graph',
         '旧 surfaceGraph 没有区域算子承载',
         { kind: 'object', id: state.owner.id },
       );
-    final.outputContract = {
-      version: 1,
-      members: state.owner.surfaceGraph.outputs.map((entry) => ({
-        port: 'regions',
-        key: entry.key,
-        lineage: [entry.signature],
-        topology: entry.signature,
-      })),
-    };
+    // Legacy contracts describe the old engine's topology tokens. Geometry is
+    // bound below against the V4 result, then a native V4 contract is stored.
+    delete styledFinal.outputContract;
+    context.legacyEvaluation ||= evaluateCreation(clone(context.project));
     for (const entry of state.owner.surfaceGraph.outputs) {
-      const target = outputRef(state.shape.id, final.id, entry.key, [
+      const target = outputRef(state.shape.id, styledFinal.id, entry.key, [
         entry.signature,
       ]);
       context.map('surface-output', entry.key, target, {
         ownerId: state.owner.id,
       });
+      {
+        const legacyCell = context.legacyEvaluation.cells.find(
+          (cell) => cell.objectId === state.owner.id && cell.key === entry.key,
+        );
+        if (!legacyCell?.geometry) {
+          addIssue(
+            context.report,
+            entry.style ? 'warning' : 'info',
+            entry.style
+              ? 'stale-styled-surface-output-preserved'
+              : 'stale-surface-output-ignored',
+            entry.style
+              ? '旧 surfaceGraph 样式输出已不在当前求值结果中；样式记录保留在迁移报告中，未捏造几何或赋值'
+              : '旧 surfaceGraph 未着色输出已不在当前求值结果中',
+            { kind: 'surface-output', id: entry.key },
+            {
+              ownerId: state.owner.id,
+              ...(entry.style ? { style: clone(entry.style) } : {}),
+            },
+          );
+          continue;
+        }
+        if (legacyCell.featureId) {
+          const previous = context.featureTargets.get(legacyCell.featureId);
+          context.featureTargets.set(legacyCell.featureId, clone(target));
+          if (previous)
+            context.wholeOutputs.delete(
+              `${previous.operatorId}\u0000${previous.key}`,
+            );
+          const pending = context.pendingFeatureAssignments.find(
+            (item) =>
+              item.state === state && item.feature.id === legacyCell.featureId,
+          );
+          if (pending) pending.target = clone(target);
+          context.idMap[`feature-output:${legacyCell.featureId}`] =
+            clone(target);
+          for (const mapping of context.report.mappings)
+            if (
+              mapping.legacy.kind === 'feature-output' &&
+              mapping.legacy.id === legacyCell.featureId &&
+              mapping.ownerId === state.owner.id
+            )
+              mapping.target = clone(target);
+        }
+        context.spatialBindings.push({
+          paintId: `surface:${entry.key}`,
+          ownerId: state.owner.id,
+          target: clone(target),
+          geometry: clone(legacyCell.geometry),
+          normalized: false,
+        });
+      }
       if (entry.style)
         assignment(context, document, state, null, target, entry.style);
     }
   }
   for (const paint of state.owner.paints || []) {
-    if (!paint.boundaryPathIds?.length)
-      fail(
-        context,
-        'spatial-paint-ambiguous',
-        '旧 paint 只有空间 geometry，没有稳定 boundaryPathIds；拒绝静默猜测',
-        { kind: 'paint', id: paint.id },
-        { ownerId: state.owner.id },
-      );
-    if (!final || current.domain !== 'regions')
+    if (!styledFinal || styledResult.domain !== 'regions')
       fail(context, 'orphan-paint', '旧 paint 没有区域算子承载', {
         kind: 'paint',
         id: paint.id,
       });
-    const key = `paths:${[...paint.boundaryPathIds]
-      .sort((left, right) => left.localeCompare(right))
-      .join('|')}`;
+    const spatial = styledFinal.type === 'partition' && paint.geometry;
+    const key = spatial
+      ? `legacy-paint:${paint.id}`
+      : paint.boundaryPathIds?.length
+        ? `paths:${[...paint.boundaryPathIds]
+            .sort((left, right) => left.localeCompare(right))
+            .join('|')}`
+        : `legacy-paint:${paint.id}`;
     const target = outputRef(
       state.shape.id,
-      final.id,
+      styledFinal.id,
       key,
-      paint.boundaryPathIds.map((id) => `legacy-path:${id}`),
+      !spatial && paint.boundaryPathIds?.length
+        ? paint.boundaryPathIds.map((id) => `legacy-path:${id}`)
+        : [`legacy-paint:${paint.id}`],
     );
-    const members = final.outputContract?.members || [];
-    if (!members.some((member) => member.key === key))
-      final.outputContract = {
+    const members = styledFinal.outputContract?.members || [];
+    if (!spatial && !members.some((member) => member.key === key))
+      styledFinal.outputContract = {
         version: 1,
         members: [...members, contractMember(target)],
       };
     context.map('paint-output', paint.id, target, { ownerId: state.owner.id });
+    if (spatial || !paint.boundaryPathIds?.length) {
+      if (!paint.geometry)
+        fail(
+          context,
+          'spatial-paint-ambiguous',
+          '旧 paint 既没有边界 ID 也没有冻结几何',
+          { kind: 'paint', id: paint.id },
+          { ownerId: state.owner.id },
+        );
+      context.spatialBindings.push({
+        paintId: paint.id,
+        ownerId: state.owner.id,
+        target: clone(target),
+        geometry: clone(paint.geometry),
+      });
+      addIssue(
+        context.report,
+        'info',
+        'spatial-paint-matched-once',
+        '旧 paint 没有边界 ID；导入时以冻结几何唯一匹配 V4 输出',
+        { kind: 'paint', id: paint.id },
+        { ownerId: state.owner.id },
+      );
+    }
     assignment(context, document, state, null, target, paint);
   }
 }
 
 function compile(context) {
   validateLegacy(context);
-  const p = context.project,
-    allOwners = owners(context),
+  const p = context.project;
+  p.creation = creationDocument(p);
+  const allOwners = owners(context),
     assets = {};
   context.wholeOutputs = new Set();
   const document = createDocument({
     id: context.id('document', `legacy-v${p.version}`),
     idFactory: () => context.id('generated', 'default-part'),
   });
+  context.document = document;
   document.geometrySettings.curveToleranceMM = p.model?.toleranceMM || 0.015;
+  document.geometrySettings.joinToleranceMM = Math.max(
+    document.geometrySettings.joinToleranceMM,
+    ...allOwners.flatMap((object) =>
+      (object.modifiers || [])
+        .filter(
+          (modifier) =>
+            modifier.type === 'fill' &&
+            modifier.enabled !== false &&
+            modifier.joinMM > 0,
+        )
+        .map((modifier) => modifier.joinMM),
+    ),
+  );
   dataAsset(context, document, assets);
   context.states = new Map();
   const paths = new Map(p.paths.map((path) => [path.id, path])),
     copies = new Map();
+  context.paths = paths;
+  context.copies = copies;
+  context.features = new Map(
+    (p.model?.features || []).map((feature) => [feature.id, feature]),
+  );
+  context.featureTargets = new Map();
+  context.publishedFeatureIds = new Set();
+  context.pendingFeatureAssignments = [];
+  context.pendingOutputAssignments = [];
+  context.spatialBindings = [];
+  context.legacyRegionByOperator = new Map();
   for (const object of allOwners) {
     const shapeId = context.id('shape', object.id),
       programId = context.id('program', object.id),
@@ -1353,6 +2643,24 @@ function compile(context) {
   metadata(context, document, allOwners);
   for (const object of allOwners)
     compileOwner(context, document, context.states.get(object.id));
+  for (const pending of context.pendingFeatureAssignments)
+    assignment(
+      context,
+      document,
+      pending.state,
+      pending.feature,
+      pending.target,
+      pending.style,
+    );
+  for (const pending of context.pendingOutputAssignments)
+    assignment(
+      context,
+      document,
+      pending.state,
+      null,
+      pending.target,
+      pending.style,
+    );
   for (const group of p.groups || []) {
     const id = context.id('collection', group.id);
     const grouped = new Set(
