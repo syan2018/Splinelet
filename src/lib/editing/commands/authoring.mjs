@@ -19,6 +19,7 @@ import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
 import { createSourceTransferCommand } from './source-transfer.mjs';
 import { createResourceCommand, RESOURCE_ACTIONS } from './resources.mjs';
 import { extendPath } from '../../geometry/extend-path.mjs';
+import { nextSourcePathOrder } from '../../geometry/source-order.mjs';
 import {
   createPathMetadataCommand,
   PATH_METADATA_ACTIONS,
@@ -37,6 +38,10 @@ import {
 } from './path-node-deletion.mjs';
 import { PATH_MERGE_ACTIONS } from './path-merge.mjs';
 import { createPathMergeAuthoringCommand } from './path-merge-authoring.mjs';
+import {
+  createSourceOrganizationCommand,
+  SOURCE_ORGANIZATION_ACTIONS,
+} from './source-organization.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -231,6 +236,7 @@ function drawPath(document, action, idFactory) {
   sketch.paths[pathId] = {
     id: pathId,
     name: action.name || '线条',
+    order: nextSourcePathOrder(document),
     visible: true,
     edges: uses,
     ...(uses.length === 0 ? { startVertexId: vertices[0] } : {}),
@@ -341,6 +347,8 @@ export function createAuthoringCommand(action) {
       return createPathNodeDeletionCommand(action)(document, { idFactory });
     if (PATH_MERGE_ACTIONS.includes(action.kind))
       return createPathMergeAuthoringCommand(action)(document, { idFactory });
+    if (SOURCE_ORGANIZATION_ACTIONS.includes(action.kind))
+      return createSourceOrganizationCommand(action)(document, { idFactory });
     if (action.kind === 'set-node') {
       const node = document.nodes[action.nodeId];
       if (!node) throw Error('部件不存在');

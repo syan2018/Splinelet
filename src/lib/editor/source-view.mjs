@@ -1,5 +1,6 @@
 import { resolveRelation } from '../geometry/relations.mjs';
 import { effectiveNodeState } from '../scene/hierarchy.mjs';
+import { orderedSourcePaths } from '../geometry/source-order.mjs';
 import {
   inverseTransform,
   transformPoint,
@@ -340,62 +341,72 @@ export function projectSourceView(document, frame) {
   const paths = [];
   const diagnostics = [];
   const unavailablePaths = [];
-  for (const sketch of Object.values(document.sketches).sort((left, right) =>
-    left.id.localeCompare(right.id),
-  ))
-    for (const pathValue of Object.values(sketch.paths).sort((left, right) =>
-      left.id.localeCompare(right.id),
-    )) {
-      const ref = {
-        kind: 'path',
-        sketchId: sketch.id,
-        id: pathValue.id,
-      };
-      const id = sourceIdentityId(ref);
-      setIdentity(identities, 'paths', id, ref);
-      const parentNodeId = document.nodes[sketch.ownerNodeId]?.parentId ?? null;
-      const unavailable = (reason) => ({
-        id,
+  for (const { sketch, path: pathValue } of orderedSourcePaths(document)) {
+    const ref = {
+      kind: 'path',
+      sketchId: sketch.id,
+      id: pathValue.id,
+    };
+    const id = sourceIdentityId(ref);
+    setIdentity(identities, 'paths', id, ref);
+    const parentNodeId = document.nodes[sketch.ownerNodeId]?.parentId ?? null;
+    const unavailable = (reason) => ({
+      id,
+      ref: cloneRef(ref),
+      ownerNodeId: sketch.ownerNodeId,
+      ownerRef: { kind: 'node', id: sketch.ownerNodeId },
+      parentNodeId,
+      parentRef:
+        parentNodeId === null ? null : { kind: 'node', id: parentNodeId },
+      name: pathValue.name,
+      reason,
+    });
+    if (!pathValue.edges.length && !pathValue.startVertexId) {
+      unavailablePaths.push(unavailable('empty'));
+      continue;
+    }
+    const localIdentities = identityTables();
+    try {
+      paths.push(
+        projectPath(document, sketch, pathValue, sourceFrame, localIdentities),
+      );
+      mergeIdentities(identities, localIdentities);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.push({
+        severity: 'error',
+        kind: 'source-path-unavailable',
         ref: cloneRef(ref),
         ownerNodeId: sketch.ownerNodeId,
-        ownerRef: { kind: 'node', id: sketch.ownerNodeId },
-        parentNodeId,
-        parentRef:
-          parentNodeId === null ? null : { kind: 'node', id: parentNodeId },
-        name: pathValue.name,
-        reason,
+        message,
       });
-      if (!pathValue.edges.length && !pathValue.startVertexId) {
-        unavailablePaths.push(unavailable('empty'));
-        continue;
-      }
-      const localIdentities = identityTables();
-      try {
-        paths.push(
-          projectPath(
-            document,
-            sketch,
-            pathValue,
-            sourceFrame,
-            localIdentities,
-          ),
-        );
-        mergeIdentities(identities, localIdentities);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        diagnostics.push({
-          severity: 'error',
-          kind: 'source-path-unavailable',
-          ref: cloneRef(ref),
-          ownerNodeId: sketch.ownerNodeId,
-          message,
-        });
-        unavailablePaths.push(unavailable('projection-error'));
-      }
+      unavailablePaths.push(unavailable('projection-error'));
     }
+  }
   return freeze({
     frame: sourceFrame,
     paths,
+    orderedPathIds: orderedSourcePaths(document).map(({ sketch, path }) =>
+      sourcePathId(sketch.id, path.id),
+    ),
+    collections: Object.values(document.collections)
+      .sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id),
+      )
+      .map((collection) => ({
+        id: collection.id,
+        name: collection.name,
+        members: collection.members.map((ref) => ({
+          ref: cloneRef(ref),
+          pathId:
+            ref.kind === 'path' ? sourcePathId(ref.sketchId, ref.id) : null,
+          ...(ref.kind === 'path'
+            ? {
+                exists: Boolean(document.sketches[ref.sketchId]?.paths[ref.id]),
+              }
+            : {}),
+        })),
+      })),
     identities,
     diagnostics,
     unavailablePaths,

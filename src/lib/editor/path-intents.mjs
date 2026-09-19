@@ -16,6 +16,10 @@ export function createPathIntent(request, displayed) {
       'straighten-edge',
       'delete-path-vertices',
       'merge-paths',
+      'create-path-collection',
+      'rename-collection',
+      'delete-collection',
+      'reorder-source-paths',
     ].includes(action?.kind)
   )
     throw Error('路径动作尚未适配');
@@ -54,6 +58,31 @@ export function createPathIntent(request, displayed) {
       kind: action.kind,
       pathRefs: action.pathIds.map(resolve),
       value: action.value,
+    };
+  } else if (
+    action.kind === 'create-path-collection' ||
+    action.kind === 'reorder-source-paths'
+  ) {
+    if (!Array.isArray(action.pathIds)) throw Error('路径选区必须是数组');
+    command = {
+      kind: action.kind,
+      pathRefs: action.pathIds.map(resolve),
+      ...(action.kind === 'create-path-collection'
+        ? { name: action.name }
+        : {}),
+    };
+  } else if (
+    action.kind === 'rename-collection' ||
+    action.kind === 'delete-collection'
+  ) {
+    if (
+      !view.source.collections.some((item) => item.id === action.collectionId)
+    )
+      throw Error('整理分组已失效');
+    command = {
+      kind: action.kind,
+      collectionId: action.collectionId,
+      ...(action.kind === 'rename-collection' ? { name: action.name } : {}),
     };
   } else if (action.kind === 'merge-paths') {
     command = {

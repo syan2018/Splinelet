@@ -7,6 +7,7 @@ import { PATH_DELETION_ACTIONS } from '../editing/commands/path-deletion.mjs';
 import { PATH_GEOMETRY_ACTIONS } from '../editing/commands/path-geometry.mjs';
 import { PATH_NODE_DELETION_ACTIONS } from '../editing/commands/path-node-deletion.mjs';
 import { PATH_MERGE_ACTIONS } from '../editing/commands/path-merge.mjs';
+import { SOURCE_ORGANIZATION_ACTIONS } from '../editing/commands/source-organization.mjs';
 import { exportSnapshot } from '../export/snapshot.mjs';
 
 export const V4_AGENT_API_VERSION = '5.0';
@@ -20,6 +21,7 @@ const AUTHORING_ACTIONS = Object.freeze([
   ...PATH_GEOMETRY_ACTIONS,
   ...PATH_NODE_DELETION_ACTIONS,
   ...PATH_MERGE_ACTIONS,
+  ...SOURCE_ORGANIZATION_ACTIONS,
   'set-node',
   'transfer-source',
   'set-print-settings',

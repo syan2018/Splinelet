@@ -28,6 +28,8 @@
 
 2026-09-20 节点与合并增量：`delete-path-vertices` 按稳定 Vertex ID 和捕获的有向边顺序删除，复用原节点删除的拟合与连续模式算法；存活节点/未受影响边保持身份，合并边分配新 ID，支持闭合起点旋转、单点与整条删除。`merge-paths` 保持原四种端点接合方向和三分之一直桥控制柄，保留第一条 Path 身份；重合端点焊接会检查共享与 Relation。原普通绘制产生的同部件不同 Sketch，通过保持世界坐标的来源转移与合并组合成一次撤销，拒绝扩大到其他共享路径或跨部件暗中转移。两者已有原像素视图和旧算法对照测试，API5 已登记；原画布事件、会话和保存接线仍未完成。验证范围见[本次快照](../../docs/qa/v4-node-deletion-and-merge-2026-09-20.md)。
 
+2026-09-20 源列表增量：`Path.order` / `Collection.order` 显式保留显示顺序；旧 V4 缺省使用确定性 ID 次序，新线条追加，旧工程写入原路径/分组次序。源投影保留所有路径的稳定顺序及集合逐成员引用，不把重叠集合压成唯一 `groupId`。`create-path-collection`、`rename-collection`、`delete-collection` 与严格全量 `reorder-source-paths` 已有命令和像素视图意图适配；整理不会修改所有权、几何或构造输入。普通编组仍须按 Node 层级适配原工作区，不新增 Collection 管理入口。旧列表拖放的目标编组策略及父级事件接线尚未完成。
+
 原 `studio-app.tsx` 的接线按以下行为切片推进，不新增工作包文档：
 
 1. 节点、柄、拆边：替换 `startPointDrag`/pointer move/up 与双击拆边；单次 Preview 提交，多节点拖动及批量模式切换须补原子命令。

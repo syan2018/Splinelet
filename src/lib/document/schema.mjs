@@ -340,8 +340,11 @@ const validateSketch = (key, sketch, seen) => {
     exactKeys(path, ['id', 'name', 'edges', 'visible'], 'Path', [
       'handleModes',
       'startVertexId',
+      'order',
     ]);
     text(path.name, 'Path.name');
+    if (path.order !== undefined && !finite(path.order))
+      fail('Path.order 无效');
     if (!Array.isArray(path.edges)) fail('Path.edges 无效');
     for (const use of path.edges) {
       exactKeys(use, ['edgeId', 'reversed'], 'Path.edges[]');
@@ -732,7 +735,11 @@ const validateReference = (key, reference, seen) => {
 };
 const validateCollection = (key, collection, seen) => {
   recordId(key, collection, 'Collection', seen);
-  exactKeys(collection, ['id', 'name', 'members', 'origin'], 'Collection');
+  exactKeys(collection, ['id', 'name', 'members', 'origin'], 'Collection', [
+    'order',
+  ]);
+  if (collection.order !== undefined && !finite(collection.order))
+    fail('Collection.order 无效');
   text(collection.name, 'Collection.name');
   if (!Array.isArray(collection.members)) fail('Collection.members 无效');
   collection.members.forEach((member) =>

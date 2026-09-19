@@ -518,6 +518,7 @@ function copyPath(context, state, path) {
   state.sketch.paths[pathId] = {
     id: pathId,
     name: path.name || path.id,
+    order: context.project.paths.findIndex((entry) => entry.id === path.id),
     edges: uses,
     visible: path.visible !== false,
     ...(startVertexId ? { startVertexId } : {}),
@@ -2814,6 +2815,7 @@ function compile(context) {
     document.collections[id] = {
       id,
       name: group.name || group.id,
+      order: p.groups.indexOf(group),
       members,
       origin: 'legacy',
     };
