@@ -75,6 +75,16 @@ async function main() {
       0,
     );
     const card = page.locator('.modifier-card');
+    assert.equal(
+      (await evidence()).storageDirty,
+      false,
+      'a loaded V4 file starts clean',
+    );
+    assert.equal(
+      (await evidence()).displayedPaths,
+      1,
+      'root-issued display includes the real source path',
+    );
     const derived = page.locator('[data-derived-curves]');
     assert.equal(await derived.getAttribute('data-derived-curves'), '2');
     const initialPath = await derived.getAttribute('d');
@@ -107,11 +117,24 @@ async function main() {
     const changed = await evidence();
     assert.ok(Math.abs(changed.angleRad - Math.PI / 6) < 1e-8);
     assert.equal(changed.rawUnchanged, true);
+    assert.equal(changed.storageDirty, true);
     assert.equal(changed.revision, before.revision + 1);
     before = changed;
     await page.getByRole('button', { name: '测试撤销', exact: true }).click();
     await waitRevision(before.revision);
     assert.equal((await evidence()).baselineRestored, true);
+
+    await page.getByRole('button', { name: '测试保存', exact: true }).click();
+    await page.waitForFunction(() => {
+      const element = document.getElementById('evidence');
+      const state = JSON.parse(element.textContent);
+      return (
+        element.dataset.ready === 'true' &&
+        state.savedWrites === 1 &&
+        !state.storageDirty
+      );
+    });
+    assert.equal(await page.locator('#fixture-error').textContent(), '');
 
     before = await evidence();
     // Add through the original form; inspect the actual V4 graph and geometry.

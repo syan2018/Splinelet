@@ -137,6 +137,8 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ### 执行与验收记录
 
+2026-09-20 根会话控制器：`editor/studio-session.mjs` 持有唯一 EditorSession、文件会话和 CreationRuntime，发出可供 React 订阅的稳定 snapshot。打开时校验文档和展示参考系，一次发布完整的新会话状态；旧运行时关闭，撤销历史重置，文件 revision 与编辑状态对齐。原组件 fixture 已改用此订阅，展示路径不再由空数组占位。保存编码权威文档，预览只显示，取消不置脏；恢复以未绑定的修改文档进入。默认 `StudioApp` 尚未使用控制器；参考图资源 URL 生命周期、Web 文件句柄/原生写入适配、完整源回调及 ModelWorkspace 边界仍须接入，不能提前宣称根切换完成。
+
 2026-09-20 原节点动作边界：原主界面的连接方式、指定段直连、批量删点及公开 API 的连接方式统一调用 `source-editor/node-actions.mjs`。旧后端保留原算法，V4 后端将已显示路径的节点/段索引解析为稳定源身份后提交命令；面板继续使用原 `SplineNodeInspector`。主界面状态提示、选区处理与快捷键保留在原位置。该边界不涵盖单节点拟合删除 API、画布拖动、续画、接合或文件会话，因此不能据此签收默认根 V4 切换。
 
 2026-09-20 源编辑共享运行时：`CreationRuntime` 同时提供 `readSourceView`、`commandSource`、`commandPath` 和 `beginSourceGesture`，共用私有展示句柄、单一 EditorSession 和历史。源命令从已展示的稳定身份编译，拖动使用固定基线；参考图坐标系在运行时创建时捕获，屏幕缩放/平移不改变它，参考系变更须重建运行时。连续相同坐标采样仍按预览版本使旧句柄失效。专项测试覆盖共享历史、实时派生结果及取消/换文档保护；原主画布回调和默认根会话注入仍待完成，不能签收完整源编辑旅程。

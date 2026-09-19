@@ -66,6 +66,7 @@ const session = createV4PersistenceSession({
 let state = session.open(openedLegacy);
 assert.equal(state.target, null);
 assert.equal(state.legacySource, true);
+assert.equal(state.dirty, true);
 assert.throws(
   () => session.save({ expectedEpoch: state.epoch, expectedRevision: 0 }),
   /首次保存/,
@@ -92,6 +93,115 @@ assert.equal(
 );
 assert.equal(session.state.dirty, false);
 
+const mutableTarget = { path: 'replaced.spl' };
+state = session.open({
+  kind: 'v4',
+  epoch: 'replaced-editor',
+  revision: 7,
+  document: document('replaced'),
+  assets: {},
+  target: mutableTarget,
+});
+assert.equal(state.revision, 7);
+assert.equal(state.dirty, false);
+assert.notStrictEqual(state.target, mutableTarget);
+mutableTarget.path = 'changed-after-open.spl';
+assert.equal(session.state.target.path, 'replaced.spl');
+assert.equal(
+  session.update({
+    epoch: state.epoch,
+    revision: state.revision,
+    previewId: null,
+    document: document('replaced'),
+  }).dirty,
+  false,
+  'opening at the replacement revision and receiving the same editor state stays clean',
+);
+assert.equal(
+  session.update({
+    epoch: state.epoch,
+    revision: state.revision,
+    previewId: null,
+    document: document('replaced'),
+  }).dirty,
+  false,
+  'a no-op update or preview cancellation state stays clean',
+);
+state = session.update({
+  epoch: state.epoch,
+  revision: state.revision + 1,
+  previewId: null,
+  document: document('replaced-edit'),
+});
+assert.equal(state.dirty, true, 'a committed edit dirties the session');
+assert.throws(
+  () =>
+    session.update({
+      epoch: state.epoch,
+      revision: state.revision - 1,
+      previewId: null,
+      document: document('replaced'),
+    }),
+  /过期/,
+);
+assert.throws(
+  () =>
+    session.update({
+      epoch: state.epoch,
+      revision: state.revision,
+      previewId: null,
+      document: document('identity-violation'),
+    }),
+  /identity/,
+);
+const beforeBadOpen = session.state;
+assert.throws(
+  () =>
+    session.open({
+      kind: 'v4',
+      epoch: '',
+      document: document('bad'),
+      assets: {},
+    }),
+  /epoch/,
+);
+assert.deepEqual(
+  session.state,
+  beforeBadOpen,
+  'invalid open leaves the current file intact',
+);
+assert.throws(() =>
+  session.open({
+    kind: 'v4',
+    document: document('clone-failure'),
+    assets: { unsupported: () => {} },
+  }),
+);
+assert.deepEqual(
+  session.state,
+  beforeBadOpen,
+  'clone failures leave the current file intact',
+);
+state = session.open({
+  kind: 'legacy',
+  document: document('legacy-unbound'),
+  assets: {},
+  target: 'legacy.spl',
+  dirty: false,
+});
+assert.equal(state.target, null);
+assert.equal(
+  state.dirty,
+  true,
+  'legacy projects remain dirty even when dirty is false',
+);
+
+state = session.open({
+  kind: 'v4',
+  document: document('new'),
+  assets: {},
+  target: 'new.spl',
+});
 state = session.update({
   epoch: state.epoch,
   revision: 1,

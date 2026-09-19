@@ -1,5 +1,5 @@
 // Isolated component fixture. No application storage or user files are read.
-import React, { useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import CreationModifiers from '../../../src/components/creation/creation-modifiers.tsx';
 import { SplineNodeInspector } from '../../../src/components/source-editor/spline-inspector.tsx';
@@ -11,7 +11,7 @@ import {
 import { createDocument } from '../../../src/lib/document/schema.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
-import { createV4CreationRuntime } from '../../../src/lib/editor/creation-runtime.mjs';
+import { createStudioSession } from '../../../src/lib/editor/studio-session.mjs';
 import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
 
 const h = React.createElement;
@@ -52,26 +52,33 @@ dispatch((document) => {
   return { document };
 });
 const baseline = structuredClone(editor.state.document);
-const runtime = createV4CreationRuntime({
-  editorSession: editor,
-  sourceFrame: { width: 100, height: 100, widthMM: 100 },
-  toDisplayProject: (_state, view) => ({
-    version: 4,
-    width: 100,
-    height: 100,
-    widthMM: 100,
-    paths: [],
-    creation: view.creation,
-  }),
+const presentation = {
+  reference: null,
+  frame: { width: 100, height: 100, widthMM: 100 },
+  newReliefDepthMM: 2,
+  fileName: 'fixture.spl',
+};
+const saved = [];
+const studio = createStudioSession({
+  opened: { kind: 'v4', document: baseline, target: 'fixture.spl', assets: {} },
+  presentation,
+  persistence: {
+    writeFile: async (target, bytes) => {
+      saved.push({ target, bytes });
+    },
+  },
+  idFactory,
 });
 const read = async () => {
-  const project = runtime.project();
+  const { project, runtime } = studio.getSnapshot();
   return { project, scene: await runtime.evaluate('creation', {}, project) };
 };
 const initial = await read();
 
 function Fixture() {
-  const previewProject = runtime.project();
+  const snapshot = useSyncExternalStore(studio.subscribe, studio.getSnapshot);
+  const { project: previewProject, runtime, editorState } = snapshot;
+  const dispatch = (command) => studio.dispatch(command);
   const preview = useCurvePreview(previewProject, owner.id, runtime);
   const [display, setDisplay] = useState(initial);
   const [error, setError] = useState('');
@@ -81,7 +88,7 @@ function Fixture() {
   const run = async (action) => {
     setBusy(true);
     try {
-      action();
+      await action();
       setDisplay(await read());
       setError('');
     } catch (cause) {
@@ -90,7 +97,7 @@ function Fixture() {
       setBusy(false);
     }
   };
-  const document = editor.state.document;
+  const document = editorState.document;
   const sourcePath = sourceBaseline
     ? runtime.readSourceView(previewProject).source.paths[0]
     : null;
@@ -102,6 +109,9 @@ function Fixture() {
       })
     : null;
   const evidence = {
+    storageDirty: snapshot.storage.dirty,
+    savedWrites: saved.length,
+    displayedPaths: previewProject.paths.length,
     source: sourcePath && {
       curves: sourcePath.curves,
       modes: sourcePath.nodeModes,
@@ -115,7 +125,7 @@ function Fixture() {
     ),
     curveCount:
       evaluateProgram(document, owner.id).curves.value?.curves.length ?? 0,
-    revision: editor.state.revision,
+    revision: editorState.revision,
     rawUnchanged:
       JSON.stringify(document.sketches) === JSON.stringify(baseline.sketches),
     baselineRestored: JSON.stringify(document) === JSON.stringify(baseline),
@@ -137,9 +147,16 @@ function Fixture() {
           disabled: busy,
           onClick: () =>
             run(() => {
-              editor.replaceDocument(structuredClone(baseline), {
-                expectedRevision: editor.state.revision,
-              });
+              studio.open(
+                {
+                  kind: 'v4',
+                  document: baseline,
+                  assets: {},
+                  target: 'fixture.spl',
+                },
+                presentation,
+              );
+              const runtime = studio.getSnapshot().runtime;
               let project = runtime.project();
               let path = runtime.readSourceView(project).source.paths[0];
               project = runtime
@@ -178,7 +195,9 @@ function Fixture() {
                   { project },
                 )
                 .commit();
-              setSourceBaseline(structuredClone(editor.state.document));
+              setSourceBaseline(
+                structuredClone(studio.getSnapshot().editorState.document),
+              );
               setSelectedNodes([1]);
             }),
         },
@@ -188,10 +207,14 @@ function Fixture() {
         'button',
         {
           disabled: busy,
-          onClick: () =>
-            run(() => editor.undo({ expectedRevision: editor.state.revision })),
+          onClick: () => run(() => studio.undo()),
         },
         '测试撤销',
+      ),
+      h(
+        'button',
+        { disabled: busy, onClick: () => run(() => studio.save()) },
+        '测试保存',
       ),
       h(
         'button',

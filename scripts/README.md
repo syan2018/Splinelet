@@ -52,6 +52,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 ## 目录
 
+`test-v4-studio-session.mjs` 验证原工作区根会话控制器：会话订阅发出同一运行时的只读展示句柄，源/构造命令共用历史，打开时编辑与文件版本对齐，预览不写文件，实际 V4 编码保存、换文件后的迟到写入、恢复及失效恢复保护。`test-v4-persistence.mjs` 同时检查打开的显式初始版本/dirty、取消或相同版本同步不置脏、旧工程始终另存为，以及输入失败时保留原文件状态。原组件浏览器 fixture 已通过 `useSyncExternalStore` 订阅此控制器，不自行维护另一份可写 Project；仍不是默认根工作区完整切换验收。
+
 `test-v4-node-actions.mjs` 对比原节点操作算法和 V4 源命令的连接方式、直连、批量删点结果，验证稳定身份、错误原子性和一次撤销。原主界面及节点 API 复用这个动作边界；原组件浏览器用例同时挂载 `SplineNodeInspector`，验证实际下拉框、直连/删除按钮、实时派生结果和撤销。
 
 `test-v4-source-runtime.mjs` 验证源编辑、路径命令和修改器共用同一 V4 会话及展示句柄：像素身份映射、固定参考坐标系、拖动按起点重算、派生预览同步、取消不留历史、提交一次撤销，以及换文档/撤销/重复坐标采样后的旧句柄拒绝。运行命令为 `node scripts/tests/unit/test-v4-source-runtime.mjs`；这属于共享运行时验证，尚不代表原主画布回调完成接线。

@@ -1,4 +1,5 @@
 import { encodeDocument } from '../document/codec.mjs';
+import { sameDocument } from '../editing/history.mjs';
 
 const clone = (value) => structuredClone(value);
 const freeze = (value) => {
@@ -68,15 +69,37 @@ export function createV4PersistenceSession(options = {}) {
       return state();
     },
     open(project) {
-      if (!project?.document || typeof project.document !== 'object')
+      if (project?.kind !== 'v4' && project?.kind !== 'legacy')
+        throw Error('打开结果必须标明 V4 或旧工程');
+      if (!project.document || typeof project.document !== 'object')
         throw Error('打开结果缺少 V4 Document');
-      epoch = project.epoch || `file-${idFactory()}`;
-      revision = 0;
-      document = clone(project.document);
-      assets = clone(project.assets || {});
-      target = project.kind === 'v4' ? project.target : null;
-      legacySource = project.kind === 'legacy';
-      dirty = legacySource;
+      if (
+        project.epoch !== undefined &&
+        (typeof project.epoch !== 'string' || !project.epoch)
+      )
+        throw Error('打开结果 epoch 必须是非空字符串');
+      const nextRevision =
+        project.revision === undefined ? 0 : project.revision;
+      if (!Number.isSafeInteger(nextRevision) || nextRevision < 0)
+        throw Error('打开结果 revision 必须是非负安全整数');
+      if (project.dirty !== undefined && typeof project.dirty !== 'boolean')
+        throw Error('打开结果 dirty 必须是布尔值');
+
+      // Clone every incoming mutable value before changing the active file.
+      const nextEpoch = project.epoch || `file-${idFactory()}`;
+      const nextDocument = clone(project.document);
+      const nextAssets = clone(project.assets || {});
+      const nextTarget = clone(project.target ?? null);
+      const nextLegacySource = project.kind === 'legacy';
+      const nextDirty = nextLegacySource || project.dirty === true;
+
+      epoch = nextEpoch;
+      revision = nextRevision;
+      document = nextDocument;
+      assets = nextAssets;
+      target = nextLegacySource ? null : nextTarget;
+      legacySource = nextLegacySource;
+      dirty = nextDirty;
       return state();
     },
     update(editorState) {
@@ -84,10 +107,21 @@ export function createV4PersistenceSession(options = {}) {
       if (editorState.previewId !== null) return state();
       if (
         editorState.epoch !== epoch ||
-        !Number.isInteger(editorState.revision)
+        !Number.isSafeInteger(editorState.revision) ||
+        editorState.revision < 0
       )
         throw Error('编辑会话 epoch 不匹配');
-      document = clone(editorState.document);
+      if (!editorState.document || typeof editorState.document !== 'object')
+        throw Error('编辑会话缺少 V4 Document');
+      if (editorState.revision < revision)
+        throw Error('编辑会话 revision 已过期');
+      if (editorState.revision === revision) {
+        if (!sameDocument(document, editorState.document))
+          throw Error('编辑会话 identity 不匹配');
+        return state();
+      }
+      const nextDocument = clone(editorState.document);
+      document = nextDocument;
       revision = editorState.revision;
       dirty = true;
       return state();
