@@ -32,6 +32,8 @@
 
 原 `studio-app.tsx` 的接线按以下行为切片推进，不新增工作包文档：
 
+2026-09-20 实际来源复核发现并修复迁移中的隐藏分区接边 Path：接边改为动态求值，不再共享原可写 Edge 或保存一次性的派生延伸点。严格检查内置与 gold 的全部来源分别为 76/79 条路径、569/575 段原始曲线，并核对源显示顺序。端点/底面编辑及复制后的契约与属性回归见[本批快照](../../docs/qa/v4-source-organization-and-dynamic-partition-2026-09-20.md)。这仍是接入前模块验证，不签收 T16/T17。
+
 1. 节点、柄、拆边：替换 `startPointDrag`/pointer move/up 与双击拆边；单次 Preview 提交，多节点拖动及批量模式切换须补原子命令。
 2. 绘制、续画、闭合：补零边路径创建和 exact cubic append/prepend/close；保留每次落点可撤销与树中即时出现的行为。拟合在事务外，迟到结果用 epoch/revision 拒绝。
 3. 删除、直连、合并：不能用 remove-edge 代替旧节点删除；保留重拟合与稳定路径身份。共享 Edge/Vertex 的拓扑影响须先查询，跨 owner 合并不能暗中转移来源。

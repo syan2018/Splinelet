@@ -13,6 +13,10 @@ import {
   outputIdentity,
 } from '../../provenance.mjs';
 import { fillCurves, sampleCubic } from './fill.mjs';
+import {
+  connectPartitionCutters,
+  validatePartitionEndpointJoin,
+} from './partition-connect.mjs';
 
 const writer = new GeoJSONWriter();
 // Disconnected pieces of one semantic result retain that result's identity.
@@ -147,7 +151,7 @@ const curveTokens = (curve) =>
     .map((edge) => text([edge.source.sketchId, edge.source.id, edge.instances]))
     .sort(compare);
 const curves = (stage) => stage?.value?.curves || [];
-const boundarySignature = (base, cutter, face) =>
+const boundarySignature = (base, cutters, face) =>
   contourSignatures(
     [face],
     [
@@ -155,14 +159,11 @@ const boundarySignature = (base, cutter, face) =>
         id: `base:${base.ref.key}`,
         geometry: readGeometry(base.geometry).getBoundary(),
       },
-      ...curves(cutter).map((curve) => ({
+      ...cutters.map(({ curve, geometry }) => ({
+        // Geometry may contain a transient endpoint extension, while the
+        // identity remains the original source-edge lineage.
         id: `cutter:${curveTokens(curve).join('|')}`,
-        geometry: readGeometry({
-          type: 'LineString',
-          coordinates: curve.edges.flatMap((edge, index) =>
-            sampleCubic(edge.cubic, 0.015).slice(index ? 1 : 0),
-          ),
-        }),
+        geometry,
       })),
     ],
   )[0];
@@ -719,10 +720,13 @@ export const partitionOperator = {
     cutter: { domain: 'curves', min: 1, max: 1 },
   },
   outputPorts: { regions: { domain: 'regions' } },
-  validateParams: (params) =>
-    params?.scope?.kind === 'all' ||
-    params?.scope?.kind === 'selected' ||
-    'partition 需要显式 scope',
+  validateParams: (params) => {
+    if (!['all', 'selected'].includes(params?.scope?.kind))
+      return 'partition 需要显式 scope';
+    if (params.endpointJoin !== undefined)
+      return validatePartitionEndpointJoin(params.endpointJoin);
+    return true;
+  },
   evaluate: ({ document, ownerNodeId, operator, inputs }) => {
     const source = input(inputs),
       cutter = input(inputs, 'cutter');
@@ -733,17 +737,30 @@ export const partitionOperator = {
     const scope = selected(source, operator.params.scope);
     if (scope.stage) return { regions: scope.stage };
     try {
-      const lines = curves(cutter).map((curve) =>
-        readGeometry({
-          type: 'LineString',
-          coordinates: curve.edges.flatMap((edge, index) =>
-            sampleCubic(
-              edge.cubic,
-              document.geometrySettings.curveToleranceMM,
-            ).slice(index ? 1 : 0),
-          ),
-        }),
+      const baseGeometries = scope.selected.map((base) =>
+        readGeometry(base.geometry),
       );
+      const cutterCurves = curves(cutter);
+      const sampledCutters = cutterCurves.map((curve) => ({
+        id: operator.params.endpointJoin
+          ? curve.pathRef?.id
+          : curve.pathRef?.id || curve.key,
+        curve,
+        coordinates: curve.edges.flatMap((edge, index) =>
+          sampleCubic(
+            edge.cubic,
+            document.geometrySettings.curveToleranceMM,
+          ).slice(index ? 1 : 0),
+        ),
+      }));
+      const connected = scope.selected.length
+        ? connectPartitionCutters({
+            baseGeometries,
+            cutters: sampledCutters,
+            endpointJoin: operator.params.endpointJoin,
+          })
+        : { cutters: [], connections: [], diagnostics: [] };
+      const lines = connected.cutters.map((item) => item.geometry);
       const regions = [...scope.untouched],
         members = [];
       for (const base of scope.selected) {
@@ -753,7 +770,7 @@ export const partitionOperator = {
           ...lines,
         ]).filter((face) => geometry.covers(face.getInteriorPoint()));
         const signatures = faces.map((face) =>
-          boundarySignature(base, cutter, face),
+          boundarySignature(base, connected.cutters, face),
         );
         if (new Set(signatures).size !== signatures.length)
           throw Error('partition 候选轮廓签名重复，无法安全绑定区域身份');
@@ -800,6 +817,14 @@ export const partitionOperator = {
         regions: stageRegions(
           regionSet(ownerNodeId, regions, [
             { kind: 'output-contract-proposal', members },
+            ...(operator.params.endpointJoin
+              ? [
+                  {
+                    kind: 'partition-endpoint-join',
+                    connections: connected.connections,
+                  },
+                ]
+              : []),
           ]),
           ownerNodeId,
           [
@@ -807,6 +832,7 @@ export const partitionOperator = {
               code: 'partition-contract-proposal',
               message: '首次分区返回来源轮廓候选，命令可绑定 outputContract',
             },
+            ...connected.diagnostics,
           ],
           [...source.dependencies, ...cutter.dependencies],
         ),

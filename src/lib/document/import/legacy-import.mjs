@@ -1,8 +1,11 @@
 import { sha256 } from '../../project-container.mjs';
 import { evaluatePlanar } from '../../construction/document-evaluation.mjs';
-import { creationDocument, regionSources } from '../../creation-schema.mjs';
+import {
+  creationDocument,
+  dividerGraphCohorts,
+  regionSources,
+} from '../../creation-schema.mjs';
 import { evaluateCreation } from '../../creation-engine.mjs';
-import { evaluatePartition } from '../../partition-engine.mjs';
 import { readGeometry } from '../../region-engine.mjs';
 import { createDocument, validateDocument } from '../schema.mjs';
 
@@ -2206,77 +2209,63 @@ function compileOwner(context, document, state) {
       };
     }
     if (dividerPathIds.length) {
-      const connections = evaluatePartition(
-        context.project,
-        state.owner,
-        state.owner.joinMM || 0,
-      ).connections;
-      const cutterPathIds = dividerPathIds.map((pathId) => {
-        source(context, state, pathId);
-        const sourcePath = state.paths.get(pathId),
-          uses = sourcePath
-            ? state.sketch.paths[sourcePath.pathId].edges.map(clone)
-            : [];
-        for (const connection of connections.filter(
-          (item) => item.pathId === pathId,
-        )) {
-          const extra = Math.min(0.005, (state.owner.joinMM || 0) / 100),
-            extended = connection.to.map(
-              (value, index) =>
-                value +
-                ((value - connection.from[index]) / connection.gapMM) * extra,
-            ),
-            first = connection.endpoint === 0,
-            adjacentUse = first ? uses[0] : uses.at(-1),
-            adjacentEdge = state.sketch.edges[adjacentUse.edgeId],
-            adjacentVertexId = first
-              ? adjacentEdge.startVertexId
-              : adjacentEdge.endVertexId,
-            adjacent = state.sketch.vertices[adjacentVertexId].position.value,
-            vertexId = context.id(
-              'vertex',
-              `${state.owner.id}:${pathId}:partition-join:${connection.endpoint}`,
-            ),
-            edgeId = context.id(
-              'edge',
-              `${state.owner.id}:${pathId}:partition-join:${connection.endpoint}`,
-            ),
-            start = first ? extended : adjacent,
-            end = first ? adjacent : extended;
-          state.sketch.vertices[vertexId] = {
-            id: vertexId,
-            position: { kind: 'free', value: extended },
-          };
-          state.sketch.edges[edgeId] = {
-            id: edgeId,
-            startVertexId: first ? vertexId : adjacentVertexId,
-            endVertexId: first ? adjacentVertexId : vertexId,
-            startHandle: {
-              kind: 'free',
-              vector: [(end[0] - start[0]) / 3, (end[1] - start[1]) / 3],
-            },
-            endHandle: {
-              kind: 'free',
-              vector: [(start[0] - end[0]) / 3, (start[1] - end[1]) / 3],
-            },
-          };
-          const use = { edgeId, reversed: false };
-          if (first) uses.unshift(use);
-          else uses.push(use);
-        }
-        if (!connections.some((item) => item.pathId === pathId))
-          return sourcePath.pathId;
-        const derivedPathId = context.id(
-          'path',
-          `${state.owner.id}:${pathId}:partition-connected`,
-        );
-        state.sketch.paths[derivedPathId] = {
-          id: derivedPathId,
-          name: `${sourcePath.path.name || pathId} · 分区连接`,
-          edges: uses,
-          visible: false,
-        };
-        return derivedPathId;
+      const cutterPaths = dividerPathIds.map((legacyPathId) => {
+        source(context, state, legacyPathId);
+        const sourcePath = state.paths.get(legacyPathId);
+        if (!sourcePath)
+          fail(
+            context,
+            'partition-divider-missing',
+            '旧分区线缺少 canonical V4 Path',
+            { kind: 'path', id: legacyPathId },
+            { ownerId: state.owner.id },
+          );
+        return { legacyPathId, pathId: sourcePath.pathId };
+      });
+      const pathIds = new Map(
+        cutterPaths.map((item) => [item.legacyPathId, item.pathId]),
+      );
+      const seenCohortPaths = new Set();
+      // Cohorts preserve the accepted legacy divider graph: later dividers may
+      // attach to earlier ones without pulling an older endpoint to a new line.
+      const cohorts = dividerGraphCohorts(state.owner).map((cohort) =>
+        [...cohort].map((legacyPathId) => {
+          const pathId = pathIds.get(legacyPathId);
+          if (!pathId)
+            fail(
+              context,
+              'partition-cohort-path-missing',
+              '旧分区 cohort 引用了不属于当前 cutter 的 Path',
+              { kind: 'path', id: legacyPathId },
+              { ownerId: state.owner.id },
+            );
+          if (seenCohortPaths.has(pathId))
+            fail(
+              context,
+              'partition-cohort-path-duplicate',
+              '旧分区 cohort 重复引用同一 Path',
+              { kind: 'path', id: legacyPathId },
+              { ownerId: state.owner.id, pathId },
+            );
+          seenCohortPaths.add(pathId);
+          return pathId;
+        }),
+      );
+      const disabled = Object.entries(
+        state.owner.connectionDisabled || {},
+      ).flatMap(([key, value]) => {
+        if (value !== true) return [];
+        const match = /^(.*):([01])$/.exec(key),
+          pathId = match && pathIds.get(match[1]);
+        if (!match || !pathId)
+          fail(
+            context,
+            'partition-disabled-endpoint-missing',
+            '旧分区禁用连接引用了不属于当前 cutter 的端点',
+            { kind: 'object', id: state.owner.id },
+            { endpoint: key },
+          );
+        return [{ pathId, endpoint: Number(match[2]) }];
       });
       const cutter = operator(
         context,
@@ -2288,7 +2277,7 @@ function compileOwner(context, document, state) {
           name: `${state.owner.name || state.owner.id} · 分区线`,
           enabled: true,
           inputs: {
-            paths: cutterPathIds.map((pathId) => {
+            paths: cutterPaths.map(({ pathId }) => {
               return {
                 kind: 'sketch',
                 sketchId: state.sketch.id,
@@ -2312,7 +2301,14 @@ function compileOwner(context, document, state) {
             input: [inputPort(partitionBase.port)],
             cutter: [inputPort(port(state.shape.id, cutter.id, 'curves'))],
           },
-          params: { scope: { kind: 'all' } },
+          params: {
+            scope: { kind: 'all' },
+            endpointJoin: {
+              toleranceMM: state.owner.joinMM || 0,
+              disabled,
+              cohorts,
+            },
+          },
         },
       );
       current = {

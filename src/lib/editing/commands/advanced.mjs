@@ -20,6 +20,11 @@ import {
 } from '../../scene/ownership.mjs';
 import { planNodeRebase } from '../../scene/rebase.mjs';
 import { identityTransform } from '../../scene/transforms.mjs';
+import {
+  isCanonicalRegionOutputKey,
+  remapCanonicalRegionOutputReference,
+  remapPartitionOperator,
+} from '../../construction/operators/regions/partition-identity.mjs';
 
 const clone = (value) => structuredClone(value);
 
@@ -409,6 +414,7 @@ function remapStructured(value, idMap) {
   if (Array.isArray(value))
     return value.map((item) => remapStructured(item, idMap));
   if (!value || typeof value !== 'object') return value;
+  if (value.kind === 'output') return remapOutputReference(value, idMap);
   const result = {};
   for (const [key, child] of Object.entries(value))
     result[key] =
@@ -418,23 +424,28 @@ function remapStructured(value, idMap) {
         : remapStructured(child, idMap);
   return result;
 }
-const remapOutputReference = (ref, idMap) => ({
-  ...clone(ref),
-  ownerNodeId: mapId(ref.ownerNodeId, idMap),
-  operatorId: mapId(ref.operatorId, idMap),
-  key: remapEncoded(ref.key, idMap),
-  lineage: ref.lineage.map((token) => remapEncoded(token, idMap)),
-  instances: ref.instances.map((instance) => ({
-    ...instance,
-    operatorId: mapId(instance.operatorId, idMap),
-  })),
-});
+function remapOutputReference(ref, idMap) {
+  return isCanonicalRegionOutputKey(ref.key)
+    ? remapCanonicalRegionOutputReference(ref, idMap)
+    : {
+        ...clone(ref),
+        ownerNodeId: mapId(ref.ownerNodeId, idMap),
+        operatorId: mapId(ref.operatorId, idMap),
+        key: remapEncoded(ref.key, idMap),
+        lineage: ref.lineage.map((token) => remapEncoded(token, idMap)),
+        instances: ref.instances.map((instance) => ({
+          ...instance,
+          operatorId: mapId(instance.operatorId, idMap),
+        })),
+      };
+}
 const copyOperator = (value, { idMap }) => {
   const specification = defaultConstructionRegistry.get(value.type);
   if (!specification) throw Error(`未知算子不可复制：${value.type}`);
   if (specification.copy) return specification.copy(value, { idMap });
   const copied = clone(value);
   copied.params = remapStructured(copied.params, idMap);
+  if (value.type === 'partition') return remapPartitionOperator(copied, idMap);
   if (copied.outputContract)
     copied.outputContract.members = copied.outputContract.members.map(
       (member) => ({

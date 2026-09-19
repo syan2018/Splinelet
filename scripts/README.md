@@ -52,6 +52,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 ## 目录
 
+`test-v4-import-source-identity.mjs` 严格比较实际旧工程与全部 V4 可写来源，检查路径/边总集合、独立边使用、孤立节点及源列表次序；默认只读内置 Sandrone，可用首个参数指定额外工程。`test-v4-partition-endpoint-join.mjs` 验证分区接边在端点/底面变化后重新求值、禁用与空输入行为。派生接边不能保存为隐藏可写来源。
+
 `tests/unit/test-v4-source-order.mjs` 覆盖导入/容器重开后的源路径与集合顺序、新线追加、排序意图和过期视图；`test-v4-source-organization.mjs` 覆盖整理集合及全局源顺序的原子命令、重叠成员、锁定和一次撤销。它们不替代原树拖放的 UI 接线验收。
 
 `examples/draw-cup-emblem.mjs` 导出 `drawCupEmblem(call)`，只通过公开 API 在实例工程副本上创建参数化纹样。`tests/browser/test-agent-spline-authoring.cjs` 接收隔离 Playwright page 和可选输出目录，自行载入已提交的 `public/sandrone-example.spl`，验证开放的 1/8 轮廓跨相邻扇区连接构面、母线编辑、拖动中的派生预览、断口诊断与平面/立体切换、一步撤销、参数控件、原杯身保留、保存重开及实体/3MF 导出。只能在独立测试端口和新 browser context 执行。
