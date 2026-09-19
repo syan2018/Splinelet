@@ -147,6 +147,11 @@ export function createV4PersistenceSession(options = {}) {
       if (epoch !== startEpoch) throw Error('恢复结果已过期');
       return readonly(recovered);
     },
+    /** A detached file copy never binds a target or marks the document saved. */
+    exportBytes(options) {
+      const saved = capture(options);
+      return encode(saved.document, { assets: saved.assets });
+    },
     /** @param {{expectedEpoch:string, expectedRevision:number, previewId?:string|null, saveAsTarget?:unknown}} options */
     save({
       expectedEpoch,

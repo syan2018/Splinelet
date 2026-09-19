@@ -90,6 +90,23 @@ assert.equal(changed.storage.dirty, true);
 assert.equal(changed.editorState.revision, 1);
 assert.notEqual(changed.project, initial.project);
 assert.equal(changed.project.paths.length, 2);
+const exported = session.exportBytes();
+assert.deepEqual(
+  decodeDocument(exported).document,
+  changed.editorState.document,
+);
+assert.equal(
+  session.getSnapshot(),
+  changed,
+  'export does not publish or mark saved',
+);
+assert.equal(writes.length, 0, 'export must not write or bind a destination');
+exported.fill(0);
+assert.deepEqual(
+  decodeDocument(session.exportBytes()).document,
+  changed.editorState.document,
+  'export bytes do not alias document authority',
+);
 assert.equal(
   notifications,
   1,
@@ -281,11 +298,13 @@ pendingGesture.update({
   pixelPoint: { x: 470, y: 320 },
 });
 const currentPreview = previewRecovery.getSnapshot();
+assert.throws(() => previewRecovery.exportBytes(), /preview/);
 choosingFrame.resolve(presentation('draft.spl'));
 await assert.rejects(pendingRecovery, /过期/);
 assert.equal(previewRecovery.getSnapshot(), currentPreview);
 pendingGesture.cancel();
 previewRecovery.dispose();
+assert.throws(() => previewRecovery.exportBytes(), /关闭/);
 
 console.log(
   'PASS: Studio session owns real V4 editor/runtime snapshots, storage lifecycle, replacement and persistence races.',

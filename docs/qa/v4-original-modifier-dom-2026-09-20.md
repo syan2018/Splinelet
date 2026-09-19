@@ -246,3 +246,11 @@ V4 的原重新拟合入口从捕获的只读源视图按现有边逐段拟合�
 原 finish_path 曾只清理绘制会话，未提交待完成分区却返回 finished。现在复用 finishDrawing：有效分区一次提交，构造失败返回原因并保留原线，忙碌/拖动/保存期间拒绝。原界面浏览器新增 Enter 完成后撤销，再通过 resume_path/finish_path 完成并撤销重做；单点孔结束失败不改变 revision，随后保存重开、续画闭合通过。
 
 验证：outputs/v4-qa/original-finish-api-2026-09-20.log 为 PASS，包含真实 Sandrone Worker 实体检查及原界面流程；outputs/v4-qa/check-all-finish-api-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖类型、lint、全部单元测试、格式、Rust 检查和 Web/桌面前端生产构建。完整 API 和默认入口仍未签收。
+
+## 2026-09-20 原工程副本导出
+
+原导出按钮曾调用旧 Project 编码器，export(json) 则直接序列化展示数据。现在两者都从 V4 会话取得含资源的规范 .spl 副本，副本不改变保存绑定、dirty 或历史；单元检查预览拒绝、返回字节无权威别名、关闭后拒绝。API 的 V4 返回结构为 filename/mimeType/base64。
+
+outputs/v4-qa/original-project-copy-2026-09-20.log 为 PASS：原浏览器对真实 Sandrone 的 API 副本与按钮下载分别 decodeDocument，核对当前规范文档、底图资产与两份完整结果相等，再继续原编辑/撤销/保存/重开流程。完整 API 与默认切换仍未签收。
+
+全库验证：outputs/v4-qa/check-all-project-copy-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖类型、lint、全部单元测试、格式、Rust 检查和 Web/桌面前端生产构建。

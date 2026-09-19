@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Full original UI with an injected V4 host, fresh browser context and ephemeral port.
 const assert = require('node:assert/strict');
-const { mkdir, writeFile } = require('node:fs/promises');
+const { mkdir, writeFile, readFile } = require('node:fs/promises');
 const { resolve } = require('node:path');
 const { chromium } = require('playwright');
 
@@ -106,6 +106,39 @@ async function main() {
       await import('three/addons/libs/fflate.module.js');
     const archive = unzipSync(Buffer.from(generic3mf.base64, 'base64'));
     assert.match(strFromU8(archive['3D/3dmodel.model']), /<triangle /);
+    const { decodeDocument } =
+      await import('../../../../src/lib/document/codec.mjs');
+    const projectCopy = await page.evaluate(() =>
+      window.traceStudio.call('export', { format: 'json' }),
+    );
+    assert.equal(projectCopy.filename, 'Splinelet工程.spl');
+    const decodedCopy = decodeDocument(
+      Buffer.from(projectCopy.base64, 'base64'),
+    );
+    assert.deepEqual(
+      decodedCopy.document,
+      await page.evaluate(() => window.originalStudioDocument()),
+    );
+    assert.ok(
+      Object.keys(decodedCopy.assets).length,
+      'copy includes reference bytes',
+    );
+    await page
+      .getByRole('button', { name: '导出', exact: true })
+      .first()
+      .click();
+    await page
+      .getByRole('button', { name: '源曲线 SVG · 精确贝塞尔', exact: true })
+      .click();
+    const downloadPending = page.waitForEvent('download');
+    await page
+      .getByRole('button', { name: '导出 .spl 工程副本', exact: true })
+      .click();
+    const copyDownload = await downloadPending;
+    const copyPath = resolve(output, 'exported-project-copy.spl');
+    await copyDownload.saveAs(copyPath);
+    assert.deepEqual(decodeDocument(await readFile(copyPath)), decodedCopy);
+    await page.keyboard.press('Escape');
     assert.equal(
       (await evidence()).dirty,
       false,

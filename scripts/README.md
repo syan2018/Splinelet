@@ -119,3 +119,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-creation-output.mjs` 验证原输出运行时的规范实体/3MF、复用、只读及预览/过期拒绝；`test-v4-body-samples.mjs` 默认检查内置 Sandrone，可用额外路径参数检查其他本地样例，验证实体、STL、材料体积和 3MF。原根浏览器使用 browser-studio-host 和真实 document-worker/WASM，覆盖内置样例的成品检查与通用 3MF 内容。
 
 原根浏览器验收还覆盖公开 finish_path 与 Enter 的同一分区提交语义、单步撤销重做，以及未完成孔的错误返回、原始线条保留与保存后续画。
+
+原根浏览器的工程副本检查对 API 与原导出按钮实际下载的 .spl 分别解码，核对当前规范 Sandrone 文档和底图资源；test-v4-studio-session.mjs 同时验证导出不写文件、不清除 dirty、返回字节独立，以及预览和关闭期间拒绝导出。

@@ -197,6 +197,9 @@ export function createStudioSession({
       const identity = capture();
       return persist(() => files.save({ ...identity, saveAsTarget }));
     },
+    exportBytes() {
+      return files.exportBytes(capture());
+    },
     autosave() {
       const identity = capture();
       return persist(() => files.autosave(identity));

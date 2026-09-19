@@ -333,3 +333,7 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 原成品输出接线：CreationWorkspace 的输出零件与切片模板直接读取规范制造定义，solid/3mf 请求经运行时求值 BodySet，再适配原检查和下载 DTO；同一提交版本复用实体结果，禁止预览导出和迟到结果。Web/Desktop 共用 browser-studio-host 装配现有 document-worker，资源随宿主释放；显式导入 worker-client.ts，避免与旧同名 mjs 客户端混用协议。原高级 ModelWorkspace 的全部面板与默认入口仍待接线。
 
 2026-09-20 完成绘制 API 对齐：原 finish_path 进入与按钮、Enter 相同的 finishDrawing 管线，发布有效的待完成分区；忙碌或构造失败返回错误，不再仅退出绘制后误报成功。失败保留 raw Path 供保存与续画。原界面浏览器覆盖 API 完成、单步撤销/重做、单点孔拒绝且版本不变、保存重开继续闭合；完整精确样条 API、默认入口与其余待办仍未签收。
+
+2026-09-20 原工程副本接线：导出 .spl 副本与 export(json) 从 V4 文件会话捕获已提交 Document/资源并编码完整容器，不序列化旧展示 Project。API 在 V4 下返回 filename/mimeType/base64，旧会话保留 content；原按钮经既有平台下载入口输出。导出不绑定目标、不清除 dirty、不增加历史，预览和已关闭宿主拒绝；原浏览器实际下载和 API 容器均解码核对真实 Sandrone 文档及底图资源。工程物理比例、完整 API 与默认入口仍待完成。
+
+2026-09-20 工程宽度待实施契约澄清：原控件只改 widthMM，像素源曲线和 guide 在求值时按新比例转成 mm；mirror/radial_array 的 centerMM、offset 的 distanceMM、stroke 的 widthMM、接合/采样容差及厚度仍保持绝对毫米值（region-engine.mjs、curve-modifiers.mjs、curve-transforms.mjs、modifier-engine.mjs）。因此原宽度控制不等于整体 XY 等比缩放；V4 不能把所有算子参数一并乘比例来冒充兼容。后续须将像素来源对应的 Source 与 Reference/frame 更新、节点 pose 与 Relation 的坐标归属及 runtime 重建纳入同一原子命令，并以旧引擎改宽度结果对照验收。此项尚未实现。

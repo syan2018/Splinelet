@@ -2679,7 +2679,11 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const exportFile = async (format: 'svg' | 'blender' | 'json') => {
     const p = pr.current;
     if (format === 'json') {
-      download(await encodeProjectBytes(p), 'Splinelet工程.spl', SPL_MIME);
+      download(
+        host ? host.exportBytes() : await encodeProjectBytes(p),
+        'Splinelet工程.spl',
+        SPL_MIME,
+      );
       setStatus('.spl 工程已导出，包含底图和所有编辑数据');
       return;
     }
@@ -3305,6 +3309,17 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
             filename: '角色曲线_blender.py',
             content: blender(pr.current),
           };
+        if (a.format === 'json' && host) {
+          const bytes = host.exportBytes();
+          const chunks = [];
+          for (let i = 0; i < bytes.length; i += 16384)
+            chunks.push(String.fromCharCode(...bytes.subarray(i, i + 16384)));
+          return {
+            filename: 'Splinelet工程.spl',
+            mimeType: SPL_MIME,
+            base64: btoa(chunks.join('')),
+          };
+        }
         if (a.format === 'json')
           return {
             filename: 'Splinelet工程.bezier.json',
@@ -3582,7 +3597,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                     set_point:
                       'Edit a cubic control handle by path, curve index, and handle index.',
                     export:
-                      'Return SVG, Blender Python, or project JSON without downloading.',
+                      'Return SVG, Blender Python, or a project copy without downloading. In V4, json returns the complete .spl ZIP as base64 with filename and mimeType, including assets; legacy sessions return JSON content.',
                   } as Record<string, string>
                 )[name],
               inputSchema: {
@@ -4784,7 +4799,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
               <div className="export-option">
                 <div>
                   <b>可继续编辑的完整工程</b>
-                  <p>底图、路径、尺寸与控制点 · JSON</p>
+                  <p>底图、路径、尺寸与控制点 · 完整工程文件</p>
                 </div>
                 <button onClick={() => report(exportFile('json'))}>
                   导出 .spl 工程副本

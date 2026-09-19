@@ -73,6 +73,10 @@ export function createStudioHost({ opened, presentation, urls, ...options }) {
       alive();
       return session.save(target);
     },
+    exportBytes() {
+      alive();
+      return session.exportBytes();
+    },
     autosave() {
       alive();
       return session.autosave();
