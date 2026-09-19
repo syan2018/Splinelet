@@ -30,3 +30,13 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 本次 `pnpm check:all` 退出码 0，90 项 hermetic 单元测试及所有类型、lint、格式、Rust、双端构建检查通过。日志：`outputs/v4-qa/check-all-original-modifier-add-2026-09-20.log`。原组件浏览器用例通过，结果仍在上文独立 fixture 目录。
 
 闭合构面的旧 `joinMM` 焊接及失败处理与 V4 Fill 不等价，本次明确拒绝，不默认丢弃参数。已有区域的新增、删除排序及原画布派生样条预览仍未接线；后者当前仍调用旧曲线求值器，是后续默认根工作区接入的必要依赖。
+
+## 同日补充：原派生样条预览
+
+`useCurvePreview` 现可从同一 CreationRuntime 同步读取 V4 当前曲线结果；不等待区域 Worker，也不调用旧曲线求值器。投影沿用原预览的世界毫米/Y-up DTO、开关、阶段选择和 SVG overlay。最终视图只读取明确发布的曲线端口，不把字典末项或其他分支的构面输入当成最终输出；blocked、empty、absent 均不回退旧阶段。阶段键包含算子和端口，避免任意文档 ID 与保留的 `final` 冲突。
+
+端点/分叉度数根据 Edge 的共享顶点键和明确 Join 端点集合计算，不按距离推断连接。祖先隐藏同样隐藏预览；投影深冻结，不回写源。运行时只接收自己发出的当前展示句柄；相同拖动 ID 下数据更新、取消和旧句柄拒绝均有专项测试，不产生新历史。
+
+原组件浏览器用例实际验证 SVG：镜像 2 条→新增阵列 6 条→选择镜像阶段 2 条→最终 6 条；关闭显示没有路径，重新开启恢复；参数缺失后最终路径为空，不能用成功的中间阶段冒充。`test-v4-curve-preview.mjs` 和 `test-v4-curve-preview-runtime.mjs` 覆盖坐标、拓扑、多分支、真实 Fill 输入、隐藏和实时状态边界。
+
+`pnpm check:all` 退出码 0，92 项 hermetic 单元测试及类型、lint、格式、Rust 和双端构建通过；日志为 `outputs/v4-qa/check-all-original-curve-preview-2026-09-20.log`。阶段键补充后专项单测、组件浏览器、全库 lint/格式亦通过。默认根尚未注入 V4 会话，真实源画布拖动、完整模型/文件旅程仍未签收。

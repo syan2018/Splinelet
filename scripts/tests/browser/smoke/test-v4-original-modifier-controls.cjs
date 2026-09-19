@@ -75,6 +75,9 @@ async function main() {
       0,
     );
     const card = page.locator('.modifier-card');
+    const derived = page.locator('[data-derived-curves]');
+    assert.equal(await derived.getAttribute('data-derived-curves'), '2');
+    const initialPath = await derived.getAttribute('d');
     assert.equal(
       await card.evaluate((el) => getComputedStyle(el).borderRadius),
       '9px',
@@ -140,6 +143,24 @@ async function main() {
       before.operators.find((operator) => operator.type === 'curve-mirror').id,
     );
     assert.equal(added.curveCount, before.curveCount * 3);
+    assert.equal(await derived.getAttribute('data-derived-curves'), '6');
+    await page
+      .getByRole('combobox', { name: '样条预览阶段' })
+      .selectOption(
+        `operator:${JSON.stringify([before.operators.find((operator) => operator.type === 'curve-mirror').id, 'curves'])}`,
+      );
+    assert.equal(await derived.getAttribute('data-derived-curves'), '2');
+    assert.equal(await derived.getAttribute('d'), initialPath);
+    await page
+      .getByRole('combobox', { name: '样条预览阶段' })
+      .selectOption('final');
+    assert.equal(await derived.getAttribute('data-derived-curves'), '6');
+    await page
+      .getByRole('checkbox', { name: '派生样条', exact: true })
+      .uncheck();
+    assert.equal(await derived.count(), 0);
+    await page.getByRole('checkbox', { name: '派生样条', exact: true }).check();
+    assert.equal(await derived.getAttribute('data-derived-curves'), '6');
     assert.equal(added.rawUnchanged, true);
     assert.equal(added.revision, before.revision + 1);
     assert.equal(await page.locator('.modifier-card').count(), 2);
@@ -177,6 +198,12 @@ async function main() {
       kind: 'parameter',
       id: 'angle',
     });
+    assert.equal(
+      await derived.getAttribute('data-derived-curves'),
+      '0',
+      'blocked final output must not show a successful earlier stage',
+    );
+    assert.equal(await derived.getAttribute('d'), '');
     await page.screenshot({
       path: resolve(output, 'missing-parameter.png'),
       fullPage: true,

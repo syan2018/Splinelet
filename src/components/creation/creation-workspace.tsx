@@ -1178,7 +1178,7 @@ export default function CreationWorkspace(p: Props) {
           ) as unknown as Partial<CreationScene>),
         }
       : editedDraft;
-  const curvePreview = useCurvePreview(p.project, current?.id);
+  const curvePreview = useCurvePreview(p.project, current?.id, p.runtime);
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.

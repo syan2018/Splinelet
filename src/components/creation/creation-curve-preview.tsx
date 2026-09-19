@@ -4,20 +4,26 @@ import { evaluateCurveProgram } from '@/lib/curve-modifiers.mjs';
 import { creationDocument } from '@/lib/creation-schema.mjs';
 import type { Project } from '@/lib/project';
 import type { CurvePreview } from '@/lib/modifier-types';
+import type { CreationRuntime } from './creation-runtime';
 
-export function useCurvePreview(project: Project, objectId?: string) {
+export function useCurvePreview(
+  project: Project,
+  objectId?: string,
+  runtime?: Pick<CreationRuntime, 'readCurvePreviews'>,
+) {
   const [enabled, setEnabled] = useState(true);
   const [choice, setChoice] = useState({ objectId: '', stageId: 'final' });
   // This cheap, exact program stays live during a drag; it never waits for the
   // debounced surface worker and uses the very same curve evaluator as fill.
   const all = useMemo(() => {
+    if (runtime) return runtime.readCurvePreviews(project);
     const doc = creationDocument(project) as NonNullable<Project['creation']>;
     return doc.objects
       .filter((o) => o.visible)
       .flatMap(
         (o) => evaluateCurveProgram(project, o).stages,
       ) as CurvePreview[];
-  }, [project]);
+  }, [project, runtime]);
   const focusedId = objectId || all[0]?.objectId;
   const stages = all.filter((s) => s.objectId === focusedId);
   const requested = choice.objectId === focusedId ? choice.stageId : 'final';
@@ -59,12 +65,16 @@ export function useCurvePreview(project: Project, objectId?: string) {
               setChoice({ objectId: focusedId!, stageId: e.target.value })
             }
           >
-            <option value="final">最终曲线 / 构面输入</option>
-            {stages.map((s) => (
-              <option key={s.stageId} value={s.stageId}>
-                {s.name}
-              </option>
-            ))}
+            <option value="final">
+              {runtime ? '最终曲线' : '最终曲线 / 构面输入'}
+            </option>
+            {stages
+              .filter((stage) => stage.stageId !== 'final')
+              .map((s) => (
+                <option key={s.stageId} value={s.stageId}>
+                  {s.name}
+                </option>
+              ))}
           </select>
         )}
         {enabled && (

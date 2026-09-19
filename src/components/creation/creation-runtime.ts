@@ -1,4 +1,5 @@
 import type { Project } from '@/lib/project';
+import type { CurvePreview } from '@/lib/modifier-types';
 
 export type CreationRuntimeContext = {
   project: Project;
@@ -31,6 +32,7 @@ export type BoundCreationEvaluation = {
  * treat them as an alternate writable source model.
  */
 export type CreationRuntime = {
+  readCurvePreviews: (project: Project) => CurvePreview[];
   readCreationDocument: (project: Project) => unknown;
   evaluate: (
     action: string,

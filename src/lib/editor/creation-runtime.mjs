@@ -3,6 +3,8 @@ import { projectCreationView } from './creation-view.mjs';
 import { evaluateDocument } from '../evaluation/evaluate-document.mjs';
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { sameDocument } from '../editing/history.mjs';
+import { evaluatePlanar } from '../construction/document-evaluation.mjs';
+import { projectCurvePreviews } from './curve-preview.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -101,6 +103,19 @@ export function createV4CreationRuntime({
     },
     readCreationDocument(project) {
       return metadata(project).view.creation;
+    },
+    readCurvePreviews(project) {
+      const entry = metadata(project);
+      if (!sameState(entry.state, editorSession.state))
+        throw Error('样条预览工程已过期');
+      if (!entry.curvePreviews) {
+        const document = documentOf(entry.state);
+        entry.curvePreviews = projectCurvePreviews(
+          document,
+          evaluatePlanar(document, { requestedDomains: ['curves'] }),
+        );
+      }
+      return entry.curvePreviews;
     },
     async evaluate(action, args, project) {
       const entry = metadata(project);

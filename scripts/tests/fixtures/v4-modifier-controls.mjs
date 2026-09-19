@@ -2,6 +2,10 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import CreationModifiers from '../../../src/components/creation/creation-modifiers.tsx';
+import {
+  useCurvePreview,
+  CurvePreviewOverlay,
+} from '../../../src/components/creation/creation-curve-preview.tsx';
 import { createDocument } from '../../../src/lib/document/schema.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
@@ -50,6 +54,9 @@ const runtime = createV4CreationRuntime({
   editorSession: editor,
   toDisplayProject: (_state, view) => ({
     version: 4,
+    width: 100,
+    height: 100,
+    widthMM: 100,
     paths: [],
     creation: view.creation,
   }),
@@ -61,6 +68,8 @@ const read = async () => {
 const initial = await read();
 
 function Fixture() {
+  const previewProject = runtime.project();
+  const preview = useCurvePreview(previewProject, owner.id, runtime);
   const [display, setDisplay] = useState(initial);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -174,6 +183,21 @@ function Fixture() {
       onCommand: (action, args) =>
         run(() => runtime.command(action, args, display).commit()),
     }),
+    preview.controls,
+    h(
+      'svg',
+      {
+        viewBox: '0 0 100 100',
+        width: 340,
+        height: 240,
+        'aria-label': '测试派生曲线画布',
+      },
+      h(CurvePreviewOverlay, {
+        previews: preview.previews,
+        project: previewProject,
+        scale: 1,
+      }),
+    ),
     h('pre', { id: 'evidence', 'data-ready': !busy }, JSON.stringify(evidence)),
     h('p', { id: 'fixture-error', role: 'status' }, error),
   );

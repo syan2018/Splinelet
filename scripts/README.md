@@ -56,6 +56,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 `test-v4-modifier-add.mjs` 验证原 `modifier_add` 的纯曲线阶段镜像/阵列：世界坐标转换、发布端口接线、原线不变、一次撤销和错误原子拒绝；已有区域、锁定或不可用曲线不能通过简化入口追加。上述原组件浏览器用例同时验证实际新增阵列、三倍曲线输出、正确前序引用和撤销。构面接合、已有区域的修改器增删排序尚需独立接线，不属于这一项通过范围。
 
+`test-v4-curve-preview.mjs` 检查 V4 当前曲线结果到原画布预览的世界坐标、显式端点拓扑、隐藏、稳定阶段及最终输出失效不回退；`test-v4-curve-preview-runtime.mjs` 检查同步读取、不可变缓存、拖动预览版本、取消与过期句柄拒绝。原组件浏览器用例同时挂载原预览开关、阶段选择和 SVG overlay，验证新增阵列后的六条曲线、切回镜像阶段的两条曲线，以及失效输出的空路径；不替代默认根工作区和完整源拖动旅程。
+
 `node scripts/tests/browser/smoke/test-v4-original-modifier-controls.cjs` 在临时端口和全新浏览器 context 中加载原 `CreationModifiers`、原样式与真实 V4 会话，检查实际数值提交、一次撤销、参数驱动、缺失参数和锁定，并断言卡片样式加载。最小 fixture 为 `tests/fixtures/v4-modifier-controls.mjs`，不读取应用草稿或用户文件；结果与截图位于 `output/playwright/v4-original-modifier-controls/`。这是组件接线验证，不能代替默认根工作区或原生文件旅程。浏览器 CommonJS 脚本使用单独 lint override：允许 require 和 Node 模块导出函数的解构，不将其误判为需要绑定 this 的实例方法；产品 TypeScript 规则保持不变。
 
 `test-v4-import-source-identity.mjs` 严格比较实际旧工程与全部 V4 可写来源，检查路径/边总集合、独立边使用、孤立节点及源列表次序；默认只读内置 Sandrone，可用首个参数指定额外工程。`test-v4-partition-endpoint-join.mjs` 验证分区接边在端点/底面变化后重新求值、禁用与空输入行为。派生接边不能保存为隐藏可写来源。
