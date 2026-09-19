@@ -23,6 +23,14 @@ import {
   createPathMetadataCommand,
   PATH_METADATA_ACTIONS,
 } from './path-metadata.mjs';
+import {
+  createPathDeletionCommand,
+  PATH_DELETION_ACTIONS,
+} from './path-deletion.mjs';
+import {
+  createPathGeometryCommand,
+  PATH_GEOMETRY_ACTIONS,
+} from './path-geometry.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -319,6 +327,10 @@ export function createAuthoringCommand(action) {
       return createSourceCommand(action)(document, { idFactory });
     if (PATH_METADATA_ACTIONS.includes(action.kind))
       return createPathMetadataCommand(action)(document);
+    if (PATH_DELETION_ACTIONS.includes(action.kind))
+      return createPathDeletionCommand(action)(document);
+    if (PATH_GEOMETRY_ACTIONS.includes(action.kind))
+      return createPathGeometryCommand(action)(document);
     if (action.kind === 'set-node') {
       const node = document.nodes[action.nodeId];
       if (!node) throw Error('部件不存在');

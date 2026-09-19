@@ -6,9 +6,15 @@ export function createPathIntent(request, displayed) {
   const action = structuredClone(request),
     view = structuredClone(displayed);
   if (
-    !['set-paths', 'start-path', 'extend-path', 'close-path'].includes(
-      action?.kind,
-    )
+    ![
+      'set-paths',
+      'delete-paths',
+      'start-path',
+      'extend-path',
+      'close-path',
+      'refit-path',
+      'straighten-edge',
+    ].includes(action?.kind)
   )
     throw Error('路径动作尚未适配');
   if (
@@ -19,8 +25,7 @@ export function createPathIntent(request, displayed) {
   )
     throw Error('路径操作需要已提交的源视图');
   const resolve = (id) => {
-    const path = view.source.paths.find((item) => item.id === id);
-    const ref = path && view.source.identities.byId[path.identity.pathId];
+    const ref = view.source.identities.byId[id];
     if (ref?.kind !== 'path') throw Error('路径选区已失效');
     return ref;
   };
@@ -34,13 +39,46 @@ export function createPathIntent(request, displayed) {
         : {}),
       ...(action.name !== undefined ? { name: action.name } : {}),
     };
-  } else if (action.kind === 'set-paths') {
+  } else if (action.kind === 'set-paths' || action.kind === 'delete-paths') {
     if (!Array.isArray(action.pathIds)) throw Error('路径选区必须是数组');
     command = {
       kind: action.kind,
       pathRefs: action.pathIds.map(resolve),
       value: action.value,
     };
+  } else if (
+    action.kind === 'refit-path' ||
+    action.kind === 'straighten-edge'
+  ) {
+    const pathRef = resolve(action.pathId);
+    const path = view.source.paths.find((item) => item.id === action.pathId);
+    if (!path) throw Error('路径来源当前无法显示，请先修复');
+    if (action.kind === 'straighten-edge') {
+      if (!path.identity.edgeIds.includes(action.edgeIdentityId))
+        throw Error('曲线段不属于所选路径');
+      const edge = view.source.identities.byId[action.edgeIdentityId];
+      command = { kind: action.kind, pathRef, edgeId: edge.id };
+    } else {
+      if (!Array.isArray(action.pixelCubics))
+        throw Error('重拟合需要逐段 cubic');
+      command = {
+        kind: action.kind,
+        pathRef,
+        expectedEdges: path.identity.edgeIds.map((id, index) => ({
+          edgeId: view.source.identities.byId[id].id,
+          reversed:
+            view.source.identities.byId[path.identity.handleIds[index][0]]
+              .end === 'end',
+        })),
+        cubics: action.pixelCubics.map((cubic) => {
+          if (!Array.isArray(cubic) || cubic.length !== 4)
+            throw Error('重拟合每段必须是 cubic');
+          return cubic.map((point) =>
+            sourceViewToWorld(view.source.frame, point),
+          );
+        }),
+      };
+    }
   } else {
     const ref = resolve(action.pathId);
     command = {

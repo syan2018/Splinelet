@@ -3,6 +3,8 @@ import { SOURCE_ACTIONS } from '../editing/commands/source.mjs';
 import { ADVANCED_ACTIONS } from '../editing/commands/advanced.mjs';
 import { RESOURCE_ACTIONS } from '../editing/commands/resources.mjs';
 import { PATH_METADATA_ACTIONS } from '../editing/commands/path-metadata.mjs';
+import { PATH_DELETION_ACTIONS } from '../editing/commands/path-deletion.mjs';
+import { PATH_GEOMETRY_ACTIONS } from '../editing/commands/path-geometry.mjs';
 import { exportSnapshot } from '../export/snapshot.mjs';
 
 export const V4_AGENT_API_VERSION = '5.0';
@@ -12,6 +14,8 @@ const AUTHORING_ACTIONS = Object.freeze([
   ...Object.values(ADVANCED_ACTIONS),
   ...RESOURCE_ACTIONS,
   ...PATH_METADATA_ACTIONS,
+  ...PATH_DELETION_ACTIONS,
+  ...PATH_GEOMETRY_ACTIONS,
   'set-node',
   'transfer-source',
   'set-print-settings',
