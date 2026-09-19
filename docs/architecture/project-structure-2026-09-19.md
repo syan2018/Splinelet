@@ -4,28 +4,29 @@ Splinelet 使用单一前端工程，共享 React 应用、领域模型和 Worke
 
 ## 目录职责
 
-| 路径                                                          | 职责                                            |
-| ------------------------------------------------------------- | ----------------------------------------------- |
-| `app/`                                                        | Web 路由、页面元数据和两端共用的全局样式        |
-| `src/desktop/`                                                | 桌面 HTML 与 React 启动入口                     |
-| `src/components/studio/`                                      | 共享应用主体、工作区组合与应用状态              |
-| `src/components/shell/`                                       | 窗口控制等宿主界面                              |
-| `src/components/{creation,modeling,source-editor,shared,ui}/` | 各工作区与通用界面                              |
-| `src/hooks/`                                                  | 可复用 React 状态逻辑                           |
-| `src/lib/platform/`                                           | Tauri 桥接、浏览器下载及平台分派                |
-| `src/lib/source-editor/`                                      | 选择、节点编辑、连续性、连接与画布数学          |
-| `src/lib/persistence/`                                        | IndexedDB 恢复草稿与文件写入队列                |
-| `src/lib/` 其他模块                                           | 领域模型、几何构造、实体、导出和模型 Worker     |
-| `src/types/`                                                  | Vite 资源与 Worker 导入的环境类型声明           |
-| `public/`                                                     | 示例资源、图标与兼容描线运行时                  |
-| `src-tauri/src/`                                              | Rust 应用装配、IPC 命令、文件权限和外部打开事件 |
-| `src-tauri/target/frontend/`                                  | 桌面前端构建输出                                |
-| `scripts/build/`                                              | 构建辅助模块                                    |
-| `scripts/tests/`                                              | Node 回归、隔离浏览器回归及最小 fixture         |
-| `docs/`                                                       | 当前使用、架构、专题说明；`qa/` 仅为历史验收    |
-| `dist/`                                                       | Web 构建输出                                    |
+| 路径                                                          | 职责                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `app/`                                                        | Web 路由、页面元数据和两端共用的全局样式                              |
+| `src/desktop/`                                                | 桌面 HTML 与 React 启动入口                                           |
+| `src/components/studio/`                                      | 共享应用主体、工作区组合与应用状态                                    |
+| `src/components/shell/`                                       | 窗口控制等宿主界面                                                    |
+| `src/components/{creation,modeling,source-editor,shared,ui}/` | 各工作区与通用界面                                                    |
+| `src/hooks/`                                                  | 可复用 React 状态逻辑                                                 |
+| `src/lib/platform/`                                           | Tauri 桥接、浏览器下载及平台分派                                      |
+| `src/lib/source-editor/`                                      | 选择、节点编辑、连续性、连接与画布数学                                |
+| `src/lib/persistence/`                                        | IndexedDB 恢复草稿与文件写入队列                                      |
+| `src/lib/` 其他模块                                           | 领域模型、几何构造、实体、导出和模型 Worker                           |
+| `src/types/`                                                  | Vite 资源与 Worker 导入的环境类型声明                                 |
+| `public/`                                                     | 示例资源、图标与兼容描线运行时                                        |
+| `src-tauri/src/`                                              | Rust 应用装配、IPC 命令、文件权限和外部打开事件                       |
+| `src-tauri/target/frontend/`                                  | 桌面前端构建输出                                                      |
+| `scripts/build/`                                              | 构建辅助模块                                                          |
+| `scripts/tests/`                                              | Node 回归、隔离浏览器回归及最小 fixture                               |
+| `docs/`                                                       | 当前使用、架构、专题说明；`qa/` 仅为历史验收                          |
+| `tasks/`                                                      | 复杂任务总控、模块分发与逐项验收；见[任务目录](../../tasks/README.md) |
+| `dist/`                                                       | Web 构建输出                                                          |
 
-根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/` 和 `docs/`。`dist/` 仅存 Web 构建生成物，不纳入版本控制；桌面前端产物归入 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。
+根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/`、`docs/` 和 `tasks/`。`dist/` 仅存 Web 构建生成物，不纳入版本控制；桌面前端产物归入 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。
 
 ## 依赖与状态边界
 

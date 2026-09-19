@@ -145,6 +145,7 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 - [统一创作与 API](docs/creation-2026-09-19.md)
 - [源线编辑与快捷键](docs/source-editor.md)
 - [编辑模型评审与重构计划](docs/architecture/editor-model-review-and-refactor-2026-09-19.md)（对象组织、求值管线与渐进交互；设计提案，尚未实施）
+- [V4 重构任务总控](tasks/editor-model-v4-refactor/README.md)（模块分发、并行依赖、交付与验收）
 - [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/architecture/construction-pipeline.md)
 - [打印分层](docs/print-stack.md) · [3MF 导出](docs/3mf-export.md)
 - [Splinelet 工程格式](docs/project-format.md)
@@ -154,7 +155,7 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 
 ### 仓库结构
 
-根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/` 和 `docs/`；`dist/` 是构建生成目录，不纳入版本控制。
+根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/`、`docs/` 和 `tasks/`；`dist/` 是构建生成目录，不纳入版本控制。
 
 ```text
 app/                 Web 路由入口与全局样式
@@ -168,6 +169,7 @@ public/              静态资源与兼容 URL 运行时
 src-tauri/           Tauri 原生宿主；target/frontend/ 为桌面前端输出
 scripts/             构建、测试与验证工具
 docs/                当前指南、架构和历史 QA
+tasks/               复杂工程任务、模块工作包与验收管理
 dist/                Web 构建输出
 ```
 

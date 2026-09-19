@@ -23,6 +23,11 @@
 - [编辑模型评审与重构计划（2026-09-19）](architecture/editor-model-review-and-refactor-2026-09-19.md)：对象组织、源定义到曲线/区域/浮雕/实体的管线、默认简单与按需展开的交互，以及 V4 迁移和体验验收；尚未实施。
 - [交互设计稿（2026-09-19）](interaction-design-2026-09-19.md)：目标交互、当前修正范围与待实现项。
 
+## 执行任务
+
+- [复杂任务目录](../tasks/README.md)：分发、依赖、交付与验收管理。
+- [V4 编辑模型重构](../tasks/editor-model-v4-refactor/README.md)：8 个模块工作包、包内检查点、四并发优先调度及阶段门槛；实施尚未开始。
+
 ## 历史 QA 快照
 
 - [统一创作验收（2026-09-12）](qa/creation-acceptance-2026-09-12.md)

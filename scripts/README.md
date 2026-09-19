@@ -34,6 +34,8 @@ pnpm desktop:check
 
 后续 V4 验收按[编辑模型重构方案](../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)扩展：U01–U06 验证普通描线、分区、编组无需技术配置，A 项验证对象身份和各数据域转换。它们目前是设计目标，现有回归通过不代表已覆盖 V4；各工作包实现时再加入对应最小 fixture 与测试。
 
+具体分发和验收入口见 [V4 任务总控](../tasks/editor-model-v4-refactor/README.md)。其中 [P01 验证工作包](../tasks/editor-model-v4-refactor/01-validation-2026-09-19.md)负责新增统一的 `test:browser` runner；该命令当前不存在，`check:all` 也不包含浏览器或 Tauri 原生交互验收。
+
 `tests/browser/test-property-navigation.cjs` 接收隔离 `page` 和 `tests/fixtures/shoulder-region.json` 工程对象，检查顶栏主菜单、左右栏入口归属、竖排属性分组、全局分类不随选区跳转、工具与选区属性范围、高级构造编辑器及源曲线导出入口。`test-selection-scope-browser.cjs` 同样使用此 fixture，覆盖区域属性提交、切换选区时的输入草稿、源线选择与恢复后实体导出；选择工具拖动不修改几何。
 
 ## 目录

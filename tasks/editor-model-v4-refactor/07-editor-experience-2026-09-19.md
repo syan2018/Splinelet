@@ -1,0 +1,241 @@
+# P07 · 编辑器投影、画布与渐进属性
+
+建档：2026-09-19。**这是一个分发工作包；T 编号是包内验收检查点，不要求为每个 T 新开执行任务。**
+
+- 包负责人 / 验收者：未分配
+- 建议角色：编辑体验负责人
+- 执行状态：见下面各检查点；当前均未开始
+- 起始提交 / 合同版本：分发时填写
+- 总控：[范围、合同、最快可行调度与门槛](README.md)
+- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 仓库约定：[AGENTS.md](../../AGENTS.md)
+
+## 背景与要交付的改变
+
+作品树和选择目前依赖 paths/cells；纯派生部件难移动，面失败容易丢选区，聚焦不能覆盖最终阵列。新 UI 必须读稳定 Node 与求值结果的任务投影，而不是把 Document 顶层表逐个显示成技术目录。
+
+默认只有部件/组与按需线/区，直接上色和调厚度；高级构造随重复、引用等任务展开；修复失效保持原部件上下文。
+
+## 在整条管线中的位置
+
+输入 P06 命令、P04/P05 snapshot 与有效属性；输出 props 明确的画布/树/属性组件和真实交互验收，P00 接入共享宿主。
+
+T15 投影先完成；T16 画布和 T17 属性可并行且分目录写。共享选区只有一份，根组件由 P00 装配；普通任务不要求端口、坐标框架或手动 Fill。
+
+所有包共同守护：部件身份不依赖输出类型/数量；源定义是唯一权威，求值结果只读；普通用户的默认概念只有部件、线条、区域、颜色和厚度，高级业务按需展开。技术正确与默认体验同时验收。
+
+## 如何分发本包
+
+先读本页背景、总控第 1–2 节及相关代码入口；开工前记录已验收的上游提交和合同版本。只启动依赖已就绪的检查点，不需等前一工作包全部做完，也不能跳过本检查点依赖。负责人可连续完成多个检查点，或在总控许可的非重叠范围内分给临时协作者。
+
+- [T15 编辑器投影、拾取与语义选择](#t15)：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)
+- [T16 默认画布与直接编辑接入](#t16)：[T01](01-validation-2026-09-19.md#t01)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)
+- [T17 作品树、区域属性与按需构造详情](#t17)：[T01](01-validation-2026-09-19.md#t01)、[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T15](07-editor-experience-2026-09-19.md#t15)
+
+交付物先做覆盖面的最小验证，再交 P00 接线；同一待验收提交上的全量检查证据可以被多个检查点引用，不重复跑同一批构建。各检查点仍需自己的反例和语义验收。全部小项写完之前，下游可以使用已单独签收的检查点交付。
+
+禁止修改未授权公共文件或其他执行者的工作；需扩范围时给出具体文件、理由、消费者影响，由 P00 登记后执行。
+
+<a id="t15"></a>
+
+## T15 · 编辑器投影、拾取与语义选择
+
+- 状态：未开始
+- 执行者 / 验收者：未分配
+- 前置：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)
+- 下游：[T16](07-editor-experience-2026-09-19.md#t16)、[T17](07-editor-experience-2026-09-19.md#t17)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)
+- 覆盖原工作包：R4/R5
+- 验收复核：UI 负责人验证可消费性，主代理核对选择语义。
+
+### 目标与代码背景
+
+把文档身份和求值结果投影为简单的树、画布与属性，不让内部结果类型变成用户层级。
+
+现有代码入口（用于理解与复用，不自动获得写权限）：
+
+- [src/hooks/use-creation-selection.ts](../../src/hooks/use-creation-selection.ts)
+- [src/lib/creation-selection.mjs](../../src/lib/creation-selection.mjs)
+- [src/lib/creation-pick.mjs](../../src/lib/creation-pick.mjs)
+- [src/components/creation/creation-selection-details.tsx](../../src/components/creation/creation-selection-details.tsx)
+
+### 可写范围
+
+- src/lib/editor/projection.mjs（新增）
+- src/lib/editor/selection.mjs（新增）
+- src/lib/editor/picking.mjs（新增）
+- src/hooks/use-editor-selection.ts（新增）
+
+另含下列命令对应的新单测文件。
+
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+
+### 分步交付
+
+1. Node 身份/层级、源线、区域、诊断、有效颜色/厚度的只读视图；未上色候选只在画布点取，不默认重复列树。
+2. Selection 使用 scope/entityRefs/activeRef；稳定区分部件、区域、线、节点及高级引用，不借 path 投影执行对象操作。
+3. F 范围、世界命中、派生元素可写回能力与失效行定位共用当前 snapshot。
+
+按交付物提交小改动，不等整包所有检查点做完再一次提交。
+
+### 验收
+
+覆盖：**A09、A17、A18、A20；U01/U03/U06**；最终标准见架构方案第 10 节。
+
+- [ ] 区域失败不删除所属部件；选区可停留在修复目标；异步更新不自动跳层或扩大到兄弟。
+- [ ] V/A/P/H 的范围明确；Ctrl+A 服从当前语义范围；节点首版一条活动线。
+- [ ] 折叠树/高级详情只改会话，Document 和几何 hash 不变。
+
+验证命令：
+
+```sh
+node scripts/tests/unit/test-v4-editor-projection.mjs
+```
+
+上述 `test-v4-*.mjs` 是拟新增测试文件，交付后即可直接用 Node 运行，并由现有 `pnpm test` 自动枚举；Node 单测不等待浏览器 runner。只有列出的 `pnpm test:browser` 命令需要 P01/T01 先交付入口。实现任务还须引用待验收提交上的 `pnpm check:all` 结果；计划本身不构成通过证据。
+
+### 执行与验收记录
+
+- 认领人 / 时间：
+- 起始提交 / 合同版本：
+- 实现提交 / 关键变更：
+- 实际命令、结果、环境及证据路径：
+- U/A 编号与 fixture：
+- P00 接线提交 / 合同或范围变更：
+- 遗留问题 / 阻塞条件：
+- 验收人 / 日期 / 结论：
+
+<a id="t16"></a>
+
+## T16 · 默认画布与直接编辑接入
+
+- 状态：未开始
+- 执行者 / 验收者：未分配
+- 前置：[T01](01-validation-2026-09-19.md#t01)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)
+- 下游：[T21](01-validation-2026-09-19.md#t21)
+- 覆盖原工作包：R4
+- 验收复核：主代理与验证负责人走真实交互，不仅检查组件快照。
+
+### 目标与代码背景
+
+在保持现有工具习惯的前提下，将源编辑与整体移动接入 V4 命令和结果投影。
+
+现有代码入口（用于理解与复用，不自动获得写权限）：
+
+- [src/components/studio/studio-app.tsx](../../src/components/studio/studio-app.tsx)
+- [src/components/source-editor/spline-inspector.tsx](../../src/components/source-editor/spline-inspector.tsx)
+- [src/components/source-editor/endpoint-snap-overlay.tsx](../../src/components/source-editor/endpoint-snap-overlay.tsx)
+- [src/lib/source-editor/canvas-gestures.mjs](../../src/lib/source-editor/canvas-gestures.mjs)
+
+### 可写范围
+
+- src/components/source-editor/v4/（新增适配组件）
+- src/hooks/use-v4-canvas-gestures.ts（新增）
+- scripts/tests/browser/v4/test-basic-authoring.cjs（新增）
+- scripts/tests/browser/v4/test-object-move.cjs（新增）
+
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+
+### 分步交付
+
+1. H 改 pose，A/P 编辑稳定实体与自由参数；屏幕/world/local 转换统一；保持右键/空格/中键平移和4px手势阈值。
+2. 线、面、派生副本选取与“编辑母线”明确范围；F 使用求值结果；取消/失焦/捕获丢失与一次撤销完整。
+3. 向 I00 提供 props 清晰的组件/手势接入，不直接重写共享根组件状态。
+
+按交付物提交小改动，不等整包所有检查点做完再一次提交。
+
+### 验收
+
+覆盖：**A01–A03、A06、A08、A11、A13、A20；U01/U02/U04**；最终标准见架构方案第 10 节。
+
+- [ ] 真实指针完成 U01/U02 核心操作；镜像/阵列整体移动后继续调节点，局部 Sketch/Program 不被移动重写。
+- [ ] 候选区域不重复列树，普通闭合不要求打开构造；编辑输入草稿不写向刚切换的新选区。
+- [ ] Web 和 desktop-frontend 各跑对应 V4 浏览器用例；截图仅作补充，结构/几何断言必须存在。
+
+验证命令：
+
+```sh
+pnpm test:browser --suite v4 --case basic-authoring --target web
+pnpm test:browser --suite v4 --case object-move --target desktop-frontend
+```
+
+上述 `test-v4-*.mjs` 是拟新增测试文件，交付后即可直接用 Node 运行，并由现有 `pnpm test` 自动枚举；Node 单测不等待浏览器 runner。只有列出的 `pnpm test:browser` 命令需要 P01/T01 先交付入口。实现任务还须引用待验收提交上的 `pnpm check:all` 结果；计划本身不构成通过证据。
+
+### 执行与验收记录
+
+- 认领人 / 时间：
+- 起始提交 / 合同版本：
+- 实现提交 / 关键变更：
+- 实际命令、结果、环境及证据路径：
+- U/A 编号与 fixture：
+- P00 接线提交 / 合同或范围变更：
+- 遗留问题 / 阻塞条件：
+- 验收人 / 日期 / 结论：
+
+<a id="t17"></a>
+
+## T17 · 作品树、区域属性与按需构造详情
+
+- 状态：未开始
+- 执行者 / 验收者：未分配
+- 前置：[T01](01-validation-2026-09-19.md#t01)、[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T15](07-editor-experience-2026-09-19.md#t15)
+- 下游：[T21](01-validation-2026-09-19.md#t21)
+- 覆盖原工作包：R5/R6/R7
+- 验收复核：主代理核对用户术语与默认路径；验证负责人验收任务完成。
+
+### 目标与代码背景
+
+让默认界面保持部件、线条、区域、颜色/厚度；复杂构造按任务展开。
+
+现有代码入口（用于理解与复用，不自动获得写权限）：
+
+- [src/components/creation/creation-workspace.tsx](../../src/components/creation/creation-workspace.tsx)
+- [src/components/creation/property-navigation.tsx](../../src/components/creation/property-navigation.tsx)
+- [src/components/creation/creation-modifiers.tsx](../../src/components/creation/creation-modifiers.tsx)
+- [src/components/creation/creation-print-stack.tsx](../../src/components/creation/creation-print-stack.tsx)
+- [docs/interaction-design-2026-09-19.md](../../docs/interaction-design-2026-09-19.md)
+
+### 可写范围
+
+- src/components/creation/v4/（新增作品树/属性/构造面板）
+- scripts/tests/browser/v4/test-progressive-workspace.cjs（新增）
+- scripts/tests/browser/v4/test-repeated-motif.cjs（新增，U04）
+- scripts/tests/browser/v4/test-reference-space.cjs（新增，U05）
+
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+
+### 分步交付
+
+1. 组/部件树，按需线/区行；改父级、排序与源转移分开；不默认生成源/基准/程序/结果四个目录或 Collection 管理器。
+2. 保留工具/工程/选区导航，区域颜色/厚度直接编辑，普通工程有默认成品；分层启用后才显示层数。基本 UI 可先交付，分层/Part 属性须等 T13 制造签收后完成验收。
+3. 镜像/重复/连接边界、引用形状/按位置切割使用任务名称；错误先给具体原因和修复入口，返回普通属性不留技术目录。
+
+按交付物提交小改动，不等整包所有检查点做完再一次提交。
+
+### 验收
+
+覆盖：**A04、A07、A09、A12、A17、A20；U02–U06**；最终标准见架构方案第 10 节。
+
+- [ ] U02–U05 使用独立明确 case 验证结果；U06 与 P02/T19 的 failure-repair-reopen 衔接。普通入口不要求 Source/Port/Collection/local/world 技术设置；高级展开/收起不改 Document。T17 先验证失败/修复显示，跨文件重开由 T19/T21 补完整旅程。
+- [ ] 组操作不把孩子的一套修改器当成组属性，批量操作范围可见；树排序不改 Z/制造。
+- [ ] 向 I00 提供明确 props，不能与 T16 同时编辑根工作区或引入第二套选择状态。
+
+验证命令：
+
+```sh
+pnpm test:browser --suite v4 --case progressive-workspace --target web
+pnpm test:browser --suite v4 --case repeated-motif --target web
+pnpm test:browser --suite v4 --case reference-space --target web
+```
+
+上述 `test-v4-*.mjs` 是拟新增测试文件，交付后即可直接用 Node 运行，并由现有 `pnpm test` 自动枚举；Node 单测不等待浏览器 runner。只有列出的 `pnpm test:browser` 命令需要 P01/T01 先交付入口。实现任务还须引用待验收提交上的 `pnpm check:all` 结果；计划本身不构成通过证据。
+
+### 执行与验收记录
+
+- 认领人 / 时间：
+- 起始提交 / 合同版本：
+- 实现提交 / 关键变更：
+- 实际命令、结果、环境及证据路径：
+- U/A 编号与 fixture：
+- P00 接线提交 / 合同或范围变更：
+- 遗留问题 / 阻塞条件：
+- 验收人 / 日期 / 结论：
