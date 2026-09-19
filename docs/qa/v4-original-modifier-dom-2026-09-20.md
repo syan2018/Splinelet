@@ -158,3 +158,17 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 新增单测覆盖空模型、资源字节不共享、坐标映射、非法输入及真实 PNG 的 V4 编码/解码往返。完整原根浏览器测试实际上传 `public/reference.png`，验证 0 路径/0 部件、未保存/无绑定/无撤销、Worker 完成分析，再通过原保存按钮写入单独 OPFS 目标并读取校验当前 V4 文档；无页面或控制台错误。证据 `output/playwright/v4-original-studio/result.json` 的 `newImage` 和最终 `evidence`，截图 `original-studio.png`。
 
 `pnpm check:all` 退出 0，102 项单测、类型/lint/格式、Rust 检查和双端构建通过，日志 `outputs/v4-qa/check-all-original-new-image-2026-09-20.log`。全量检查期间补充的新图保存浏览器断言另行通过定向 lint/格式与完整浏览器执行；产品实现未再改变。描绘、建模、参考图编辑及完整 API 接线仍待完成，默认入口仍未切换。
+
+## 普通轮廓描绘与候选区域
+
+原根的 `addAnchor` / `closePath` 在 V4 模式下通过捕获的 runtime/project 发送路径意图，拟合前后不创建可写 Project 镜像。CreationWorkspace 的只读 `trace_target` 提供所属部件与待绘制语义；普通 source/fill 部件沿用基本路径命令。分区/挖洞及已有高级构造的追加仍显式拒绝，避免通过普通绘制替换构造图。
+
+完整原根浏览器脚本在新图片工程上实际按 Alt 落三点，得到一条两段开放线和一个部件；切到原手动模式后按 C，得到三段闭合线与一个候选区域。一次撤销恢复开放两段，重做恢复闭合；切换原选择工具并点击候选区域，属性栏确认单区域选择；原保存按钮写出的 V4 文档与当前状态一致。证据为 `output/playwright/v4-original-studio/result.json` 的 `drawing` / `closed` / `evidence`，以及同目录截图。
+
+这条完整操作链路发现并修复两处兼容缺口：未赋厚度的 V4 候选区域不应因 enabled=false 被画布过滤，过滤现在只针对已赋值且禁用的区域；未上色区域和空色卡的 null 颜色不应使原颜色面板崩溃，面板明确显示“未上色”，混合选区仍显示“多种颜色”。没有为新区域凭空写入颜色或厚度。
+
+原 Alt 修饰键会屏蔽字母快捷键，测试先释放 Alt 再操作 C；保留原键盘约定。当前浏览器验证的是手动描绘链路，不据此声称全部自动拟合、续画方向、角色绘制和高级构造旅程均已签收。
+
+最终 `pnpm check:all` 退出 0，102 项单测、类型/lint/格式、Rust 检查和双端构建通过，日志 `outputs/v4-qa/check-all-original-trace-candidates-2026-09-20.log`。完整原根浏览器复测通过，包含候选区域实际点击及描绘结果保存；页面和控制台无错误。
+
+无 host 的默认桌面前端另行通过 `selection-scope` 回归，覆盖原选区属性、颜色草稿切换和实体导出流程；证据 `outputs/v4-qa/original-trace-selection-2026-09-20/manifest.json`。

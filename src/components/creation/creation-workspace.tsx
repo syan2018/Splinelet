@@ -219,6 +219,7 @@ type CreationApi = {
     toggle?: boolean;
   }) => { pathIds: string[]; nodeIds: string[]; label: string };
   new_path: (path: { id: string }) => CreationDocument | undefined;
+  trace_target: () => { ownerNodeId?: string; role: string };
   show_output: (partId?: string) => void;
   show_project: () => void;
   show_tool: () => void;
@@ -1030,6 +1031,12 @@ export default function CreationWorkspace(p: Props) {
           return c;
         }
       },
+      trace_target: () => {
+        const ownerNodeId = objects.at(-1);
+        return ownerNodeId
+          ? { ownerNodeId, role: nextRole.current }
+          : { role: 'boundary' };
+      },
       show_output: (partId) => {
         if (partId) setOutputPartId(partId);
         setTab('make');
@@ -1199,7 +1206,7 @@ export default function CreationWorkspace(p: Props) {
                 !o?.visible ||
                 c.mode === 'cut' ||
                 c.mode === 'through' ||
-                c.enabled === false
+                (c.enabled === false && c.painted)
               )
                 return null;
               const candidate = !c.painted,
@@ -2435,7 +2442,9 @@ export default function CreationWorkspace(p: Props) {
                                 ? [
                                     doc.swatches.find(
                                       (s) => s.id === current.swatchId,
-                                    )?.color || swatch.color,
+                                    )?.color ||
+                                      swatch?.color ||
+                                      null,
                                   ]
                                 : (scene?.cells || [])
                                     .filter((c) =>

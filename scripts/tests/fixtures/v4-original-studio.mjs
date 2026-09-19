@@ -62,6 +62,11 @@ window.originalStudioEvidence = () => {
     revision: editorState.revision,
     previewId: editorState.previewId,
     paths: project.paths.length,
+    pathGeometry: project.paths.map((path) => ({
+      id: path.id,
+      closed: path.closed,
+      segments: path.curves.length,
+    })),
     objects: project.creation.objects.length,
     dirty: storage.dirty,
     baselineRestored: sameDocument(editorState.document, baseline),

@@ -219,6 +219,59 @@ async function main() {
       await page.locator('.project-name').innerText(),
       /new-image-project/,
     );
+    await page.getByRole('button', { name: '描线 (P)', exact: true }).click();
+    const imageBox = await page.locator('.drawing-canvas image').boundingBox();
+    assert.ok(imageBox);
+    await page.keyboard.down('Alt');
+    for (const [x, y] of [
+      [0.3, 0.3],
+      [0.6, 0.3],
+      [0.6, 0.6],
+    ]) {
+      const previous = await evidence();
+      await page.mouse.click(
+        imageBox.x + imageBox.width * x,
+        imageBox.y + imageBox.height * y,
+      );
+      await page.waitForFunction(
+        (revision) => window.originalStudioEvidence().revision > revision,
+        previous.revision,
+      );
+    }
+    const drawing = await evidence();
+    assert.equal(drawing.paths, 1);
+    assert.equal(drawing.objects, 1);
+    assert.equal(drawing.pathGeometry[0].segments, 2);
+    assert.equal(drawing.pathGeometry[0].closed, false);
+    await page.keyboard.up('Alt');
+    await page.getByRole('tab', { name: '手动', exact: true }).click();
+    await page.keyboard.press('c');
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().pathGeometry[0]?.closed === true,
+    );
+    const closed = await evidence();
+    assert.equal(closed.pathGeometry[0].segments, 3);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).pathGeometry[0].closed, false);
+    assert.equal((await evidence()).pathGeometry[0].segments, 2);
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.equal((await evidence()).pathGeometry[0].closed, true);
+    await page.locator('[data-creation-cell]').first().waitFor();
+    await page.getByRole('button', { name: '选择 (V)', exact: true }).click();
+    await page.mouse.click(
+      imageBox.x + imageBox.width * 0.5,
+      imageBox.y + imageBox.height * 0.4,
+    );
+    assert.match(
+      await page.locator('.creation-canvas-bar').innerText(),
+      /单个区域/,
+    );
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioSavedEvidence()),
+      { kind: 'v4', matchesCurrent: true },
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
@@ -237,6 +290,8 @@ async function main() {
           reopened,
           legacyOpened,
           newImage,
+          drawing,
+          closed,
           evidence: await evidence(),
           errors,
           consoleErrors,

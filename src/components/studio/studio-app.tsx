@@ -1485,9 +1485,38 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       validPoint(p);
       const config = { ...sr.current, ...options };
       const current = pr.current.paths.find((p) => p.id === ar.current);
+      const captured = host?.getSnapshot();
       if (!drawingRef.current || !current || current.closed) {
         setTraceEnd('end');
+        const target = captured ? creationApi.current?.trace_target() : null;
+        if (target && target.role !== 'boundary')
+          throw Error('分区线和挖洞的描绘接线尚未完成');
         const start = await snapped(p, config);
+        if (captured) {
+          const beforeIds = new Set(
+            captured.project.paths.map((path: TracePath) => path.id),
+          );
+          const next = captured.runtime
+            .commandPath(
+              {
+                kind: 'start-path',
+                pixelPoint: start,
+                ...(target?.ownerNodeId
+                  ? { ownerNodeId: target.ownerNodeId }
+                  : {}),
+              },
+              { project: captured.project },
+            )
+            .commit() as Project;
+          const path = next.paths.find((path) => !beforeIds.has(path.id));
+          if (!path) throw Error('新线条未出现在源视图');
+          pr.current = next;
+          setActiveNow(path.id);
+          setDrawing(true);
+          drawingRef.current = true;
+          setStatus('移动查看预览，点击落下下一锚点');
+          return start;
+        }
         const path: TracePath = {
           id: crypto.randomUUID(),
           name: `路径 ${pr.current.paths.length + 1}`,
@@ -1519,10 +1548,24 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       const a = splineEndpoint(current, end);
       if (dist(a, p) < 2) return a;
       const r = await traceSpan(a, p, config);
-      transact((p) => {
-        const index = p.paths.findIndex((v) => v.id === current.id);
-        p.paths[index] = extendSpline(p.paths[index], end, r);
-      });
+      if (captured) {
+        if (r.curves.length !== 1) throw Error('续画需要单段拟合结果');
+        pr.current = captured.runtime
+          .commandPath(
+            {
+              kind: 'extend-path',
+              pathId: current.id,
+              end,
+              pixelCubic: r.curves[0],
+            },
+            { project: captured.project },
+          )
+          .commit() as Project;
+      } else
+        transact((p) => {
+          const index = p.paths.findIndex((v) => v.id === current.id);
+          p.paths[index] = extendSpline(p.paths[index], end, r);
+        });
       setStatus(
         config.mode === 'manual'
           ? '已直连 · 未吸附、未拟合 · 可拖动控制柄调整'
@@ -1540,16 +1583,31 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       if (!path || path.curves.length < 1) throw Error('至少先绘制一段曲线');
       if (path.closed) return;
       const end = drawingRef.current ? drawingEndRef.current : 'end';
+      const captured = host?.getSnapshot();
       const r = await traceSpan(
         splineEndpoint(path, end),
         splineEndpoint(path, end === 'start' ? 'end' : 'start'),
         options,
         false,
       );
-      transact((p) => {
-        const index = p.paths.findIndex((x) => x.id === path.id);
-        p.paths[index] = extendSpline(p.paths[index], end, r, true);
-      });
+      if (captured) {
+        if (r.curves.length !== 1) throw Error('闭合需要单段拟合结果');
+        pr.current = captured.runtime
+          .commandPath(
+            {
+              kind: 'close-path',
+              pathId: path.id,
+              end,
+              pixelCubic: r.curves[0],
+            },
+            { project: captured.project },
+          )
+          .commit() as Project;
+      } else
+        transact((p) => {
+          const index = p.paths.findIndex((x) => x.id === path.id);
+          p.paths[index] = extendSpline(p.paths[index], end, r, true);
+        });
       finish();
       setStatus(
         r.fitError > sr.current.tolerance
