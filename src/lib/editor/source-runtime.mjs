@@ -1,8 +1,9 @@
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
-import { projectSourceView } from './source-view.mjs';
+import { projectSourceView, sourcePathId } from './source-view.mjs';
 import { createSourceIntent } from './source-intents.mjs';
 import { createPathIntent } from './path-intents.mjs';
 import { createGroupIntent } from './group-intents.mjs';
+import { createSplineIntent } from './spline-intents.mjs';
 
 const freeze = (value) => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -77,6 +78,36 @@ export function createSourceRuntime({
     },
     commandGroup(request, context) {
       return plan(createGroupIntent, request, context);
+    },
+    commandSplines(request, context) {
+      const entry = current(context.project);
+      let pathRefs;
+      const prepared = plan(
+        (args, captured) => {
+          const command = createSplineIntent(
+            args,
+            captured,
+            entry.state.document,
+          );
+          return (document, commandContext) => {
+            const result = command(document, commandContext);
+            pathRefs = result.selectionIntent.entityRefs;
+            return result;
+          };
+        },
+        request,
+        context,
+      );
+      return Object.freeze({
+        project: prepared.project,
+        commit() {
+          const project = prepared.commit();
+          return {
+            project,
+            pathIds: pathRefs.map((ref) => sourcePathId(ref.sketchId, ref.id)),
+          };
+        },
+      });
     },
     beginSourceGesture(project) {
       const entry = current(project);

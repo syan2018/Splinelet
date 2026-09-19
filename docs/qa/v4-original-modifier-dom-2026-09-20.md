@@ -300,3 +300,11 @@ outputs/v4-qa/check-all-spline-proposal-2026-09-20.log 记录 pnpm check:all 退
 replace-path-geometry 与捕获 path-intent 支持原像素坐标转世界/owner 局部坐标的精确替换。等拓扑保留反向使用及内部身份，变拓扑保留 Path/Program 并返回被移除的内部引用。共享、驱动、锁定、失效、ID 冲突及批量后续失败均保持原子性；开闭/节点数/单点继续编辑及一次撤销通过。原 spline_apply 整批接线尚未完成，本轮没有改原界面。
 
 outputs/v4-qa/check-all-path-replacement-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 113 项单元测试、类型、lint、格式、Rust 与双端构建。随后补充关系消费者回归：关系定义保留，失效源经 resolveRelation 返回 blocked；受驱动 Handle 拒绝覆盖。补充测试及该文件 lint/格式检查通过。
+
+## 2026-09-20 原 spline_apply 整批接线
+
+原 API 的精确新建/替换/矩阵请求经只读提案编译为一次规范事务，返回本次命令产生的路径身份。辅助线隔离 Fill 成员；洞使用现有区域构造。单元验证闭合辅助线后再建边界不误填辅助线、洞、锁定中途失败整批回滚、过期捕获、跨所属拒绝和一次撤销。无变化提交不读取上一命令结果；仅名称操作不写几何，关系驱动曲线可改名。
+
+original-spline-batch-final-2026-09-20.log 为 PASS：原界面真实 spline_apply 混合创建、准确控制柄回读、撤销/快捷键重做及规范副本保存回读通过，Sandrone/原样式及其他原编辑旅程继续通过。首轮测试错误调用不存在的 redo API，改为原重做快捷键后重跑成功。
+
+check-all-spline-batch-2026-09-20.log 记录 pnpm check:all 退出 0，涵盖 114 项单元测试、类型、lint、格式、Rust 与双端构建。最后补充仅元数据分支及关系驱动改名测试后，相关单元、类型、全库 lint/格式与双端生产构建重新通过（build-spline-batch-final-2026-09-20.log）。默认入口、工程宽度及其余高级建模接线仍未签收。

@@ -3247,8 +3247,14 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       spline_apply: (a: Parameters<typeof editSplines>[1]) => {
         if (busyRef.current || fileBusyRef.current || drag.current)
           throw Error('请先完成当前描线、拖动或保存');
-        const result = editSplines(pr.current, a);
-        setDoc(result.project as Project);
+        const captured = host?.getSnapshot();
+        const result = captured
+          ? captured.runtime
+              .commandSplines(a, { project: captured.project })
+              .commit()
+          : editSplines(pr.current, a);
+        if (captured) pr.current = result.project as Project;
+        else setDoc(result.project as Project);
         finish();
         setProposed(null);
         setStatus(`已提交 ${result.pathIds.length} 条精确样条 · Ctrl+Z 撤销`);

@@ -353,3 +353,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 spline_apply 管线拆分：精确节点、image/model 坐标和矩阵、开闭拓扑及新路径用途校验抽入 source-editor/spline-proposal.mjs。解析器仅接收 frame/paths/objects 的只读事实，返回无新 ID 的逐路径提案；旧 writer 先校验整批再分配身份与更新旧文档。冻结输入、无别名、矩阵及用途单元验证通过。此项是规范批量命令的共用输入边界，尚未完成 V4 spline_apply 接线；后续仍须实现稳定路径身份下的端点/拓扑替换、关系保护和整批一次撤销。
 
 2026-09-20 精确源替换命令：replace-path-geometry 经 authoring/API 动作表及捕获 path-intent 接入。世界 cubic 换算到 owner 局部坐标；相同有向拓扑保留 Vertex/Edge 身份，开闭或节点数变化分配新内部身份，但 Path/owner/Program 不变。被替换的细粒度消费者保留为可修复引用，返回 removedRefs；共享几何、受关系驱动源及失效拓扑拒绝覆盖。单元覆盖 pose、反向 Edge、开闭/单点、模式、过期 intent、批量中途失败与一次撤销。原 spline_apply 批量适配仍待接线，尚未签收该用户旅程。
+
+2026-09-20 原 spline_apply 批量接线：source-runtime.commandSplines 捕获只读源视图，以共用提案解析器编译一次规范事务。已有路径经 replace-path-geometry 和元数据命令，新路径按 boundary/guide/hole 进入对应构造；draw-guide 保持区域输出并隔离隐式 Fill 成员，draw-hole 返回实际创建的源 PathRef。结果路径 ID 来自本次执行，包含无变化提交；原根 API 保留参数及返回形状。单元覆盖角色、矩阵、一次撤销、过期/跨所属/锁定中途失败；原浏览器验收另见 QA。

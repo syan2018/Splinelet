@@ -23,6 +23,7 @@ pnpm desktop:check
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
 - `test-spline-edit.mjs`：精确双柄样条、坐标往返、矩阵变换、来源保留与整批失败；共用提案解析器在冻结的几何/归属视图上工作，不分配 ID 或修改展示数据。
 - `test-v4-path-replacement.mjs`：精确源曲线替换，验证带 pose 的反向拓扑、端点和双柄、开闭及节点数变化、单点继续编辑、路径身份与构造保留、一次撤销，以及共享/关系/过期/整批失败保护。
+- `test-v4-spline-intents.mjs`：原精确样条整批提交的规范接线，覆盖新建/矩阵变换/辅助线与边界/洞、无变化提交 ID、跨部件拒绝、锁定导致整批回滚和一次撤销；原根浏览器检查真实 spline_apply、回读、重做与保存回读。
 - `test-curve-pipeline.mjs`：镜像、四向阵列、显式构面、中心留空、对称性、阶段顺序、失效隔离与恢复；`test-radial-array.mjs` 检查构面后的阵列、孔与实体。
 - `test-endpoint-snap.mjs`：组合变换接缝、精确接合、自由端点、分叉目标排除、屏幕距离与吸附滞回、非原点轴、停用修改器和源数据不变性。
 - `pnpm format:check`：只检查格式，不修改文件。

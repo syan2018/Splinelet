@@ -825,6 +825,74 @@ async function main() {
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
     await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    const beforeSplines = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    const splineRevision = (await evidence()).revision;
+    const exactBatch = await page.evaluate(() =>
+      window.traceStudio.call('spline_apply', {
+        units: 'model',
+        splines: [
+          {
+            name: '精确辅助线',
+            nodes: [
+              { co: { x: -10, y: 0 }, handleRight: { x: -7, y: 9 } },
+              { co: { x: 10, y: 0 }, handleLeft: { x: 7, y: -4 } },
+            ],
+          },
+          {
+            name: '精确闭合线',
+            closed: true,
+            nodes: [
+              { co: { x: -8, y: -8 } },
+              { co: { x: 8, y: -8 } },
+              { co: { x: 0, y: 8 } },
+            ],
+          },
+        ],
+      }),
+    );
+    assert.equal(exactBatch.pathIds.length, 2);
+    assert.equal((await evidence()).revision, splineRevision + 1);
+    const exactState = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    await page.evaluate(() => window.traceStudio.call('undo'));
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeSplines,
+    );
+    await page.keyboard.press('Control+Shift+Z');
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      exactState,
+    );
+    const applied = await page.evaluate(
+      (id) =>
+        window.traceStudio.call('spline_apply', {
+          units: 'model',
+          splines: [{ id, matrix: [0, 1, -1, 0, 2, 3] }],
+        }),
+      exactBatch.pathIds[0],
+    );
+    assert.deepEqual(applied.pathIds, [exactBatch.pathIds[0]]);
+    const exactRead = await page.evaluate(
+      (id) =>
+        window.traceStudio.call('spline_inspect', {
+          pathIds: [id],
+          units: 'model',
+        }),
+      exactBatch.pathIds[0],
+    );
+    assert.ok(Math.abs(exactRead.splines[0].nodes[0].handleRight.x + 7) < 1e-8);
+    assert.ok(Math.abs(exactRead.splines[0].nodes[0].handleRight.y + 4) < 1e-8);
+    await page.evaluate(() => window.traceStudio.call('undo'));
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      exactState,
+    );
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
     const beforeApiLoad = await evidence();
     const beforeApiDocument = await page.evaluate(() =>
       window.originalStudioDocument(),

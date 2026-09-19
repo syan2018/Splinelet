@@ -423,6 +423,7 @@ export function createAuthoringCommand(action) {
       })(drawn.document, { idFactory });
       return {
         ...result,
+        changedRefs: [...result.changedRefs, ...drawn.changedRefs],
         selectionIntent: {
           scope: 'regions',
           entityRefs: result.changedRefs,
@@ -432,6 +433,43 @@ export function createAuthoringCommand(action) {
     }
     if (action.kind === 'draw-path')
       return drawPath(document, action, idFactory);
+    if (action.kind === 'draw-guide') {
+      if (
+        action.ownerNodeId &&
+        document.nodes[action.ownerNodeId]?.kind !== 'shape'
+      )
+        throw Error('辅助线必须属于部件');
+      const drawn = drawPath(
+        document,
+        { ...action, auxiliary: true },
+        idFactory,
+      );
+      const path = drawn.changedRefs.find((ref) => ref.kind === 'path');
+      const owner = document.sketches[path.sketchId].ownerNodeId;
+      const program = document.programs[document.nodes[owner].programId];
+      const allocate = createCommandIdAllocator(document, idFactory);
+      const sourceId = allocate(),
+        collectId = allocate();
+      program.operators[sourceId] = operator(sourceId, 'source', {
+        paths: [
+          { kind: 'sketch', sketchId: path.sketchId, pathIds: [path.id] },
+        ],
+      });
+      const old = program.outputs.curves;
+      // Keep guide membership outside the ordinary implicit Fill source, even
+      // for closed guides followed by later boundary drawing.
+      program.operators[collectId] = operator(collectId, 'curve-collect', {
+        input: [...(old ? [old] : []), port(owner, sourceId, 'curves')].map(
+          (ref) => ({
+            ...ref,
+            space: 'local-result',
+            transform: identity(),
+          }),
+        ),
+      });
+      program.outputs.curves = port(owner, collectId, 'curves');
+      return { document, changedRefs: [path, nodeRef(owner)] };
+    }
     if (action.kind === 'start-path') {
       if (
         action.role !== undefined &&

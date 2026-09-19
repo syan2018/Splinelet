@@ -132,6 +132,8 @@ V4 原源线列表的编组快捷键、`manage_group` 与 `move_paths` 使用纯
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。
 
+V4 会话中的原 API 先从只读源视图解析精确提案，再在一次规范事务内执行全部曲线命令。已有路径保留 Path 身份与构造引用；辅助线不会隐式参与填充，洞作用于指定部件的当前区域。共享或关系驱动的源几何不能被整条替换，失败回滚整批。默认入口切换仍以重构任务验收为准。
+
 ```js
 const call = (action, args = {}) => window.traceStudio.call(action, args);
 const { pathIds } = await call('spline_apply', {
