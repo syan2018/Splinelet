@@ -51,6 +51,6 @@ pnpm build
 ## Subagents
 
 - 主代理自行判断是否使用 subagents；只有当任务可明确拆分、并行带来的收益明显高于协调成本时才使用，不将并行作为默认流程。
-- 使用 subagents 时默认使用 `gpt-5.6-terra` 和 `medium` reasoning；只在任务确实需要时调整模型或 reasoning effort。
+- 使用 subagents 时默认使用 `gpt-5.6-terra` 和 `high` reasoning；只在任务确实需要时调整模型或 reasoning effort。
 - 架构决策、跨模块复杂状态、几何或并发判断默认由主代理处理；必要时可将边界明确的探索、审阅、测试或机械迁移交给 subagents。
 - 每个 subagent 都要明确只读或可写范围、不得触碰的文件、预期产出和必须运行的验证，避免共享工作区中的重叠修改。
