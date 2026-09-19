@@ -3,6 +3,7 @@ import {
   polygonParts,
   readGeometry,
   robustPolygonize,
+  validateArea,
 } from '../../../region-engine.mjs';
 import { contourSignatures } from '../../../surface-lineage.mjs';
 import {
@@ -13,6 +14,18 @@ import {
 import { fillCurves, sampleCubic } from './fill.mjs';
 
 const writer = new GeoJSONWriter();
+// Disconnected pieces of one semantic result retain that result's identity.
+// RegionSet already permits MultiPolygon; only explicit partitioning creates
+// separate output identities for independently editable regions.
+const polygonalResult = (geometry) => {
+  const parts = polygonParts(geometry);
+  if (!parts.length) return null;
+  if (parts.length === 1) return parts[0];
+  return readGeometry({
+    type: 'MultiPolygon',
+    coordinates: parts.map((part) => writer.write(part).coordinates),
+  });
+};
 const clone = (value) => structuredClone(value);
 const text = (value) => JSON.stringify(value);
 const result = (status, value, diagnostics = [], dependencies = []) => ({
@@ -271,15 +284,18 @@ export const strokeOperator = {
           type: 'LineString',
           coordinates: points,
         }).buffer(operator.params.widthMM / 2, 12);
-        return polygonParts(geometry).map((part) =>
-          output(
-            ownerNodeId,
-            operator.id,
-            text(['stroke', curve.key, curveTokens(curve)]),
-            curveTokens(curve),
-            part,
-          ),
-        );
+        const area = polygonalResult(geometry);
+        return area
+          ? [
+              output(
+                ownerNodeId,
+                operator.id,
+                text(['stroke', curve.key, curveTokens(curve)]),
+                curveTokens(curve),
+                area,
+              ),
+            ]
+          : [];
       });
       return {
         regions: stageRegions(
@@ -303,8 +319,10 @@ export const betweenOperator = {
   },
   outputPorts: { regions: { domain: 'regions' } },
   validateParams: (params) =>
-    (Array.isArray(params?.curveKeys) && params.curveKeys.length === 2) ||
-    'between 需要两个明确 curveKeys',
+    (Array.isArray(params?.curveKeys) &&
+      params.curveKeys.length === 2 &&
+      (params.repair === undefined || typeof params.repair === 'boolean')) ||
+    'between 需要两个明确 curveKeys 和可选 boolean repair',
   evaluate: ({ document, ownerNodeId, operator, inputs }) => {
     const source = input(inputs);
     if (source.status !== 'ready' && source.status !== 'empty')
@@ -394,7 +412,10 @@ export const betweenOperator = {
       ring = ring.filter(
         (point, index) => !index || gap(point, ring[index - 1]) > 1e-9,
       );
-      const part = readGeometry({ type: 'Polygon', coordinates: [ring] });
+      let part = readGeometry({ type: 'Polygon', coordinates: [ring] });
+      const repairWarnings = [];
+      if (!part.isValid() && operator.params.repair === true)
+        part = validateArea(part, true, repairWarnings);
       if (!part.isValid() || part.isEmpty())
         throw Error('between 的显式端点边界不能形成有效区域');
       const tokens = [...curveTokens(a), ...curveTokens(b)].sort(compare);
@@ -419,7 +440,14 @@ export const betweenOperator = {
             ],
           ),
           ownerNodeId,
-          clone(source.diagnostics || []),
+          [
+            ...clone(source.diagnostics || []),
+            ...repairWarnings.map((message) => ({
+              severity: 'warning',
+              code: 'repaired-self-intersection',
+              message,
+            })),
+          ],
           source.dependencies,
         ),
       };
@@ -465,19 +493,21 @@ export const offsetOperator = scopedRegionOperator('offset', (region, args) => {
     args.context,
     'distanceMM',
   );
-  const parts = polygonParts(
+  const area = polygonalResult(
     readGeometry(region.geometry).buffer(distanceMM, 12),
   );
-  return parts.map((part) =>
-    output(
-      args.ownerNodeId,
-      args.operator.id,
-      text(['offset', region.ref.key]),
-      region.ref.lineage,
-      part,
-      region.ref.instances,
-    ),
-  );
+  return area
+    ? [
+        output(
+          args.ownerNodeId,
+          args.operator.id,
+          text(['offset', region.ref.key]),
+          region.ref.lineage,
+          area,
+          region.ref.instances,
+        ),
+      ]
+    : [];
 });
 
 export const regionArrayOperator = scopedRegionOperator(
@@ -535,28 +565,34 @@ export const booleanOperator = {
         null,
       );
       const regions = scope.selected.flatMap((region) => {
-        const geometry = readGeometry(region.geometry)[
-          operator.params.operation
-        ](operandGeometry);
+        const source = readGeometry(region.geometry);
+        const geometry = operandGeometry
+          ? source[operator.params.operation](operandGeometry)
+          : operator.params.operation === 'intersection'
+            ? null
+            : source;
+        const area = geometry && polygonalResult(geometry);
         const parents = [
           ...region.ref.lineage,
           ...lineage(operand.value.regions),
         ].sort(compare);
-        return polygonParts(geometry).map((part) =>
-          output(
-            ownerNodeId,
-            operator.id,
-            text([
-              'boolean',
-              operator.params.operation,
-              region.ref.key,
-              lineage(operand.value.regions),
-            ]),
-            parents,
-            part,
-            region.ref.instances,
-          ),
-        );
+        return area
+          ? [
+              output(
+                ownerNodeId,
+                operator.id,
+                text([
+                  'boolean',
+                  operator.params.operation,
+                  region.ref.key,
+                  lineage(operand.value.regions),
+                ]),
+                parents,
+                area,
+                region.ref.instances,
+              ),
+            ]
+          : [];
       });
       const diagnostics =
         operator.params.operation === 'union' && scope.selected.length > 1

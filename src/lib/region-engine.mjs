@@ -172,7 +172,7 @@ export function robustPolygonize(lines) {
     out.push(it.next());
   return out;
 }
-function validateArea(g, repair = false, warnings = []) {
+export function validateArea(g, repair = false, warnings = []) {
   if (!g.isValid()) {
     if (!repair)
       throw Error('边界存在自交或零宽相接，请检查来源，或启用“预览修复自交”');
