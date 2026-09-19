@@ -55,7 +55,8 @@ export default function SplineEndpoints({
               e.stopPropagation();
               e.preventDefault();
               if (disabled || active) return;
-              closing ? onClose(e) : onResume(side);
+              if (closing) onClose(e);
+              else onResume(side);
             }}
           >
             <title>{action}</title>

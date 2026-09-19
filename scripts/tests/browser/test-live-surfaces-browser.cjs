@@ -164,7 +164,7 @@ module.exports = async (page, fixture) => {
   invalid.paths.find((p) => p.id === hole.id).closed = false;
   await call('load_project', { project: invalid });
   await settle();
-  let failed = await call('creation_inspect');
+  const failed = await call('creation_inspect');
   assert(failed.errors.some((e) => e.objectId === object.id));
   assert(!failed.cells.some((c) => c.objectId === object.id));
   const expandBad = page.getByRole('button', {

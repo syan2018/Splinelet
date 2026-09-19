@@ -25,7 +25,7 @@ const compiledCell = (p, id = 'body') => {
     c.model.features.find((f) => f.id === id).regionId,
   );
 };
-let p = liveSurfaces();
+const p = liveSurfaces();
 const original = structuredClone(p);
 check('imported face and compiled extrusion both use the live hole', () => {
   assert.equal(cell(p).areaMM2, 4800);
@@ -35,7 +35,7 @@ check('imported face and compiled extrusion both use the live hole', () => {
   assert.equal(cell(p).key, 'feature:body');
   assert.equal(cell(p).name, '有名字的区域');
 });
-let solid = await buildSolid(p);
+const solid = await buildSolid(p);
 check('print mesh volume agrees with the cut preview', () => {
   assert(solid.report.valid);
   assert(Math.abs(solid.report.volumeMM3 - 9600) < 0.01);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { setContinuity, moveHandle, nodeModes } from '../../../public/continuity.mjs';
+import { setContinuity, moveHandle } from '../../../public/continuity.mjs';
 import { removeNode } from '../../../public/node-edit.mjs';
 import { mergeSplines } from '../../../public/connect.mjs';
 import { svg, blender, validateProject } from '../../../lib/project.ts';

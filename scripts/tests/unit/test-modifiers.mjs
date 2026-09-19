@@ -9,7 +9,7 @@ import {
   creationDocument,
   validateCreation,
 } from '../../../lib/creation-schema.mjs';
-import { readGeometry, regionContext } from '../../../lib/region-engine.mjs';
+import { regionContext } from '../../../lib/region-engine.mjs';
 import { buildSolid } from '../../../lib/solid-engine.mjs';
 import {
   liveSurfaces,
@@ -250,7 +250,7 @@ upper.modifiers = [
   },
 ];
 stacked.creation.objects.push(upper);
-let stackedScene = evaluateCreation(stacked);
+const stackedScene = evaluateCreation(stacked);
 same(stackedScene.cells.find((c) => c.objectId === 'upper').zMM, 3);
 stacked = command(stacked, 'height', {
   cellKeys: [pieces[0].key],

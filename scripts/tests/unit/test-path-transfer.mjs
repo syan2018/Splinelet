@@ -23,7 +23,7 @@ const snapshot = (p) => {
     z: c.bottomMM ?? c.zMM,
   }));
 };
-let p = liveSurfaces();
+const p = liveSurfaces();
 const draft = rectangle('draft', 20, 20, 40, 40);
 draft.closed = false;
 draft.curves = draft.curves.slice(0, 2);
@@ -65,7 +65,7 @@ checks.push(
 );
 
 // Explicit modifier inputs count even for an open reference path.
-let split = structuredClone(p);
+const split = structuredClone(p);
 split.creation = creationDocument(split);
 split.creation.objects[0].modifiers.push({
   id: 'disabled-split',

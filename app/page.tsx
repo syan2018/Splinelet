@@ -37,6 +37,12 @@ import {
 } from '@/components/source-editor/spline-inspector';
 import { splineEndpoint, extendSpline } from '../public/extend.mjs';
 import SplineEndpoints from '@/components/source-editor/spline-endpoints';
+import {
+  cloneTraceValue,
+  initialTraceProject,
+  type TraceCandidate,
+  type TraceSettings,
+} from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
 import {
   pickSelection,
@@ -103,24 +109,6 @@ import {
   moveHandle,
   enforceContinuity,
 } from '../public/continuity.mjs';
-const initial: Project = {
-  version: 1,
-  image: '/reference.png',
-  imageName: '角色参考图.png',
-  width: 1200,
-  height: 1200,
-  paths: [],
-  widthMM: 100,
-  depthMM: 2,
-};
-type Candidate = Point & { id: string; score: number };
-type Settings = {
-  mode: 'ink' | 'edge' | 'manual';
-  tolerance: number;
-  corridor: number;
-  snap: boolean;
-};
-const copy = <T,>(v: T): T => structuredClone(v);
 export default function Home() {
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<any>(null);
@@ -136,7 +124,7 @@ export default function Home() {
   creationViewRef.current = creationView;
   unifiedRef.current = unified;
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
-  const [project, setProject] = useState<Project>(initial),
+  const [project, setProject] = useState<Project>(initialTraceProject),
     pr = useRef(project);
   const [active, setActive] = useState<string | null>(null),
     ar = useRef(active);
@@ -151,7 +139,7 @@ export default function Home() {
     drawingEndRef.current = end;
     setDrawingEnd(end);
   };
-  const [settings, setSettings] = useState<Settings>({
+  const [settings, setSettings] = useState<TraceSettings>({
       mode: 'ink',
       tolerance: 1.5,
       corridor: 100,
@@ -168,7 +156,7 @@ export default function Home() {
     [opacity, setOpacity] = useState(85),
     [vectorsOnly, setVectorsOnly] = useState(false),
     [fill, setFill] = useState(false);
-  const [candidates, setCandidates] = useState<Candidate[]>([]),
+  const [candidates, setCandidates] = useState<TraceCandidate[]>([]),
     cr = useRef(candidates);
   cr.current = candidates;
   const allCandidates = useRef<any[]>([]);
@@ -537,7 +525,7 @@ export default function Home() {
   };
   const setDoc = (p: Project, record = true) => {
     if (record) {
-      history.current.push(copy(pr.current));
+      history.current.push(cloneTraceValue(pr.current));
       if (history.current.length > 80) history.current.shift();
       future.current = [];
     }
@@ -546,7 +534,7 @@ export default function Home() {
     setHistoryTick((t) => t + 1);
   };
   const transact = (fn: (p: Project) => void) => {
-    const p = copy(pr.current);
+    const p = cloneTraceValue(pr.current);
     fn(p);
     setDoc(p);
   };
@@ -820,7 +808,7 @@ export default function Home() {
     lastNodeTap.current = null;
     const p = history.current.pop();
     if (!p) return;
-    future.current.push(copy(pr.current));
+    future.current.push(cloneTraceValue(pr.current));
     setDoc(p, false);
     setPreview([]);
     setProposed(null);
@@ -842,7 +830,7 @@ export default function Home() {
     lastNodeTap.current = null;
     const p = future.current.pop();
     if (!p) return;
-    history.current.push(copy(pr.current));
+    history.current.push(cloneTraceValue(pr.current));
     setDoc(p, false);
     setSelection(null);
     setMergeSource(null);
@@ -923,7 +911,7 @@ export default function Home() {
   const traceSpan = async (
     a: Point,
     b: Point,
-    options: Partial<Settings> = {},
+    options: Partial<TraceSettings> = {},
     snapEnd = true,
   ) => {
     const cfg = { ...sr.current, ...options },
@@ -970,7 +958,7 @@ export default function Home() {
       setBusy(false);
     }
   };
-  const addAnchor = async (p: Point, options: Partial<Settings> = {}) =>
+  const addAnchor = async (p: Point, options: Partial<TraceSettings> = {}) =>
     lock(async () => {
       validPoint(p);
       const config = { ...sr.current, ...options };
@@ -1024,7 +1012,7 @@ export default function Home() {
       );
       return r.end;
     });
-  const closePath = async (options: Partial<Settings> = {}) =>
+  const closePath = async (options: Partial<TraceSettings> = {}) =>
     lock(async () => {
       const path = pr.current.paths.find((p) => p.id === ar.current);
       if (!path || path.curves.length < 1) throw Error('至少先绘制一段曲线');
@@ -1373,7 +1361,7 @@ export default function Home() {
         ...g.base,
         paths: g.base.paths.map((path: TracePath) =>
           (g.kind === 'paths' ? g.ids.includes(path.id) : path.id === g.path)
-            ? copy(path)
+            ? cloneTraceValue(path)
             : path,
         ),
       };
@@ -1839,7 +1827,13 @@ export default function Home() {
     finish();
     setActiveNow(null);
     bindFile(null);
-    setDoc({ ...initial, image: src, imageName: f.name, width: w, height: h });
+    setDoc({
+      ...initialTraceProject,
+      image: src,
+      imageName: f.name,
+      width: w,
+      height: h,
+    });
     setStatus('正在分析新底图…');
   };
   const exportFile = (format: 'svg' | 'blender' | 'json') => {
@@ -1894,7 +1888,7 @@ export default function Home() {
       r.height <= 0
     )
       throw Error('候选区域无效');
-    const out: Candidate[] = [];
+    const out: TraceCandidate[] = [];
     for (const p of allCandidates.current) {
       if (p.x < r.x || p.y < r.y || p.x > r.x + r.width || p.y > r.y + r.height)
         continue;
@@ -2021,7 +2015,7 @@ export default function Home() {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
     const original = pr.current.paths.find((p) => p.id === args.pathId);
     if (!original) throw Error('路径不存在');
-    const changed = copy(original);
+    const changed = cloneTraceValue(original);
     setContinuity(changed, args.nodeIndex, args.mode);
     delete changed.fitError;
     transact((p) => {
@@ -2043,7 +2037,7 @@ export default function Home() {
     after = false,
   ) => {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
-    const next = copy(pr.current);
+    const next = cloneTraceValue(pr.current);
     const moved = movePaths(next, ids, groupId, targetId, after);
     if (
       moved &&
@@ -2158,7 +2152,7 @@ export default function Home() {
       )
         points.pop();
       if (points.length < 2) throw Error('这条旧路径没有足够的原落点记录');
-      const path = copy(original);
+      const path = cloneTraceValue(original);
       path.curves = [];
       path.quality = 1;
       path.fitError = 0;
@@ -2361,7 +2355,7 @@ export default function Home() {
       setProposed(null);
       return { discarded: true };
     },
-    get_project: () => copy(pr.current),
+    get_project: () => cloneTraceValue(pr.current),
     inspect_geometry: () => inspectGeometry(pr.current.paths),
     undo: () => {
       undo();
@@ -2909,7 +2903,10 @@ export default function Home() {
               <Tabs
                 value={settings.mode}
                 onValueChange={(v) => {
-                  setSettings((s) => ({ ...s, mode: v as Settings['mode'] }));
+                  setSettings((s) => ({
+                    ...s,
+                    mode: v as TraceSettings['mode'],
+                  }));
                   setPreview([]);
                 }}
               >

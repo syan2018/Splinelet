@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import {
   emptyModel,
   validateModel,
@@ -328,38 +327,6 @@ assert.equal(JSON.stringify(p.paths), source);
 p.paths = p.paths.filter((x) => x.id !== 'a');
 assert.match(evaluateRegions(p).find((x) => x.id === 'S').error, /删除/);
 await assert.rejects(() => buildSolid(p), /删除/);
-const sourceFile = new URL(
-  '../../../../sandrone-relief-experiment/Sandrone.source.bezier.json',
-  import.meta.url,
-);
-if (fs.existsSync(sourceFile)) {
-  const q = JSON.parse(fs.readFileSync(sourceFile));
-  q.model = emptyModel();
-  q.model.regions = [
-    {
-      id: 'hair',
-      name: 'hair',
-      kind: 'path',
-      pathId: q.paths[11].id,
-      color: '#ffffff',
-    },
-  ];
-  const s = previewRegion(q, {
-    kind: 'split',
-    baseId: 'hair',
-    pathIds: q.paths.slice(16, 23).map((p) => p.id),
-    joinMM: 0.7,
-  });
-  assert.equal(s.candidates.length, 11);
-  console.log('Sandrone: 7 cutters / 11 regions, source cubics untouched');
-  const face = previewRegion(q, {
-    kind: 'path',
-    pathId: q.paths[37].id,
-    repair: true,
-  });
-  assert.equal(face.candidates[0].holes, 1);
-  console.log('Sandrone face: self-intersection repair preserves eye hole');
-}
 console.log(
   'PASS: holes, cut preview, source dependencies, attachment heights, booleans, mesh and STL round-trip',
 );

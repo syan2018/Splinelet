@@ -1,4 +1,4 @@
-// Runs in an isolated browser, using the latest Sandrone copy without binding its file.
+// Runs in an isolated browser with the committed minimal hair-partition fixture.
 module.exports = async (page, fixture) => {
   const assert = require('node:assert/strict');
   fixture = JSON.parse(JSON.stringify(fixture));
@@ -24,7 +24,7 @@ module.exports = async (page, fixture) => {
     );
   };
   const divider = fixture.paths.find((p) => p.name === '头发分割线');
-  assert(divider, 'requires the latest 72-path Sandrone fixture');
+  assert(divider, 'requires the committed hair-partition fixture');
   const hair = fixture.creation.objects.find((o) => o.name === '头发');
   const beforeDivider = structuredClone(fixture);
   beforeDivider.creation.objects.find((o) => o.id === hair.id).roles[
@@ -105,7 +105,7 @@ module.exports = async (page, fixture) => {
   await page.getByLabel('选区颜色 HEX').fill('#cc4488');
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await settle();
-  let painted = await call('creation_inspect');
+  const painted = await call('creation_inspect');
   assert.deepEqual(
     shapes(painted),
     baseShapes,

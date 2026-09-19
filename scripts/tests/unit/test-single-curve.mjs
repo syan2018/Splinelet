@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {fitSingleCurve,evaluate,dist,buildField,trace} from '../../../public/geometry.mjs';
+import {fitSingleCurve,evaluate} from '../../../public/geometry.mjs';
 const known=[{x:10,y:10},{x:15,y:90},{x:110,y:120},{x:120,y:20}];
 const points=Array.from({length:151},(_,i)=>evaluate(known,i/150));
 for(const tolerance of [.01,.5,2,10]){const r=fitSingleCurve(points,tolerance);assert.equal(r.curves.length,1);assert.equal(r.curves[0].length,4);assert.deepEqual(r.curves[0][0],points[0]);assert.deepEqual(r.curves[0][3],points.at(-1));assert(r.fitError<3,JSON.stringify(r));}

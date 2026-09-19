@@ -50,7 +50,7 @@ module.exports = async (page, fixture) => {
     .click();
   await page.getByRole('tab', { name: '修改器', exact: true }).click();
   await wait();
-  let s = await call('creation_inspect');
+  const s = await call('creation_inspect');
   const o = s.creation.objects.find((o) => o.name === '头饰'),
     h = o.modifiers.find(
       (m) => m.rolePathId === 'be92b11d-9617-4008-b6c1-be9f1d842c45',

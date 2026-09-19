@@ -52,7 +52,7 @@ module.exports = async (page) => {
   await page.mouse.move(sourcePoint.x, sourcePoint.y);
   await page.mouse.wheel(0, -550);
   await settle();
-  let view = (await call('state')).view;
+  const view = (await call('state')).view;
   check(view.s > 3, 'F then wheel produces a high-zoom source-drag case');
 
   const sourceBefore = await call('get_project');

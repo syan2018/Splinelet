@@ -49,7 +49,7 @@ import {
   pathsForRegions,
 } from '@/lib/creation-selection.mjs';
 import { useCreationSelection } from '@/hooks/use-creation-selection';
-// @ts-ignore Vite worker asset.
+// @ts-expect-error Vite worker asset.
 import ModelWorker from '../../lib/model-worker.ts?worker';
 type Props = {
   project: Project;
@@ -286,7 +286,8 @@ export default function CreationWorkspace(p: Props) {
       const r = requests.current.get(data.id);
       if (!r) return;
       requests.current.delete(data.id);
-      data.error ? r.reject(Error(data.error)) : r.resolve(data.result);
+      if (data.error) r.reject(Error(data.error));
+      else r.resolve(data.result);
     };
     w.onerror = () => {
       setError('区域引擎加载失败，请刷新后重试');

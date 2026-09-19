@@ -133,7 +133,6 @@ async (page) => {
     .getByRole('button', { name: '建立所选面 · 1', exact: true })
     .click();
   doc = await call('get_project');
-  const ring = doc.model.regions[2].id;
   await page.keyboard.press('Control+z');
   check(
     (await call('get_project')).model.regions.length === 2,

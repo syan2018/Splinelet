@@ -34,7 +34,7 @@ import {
   printMM,
   requestedPrintCount,
 } from '@/lib/print-stack.mjs';
-// @ts-ignore Vite's explicit worker import also works through the RSC transform.
+// @ts-expect-error Vite's explicit worker import also works through the RSC transform.
 import ModelWorker from '../../lib/model-worker.ts?worker';
 
 type Props = {
@@ -217,7 +217,8 @@ export default function ModelWorkspace(p: Props) {
       const r = pending.current.get(data.id);
       if (!r) return;
       pending.current.delete(data.id);
-      data.error ? r.reject(Error(data.error)) : r.resolve(data.result);
+      if (data.error) r.reject(Error(data.error));
+      else r.resolve(data.result);
     };
     w.onerror = (e) => {
       setError('几何引擎加载失败：' + e.message);
@@ -724,11 +725,11 @@ export default function ModelWorkspace(p: Props) {
         selectedRegions: selected,
         selectedFeature: featureId,
         partId,
-        regions: regions.map(({ geometry, ...r }) => r),
+        regions: regions.map(({ geometry: _geometry, ...r }) => r),
         preview: preview
           ? {
               candidates: preview.candidates.map(
-                ({ geometry, ...r }: any) => r,
+                ({ geometry: _geometry, ...r }: any) => r,
               ),
               connections: preview.connections,
               warnings: preview.warnings,
@@ -839,7 +840,7 @@ export default function ModelWorkspace(p: Props) {
         !(e.target as HTMLElement).closest('button,summary')
       ) {
         e.preventDefault();
-        action(() => commitPreview());
+        void action(() => commitPreview());
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();

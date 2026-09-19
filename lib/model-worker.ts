@@ -2,7 +2,7 @@ import { evaluateRegions, previewRegion } from './region-engine.mjs';
 import { buildSolid } from './solid-engine.mjs';
 import { export3MF } from './three-mf.mjs';
 import { evaluateCreation, previewCreationBase } from './creation-engine.mjs';
-// @ts-ignore Vite emits the WASM alongside the worker.
+// @ts-expect-error Vite emits the WASM alongside the worker.
 import wasmURL from 'manifold-3d/manifold.wasm?url';
 self.onmessage = async ({ data }) => {
   const { id, action, project, args } = data;

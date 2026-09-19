@@ -261,8 +261,7 @@ module.exports = async (page, fixture) => {
   await page.locator(`[data-tree-object="${chest.id}"]`).click();
   // A whole-object movement projects all eight paths; clicking one visible source
   // must not mistake that dependency set for eight explicitly selected paths.
-  const curve = path.curves[1],
-    t = 0.5;
+  const curve = path.curves[1];
   const p = await point(
     (curve[0].x + 3 * curve[1].x + 3 * curve[2].x + curve[3].x) / 8,
     (curve[0].y + 3 * curve[1].y + 3 * curve[2].y + curve[3].y) / 8,

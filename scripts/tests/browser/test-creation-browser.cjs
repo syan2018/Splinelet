@@ -186,7 +186,7 @@ module.exports = async (page, options = {}) => {
     .getByRole('button', { name: '添加底板并叠放', exact: true })
     .click();
   await settle();
-  let doc = await call('get_project');
+  const doc = await call('get_project');
   check(doc.creation.objects.length === 2, 'base and object stored together');
   check(
     doc.creation.objects.find((o) => o.name === '测试部件').attachId ===
