@@ -24,6 +24,7 @@ import type {
   ModifierScene,
   ModifierCommand,
   SurfaceScope,
+  ModifierControls,
 } from '@/lib/modifier-types';
 
 const operationNames: Record<string, string> = {
@@ -39,6 +40,213 @@ const operationNames: Record<string, string> = {
 
 const curveModifierTypes = new Set(['curve_mirror', 'curve_array', 'fill']);
 const radialTypes = new Set(['radial_array', 'curve_array']);
+
+function ProgramModifierCard({
+  controls,
+  error,
+  note,
+  onCommand,
+}: {
+  controls: ModifierControls;
+  error?: string;
+  note?: string;
+  onCommand: ModifierCommand;
+}) {
+  const [open, setOpen] = useState(false);
+  const { values, type } = controls;
+  const editable = (field: string) =>
+    !controls.locked && controls.editableFields.includes(field);
+  const reason = (field: string) => {
+    const diagnostic = controls.diagnostics
+      .filter((item) => item.field === field)
+      .map((item) => item.message)
+      .join('；');
+    return [
+      controls.locked ? '部件已锁定' : '',
+      controls.drivenFields.includes(field) ? '由参数或表达式驱动' : '',
+      diagnostic,
+    ]
+      .filter(Boolean)
+      .join('；');
+  };
+  const update = (changes: Record<string, unknown>) =>
+    onCommand('modifier_update', {
+      objectId: controls.ownerNodeId,
+      modifierId: controls.operatorId,
+      changes,
+    });
+  const number = (
+    field: 'angleDeg' | 'count' | 'distanceMM',
+    label: string,
+    min: number,
+    max: number,
+    step = 0.1,
+    unit = 'mm',
+  ) => (
+    <ModifierNumber
+      label={label}
+      value={values[field]}
+      min={min}
+      max={max}
+      step={step}
+      unit={unit}
+      disabled={!editable(field)}
+      note={reason(field)}
+      onChange={(value) => update({ [field]: value })}
+    />
+  );
+  const display = (value: number | undefined) => value ?? '未解析';
+  const isRadial = radialTypes.has(type);
+  const centerLabel = isRadial ? '阵列中心' : '镜像中心';
+  const center = values.centerMM;
+  const summary = isRadial
+    ? `${operationNames[type]}：${display(values.count)} 份 · 每 ${display(values.angleDeg)}° · 中心 (${display(center?.x)}, ${display(center?.y)}) mm`
+    : type === 'curve_mirror'
+      ? `曲线镜像：轴 ${display(values.angleDeg)}° · 中心 (${display(center?.x)}, ${display(center?.y)}) mm`
+      : type === 'offset'
+        ? `轮廓偏移 ${display(values.distanceMM)} mm`
+        : type === 'boolean'
+          ? operationNames[values.operation || ''] || '运算未解析'
+          : values.name;
+  return (
+    <article
+      aria-label={values.name}
+      className={
+        'modifier-card ' +
+        (!values.enabled ? 'disabled ' : '') +
+        (error ? 'has-error' : '')
+      }
+      data-modifier-id={controls.operatorId}
+    >
+      <div className="modifier-card-header">
+        <span className="modifier-grip" title="此步骤暂不支持调整顺序">
+          <GripVertical size={14} />
+        </span>
+        <input
+          type="checkbox"
+          checked={values.enabled}
+          disabled={!editable('enabled')}
+          aria-label={'启用 ' + values.name}
+          onChange={(event) => update({ enabled: event.target.checked })}
+        />
+        <button
+          className="modifier-expand"
+          aria-label={'参数 ' + values.name}
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <ModifierName
+          value={values.name}
+          disabled={!editable('name')}
+          onChange={(name) => update({ name })}
+        />
+        <details className="modifier-menu">
+          <summary aria-label={'操作 ' + values.name}>⋯</summary>
+          <div>
+            <button disabled title="此步骤暂不支持调整顺序">
+              上移
+            </button>
+            <button disabled title="此步骤暂不支持调整顺序">
+              下移
+            </button>
+            <button disabled title="此步骤暂不支持删除">
+              删除修改器
+            </button>
+          </div>
+        </details>
+      </div>
+      {!open && (
+        <button className="modifier-summary" onClick={() => setOpen(true)}>
+          {summary}
+        </button>
+      )}
+      {open && (
+        <div className="modifier-parameters">
+          {type === 'boolean' && (
+            <label className="modifier-field">
+              <span>运算</span>
+              <select
+                aria-label={'运算 ' + values.name}
+                value={values.operation ?? ''}
+                disabled={!editable('operation')}
+                onChange={(event) => update({ operation: event.target.value })}
+              >
+                {!['difference', 'intersection', 'union'].includes(
+                  values.operation || '',
+                ) && (
+                  <option value={values.operation ?? ''} disabled>
+                    {values.operation
+                      ? '运算无效：' + values.operation
+                      : '未解析'}
+                  </option>
+                )}
+                {['difference', 'intersection', 'union'].map((operation) => (
+                  <option key={operation} value={operation}>
+                    {operationNames[operation]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {type === 'offset' && number('distanceMM', '轮廓偏移距离', -20, 20)}
+          {isRadial && number('count', '阵列数量', 1, 64, 1, '份')}
+          {(isRadial || type === 'curve_mirror') && (
+            <>
+              {number(
+                'angleDeg',
+                isRadial ? '每份旋转角度' : '镜像轴角度',
+                -360,
+                360,
+                1,
+                '°',
+              )}
+              {(['x', 'y'] as const).map((axis) => (
+                <ModifierNumber
+                  key={axis}
+                  label={centerLabel + ' ' + axis.toUpperCase()}
+                  value={center?.[axis]}
+                  min={-10000}
+                  max={10000}
+                  disabled={!editable('centerMM') || !center}
+                  note={
+                    reason('centerMM') ||
+                    (!center ? '中心未解析，不能以默认坐标覆盖' : '')
+                  }
+                  onChange={(value) => {
+                    if (center)
+                      update({ centerMM: { ...center, [axis]: value } });
+                  }}
+                />
+              ))}
+              <p className="modifier-hint">
+                中心坐标以模型毫米为单位，画布中心为 (0, 0)，Y 轴向上。
+              </p>
+            </>
+          )}
+          <p className="modifier-hint">
+            此处暂不支持更改来源、作用范围和接合参数。
+          </p>
+        </div>
+      )}
+      {controls.locked && (
+        <p className="modifier-hint">部件已锁定，修改器只读。</p>
+      )}
+      {controls.drivenFields.length > 0 && (
+        <p className="modifier-hint">
+          含参数或表达式驱动值，普通数值输入不能解除绑定。
+        </p>
+      )}
+      {error && (
+        <div className="modifier-error" role="alert">
+          <p>此步已暂停：{error}</p>
+        </div>
+      )}
+      {note && note !== error && <p className="modifier-hint">{note}</p>}
+    </article>
+  );
+}
 
 function ModifierStack({
   stack,
@@ -452,6 +660,49 @@ export default function CreationModifiers({
         <p>先选择一个部件或区域，再添加修改器。</p>
       </div>
     );
+  const programStatuses = (scene?.modifierStatus || []).filter(
+    (status) => status.objectId === object.id && status.controls,
+  );
+  if (scene?.modifierModel === 'program' || programStatuses.length) {
+    return (
+      <fieldset
+        className="creation-modifiers"
+        key={object.id}
+        disabled={busy}
+        aria-busy={busy}
+      >
+        <div className="modifier-heading">
+          <strong>{object.name}</strong>
+          <span>修改器</span>
+        </div>
+        <p className="modifier-hint">
+          源线条保持可编辑；在这里调整各步骤的参数。
+        </p>
+        <div className="modifier-stack">
+          {programStatuses.map((status) => (
+            <ProgramModifierCard
+              key={status.modifierId}
+              controls={status.controls!}
+              error={status.error}
+              note={status.note}
+              onCommand={onCommand}
+            />
+          ))}
+        </div>
+        {!programStatuses.length && (
+          <p className="modifier-empty">当前没有可展示的修改器参数。</p>
+        )}
+        <button className="modifier-add" disabled title="暂不支持添加新步骤">
+          <Plus size={15} />
+          添加修改器
+        </button>
+        <p className="modifier-hint">
+          当前支持编辑已有步骤的名称、启用状态及参数，暂不支持增删和排序。
+        </p>
+        <p className="modifier-output">输出面 → 按“颜色与高低”中的厚度拉伸</p>
+      </fieldset>
+    );
+  }
   const type = ['difference', 'union', 'intersection'].includes(kind)
     ? 'boolean'
     : kind;

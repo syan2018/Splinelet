@@ -11,6 +11,24 @@ export type CurvePreview = {
 export type SurfaceRef = { key: string; name: string; topology?: string };
 export type SurfaceScope = { kind: 'all' | 'selected'; refs?: SurfaceRef[] };
 export type SurfaceOption = { ref: SurfaceRef; name: string };
+export type ModifierControls = {
+  operatorId: string;
+  ownerNodeId: string;
+  type: string;
+  values: {
+    name: string;
+    enabled: boolean;
+    angleDeg?: number;
+    centerMM?: { x: number; y: number };
+    count?: number;
+    distanceMM?: number;
+    operation?: string;
+  };
+  editableFields: readonly string[];
+  drivenFields: readonly string[];
+  diagnostics: readonly { field: string; message: string }[];
+  locked: boolean;
+};
 export type ModifierInputRef = {
   kind: 'path' | 'region' | 'object';
   id: string;
@@ -61,6 +79,7 @@ export type ModifierCell = {
   targetTopology?: string;
 };
 export type ModifierScene = {
+  modifierModel?: 'program';
   curvePreviews?: CurvePreview[];
   errors?: { objectId: string; message: string; pathIds?: string[] }[];
   creation: { objects: ModifierObject[] };
@@ -70,6 +89,7 @@ export type ModifierScene = {
     objectId: string;
     modifierId: string;
     inputOptions: SurfaceOption[];
+    controls?: ModifierControls;
     error?: string;
     note?: string;
   }[];

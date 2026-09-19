@@ -334,7 +334,7 @@ const workerCapture = workerSession.capture({
   domains: ['curves'],
 });
 assert.equal(workerCapture.snapshot.published['shape:curves'].status, 'empty');
-worker.terminate();
+await worker.terminate();
 
 console.log(
   'PASS: V4 worker protocol rejects stale identities, isolates domains, preserves valid stages, and transports a pure evaluator snapshot through worker_threads',

@@ -1,0 +1,192 @@
+#!/usr/bin/env node
+// Real original component + V4 session, on a fresh context and ephemeral port.
+const assert = require('node:assert/strict');
+const { mkdir, writeFile } = require('node:fs/promises');
+const { resolve } = require('node:path');
+const { chromium } = require('playwright');
+
+const root = resolve(__dirname, '../../../..');
+const output = resolve(root, 'output/playwright/v4-original-modifier-controls');
+
+async function main() {
+  const { createServer } = await import('vite');
+  const server = await createServer({
+    configFile: false,
+    root,
+    publicDir: false,
+    resolve: { alias: { '@': resolve(root, 'src') } },
+    server: {
+      host: '127.0.0.1',
+      port: 0,
+      watch: {
+        ignored: ['**/src-tauri/target/**', '**/dist/**', '**/output/**'],
+      },
+    },
+    plugins: [
+      {
+        name: 'isolated-modifier-fixture',
+        configureServer(devServer) {
+          devServer.middlewares.use(async (req, res, next) => {
+            if (req.url !== '/') return next();
+            const html = await devServer.transformIndexHtml(
+              '/',
+              '<!doctype html><html><head><meta charset="utf-8"><title>原修改器组件验收</title><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="/scripts/tests/fixtures/v4-modifier-controls.mjs"></script></body></html>',
+            );
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.end(html);
+          });
+        },
+      },
+    ],
+  });
+  let browser;
+  let page;
+  const failures = [];
+  await mkdir(output, { recursive: true });
+  try {
+    await server.listen();
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({
+      viewport: { width: 1000, height: 900 },
+    });
+    page = await context.newPage();
+    page.on('pageerror', (error) => failures.push(error.message));
+    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/`);
+    await page.locator('#evidence[data-ready="true"]').waitFor();
+    const evidence = async () =>
+      JSON.parse(await page.locator('#evidence').textContent());
+    const waitRevision = async (revision) => {
+      await page.waitForFunction((before) => {
+        const element = document.getElementById('evidence');
+        return (
+          element?.dataset.ready === 'true' &&
+          JSON.parse(element.textContent).revision > before
+        );
+      }, revision);
+      assert.equal(await page.locator('#fixture-error').textContent(), '');
+    };
+    assert.equal(
+      await page.locator('.modifier-card').count(),
+      1,
+      'V4 operator appears in original card',
+    );
+    assert.equal(
+      await page.getByText('当前直接使用基础面。', { exact: true }).count(),
+      0,
+    );
+    const card = page.locator('.modifier-card');
+    assert.equal(
+      await card.evaluate((el) => getComputedStyle(el).borderRadius),
+      '9px',
+    );
+    assert.equal(
+      await card
+        .locator('.modifier-card-header')
+        .evaluate((el) => getComputedStyle(el).display),
+      'flex',
+    );
+    await card.locator('.modifier-expand').click();
+    const angle = page.getByRole('spinbutton', {
+      name: '镜像轴角度',
+      exact: true,
+    });
+    assert.ok(Math.abs(Number(await angle.inputValue()) - 135) < 1e-8);
+    assert.equal(
+      await page
+        .getByRole('spinbutton', { name: '镜像中心 X', exact: true })
+        .inputValue(),
+      '17',
+    );
+    let before = await evidence();
+    await angle.fill('120');
+    await angle.press('Enter');
+    await waitRevision(before.revision);
+    const changed = await evidence();
+    assert.ok(Math.abs(changed.angleRad - Math.PI / 6) < 1e-8);
+    assert.equal(changed.rawUnchanged, true);
+    assert.equal(changed.revision, before.revision + 1);
+    before = changed;
+    await page.getByRole('button', { name: '测试撤销', exact: true }).click();
+    await waitRevision(before.revision);
+    assert.equal((await evidence()).baselineRestored, true);
+
+    before = await evidence();
+    await card.getByRole('checkbox').uncheck();
+    await waitRevision(before.revision);
+    assert.equal((await evidence()).enabled, false);
+    before = await evidence();
+    await page.getByRole('button', { name: '测试撤销', exact: true }).click();
+    await waitRevision(before.revision);
+    assert.equal((await evidence()).baselineRestored, true);
+
+    before = await evidence();
+    await page
+      .getByRole('button', { name: '测试参数驱动', exact: true })
+      .click();
+    await waitRevision(before.revision);
+    assert.equal(await angle.isDisabled(), true);
+    assert.ok(Math.abs(Number(await angle.inputValue()) - 150) < 1e-8);
+    before = await evidence();
+    await page
+      .getByRole('button', { name: '测试缺失参数', exact: true })
+      .click();
+    await waitRevision(before.revision);
+    assert.equal(
+      await angle.inputValue(),
+      '',
+      'missing parameter must not turn into 90 or zero',
+    );
+    assert.equal(await angle.isDisabled(), true);
+    assert.deepEqual((await evidence()).angleRad, {
+      kind: 'parameter',
+      id: 'angle',
+    });
+    await page.screenshot({
+      path: resolve(output, 'missing-parameter.png'),
+      fullPage: true,
+    });
+
+    before = await evidence();
+    await page.getByRole('button', { name: '测试锁定', exact: true }).click();
+    await waitRevision(before.revision);
+    assert.equal(await card.getByRole('checkbox').isDisabled(), true);
+    assert.equal(
+      await page
+        .getByRole('spinbutton', { name: '镜像中心 X', exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.deepEqual(failures, []);
+    await writeFile(
+      resolve(output, 'result.json'),
+      JSON.stringify(
+        {
+          passed: true,
+          scope:
+            'original modifier component and V4 session; not default workspace or native file acceptance',
+          evidence: await evidence(),
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      'PASS original modifier DOM: V4 values, real edit and undo, parameter binding, missing value and lock',
+    );
+  } catch (error) {
+    if (page)
+      await page
+        .screenshot({ path: resolve(output, 'failure.png'), fullPage: true })
+        .catch(() => {});
+    console.error(failures);
+    throw error;
+  } finally {
+    await browser?.close();
+    await server.close();
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

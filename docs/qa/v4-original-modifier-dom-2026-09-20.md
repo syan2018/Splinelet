@@ -1,0 +1,22 @@
+# 原修改器组件接线验证
+
+日期：2026-09-20。范围：原组件接入 V4 参数及旧工作区行为回归；不是默认 V4 工作区或原生文件签收。
+
+原 `CreationModifiers` 现在直接读取 `modifierStatus.controls`，沿用原卡片、数值输入和 CSS。构造图使用明确的 `modifierModel` 标记，不伪造旧列表、来源或作用范围。驱动值只读；缺失参数不显示默认角度或零坐标；锁定部件禁止提交。新增、删除、排序、来源和作用范围的 V4 接线仍未完成。
+
+`node scripts/tests/browser/smoke/test-v4-original-modifier-controls.cjs` 在临时端口和全新 context 中挂载真实原组件、原样式与真实 V4 会话。实际输入 120° 后正确写入旋转部件的局部角度，原 Sketch 不变，一次撤销恢复完整 Document；启用切换、参数驱动、缺失参数和锁定均通过。测试还断言原卡片圆角和布局样式。证据：`output/playwright/v4-original-modifier-controls/result.json` 与同目录截图。此 fixture 不访问应用草稿或用户文件。
+
+旧修改器用例曾假设 Sandrone 文件的初始作用范围为全部，实际上文件保存的是选定区域，并可能抢先读取启动工程。本次让测试等待实际文件中的修改器内容，再明确建立全部区域的撤销起点。相交运算改变拓扑时，按已有输出契约检查暂停、可见诊断及恢复原运算后的修复，不再访问不存在的旧区域。拖放测试使用足够高的 viewport 并收起参数，防止面板滚动令自动化拖起另一张卡片；原产品拖放实现没有修改。草稿状态断言同步当前文案。
+
+以下两项均通过，每项 16 个行为断言：
+
+```sh
+pnpm test:browser --suite legacy --case modifiers --target desktop-frontend --port 4197 --output outputs/v4-qa/original-modifier-legacy-tall-2026-09-20
+pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --inspector-port 9258 --output outputs/v4-qa/original-modifier-legacy-web-2026-09-20
+```
+
+覆盖实际 Sandrone 的范围、撤销、启停、重命名、拓扑暂停/修复、数值取消、拖动及菜单排序、删除、嵌套构造、草稿刷新恢复和源曲线不变。两项仍运行原后端，不能据此声称 V4 全流程完成。
+
+`pnpm check:all` 退出码 0，89 项 hermetic 单元测试、类型、lint、格式、Rust 格式与编译及双端构建通过；日志为 `outputs/v4-qa/check-all-original-modifier-dom-2026-09-20.log`。随后调整阶段提示文字及浏览器测试，重新执行双端构建、组件浏览器验证、全库 lint/格式及上述双端旧流程验证。CommonJS 浏览器脚本的 lint override 处理 Node 模块函数解构误报；产品规则不变，Worker 单测明确等待 terminate。
+
+默认根入口仍使用原 UI 的旧后端。完整 goal 保持进行中。

@@ -57,7 +57,8 @@
     {
       "files": ["scripts/tests/browser/**/*.cjs"],
       "rules": {
-        "typescript/no-require-imports": "off"
+        "typescript/no-require-imports": "off",
+        "typescript/unbound-method": "off"
       }
     },
     {

@@ -412,6 +412,7 @@ export function projectCreationView(document, snapshot) {
     cells,
     errors,
     diagnostics,
+    modifierModel: 'program',
     modifierStatus,
     connections: [],
     closures: [],

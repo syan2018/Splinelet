@@ -167,16 +167,7 @@ type CreationScene = Omit<
     topMM: number;
     message?: string;
   }[];
-  modifierStatus?: {
-    objectId: string;
-    modifierId: string;
-    inputOptions: {
-      ref: { key: string; name: string; topology?: string };
-      name: string;
-    }[];
-    error?: string;
-    note?: string;
-  }[];
+  modifierStatus?: ModifierScene['modifierStatus'];
 };
 type SolidReport = {
   valid: boolean;
