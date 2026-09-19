@@ -32,6 +32,8 @@ Splinelet 使用单一前端工程，共享 React 应用、领域模型和 Worke
 
 `app/page.tsx` 与 `src/desktop/main.tsx` 都引用 `src/components/studio/studio-entry.tsx`，共同加载原有 `studio-app.tsx`。V4 重构在原工作区的数据与命令边界接入，URL 参数不替换整套界面。客户端边界放在共享组件上，Web 路由不承担应用实现，桌面入口不导入 Web 路由组件。`@/*` 映射到 `src/*`。
 
+平面创作与建模面板的 Worker 请求生命周期共用 `src/lib/evaluation/worker-client.mjs`：负责请求配对、发送失败、引擎失效与关闭清理；不拥有工程状态，也不决定求值结果是否仍对应当前工程。工程 revision 与失效结果过滤仍由调用方负责，不能在传输层写回工程。
+
 `src/lib/platform/index.mjs` 提供跨平台下载分派，并导出桌面能力；`desktop.mjs` 封装 Tauri API，`browser.mjs` 负责浏览器下载。工程绑定、打开、保存与恢复的编排仍留在共享应用中。继续提取时应按行为边界拆分，不复制两套保存状态，不改变 `window.traceStudio.call`。
 
 Rust 的 `lib.rs` 装配应用，`commands.rs` 定义 IPC，`files.rs` 管理路径授权与原子文件操作，`open_files.rs` 处理命令行和单实例文件打开。拆分不改变命令名、授权规则和事件协议。

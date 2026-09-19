@@ -32,6 +32,7 @@ import {
 } from '@/lib/model-schema.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
+import { createWorkerClient } from '@/lib/evaluation/worker-client.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
 import ReliefView from './relief-view';
 import NumberEdit from '../shared/creation-number';
@@ -144,10 +145,6 @@ type DeleteRequest = { rs: string[]; fs: string[] };
 type View = { x: number; y: number; s: number };
 type Gesture = { x: number; y: number; base: View };
 type ResizeDrag = { x: number; width: number };
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-};
 type ModelApi = {
   state: (input?: unknown) => unknown;
   [action: string]: (input?: unknown) => unknown;
@@ -272,9 +269,7 @@ export default function ModelWorkspace(p: Props) {
   const model = useMemo(() => modelFor(p.project), [p.project]),
     ref = useRef(p);
   ref.current = p;
-  const worker = useRef<Worker | null>(null),
-    pending = useRef(new Map<number, PendingRequest>()),
-    seq = useRef(0),
+  const engine = useRef<ReturnType<typeof createWorkerClient> | null>(null),
     [boot, setBoot] = useState(0);
   const [regions, setRegions] = useState<ComputedRegion[]>([]),
     [result, setResult] = useState<Solid | null>(null),
@@ -353,24 +348,14 @@ export default function ModelWorkspace(p: Props) {
     action: string,
     args: Record<string, unknown> = {},
     project = ref.current.project,
-  ) =>
-    new Promise<T>((resolve, reject) => {
-      if (!worker.current) {
-        reject(Error('几何引擎尚未准备好'));
-        return;
-      }
-      const id = ++seq.current;
-      pending.current.set(id, {
-        resolve: (value) => resolve(value as T),
-        reject,
-      });
-      worker.current.postMessage({
-        id,
-        action,
-        project: { ...project, image: '' },
-        args,
-      });
-    });
+  ): Promise<T> =>
+    engine.current
+      ? (engine.current.request({
+          action,
+          project: { ...project, image: '' },
+          args,
+        }) as Promise<T>)
+      : Promise.reject(Error('几何引擎尚未准备好'));
   useEffect(() => {
     const w = new Worker(
         new URL('../../lib/model-worker.ts', import.meta.url),
@@ -378,28 +363,15 @@ export default function ModelWorkspace(p: Props) {
           type: 'module',
         },
       ),
-      pendingRequests = pending.current;
-    worker.current = w;
-    w.onmessage = ({ data }) => {
-      const r = pendingRequests.get(data.id);
-      if (!r) return;
-      pendingRequests.delete(data.id);
-      if (data.error) r.reject(Error(data.error));
-      else r.resolve(data.result);
-    };
-    w.onerror = (e) => {
-      setError('几何引擎加载失败：' + e.message);
-      for (const q of pendingRequests.values())
-        q.reject(Error('几何引擎加载失败'));
-      pendingRequests.clear();
-    };
+      client = createWorkerClient(w, {
+        onError: (error: Error) =>
+          setError('几何引擎加载失败：' + error.message),
+      });
+    engine.current = client;
     queueMicrotask(() => setBoot(1));
     return () => {
-      w.terminate();
-      worker.current = null;
-      for (const q of pendingRequests.values())
-        q.reject(Error('工作空间已关闭'));
-      pendingRequests.clear();
+      engine.current = null;
+      client.close(Error('工作空间已关闭'));
     };
   }, []);
   useEffect(() => {

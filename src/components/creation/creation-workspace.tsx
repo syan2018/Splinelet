@@ -28,6 +28,7 @@ import {
 } from '@/lib/creation-schema.mjs';
 import { creationCommand } from '@/lib/creation-commands.mjs';
 import { bindSurfaceGraphs } from '@/lib/surface-lineage.mjs';
+import { createWorkerClient } from '@/lib/evaluation/worker-client.mjs';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
@@ -205,10 +206,6 @@ type PendingRoleResult = {
 type DragState = { y: number; value: number } | { slider: true };
 type PaintDrag = { keys: Set<string>; swatchId: string };
 type MoveState = { paths?: string[]; objects?: string[] };
-type WorkerRequest = {
-  resolve: (value: ModelResult) => void;
-  reject: (reason?: unknown) => void;
-};
 type CreationApi = {
   state: () => unknown;
   inspect: (getProject?: () => Project) => Promise<unknown>;
@@ -348,9 +345,7 @@ export default function CreationWorkspace(p: Props) {
       throw Error('区域引擎尚未准备好');
     }),
     pendingRoleResult = useRef<PendingRoleResult | null>(null),
-    sequence = useRef(0),
-    worker = useRef<Worker | null>(null),
-    requests = useRef(new Map<number, WorkerRequest>());
+    engine = useRef<ReturnType<typeof createWorkerClient> | null>(null);
   const [boot, setBoot] = useState(false),
     [engineCalculating, setCalculating] = useState(false),
     [evaluatedProject, setEvaluatedProject] = useState<Project | null>(null),
@@ -504,44 +499,24 @@ export default function CreationWorkspace(p: Props) {
     action: string,
     args: Record<string, unknown> = {},
     project = ref.current.project,
-  ) =>
-    new Promise<ModelResult>((resolve, reject) => {
-      if (!worker.current) {
-        reject(Error('几何引擎尚未准备好'));
-        return;
-      }
-      const id = ++sequence.current;
-      requests.current.set(id, { resolve, reject });
-      worker.current.postMessage({
-        id,
-        action,
-        args,
-        project: { ...project, image: '' },
-      });
-    });
+  ): Promise<ModelResult> =>
+    engine.current
+      ? (engine.current.request({
+          action,
+          args,
+          project: { ...project, image: '' },
+        }) as Promise<ModelResult>)
+      : Promise.reject(Error('几何引擎尚未准备好'));
   useEffect(() => {
-    const w = new ModelWorker() as Worker;
-    const pendingRequests = requests.current;
-    worker.current = w;
-    w.onmessage = ({ data }) => {
-      const r = pendingRequests.get(data.id);
-      if (!r) return;
-      pendingRequests.delete(data.id);
-      if (data.error) r.reject(Error(String(data.error)));
-      else r.resolve(data.result as ModelResult);
-    };
-    w.onerror = () => {
-      setError('区域引擎加载失败，请刷新后重试');
-      for (const r of pendingRequests.values()) r.reject(Error('引擎加载失败'));
-      pendingRequests.clear();
-    };
+    const client = createWorkerClient(new ModelWorker(), {
+      onError: () => setError('区域引擎加载失败，请刷新后重试'),
+    });
+    engine.current = client;
     const timer = window.setTimeout(() => setBoot(true));
     return () => {
       window.clearTimeout(timer);
-      w.terminate();
-      worker.current = null;
-      for (const r of pendingRequests.values()) r.reject(Error('工作台已关闭'));
-      pendingRequests.clear();
+      engine.current = null;
+      client.close(Error('工作台已关闭'));
     };
   }, []);
   useEffect(() => {
