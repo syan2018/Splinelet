@@ -3,6 +3,7 @@ import { resolveRelief } from '../relief/resolve.mjs';
 import { resolveManufacturing } from '../manufacturing/placement.mjs';
 import { worldMatrix } from '../scene/transforms.mjs';
 import { buildBodies } from '../solid/bodies.mjs';
+import { evaluateExportViews } from '../export/views.mjs';
 
 const absent = (domain) => ({
   domain,
@@ -60,6 +61,10 @@ export async function evaluateDocument(document, options = {}) {
     ? await buildBodies(placedRelief, options.solidOptions)
     : absent('bodies');
   return Object.freeze({
+    ...evaluateExportViews(document, {
+      source: requested.has('curves'),
+      regions,
+    }),
     curves,
     regions,
     relief,
