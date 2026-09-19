@@ -4,6 +4,7 @@ import {
   proposeAssignmentInheritance,
 } from '../../construction/provenance.mjs';
 import { effectiveNodeState } from '../../scene/hierarchy.mjs';
+import { createCommandIdAllocator } from '../command-ids.mjs';
 
 const clone = (value) => structuredClone(value);
 const identity = () => [1, 0, 0, 1, 0, 0];
@@ -28,26 +29,6 @@ const operator = (id, type, name, inputs, params) => ({
   params,
 });
 const selected = (targets) => ({ kind: 'selected', refs: clone(targets) });
-
-const collectIds = (value, ids = new Set(), seen = new Set()) => {
-  if (!value || typeof value !== 'object' || seen.has(value)) return ids;
-  seen.add(value);
-  if (typeof value.id === 'string') ids.add(value.id);
-  for (const child of Object.values(value)) collectIds(child, ids, seen);
-  return ids;
-};
-
-const createIdAllocator = (document, idFactory) => {
-  if (typeof idFactory !== 'function') throw Error('idFactory 必须是函数');
-  const ids = collectIds(document);
-  return () => {
-    const id = idFactory();
-    if (typeof id !== 'string' || !id || ids.has(id))
-      throw Error('idFactory 返回了无效或重复 ID');
-    ids.add(id);
-    return id;
-  };
-};
 
 const requireCurrentTargets = (document, targets) => {
   if (!Array.isArray(targets)) throw Error('区域目标必须是 OutputRef 数组');
@@ -233,7 +214,7 @@ export function createRegionCommand(action) {
     const targets = clone(request.targets);
     const current = requireCurrentTargets(document, targets);
     const cutter = requireCutter(document, current.ownerNodeId, request.cutter);
-    const allocateId = createIdAllocator(document, idFactory);
+    const allocateId = createCommandIdAllocator(document, idFactory);
     const oldOutput = portInput(current.program.outputs.regions);
     let cutterInput = cutter;
 

@@ -15,6 +15,7 @@ import { evaluateProgram } from '../../construction/document-evaluation.mjs';
 import { sameOutputRef } from '../../relief/appearance.mjs';
 import { firstPaintPlan } from '../../relief/assignments.mjs';
 import { createRegionCommand } from './regions.mjs';
+import { createAppendBoundaryCommand } from './append-boundary.mjs';
 import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
 import { createSourceTransferCommand } from './source-transfer.mjs';
 import { createResourceCommand, RESOURCE_ACTIONS } from './resources.mjs';
@@ -287,6 +288,8 @@ export function createAuthoringCommand(action) {
   const request = structuredClone(action);
   return (document, { idFactory }) => {
     const action = request;
+    if (action.kind === 'append-boundary')
+      return createAppendBoundaryCommand(action)(document, { idFactory });
     if (action.kind === 'transfer-source')
       return createSourceTransferCommand(action)(document, { idFactory });
     if (RESOURCE_ACTIONS.includes(action.kind))

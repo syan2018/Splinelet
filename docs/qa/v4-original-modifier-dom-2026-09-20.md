@@ -172,3 +172,11 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 最终 `pnpm check:all` 退出 0，102 项单测、类型/lint/格式、Rust 检查和双端构建通过，日志 `outputs/v4-qa/check-all-original-trace-candidates-2026-09-20.log`。完整原根浏览器复测通过，包含候选区域实际点击及描绘结果保存；页面和控制台无错误。
 
 无 host 的默认桌面前端另行通过 `selection-scope` 回归，覆盖原选区属性、颜色草稿切换和实体导出流程；证据 `outputs/v4-qa/original-trace-selection-2026-09-20/manifest.json`。
+
+## 2026-09-20 高级部件追加轮廓的命令基础
+
+`append-boundary` 接已有未消费的闭合 PathRef，保留旧程序，通过独立 Source/Fill 与区域、曲线汇总发布新增结果。curve-collect 保留原曲线、实例和 Join 身份，拒绝重复身份；默认修改器列表隐藏结构性汇总。区域命令与追加命令共用防冲突 ID 分配器，防止覆盖旧算子。
+
+`node scripts/tests/unit/test-v4-append-boundary.mjs output/agent-emblem/sandrone-gold-emblem.spl` 通过内置 Sandrone、金色徽章和重复纹样 fixture；检查旧区域/曲线身份与几何、原始源、算子、外观/浮雕/制造赋值、一次撤销/重做，以及开放线、重复消费、锁定、ID 冲突拒绝。局部坐标 identity 计算允许 IEEE -0 与 +0 等价，其余定义与身份精确比较。原根角色绘制尚未接入该命令。
+
+类型、lint 和全部 103 项单测通过，日志 `outputs/v4-qa/check-all-append-boundary-2026-09-20.log`。该次全量命令随后因补充测试断言时的格式检查未通过而停止；格式修正及该测试复跑通过，接续的全库格式、Rust 格式/检查、Web/Desktop 构建均退出 0，日志 `outputs/v4-qa/check-append-boundary-remaining-2026-09-20.log`。没有将该命令基础作为新增浏览器或默认入口旅程签收。

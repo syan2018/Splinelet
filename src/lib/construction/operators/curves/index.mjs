@@ -290,6 +290,58 @@ export function copyCurveOperator(operator, { idMap = {} } = {}) {
   return copied;
 }
 
+/** Combine published branches without introducing instances or losing Join topology. */
+export const curveCollectOperator = {
+  type: 'curve-collect',
+  inputPorts: { input: { domain: 'curves', min: 0 } },
+  outputPorts: { curves: { domain: 'curves' } },
+  validateParams: (params) =>
+    Object.keys(params || {}).length === 0 || 'curve-collect 不接受几何参数',
+  rebase: (operator) => clone(operator),
+  copy: copyCurveOperator,
+  evaluate: ({ ownerNodeId, inputs }) => {
+    const values = inputs.input || [];
+    const dependencies = values.flatMap((value) => value.dependencies || []);
+    if (values.some((value) => !['ready', 'empty'].includes(value.status)))
+      return {
+        curves: blocked(
+          'collect-blocked',
+          '汇总曲线存在不可用的输入',
+          dependencies,
+        ),
+      };
+    const curves = values.flatMap((value) => value.value?.curves || []);
+    const junctions = values.flatMap((value) => value.value?.junctions || []);
+    const keys = curves.flatMap((curve) => curve.edges.map((edge) => edge.key));
+    if (
+      new Set(keys).size !== keys.length ||
+      new Set(curves.map((curve) => curve.key)).size !== curves.length ||
+      new Set(junctions.map((junction) => junction.id)).size !==
+        junctions.length
+    )
+      return {
+        curves: blocked(
+          'duplicate-source',
+          '汇总输入重复包含曲线或接合身份',
+          dependencies,
+        ),
+      };
+    return {
+      curves: stage(
+        curves.length ? 'ready' : 'empty',
+        curveSet(
+          ownerNodeId,
+          clone(curves),
+          clone(junctions),
+          values.flatMap((value) => clone(value.value?.provenance || [])),
+        ),
+        values.flatMap((value) => clone(value.diagnostics || [])),
+        dependencies,
+      ),
+    };
+  },
+};
+
 export const sourceOperator = {
   type: 'source',
   inputPorts: { paths: { domain: 'curves', min: 1 } },
@@ -622,6 +674,7 @@ export const joinOperator = {
 
 export const curveOperatorSpecifications = [
   sourceOperator,
+  curveCollectOperator,
   curveReferenceOperator,
   curveTransformOperator,
   curveMirrorOperator,

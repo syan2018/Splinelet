@@ -123,7 +123,12 @@ const operatorStatus = (document, snapshot, node) => {
   const program = document.programs[node.programId];
   if (!program) return [];
   return Object.values(program.operators)
-    .filter((operator) => !['source', 'fill'].includes(operator.type))
+    .filter(
+      (operator) =>
+        !['source', 'fill', 'curve-collect', 'region-collect'].includes(
+          operator.type,
+        ),
+    )
     .map((operator) => {
       const component =
         snapshot?.planar?.components?.[`operator:${operator.id}`];

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   copyCurveOperator,
+  curveCollectOperator,
   curveArrayOperator,
   curveMirrorOperator,
   curveOperatorSpecifications,
@@ -68,6 +69,7 @@ assert.deepEqual(
   curveOperatorSpecifications.map((spec) => spec.type),
   [
     'source',
+    'curve-collect',
     'curve-reference',
     'curve-transform',
     'curve-mirror',
@@ -214,6 +216,47 @@ const joined = run(
   array,
 );
 assert.equal(joined.value.junctions.length, 4);
+const collected = curveCollectOperator.evaluate({
+  ownerNodeId: 'shape-b',
+  inputs: { input: [joined] },
+}).curves;
+assert.deepEqual(
+  collected,
+  joined,
+  'collect preserves Join identity and topology',
+);
+assert.notEqual(
+  collected.value,
+  joined.value,
+  'collected geometry is independently owned',
+);
+assert.deepEqual(
+  fillCurves(collected.value, { joinToleranceMM: 0.001 }),
+  fillCurves(joined.value, { joinToleranceMM: 0.001 }),
+  'collect retains the closure provided by Join',
+);
+assert.equal(
+  curveCollectOperator.evaluate({
+    ownerNodeId: 'shape-b',
+    inputs: { input: [joined, joined] },
+  }).curves.status,
+  'blocked',
+  'repeated branches must not create duplicate identities',
+);
+assert.equal(
+  curveCollectOperator.evaluate({
+    ownerNodeId: 'shape-b',
+    inputs: { input: [] },
+  }).curves.status,
+  'empty',
+);
+assert.equal(
+  curveCollectOperator.evaluate({
+    ownerNodeId: 'shape-b',
+    inputs: { input: [{ status: 'blocked', dependencies: ['missing'] }] },
+  }).curves.status,
+  'blocked',
+);
 assert.deepEqual(joined.value.junctions[0].endpoints[0], {
   edgeKey: 'path-a:0:e@array:0',
   end: 'end',
