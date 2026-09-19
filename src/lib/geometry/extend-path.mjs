@@ -32,9 +32,15 @@ export function extendPath(document, action, { idFactory }) {
   const sketch = document.sketches[action.sketchId];
   const path = sketch?.paths[action.pathId];
   const end = action.end ?? 'end';
-  if (!path?.edges.length || !['start', 'end'].includes(end))
+  if (
+    !path ||
+    (!path.edges.length && !path.startVertexId) ||
+    !['start', 'end'].includes(end)
+  )
     throw Error('请选择开放路径的头或尾');
-  let first, last;
+  if (!path.edges.length && action.close) throw Error('至少先绘制一段曲线');
+  let first = path.edges.length ? undefined : path.startVertexId;
+  let last = first;
   for (const use of path.edges) {
     const edge = sketch.edges[use.edgeId];
     if (!edge) throw Error('路径引用的曲线段不存在');
@@ -44,7 +50,7 @@ export function extendPath(document, action, { idFactory }) {
     first ??= from;
     last = to;
   }
-  if (first === last) throw Error('闭合路径不能续画');
+  if (path.edges.length && first === last) throw Error('闭合路径不能续画');
   const fromId = end === 'start' ? first : last;
   const toId = end === 'start' ? last : first;
   const from = position(document, sketch, fromId);
@@ -92,6 +98,7 @@ export function extendPath(document, action, { idFactory }) {
   const use = { edgeId, reversed: false };
   if (end === 'start' && !action.close) path.edges.unshift(use);
   else path.edges.push(use);
+  delete path.startVertexId;
   return {
     document,
     changedRefs: [

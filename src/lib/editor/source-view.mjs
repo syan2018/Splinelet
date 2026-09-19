@@ -277,7 +277,9 @@ const projectPath = (document, sketch, pathValue, sourceFrame, identities) => {
     );
   }
 
-  const closed = previousEnd === orientedVertices[0];
+  if (!pathValue.edges.length && pathValue.startVertexId)
+    orientedVertices.push(pathValue.startVertexId);
+  const closed = curves.length > 0 && previousEnd === orientedVertices[0];
   if (closed) nodeModes[0] = mergeMode(nodeModes[0], nodeModes.pop());
   const anchorVertexIds = closed
     ? orientedVertices.slice(0, -1)
@@ -288,9 +290,11 @@ const projectPath = (document, sketch, pathValue, sourceFrame, identities) => {
       pathValue.handleModes?.[vertexId],
     );
   });
-  const anchors = closed
-    ? curves.map((cubic) => cubic[0])
-    : [curves[0][0], ...curves.map((cubic) => cubic[3])];
+  const anchors = !curves.length
+    ? [projectPoint(vertexValue(document, sketch, pathValue.startVertexId))]
+    : closed
+      ? curves.map((cubic) => cubic[0])
+      : [curves[0][0], ...curves.map((cubic) => cubic[3])];
   const anchorIds = anchorVertexIds.map((vertexId) => {
     const anchorRef = {
       kind: 'vertex',
@@ -314,7 +318,7 @@ const projectPath = (document, sketch, pathValue, sourceFrame, identities) => {
     name: pathValue.name,
     color: pathColor(id),
     curves,
-    start: curves[0][0],
+    start: anchors[0],
     closed,
     visible: pathValue.visible && state.visible,
     locked: state.locked,
@@ -361,7 +365,7 @@ export function projectSourceView(document, frame) {
         name: pathValue.name,
         reason,
       });
-      if (!pathValue.edges.length) {
+      if (!pathValue.edges.length && !pathValue.startVertexId) {
         unavailablePaths.push(unavailable('empty'));
         continue;
       }

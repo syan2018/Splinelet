@@ -28,6 +28,14 @@ const sourceClosure = (document, sourceSketchId, selectedPathIds) => {
     for (const pathId of paths) {
       const path = source.paths[pathId];
       if (!path) throw Error(`转移闭包包含不存在的 Path: ${pathId}`);
+      if (path.startVertexId !== undefined) {
+        if (!source.vertices[path.startVertexId])
+          throw Error(
+            `转移闭包中的 Path ${pathId} 引用了不存在的 Vertex: ${path.startVertexId}`,
+          );
+        if (!vertices.has(path.startVertexId)) changed = true;
+        vertices.add(path.startVertexId);
+      }
       for (const use of path.edges) {
         const edge = source.edges[use.edgeId];
         if (!edge)
@@ -55,7 +63,11 @@ const sourceClosure = (document, sourceSketchId, selectedPathIds) => {
       edges.add(edge.id);
     }
     for (const [pathId, path] of Object.entries(source.paths)) {
-      if (!path.edges.some((use) => edges.has(use.edgeId)) || paths.has(pathId))
+      if (
+        paths.has(pathId) ||
+        (!path.edges.some((use) => edges.has(use.edgeId)) &&
+          !vertices.has(path.startVertexId))
+      )
         continue;
       paths.add(pathId);
       changed = true;

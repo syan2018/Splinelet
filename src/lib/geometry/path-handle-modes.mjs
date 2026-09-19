@@ -16,6 +16,10 @@ const edgeEnd = (edge, atStart) =>
     : { vertexId: edge.endVertexId, handle: handle(edge.id, 'end') };
 
 const pathSlots = (sketch, path) => {
+  if (!path.edges.length && path.startVertexId) {
+    if (!sketch.vertices[path.startVertexId]) throw Error('Path 起点不存在');
+    return [{ vertexId: path.startVertexId, incoming: null, outgoing: null }];
+  }
   const slots = [];
   for (const use of path.edges) {
     const edge = sketch.edges[use.edgeId];

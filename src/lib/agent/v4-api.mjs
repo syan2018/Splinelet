@@ -24,6 +24,7 @@ const AUTHORING_ACTIONS = Object.freeze([
   'close-path',
   'create-shape',
   'draw-path',
+  'start-path',
   'extend-path',
   'group-nodes',
   'move-nodes',

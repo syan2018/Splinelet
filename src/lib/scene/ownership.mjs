@@ -183,6 +183,9 @@ export function copyNodes(
           ...use,
           edgeId: mapped(use.edgeId),
         })),
+        ...(path.startVertexId === undefined
+          ? {}
+          : { startVertexId: mapped(path.startVertexId) }),
         ...(path.handleModes
           ? {
               handleModes: Object.fromEntries(

@@ -6,8 +6,16 @@ import {
   LegacyImportError,
 } from '../../../src/lib/document/import/legacy-import.mjs';
 import { validateDocument } from '../../../src/lib/document/schema.mjs';
+import {
+  decodeDocument,
+  encodeDocument,
+} from '../../../src/lib/document/codec.mjs';
 import { resolveSketch } from '../../../src/lib/geometry/sketch.mjs';
 import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
+import {
+  transformPoint,
+  worldMatrix,
+} from '../../../src/lib/scene/transforms.mjs';
 import {
   ambiguousPaintProject,
   unsupportedProject,
@@ -37,6 +45,72 @@ for (const { version, make } of [
   assert.deepEqual(input, make(), `V${version} input must not be mutated`);
   assert.ok(Object.keys(migrated.idMap).length > 0);
 }
+
+const singlePointProject = (version) => {
+  const project = v1Project();
+  project.version = version;
+  project.paths = [
+    {
+      ...project.paths[0],
+      id: 'point-path',
+      name: '单节点',
+      curves: [],
+      start: { x: 0, y: 0 },
+      anchors: [{ x: 0, y: 0 }],
+      nodeModes: ['corner'],
+      closed: false,
+      visible: false,
+    },
+  ];
+  return project;
+};
+for (const version of [1, 2, 3]) {
+  const input = singlePointProject(version),
+    migrated = importLegacy(input),
+    pathRef = migrated.idMap['path:point-path'],
+    vertexRef = migrated.idMap['vertex:point-path:0'],
+    sketch = migrated.document.sketches[pathRef.sketchId],
+    path = sketch.paths[pathRef.id];
+  assert.equal(migrated.report.sourceVersion, version);
+  assert.equal(path.name, '单节点');
+  assert.equal(path.visible, false);
+  assert.deepEqual(path.edges, []);
+  assert.equal(path.handleModes, undefined);
+  assert.equal(path.startVertexId, vertexRef.id);
+  assert.equal(vertexRef.kind, 'vertex');
+  assert.equal(vertexRef.sketchId, sketch.id);
+  assert.deepEqual(sketch.vertices[vertexRef.id].position, {
+    kind: 'free',
+    value: [-25, 20],
+  });
+  assert.deepEqual(
+    transformPoint(
+      worldMatrix(migrated.document, sketch.ownerNodeId),
+      sketch.vertices[vertexRef.id].position.value,
+    ),
+    [-25, 20],
+  );
+  assert.deepEqual(Object.keys(sketch.edges), []);
+  const groupRef = migrated.idMap['group:legacy-group'];
+  assert.deepEqual(migrated.document.collections[groupRef.id].members, [
+    pathRef,
+  ]);
+  const roundtrip = decodeDocument(
+    encodeDocument(migrated.document, { assets: migrated.assets }),
+  );
+  assert.deepEqual(roundtrip.document, migrated.document);
+  assert.deepEqual(roundtrip.assets, migrated.assets);
+  assert.deepEqual(input, singlePointProject(version));
+}
+
+const closedPoint = singlePointProject(3);
+closedPoint.paths[0].closed = true;
+assert.throws(
+  () => importLegacy(closedPoint),
+  (error) =>
+    error instanceof LegacyImportError &&
+    error.report.issues.some((entry) => entry.code === 'closed-empty-path'),
+);
 
 const v1 = importLegacy(v1Project());
 assert.equal(Object.values(v1.document.nodes).length, 1);
@@ -152,5 +226,5 @@ assert.throws(
 );
 
 console.log(
-  'PASS: V1-V3 one-way import, cubic conversion, unique source ownership, program/style/manufacturing mapping, and structured refusal.',
+  'PASS: V1-V3 one-way import, cubic and point-path conversion, unique source ownership, program/style/manufacturing mapping, and structured refusal.',
 );

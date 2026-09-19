@@ -339,6 +339,7 @@ const validateSketch = (key, sketch, seen) => {
     recordId(pathId, path, 'Path', seen);
     exactKeys(path, ['id', 'name', 'edges', 'visible'], 'Path', [
       'handleModes',
+      'startVertexId',
     ]);
     text(path.name, 'Path.name');
     if (!Array.isArray(path.edges)) fail('Path.edges 无效');
@@ -348,6 +349,10 @@ const validateSketch = (key, sketch, seen) => {
       bool(use.reversed, 'Path.edges[].reversed');
     }
     bool(path.visible, 'Path.visible');
+    if (path.startVertexId !== undefined) {
+      id(path.startVertexId, 'Path.startVertexId');
+      if (path.edges.length) fail('Path.startVertexId 只允许用于零边 Path');
+    }
     if (path.handleModes !== undefined) {
       const modes = table(path.handleModes, 'Path.handleModes');
       for (const [vertexId, mode] of Object.entries(modes)) {
@@ -1130,12 +1135,20 @@ export function inspectDocumentReferences(document) {
             { kind: 'path', sketchId: sketch.id, id: path.id },
             'Path edgeId 不存在',
           );
-      const pathVertexIds = new Set(
-        path.edges.flatMap((use) => {
+      if (path.startVertexId && !sketch.vertices[path.startVertexId])
+        softReference(
+          diagnostics,
+          'unresolved-reference',
+          { kind: 'path', sketchId: sketch.id, id: path.id },
+          'Path startVertexId 不存在',
+        );
+      const pathVertexIds = new Set([
+        ...(path.startVertexId ? [path.startVertexId] : []),
+        ...path.edges.flatMap((use) => {
           const edge = sketch.edges[use.edgeId];
           return edge ? [edge.startVertexId, edge.endVertexId] : [];
         }),
-      );
+      ]);
       for (const vertexId of Object.keys(path.handleModes || {})) {
         const pathRef = { kind: 'path', sketchId: sketch.id, id: path.id };
         if (!sketch.vertices[vertexId])

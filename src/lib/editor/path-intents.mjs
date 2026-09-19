@@ -5,7 +5,11 @@ import { sourceViewToWorld } from './source-view.mjs';
 export function createPathIntent(request, displayed) {
   const action = structuredClone(request),
     view = structuredClone(displayed);
-  if (!['set-paths', 'extend-path', 'close-path'].includes(action?.kind))
+  if (
+    !['set-paths', 'start-path', 'extend-path', 'close-path'].includes(
+      action?.kind,
+    )
+  )
     throw Error('路径动作尚未适配');
   if (
     typeof view?.epoch !== 'string' ||
@@ -21,7 +25,16 @@ export function createPathIntent(request, displayed) {
     return ref;
   };
   let command;
-  if (action.kind === 'set-paths') {
+  if (action.kind === 'start-path') {
+    command = {
+      kind: action.kind,
+      point: sourceViewToWorld(view.source.frame, action.pixelPoint),
+      ...(action.ownerNodeId !== undefined
+        ? { ownerNodeId: action.ownerNodeId }
+        : {}),
+      ...(action.name !== undefined ? { name: action.name } : {}),
+    };
+  } else if (action.kind === 'set-paths') {
     if (!Array.isArray(action.pathIds)) throw Error('路径选区必须是数组');
     command = {
       kind: action.kind,

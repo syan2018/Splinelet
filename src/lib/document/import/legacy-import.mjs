@@ -375,7 +375,38 @@ function copyPath(context, state, path) {
     uses = [],
     nodeVertexIds = [],
     disconnectedNodes = new Set();
-  let firstId, previousId, previousPoint;
+  let firstId, previousId, previousPoint, startVertexId;
+  if (!path.curves.length) {
+    if (path.closed)
+      fail(
+        context,
+        'closed-empty-path',
+        '旧闭合路径没有曲线段，无法构成闭合拓扑',
+        { kind: 'path', id: path.id },
+      );
+    if (!finite(path.start?.x) || !finite(path.start?.y))
+      fail(
+        context,
+        'missing-point-path-start',
+        '旧单节点路径缺少有限的起点坐标',
+        { kind: 'path', id: path.id },
+      );
+    startVertexId = context.id(
+      'vertex',
+      `${state.owner.id}:${path.id}:0:start`,
+    );
+    state.sketch.vertices[startVertexId] = {
+      id: startVertexId,
+      position: { kind: 'free', value: point(path.start) },
+    };
+    nodeVertexIds[0] = startVertexId;
+    context.map(
+      'vertex',
+      `${path.id}:0`,
+      { kind: 'vertex', sketchId: state.sketch.id, id: startVertexId },
+      { ownerId: state.owner.id, pathId: path.id, nodeIndex: 0 },
+    );
+  }
   path.curves.forEach((legacyCubic, index) => {
     const cubic = legacyCubic.map(point);
     let startId;
@@ -461,6 +492,14 @@ function copyPath(context, state, path) {
   const handleModes = {};
   for (const [index, mode] of (path.nodeModes || []).entries()) {
     if (mode === 'corner') continue;
+    if (!path.curves.length)
+      fail(
+        context,
+        'invalid-point-path-node-mode',
+        '旧单节点路径不能声明连续控制柄模式',
+        { kind: 'path', id: path.id },
+        { nodeIndex: index, mode },
+      );
     if (disconnectedNodes.has(index))
       fail(
         context,
@@ -481,6 +520,7 @@ function copyPath(context, state, path) {
     name: path.name || path.id,
     edges: uses,
     visible: path.visible !== false,
+    ...(startVertexId ? { startVertexId } : {}),
     ...(Object.keys(handleModes).length ? { handleModes } : {}),
   };
   state.paths.set(path.id, { pathId, path });

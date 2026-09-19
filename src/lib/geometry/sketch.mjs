@@ -144,6 +144,15 @@ export function resolveSketch(document, sketchId, context = {}) {
   const curves = [];
   for (const path of Object.values(sketch.paths)) {
     const uses = path.edges;
+    if (!uses.length && path.startVertexId)
+      resolveVertex(
+        document,
+        sketch,
+        path.startVertexId,
+        context,
+        diagnostics,
+        dependencies,
+      );
     const resolved = [];
     const occurrences = new Map();
     let firstVertexId = null;

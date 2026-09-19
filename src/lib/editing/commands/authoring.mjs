@@ -151,7 +151,8 @@ function ensureFill(document, program, source, ownerNodeId, idFactory) {
 function drawPath(document, action, idFactory) {
   if (
     !Array.isArray(action.points) ||
-    action.points.length < (action.closed ? 3 : 2) ||
+    action.points.length <
+      (action.kind === 'start-path' ? 1 : action.closed ? 3 : 2) ||
     !action.points.every(vec)
   )
     throw Error('线条需要有限的世界坐标点');
@@ -218,6 +219,7 @@ function drawPath(document, action, idFactory) {
     name: action.name || '线条',
     visible: true,
     edges: uses,
+    ...(uses.length === 0 ? { startVertexId: vertices[0] } : {}),
   };
   document.sketches[sketchId] = sketch;
   if (action.auxiliary)
@@ -363,6 +365,12 @@ export function createAuthoringCommand(action) {
     }
     if (action.kind === 'draw-path')
       return drawPath(document, action, idFactory);
+    if (action.kind === 'start-path')
+      return drawPath(
+        document,
+        { ...action, points: [action.point], closed: false, cubics: [] },
+        idFactory,
+      );
     if (action.kind === 'extend-path') {
       const sketch = document.sketches[action.sketchId];
       if (!sketch) throw Error('线条来源不存在');
