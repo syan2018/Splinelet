@@ -37,4 +37,4 @@
 - 官方 Core XSD 验证通过；新的模板/分色/多喷嘴隔离/层高/定位检查、TypeScript、生产构建通过。新增模块 scoped lint 通过；旧大型 UI 模块仍有既存 any/React 等 lint 报错，本次没有扩大修复范围。
 - 未发送打印任务；实际耗材槽位、排盘、清料和切片质量仍需按打印机检查。
 
-复现：`node scripts/test-3mf.mjs`，随后 `node scripts/test-bambu-3mf.mjs`；`python scripts/validate-3mf.py 文件.3mf`。schema 验证使用隔离安装在 workspace `outputs/3mf/validation-deps` 的 xmlschema。
+复现：`node scripts/tests/unit/test-3mf.mjs`，随后 `node scripts/tests/unit/test-bambu-3mf.mjs`；`python scripts/validation/validate-3mf.py 文件.3mf`。schema 验证使用隔离安装在 workspace `outputs/3mf/validation-deps` 的 xmlschema。

@@ -108,23 +108,21 @@ await window.traceStudio.call('export', { format: 'svg' });
 ## 验证
 
 ```powershell
-node scripts/test-selection.mjs
-node scripts/test-continuity.mjs
-node scripts/test-node-edit.mjs
-node scripts/test-connect.mjs
-node scripts/test-extend.mjs
-node scripts/test-swatch-delete.mjs
-node scripts/test-single-curve.mjs
-node scripts/test-persistence.mjs
-node scripts/test-model.mjs
-node scripts/test-creation.mjs
+node scripts/tests/unit/test-selection.mjs
+node scripts/tests/unit/test-continuity.mjs
+node scripts/tests/unit/test-node-edit.mjs
+node scripts/tests/unit/test-connect.mjs
+node scripts/tests/unit/test-extend.mjs
+node scripts/tests/unit/test-swatch-delete.mjs
+node scripts/tests/unit/test-single-curve.mjs
+node scripts/tests/unit/test-persistence.mjs
+node scripts/tests/unit/test-model.mjs
 npx tsc --noEmit
 npm run build
 ```
 
 浏览器调试脚本供 Playwright CLI `run-code --filename` 使用，必须在隔离的测试浏览器中运行，会替换测试工程：
 
-- test-properties-layout.js：选择集、批量编组 / 拖动、框选、节点批量删除及撤销。
 - test-interaction-edges.js：折叠组、插入位置、改名、隐藏、连续模式、视图保持、拟合确认。
 - test-interaction-storage.js：拖动中不保存、提交后保存、刷新恢复、F2 和导出；接上一脚本的测试工程。
 - test-saving-browser.js：用实际浏览器私有文件系统测试同文件自动保存、授权恢复与另存为，仅替换 OS 文件选择器。

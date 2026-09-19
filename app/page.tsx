@@ -26,17 +26,17 @@ import {
   ArrowUpFromLine,
   Box,
 } from 'lucide-react';
-import { Outliner } from '@/components/outliner';
+import { Outliner } from '@/components/source-editor/outliner';
 import { modelTools } from '@/lib/model-api';
-import ModelWorkspace from '@/components/model-workspace';
-import CreationWorkspace from '@/components/creation-workspace';
+import ModelWorkspace from '@/components/modeling/model-workspace';
+import CreationWorkspace from '@/components/creation/creation-workspace';
 import {
   SplinePathInspector,
   SplineNodeInspector,
   SplineTraceControls,
-} from '@/components/spline-inspector';
+} from '@/components/source-editor/spline-inspector';
 import { splineEndpoint, extendSpline } from '../public/extend.mjs';
-import SplineEndpoints from '@/components/spline-endpoints';
+import SplineEndpoints from '@/components/source-editor/spline-endpoints';
 import { creationTools } from '@/lib/creation-api';
 import {
   pickSelection,

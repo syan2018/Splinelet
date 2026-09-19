@@ -18,7 +18,7 @@
 
 构面使用 JSTS 平面拓扑；源贝塞尔按毫米精度自适应采样，默认 0.015 mm。三维布尔使用 Manifold WASM，在 Worker 内计算。采样点和三角网格不是新增的可编辑样条节点。
 
-制造清理默认关闭；可预览开启 0.02 mm 清理以处理极小缝隙和零宽接触。清理会改变派生细节，需检查结果。导出会去除共面特征分界和浮点坍缩面，然后重新校验实际 STL 坐标。未实现圆角、斜面、自动最小壁厚分析、多色 3MF 或完整的自由曲面建模。
+制造清理默认关闭；可预览开启 0.02 mm 清理以处理极小缝隙和零宽接触。清理会改变派生细节，需检查结果。导出会去除共面特征分界和浮点坍缩面，然后重新校验实际 STL 坐标。当前未实现圆角、斜面、自动最小壁厚分析或完整的自由曲面建模；统一创作与高级构面工作区均可导出保留分色实体的通用 3MF。
 
 ## Agent API 3.0
 
@@ -62,8 +62,8 @@ await call('export_model', { format: 'blender' });
 
 ## 桑多涅实例与验证
 
-`scripts/build-sandrone-demo.mjs source.bezier.json output-directory` 可从用户提供的 71 路径工程建立独立例子。用户图片和工程没有放入网站资源，也不会随网站发布。
+`scripts/examples/build-sandrone-demo.mjs source.bezier.json output-directory` 可从用户提供的 71 路径工程建立独立例子。用户图片和工程没有放入网站资源，也不会随网站发布。
 
 例子包含 140 个有来源关联的面和 64 个体块；其中 7 条头发分界线生成 11 个区域，面部扣除嘴和眉，头饰由成对开放曲线围面，边框由外轮廓相减。成品约 80.35 × 97.32 × 4.55 mm，1 个连通实体，18,662 个三角面，非流形边和退化面为 0。保留全部 71 条源路径和 547 段三次贝塞尔。杯身尚未绘制的底图花纹没有被自动补入。
 
-几何测试：`node scripts/test-model.mjs`。浏览器脚本供 Playwright CLI `run-code --filename` 使用，**只在隔离测试浏览器运行**：`scripts/test-model-browser.js` 验证构面、扣孔、选区、撤销、依附高度、实际下载和刷新恢复；`scripts/test-sandrone-browser.js` 用实际工程验证 Worker、11 区候选和三个导出。`scripts/verify-relief-blender.py` 在独立 Blender 进程中验证导出源曲线、实体和实际下载的 STL。
+几何测试：`node scripts/tests/unit/test-model.mjs`。浏览器脚本供 Playwright CLI `run-code --filename` 使用，**只在隔离测试浏览器运行**：`scripts/tests/browser/test-model-browser.js` 验证构面、扣孔、选区、撤销、依附高度、实际下载和刷新恢复。`scripts/validation/verify-relief-blender.py` 在独立 Blender 进程中验证导出源曲线、实体和实际下载的 STL。依赖私人 Sandrone 工程的旧浏览器验收已移除，历史结论仅保留在 `docs/qa/`。

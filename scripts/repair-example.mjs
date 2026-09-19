@@ -1,4 +1,0 @@
-import fs from 'node:fs/promises';import {intersections,splitCubic,dist} from '../public/geometry.mjs';import {call} from './client.mjs';
-const project=await call('get_project');const audit=[];
-for(const path of project.paths){let removed=0;for(let k=0;k<50;k++){const hit=intersections(path.curves)[0];if(!hit)break;const a=hit.first,b=hit.second;if(a.curve>b.curve)throw Error('Bad segment order');const left=splitCubic(path.curves[a.curve],a.t)[0],right=splitCubic(path.curves[b.curve],b.t)[1];const common={x:(left[3].x+right[0].x)/2,y:(left[3].y+right[0].y)/2};left[3]=common;right[0]=common;path.curves.splice(a.curve,b.curve-a.curve+1,left,right);removed++}if(removed)audit.push({name:path.name,removed,remaining:intersections(path.curves).length})}
-await call('load_project',{project});await fs.writeFile(new URL('./geometry-repairs.json',import.meta.url),JSON.stringify(audit,null,2));console.log(audit);

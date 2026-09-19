@@ -51,6 +51,6 @@
 - 最新 Sandrone 工程转换后保持 69 个面的几何和颜色；修改底层后，其他面的颜色、轮廓与局部厚度保持。
 - 浏览器交互：转换确认取消与接受、建层、分配、整数厚度、层高切换、撤销、拖动调高；检查侧栏与三维画布布局。
 
-命令：`node scripts/test-print-stack.mjs [工程路径]`。旧修改器回归：`node scripts/test-modifiers.mjs`。
+命令：`node scripts/tests/unit/test-print-stack.mjs [工程路径]`。旧修改器回归：`node scripts/tests/unit/test-modifiers.mjs`。
 
 本轮检查完成：新分层回归 3 组、旧修改器回归 10 组、TypeScript 和生产构建通过。浏览器中底层 10→12 打印层后，中层和顶层的起点都增加 2；层高 0.2→0.16 mm 后层数不变。拖动、整数输入、Esc 取消、撤销、自动保存重载、批量分配与 SVG 顺序均已操作确认。1440×1000 视口下无页面溢出，画布与侧栏边界正常，无页面脚本异常。截图位于工作区 `outputs/print-stack/print-stack-ui.png`。

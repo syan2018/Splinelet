@@ -1,6 +1,6 @@
 # Splinelet · 统一创作
 
-入门与截图见 [README](README.md)。当前构造链、修改器、打印分层和导出细节分别见 [构造链](docs/construction-pipeline-review.md)、[修改器](docs/modifiers.md)、[打印分层](docs/print-stack.md) 和 [3MF](docs/3mf-export.md)。
+入门与截图见 [README](README.md)。当前构造链、修改器、打印分层和导出细节分别见 [构造链](docs/architecture/construction-pipeline.md)、[修改器](docs/modifiers.md)、[打印分层](docs/print-stack.md) 和 [3MF](docs/3mf-export.md)。
 
 作品以“头发、头饰、脸、杯子”等部件组织。一个部件可以包含多条源线和多个局部色块；画出边界后直接填色，再调厚度，不必逐个新建面和拉伸特征。平面与立体只是同一作品的两种视图。
 
@@ -111,10 +111,10 @@ const svg = await call('creation_export', { format: 'svg' });
 
 补边接口：`join {objectId,joinMM}`，其中 0 移除全部补边；`connection {objectId,pathId,endpoint:0|1,disabled}` 禁用或恢复单端点；`remove_connection {objectId,featureIds,disabled}` 停用或恢复旧带状面封口。`creation_inspect` 返回 `diagnostics`、`connections` 和 `closures`，后者含源路径、构面 ID 与禁用状态。`state.creation.selection` 是唯一语义选择 `{kind:'object'|'path'|'cell',ids}`。
 
-选择与同步逻辑集中在 `components/use-creation-selection.ts`；画布坐标、缩放和定位在 `public/canvas-gestures.mjs`；构面封口/补边面板在 `components/creation-connections.tsx`。源编辑器只接收选择的路径投影；portal 面层明确转交主画布的平移手势。几何命令不依赖显示方式。
+选择与同步逻辑集中在 `hooks/use-creation-selection.ts`；画布坐标、缩放和定位在 `public/canvas-gestures.mjs`；构面封口/补边面板在 `components/creation/creation-connections.tsx`。源编辑器只接收选择的路径投影；portal 面层明确转交主画布的平移手势。几何命令不依赖显示方式。
 
 ## 验证
 
-`node scripts/test-creation.mjs` 测试区域继承、颜色与高度、合并冲突、补边预览、孔洞、整体移动、缩放、底板依附及真实实体。已有桑多涅试验副本时另验证旧工程迁移、11 块刘海转换前后体积一致、改厚度后的 STL 精度及源线不变。
+`node scripts/tests/unit/test-construction-pipeline.mjs` 测试区域继承、颜色与高度、构造失效、补边预览、孔洞、整体移动、缩放、底板依附及真实实体。完整的可复现单元测试使用 `npm test` 运行；不读取仓库外的私人艺术工程。
 
-`scripts/test-creation-browser.cjs` 导出一个接收 Playwright `page` 的异步函数，会替换隔离测试浏览器的工程，自行建立测试夹具。第二个参数可传 `{outputDir}`。覆盖真实鼠标扫色、拖动高度、Esc、撤销、底板预览、三种文件下载以及刷新恢复。人工补充验收和已知边界见 [CREATION-QA.md](CREATION-QA.md)。
+`scripts/tests/browser/test-creation-browser.cjs` 导出一个接收 Playwright `page` 的异步函数，会替换隔离测试浏览器的工程，自行建立测试夹具。第二个参数可传 `{outputDir}`。覆盖真实鼠标扫色、拖动高度、Esc、撤销、底板预览、三种文件下载以及刷新恢复。历史人工验收记录见 [统一创作验收快照](docs/qa/creation-acceptance-2026-09-12.md)。

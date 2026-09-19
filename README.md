@@ -125,9 +125,10 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 
 ## 文档与开发
 
+- [完整文档索引](docs/README.md)
 - [统一创作与 API](CREATION.md)
 - [源线编辑与快捷键](docs/source-editor.md)
-- [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/construction-pipeline-review.md)
+- [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/architecture/construction-pipeline.md)
 - [打印分层](docs/print-stack.md) · [3MF 导出](docs/3mf-export.md)
 - [高级构面与实体操作](MODELING.md)
 
@@ -136,12 +137,9 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 部分核心回归检查：
 
 ```sh
-npx tsc --noEmit
-node scripts/test-construction-pipeline.mjs
-node scripts/test-modifiers.mjs
-node scripts/test-print-stack.mjs
-node scripts/test-3mf.mjs
-node scripts/test-bambu-3mf.mjs
+npm run typecheck
+npm test
+npm run build
 ```
 
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
