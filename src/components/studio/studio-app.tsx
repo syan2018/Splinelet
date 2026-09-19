@@ -131,12 +131,7 @@ import {
   isDesktopRuntime,
   listenDesktopOpenFiles,
 } from '@/lib/platform/index.mjs';
-import {
-  splitCubic,
-  evaluate,
-  dist,
-  inspectGeometry,
-} from '../../../public/geometry.mjs';
+import { evaluate, dist, inspectGeometry } from '../../../public/geometry.mjs';
 import {
   pathNodes,
   nodeSelection,
@@ -149,11 +144,7 @@ import {
   mergeSplines,
 } from '@/lib/source-editor/connect.mjs';
 import { workspaceDB, FileWriter } from '@/lib/persistence/workspace.mjs';
-import {
-  nodeModes,
-  moveHandle,
-  enforceContinuity,
-} from '@/lib/source-editor/continuity.mjs';
+import { moveHandle } from '@/lib/source-editor/continuity.mjs';
 import {
   createLegacyNodeActions,
   createV4NodeActions,
@@ -2407,23 +2398,12 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         if (distance < best.distance) best = { distance, i, t };
       }
     });
-    transact((q) => {
-      const a = q.paths.find((x) => x.id === pathId)!;
-      const modes = nodeModes(a);
-      if (modes[best.i] === 'symmetric') modes[best.i] = 'smooth';
-      const nextNode = a.closed ? (best.i + 1) % a.curves.length : best.i + 1;
-      if (modes[nextNode] === 'symmetric') modes[nextNode] = 'smooth';
-      modes.splice(best.i + 1, 0, 'smooth');
-      a.curves.splice(
-        best.i,
-        1,
-        ...(splitCubic(a.curves[best.i], best.t) as Cubic[]),
-      );
-      a.nodeModes = modes;
-      enforceContinuity(a);
-      if (a.fitting === 'single')
-        a.anchors = [a.start, ...a.curves.map((c) => c[3])];
-    });
+    try {
+      nodeActions().splitSpan(pathId, best.i, best.t);
+    } catch (error) {
+      setStatus(errorMessage(error));
+      return;
+    }
     setActiveNow(pathId);
     setSelection({ curve: best.i, point: 3 });
     setStatus('已精确拆分，形状保持不变；受影响的对称节点改为平滑连接');

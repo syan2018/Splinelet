@@ -3,8 +3,10 @@ import {
   nodeModes,
   setContinuity,
   moveHandle as moveLegacyHandle,
+  enforceContinuity,
 } from './continuity.mjs';
 import { deleteNodes } from './selection.mjs';
+import { splitCubic } from '../../../public/geometry.mjs';
 
 const HANDLE_MODES = new Set(['corner', 'smooth', 'symmetric']);
 
@@ -34,6 +36,16 @@ const requireTolerance = (tolerancePixels) => {
 const requireMode = (mode) => {
   if (!HANDLE_MODES.has(mode)) throw Error('无效节点模式');
 };
+const requireSplit = (path, curveIndex, t) => {
+  if (
+    !Number.isInteger(curveIndex) ||
+    curveIndex < 0 ||
+    !path.curves[curveIndex]
+  )
+    throw Error('曲线段索引越界');
+  if (!Number.isFinite(t) || t <= 0 || t >= 1)
+    throw Error('拆分位置必须在曲线段内部');
+};
 
 const requireHandle = (path, curveIndex, pointIndex, position) => {
   if (
@@ -61,6 +73,28 @@ export function createLegacyNodeActions({ getProject, transact }) {
   if (typeof getProject !== 'function' || typeof transact !== 'function')
     throw Error('节点操作需要工程读取和事务接口');
   return Object.freeze({
+    splitSpan(pathId, curveIndex, t) {
+      requireSplit(requirePath(getProject(), pathId), curveIndex, t);
+      transact((project) => {
+        const path = requirePath(project, pathId);
+        const modes = nodeModes(path);
+        if (modes[curveIndex] === 'symmetric') modes[curveIndex] = 'smooth';
+        const next = path.closed
+          ? (curveIndex + 1) % path.curves.length
+          : curveIndex + 1;
+        if (modes[next] === 'symmetric') modes[next] = 'smooth';
+        modes.splice(curveIndex + 1, 0, 'smooth');
+        path.curves.splice(
+          curveIndex,
+          1,
+          ...splitCubic(path.curves[curveIndex], t),
+        );
+        path.nodeModes = modes;
+        enforceContinuity(path);
+        if (path.fitting === 'single')
+          path.anchors = [path.start, ...path.curves.map((curve) => curve[3])];
+      });
+    },
     moveHandle(pathId, curveIndex, pointIndex, position) {
       requireHandle(
         requirePath(getProject(), pathId),
@@ -174,6 +208,17 @@ export function createV4NodeActions({ runtime, project, onCommit }) {
     return nextProject;
   };
   return Object.freeze({
+    splitSpan(pathId, curveIndex, t) {
+      const { path } = capturedPath(runtime, project, pathId);
+      requireSplit(path, curveIndex, t);
+      const [identityId] = capturedIndices(path, [curveIndex], 'edgeIds');
+      commit(
+        runtime.commandSource(
+          { kind: 'split-span', pathId, identityId, t },
+          { project },
+        ),
+      );
+    },
     moveHandle(pathId, curveIndex, pointIndex, position) {
       const { path } = capturedPath(runtime, project, pathId);
       requireHandle(path, curveIndex, pointIndex, position);

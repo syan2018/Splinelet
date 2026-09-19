@@ -345,3 +345,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 set_point 接线：原 API 改走共享 node-actions.moveHandle；V4 从捕获源视图的有向 handleIds 解析稳定 edge-end，提交既有 move-handle 源命令，复用鼠标的画布/pose 换算、模式联动与关系保护。旧分支仍调用原 moveHandle。单元对照旋转/平移部件上的普通、smooth、symmetric 控制柄和单步撤销，检查非法索引/位置及过期控制器无部分写入。原浏览器检查两侧柄 API 写后准确回读和一次撤销恢复完整文档。完整 spline_apply、组织 API、工程宽度及默认入口仍待推进。
 
 2026-09-20 原入口剩余审阅：默认切换前还须接通 splitAt 双击拆分（已有 split-span 源命令）、spline_apply 原子精确样条批量写入、manage_group/move_paths（原 groupId 唯一归属与可重叠 collection 需显式适配，不可直接等同）、widthMM 的原比例语义、ModelWorkspace 全套旧 model 写入，以及承托部件预览的 commitPreparedDisplay。app/page.tsx 和 desktop/main.tsx 仍未装配 host。这些不能由现有单一路径绿色测试替代验收。
+
+2026-09-20 原双击拆分接线：splitAt 保留原采样落点和新节点选择，几何变更交给 node-actions.splitSpan。V4 按捕获的有向 Edge 身份调用 split-span（反向使用换算 t），旧分支提取原精确拆分/模式/anchors 更新。失败显示原因而不改变选区。旋转/平移部件上的普通、smooth、symmetric 模式对照及一次撤销通过；原画布双击验收结果见 QA。上一轮剩余审阅中的 splitAt 项由此补齐，其余批量样条、组织、宽度、高级建模与默认入口仍待完成。

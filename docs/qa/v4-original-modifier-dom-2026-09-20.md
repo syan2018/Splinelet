@@ -276,3 +276,9 @@ outputs/v4-qa/original-api-load-final-2026-09-20.log 为 PASS：V4 导出回读�
 outputs/v4-qa/original-api-handle-2026-09-20.log 为 PASS：原界面中通过 set_point 分别移动两侧柄，用 spline_inspect 回读精确像素位置，各自只增一次 revision，撤销恢复完整文档；其余原界面 Sandrone、文件、实体及导入流程继续通过。完整 API 与默认入口仍未签收。
 
 验证收口：check-all-api-handle-2026-09-20.log 中类型、lint 与 111 项单元测试通过，格式步骤因同时更新本验收文档而失败。完成文档格式化后，单独重跑 format:check、desktop:format:check、desktop:check 均退出 0；build-api-handle-2026-09-20.log 记录双端生产构建退出 0。
+
+## 2026-09-20 原画布双击精确拆分
+
+原 splitAt 已由 legacy transact 改用共享节点动作：保留采样落点、选中新节点和状态提示，V4 解析当前源 Edge 身份并复用 split-span；旧精确拆分算法抽入 legacy adapter。单测覆盖有 pose 的曲线、平滑/对称模式与原结果一致、一次撤销、非法 t 与过期视图拒绝。浏览器增补内置 Sandrone 原 SVG 双击增加一段、一次 revision 和撤销恢复完整规范文档的检查。验证结果以 original-split-2026-09-20.log 与 check-all-original-split-2026-09-20.log 为准。
+
+结果：原浏览器日志为 PASS；完整 pnpm check:all 退出 0，涵盖 111 项单元测试、类型、lint、格式、Rust 检查与双端生产构建。

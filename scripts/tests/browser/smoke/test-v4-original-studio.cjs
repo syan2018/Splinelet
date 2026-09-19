@@ -172,6 +172,27 @@ async function main() {
     });
     await page.mouse.click(point.x, point.y);
     await page.locator('[data-node-index]').first().waitFor();
+    const beforeSplit = await evidence();
+    const splitBaseline = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    await page.mouse.dblclick(point.x, point.y);
+    await page.waitForFunction(
+      (revision) => window.originalStudioEvidence().revision > revision,
+      beforeSplit.revision,
+    );
+    const afterSplit = await evidence();
+    assert.equal(afterSplit.revision, beforeSplit.revision + 1);
+    assert.equal(
+      afterSplit.pathGeometry.reduce((sum, path) => sum + path.segments, 0),
+      beforeSplit.pathGeometry.reduce((sum, path) => sum + path.segments, 0) +
+        1,
+    );
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      splitBaseline,
+    );
     const node = page.locator('[data-node-index]').first();
     const box = await node.locator('rect').boundingBox();
     assert.ok(box);
