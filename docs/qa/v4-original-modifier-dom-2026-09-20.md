@@ -322,3 +322,9 @@ create-support 已通过原 creation_base 预览/确认接入：选中部件外�
 原界面发现并修复空色卡工程的 swatch.id 异常：未选色时在承托事务中建立默认金色。original-support-verified-2026-09-20.log 为 PASS，实际预览/取消/确认、撤销重做和规范文件保存回读通过；原 Sandrone、样式及其他编辑流程继续通过。前两轮分别因测试选择器的可访问名称、上述空色卡问题失败，修复后重跑成功。
 
 普通源线的恒等汇总不再重复显示派生预览；有实际变换的汇总仍保留预览，新增单元分别验证。check-all-support-final-2026-09-20.log 记录 pnpm check:all 退出 0（116 项单元、类型、lint、格式、Rust 和双端生产构建）；补充的源预览针对性单元及最新类型/lint 检查也通过。默认入口和其他剩余高级建模接线仍未签收。
+
+## 2026-09-20 原线条用途读侧
+
+regionPathUses 现在识别已发布 Fill 及普通区域消费者的边界，支持多个 Source 成员和未限定 pathIds 的 Sketch；差集独占的私有 Fill 仍只计为洞，真正多用途保留歧义。消费者索引一次建立，避免对每个 Fill 重扫全部构造。未完成绘制仍要求独占的一条源路径，没有扩大续画匹配范围。
+
+original-role-projection-2026-09-20.log 为 PASS：原界面创建的闭合样条正确回读 boundary，其他 Sandrone、样式、源编辑、承托及保存回读继续通过。boundary-drawing-role-projection-2026-09-20.log 中真实样例的高级分支、保存续画与一次撤销通过。check-all-role-projection-2026-09-20.log 记录完整 pnpm check:all 退出 0，覆盖 117 项单元测试、类型、lint、格式、Rust 与双端生产构建。用途切换写命令和默认入口仍待完成。

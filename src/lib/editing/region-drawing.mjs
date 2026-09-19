@@ -4,12 +4,34 @@ export function regionPathUses(document, pathRef) {
   if (pathRef?.kind !== 'path' || !sketch?.paths[pathRef.id]) return [];
   const ownerNodeId = sketch.ownerNodeId;
   const program = document.programs[document.nodes[ownerNodeId]?.programId];
+  const operators = Object.values(program?.operators || {});
+  // A published Fill (or a Fill feeding ordinary region construction) supplies
+  // boundaries. A private Fill used only as a Difference operand supplies holes.
+  const boundaryConsumers = new Set();
+  const include = (input) => {
+    if (input?.kind === 'port' && input.ownerNodeId === ownerNodeId)
+      boundaryConsumers.add(input.operatorId);
+  };
+  include(program?.outputs.regions);
+  for (const consumer of operators)
+    for (const [port, inputs] of Object.entries(consumer.inputs)) {
+      if (
+        consumer.type === 'boolean' &&
+        consumer.params.operation === 'difference' &&
+        port === 'operand'
+      )
+        continue;
+      inputs.forEach(include);
+    }
+  const boundaryFill = (operator) =>
+    operator.authoring?.phase === 'drawing' ||
+    boundaryConsumers.has(operator.id);
   const matches = [];
-  for (const operator of Object.values(program?.operators || {})) {
+  for (const operator of operators) {
     let sourceInput;
     if (
       operator.type === 'fill' &&
-      operator.authoring?.phase === 'drawing' &&
+      boundaryFill(operator) &&
       operator.inputs.input?.length === 1
     )
       sourceInput = operator.inputs.input[0];
@@ -33,13 +55,21 @@ export function regionPathUses(document, pathRef) {
     const source =
       sourceInput?.ownerNodeId === ownerNodeId &&
       program.operators[sourceInput.operatorId];
-    const paths = source?.type === 'source' && source.inputs.paths;
+    const paths = source?.type === 'source' ? source.inputs.paths : [];
+    // Incremental drawing remains an exclusive single-path branch. Broader
+    // committed membership must not make another path resumable as this branch.
     if (
-      paths?.length !== 1 ||
-      paths[0].kind !== 'sketch' ||
-      paths[0].sketchId !== sketch.id ||
-      paths[0].pathIds?.length !== 1 ||
-      paths[0].pathIds[0] !== pathRef.id
+      operator.authoring?.phase === 'drawing' &&
+      (paths.length !== 1 || paths[0].pathIds?.length !== 1)
+    )
+      continue;
+    if (
+      !paths?.some(
+        (input) =>
+          input.kind === 'sketch' &&
+          input.sketchId === sketch.id &&
+          (input.pathIds === undefined || input.pathIds.includes(pathRef.id)),
+      )
     )
       continue;
     matches.push({

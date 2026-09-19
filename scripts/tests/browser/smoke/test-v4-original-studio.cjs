@@ -853,6 +853,13 @@ async function main() {
       }),
     );
     assert.equal(exactBatch.pathIds.length, 2);
+    const exactRoles = await page.evaluate(() =>
+      window.traceStudio.call('get_project'),
+    );
+    const boundaryOwner = exactRoles.creation.objects.find((object) =>
+      object.pathIds.includes(exactBatch.pathIds[1]),
+    );
+    assert.equal(boundaryOwner.roles[exactBatch.pathIds[1]], 'boundary');
     assert.equal((await evidence()).revision, splineRevision + 1);
     const exactState = await page.evaluate(() =>
       window.originalStudioDocument(),
