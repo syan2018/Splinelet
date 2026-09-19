@@ -54,6 +54,7 @@ export function createV4CreationRuntime({
   let snapCache = null;
   const scenes = new WeakMap();
   const prepared = new WeakMap();
+  const preparedDisplays = new WeakMap();
   let currentDisplay = null;
   let disposed = false;
   const assertAlive = () => {
@@ -115,6 +116,21 @@ export function createV4CreationRuntime({
     issueProject: issue,
     sameState,
   });
+  const prepareCommand = async (action, args, context) => {
+    const command = intent(action, args, displayed(context));
+    const base = metadata(context.project).state;
+    const token = await editorSession.prepare(command, {
+      expectedRevision: base.revision,
+    });
+    current(context.project);
+    const prospective = { ...base, document: token.result.document };
+    const handle = Object.freeze({
+      project: issue(prospective, null, token),
+      token,
+    });
+    prepared.set(handle, { token, baseProject: context.project });
+    return handle;
+  };
   return Object.freeze({
     ...sourceRuntime,
     project() {
@@ -214,6 +230,28 @@ export function createV4CreationRuntime({
     },
     async evaluate(action, args, project) {
       const entry = metadata(project);
+      if (action === 'creation_base') {
+        current(project);
+        const handle = await prepareCommand('base', args, {
+          project,
+          scene: null,
+        });
+        const prospective = metadata(handle.project);
+        const snapshot = await evaluate(prospective.state.document, {
+          ...identity(prospective.state),
+          requestedDomains: ['curves', 'regions', 'relief', 'placed-relief'],
+        });
+        current(project);
+        const scene = projectCreationView(prospective.state.document, snapshot);
+        prospective.view = scene;
+        scenes.set(scene, { project: handle.project, snapshot });
+        preparedDisplays.set(handle.project, handle);
+        return {
+          project: handle.project,
+          scene,
+          objectId: handle.token.result.selectionIntent.activeRef.id,
+        };
+      }
       if (action === 'solid' || action === '3mf') {
         current(project);
         const request = structuredClone(args || {});
@@ -276,24 +314,14 @@ export function createV4CreationRuntime({
         },
       };
     },
-    async prepare(action, args, context) {
-      const command = intent(action, args, displayed(context));
-      const base = metadata(context.project).state;
-      const token = await editorSession.prepare(command, {
-        expectedRevision: base.revision,
-      });
-      current(context.project);
-      const prospective = { ...base, document: token.result.document };
-      const handle = Object.freeze({
-        project: issue(prospective, null, token),
-        token,
-      });
-      prepared.set(handle, { token, baseProject: context.project });
-      return handle;
-    },
+    prepare: prepareCommand,
     commitPrepared: commitToken,
-    commitPreparedDisplay() {
-      throw Error('此展示工程不含已准备的底板命令');
+    commitPreparedDisplay(project, context) {
+      const handle = preparedDisplays.get(project);
+      if (!handle) throw Error('此展示工程不含已准备的底板命令');
+      const result = commitToken(handle, context);
+      preparedDisplays.delete(project);
+      return result;
     },
     setSlicerTemplate(template, context) {
       const entry = current(context.project);

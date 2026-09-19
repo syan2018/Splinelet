@@ -357,3 +357,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 原 spline_apply 批量接线：source-runtime.commandSplines 捕获只读源视图，以共用提案解析器编译一次规范事务。已有路径经 replace-path-geometry 和元数据命令，新路径按 boundary/guide/hole 进入对应构造；draw-guide 保持区域输出并隔离隐式 Fill 成员，draw-hole 返回实际创建的源 PathRef。结果路径 ID 来自本次执行，包含无变化提交；原根 API 保留参数及返回形状。单元覆盖角色、矩阵、一次撤销、过期/跨所属/锁定中途失败；原浏览器验收另见 QA。
 
 2026-09-20 承托管线补齐中：原 creation_base 使用所选部件区域合并后的外环（包括去掉由多个分区共同围成的孔洞），再进行 union/offset；不能按单个区域去孔替代。新增 region-outline 规范算子，显式输入 RegionSet，保留断开外形，稳定排序输入并保留单一派生输出身份，支持复制/坐标重定位和重新求值。原承托按钮的预备命令、厚度/叠放/打印层与确认接线仍待完成。
+
+2026-09-20 承托命令与原预览接线：create-support 用 world-result 引用所选部件发布区域，经各部件 region-outline、union 与 offset 构造新底板，保留源 Sketch/Program/厚度。普通模式改 placement 为顶面依附，打印模式插入新的最底层；唯一制造零件由底板继承，多零件顶面依附明确拒绝。creation_base 生成会话预备命令和只读预览，commitPreparedDisplay 仅接受所属预览句柄，确认一次提交；原组件不再复制 V4 预览工程而丢失命令身份。取消无文档写入，过期/重复/伪造预览拒绝。原按钮及文件验收见 QA。

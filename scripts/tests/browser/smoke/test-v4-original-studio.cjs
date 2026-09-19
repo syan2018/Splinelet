@@ -893,6 +893,61 @@ async function main() {
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
     await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    const beforeSupport = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    const supportSource = await page.evaluate((id) => {
+      const document = window.originalStudioDocument();
+      const path = Object.values(document.sketches).find((sketch) =>
+        Object.keys(sketch.paths).some((pathId) => id.endsWith(pathId)),
+      );
+      return path.ownerNodeId;
+    }, exactBatch.pathIds[1]);
+    await page.evaluate(
+      (objectId) => window.traceStudio.call('creation_focus', { objectId }),
+      supportSource,
+    );
+    await page
+      .getByRole('button', { name: '当前选区属性', exact: true })
+      .click();
+    await page.getByText('生成承托部件 · 可选', { exact: true }).click();
+    await page.getByRole('button', { name: '预览底板', exact: true }).click();
+    await page
+      .getByRole('button', { name: '添加承托部件', exact: true })
+      .waitFor();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeSupport,
+    );
+    await page.getByRole('button', { name: '取消底板', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeSupport,
+    );
+    await page.getByRole('button', { name: '预览底板', exact: true }).click();
+    await page
+      .getByRole('button', { name: '添加承托部件', exact: true })
+      .click();
+    const afterSupport = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.equal(
+      Object.keys(afterSupport.nodes).length,
+      Object.keys(beforeSupport.nodes).length + 1,
+    );
+    assert.deepEqual(afterSupport.sketches, beforeSupport.sketches);
+    await page.evaluate(() => window.traceStudio.call('undo'));
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeSupport,
+    );
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      afterSupport,
+    );
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
     const beforeApiLoad = await evidence();
     const beforeApiDocument = await page.evaluate(() =>
       window.originalStudioDocument(),

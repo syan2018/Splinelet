@@ -119,6 +119,29 @@ export function projectCurvePreviews(document, snapshot) {
         .map(([port, stage]) => ({ operator, port, stage })),
     );
     if (!stages.some(({ operator }) => operator.type !== 'source')) continue;
+    // Pure local collection only repeats the editable source lines. Showing it
+    // as a derived preview would mark ordinary open guides as unfinished work.
+    if (
+      stages.every(
+        ({ operator, stage }) =>
+          operator.type === 'source' ||
+          (operator.type === 'curve-collect' &&
+            ['ready', 'empty'].includes(stage.status) &&
+            operator.inputs.input?.length > 0 &&
+            operator.inputs.input.every(
+              (ref) =>
+                ref.kind === 'port' &&
+                ref.ownerNodeId === node.id &&
+                ref.space === 'local-result' &&
+                Array.isArray(ref.transform) &&
+                ref.transform.length === 6 &&
+                ref.transform.every(
+                  (value, i) => value === [1, 0, 0, 1, 0, 0][i],
+                ),
+            )),
+      )
+    )
+      continue;
     for (const { operator, port, stage } of stages) {
       if (operator.type === 'source') continue;
       result.push(

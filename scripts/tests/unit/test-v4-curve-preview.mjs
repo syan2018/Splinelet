@@ -200,3 +200,27 @@ assert.match(
 assert.ok(snapshot.components[componentId(source.id)]);
 assert.throws(() => projectCurvePreviews(document, {}), /完整当前/);
 console.log('V4 curve preview projection passed');
+
+// Ordinary source guides must not acquire derived-preview warnings solely from
+// the identity collector used to keep their Fill membership separate.
+const guideResult = createAuthoringCommand({
+  kind: 'draw-guide',
+  closed: false,
+  points: [
+    [0, 0],
+    [8, 4],
+  ],
+})(createDocument({ idFactory }), { idFactory });
+const guideDocument = guideResult.document;
+assert.deepEqual(
+  projectCurvePreviews(guideDocument, evaluatePlanar(guideDocument)),
+  [],
+);
+const guideProgram = Object.values(guideDocument.programs)[0];
+const collector = Object.values(guideProgram.operators).find(
+  (op) => op.type === 'curve-collect',
+);
+collector.inputs.input[0].transform[4] = 2;
+assert.ok(
+  projectCurvePreviews(guideDocument, evaluatePlanar(guideDocument)).length > 0,
+);

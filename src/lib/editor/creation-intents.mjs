@@ -6,6 +6,7 @@ import {
 } from './modifier-intents.mjs';
 
 export const CREATION_INTENTS = Object.freeze([
+  'base',
   'paint',
   'height',
   'clear_paint',
@@ -87,7 +88,10 @@ export function createCreationIntent(action, args, displayed) {
         ...new Map(refs.map((ref) => [outputIdentity(ref), ref])).values(),
       ];
     };
-    if (action === 'paint') {
+    if (action === 'base') {
+      const { objectIds, ...options } = request;
+      run({ ...options, kind: 'create-support', nodeIds: objectIds });
+    } else if (action === 'paint') {
       const refs = targets();
       if (!refs.length && !request.objectIds?.length)
         throw Error('请先选择区域或部件');

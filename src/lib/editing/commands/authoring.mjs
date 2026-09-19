@@ -57,6 +57,7 @@ import {
   createSourceOrganizationCommand,
   SOURCE_ORGANIZATION_ACTIONS,
 } from './source-organization.mjs';
+import { createSupportCommand } from './support.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -320,6 +321,8 @@ export function createAuthoringCommand(action) {
   const request = structuredClone(action);
   return (document, { idFactory }) => {
     const action = request;
+    if (action.kind === 'create-support')
+      return createSupportCommand(action)(document, { idFactory });
     if (action.kind === 'append-boundary')
       return createAppendBoundaryCommand(action)(document, { idFactory });
     if (action.kind === 'transfer-source')

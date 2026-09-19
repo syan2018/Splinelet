@@ -2619,16 +2619,18 @@ export default function CreationWorkspace(p: Props) {
                                         ),
                                       }
                                     : { heightMM: baseHeight }),
-                                  swatchId: swatch.id,
+                                  swatchId: swatch?.id,
                                 });
                                 if (ref.current.project !== snapshot)
                                   throw Error('来源已变化，请重新预览');
                                 setBasePreview({
                                   ...result,
-                                  project: {
-                                    ...result.project,
-                                    image: snapshot.image,
-                                  },
+                                  project: ref.current.runtime
+                                    ? result.project
+                                    : {
+                                        ...result.project,
+                                        image: snapshot.image,
+                                      },
                                   revision: snapshot,
                                 });
                               })
