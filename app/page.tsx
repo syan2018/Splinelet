@@ -1,4 +1,4 @@
-import StudioApp from '@/components/studio/studio-app';
+import StudioApp from '@/components/studio/studio-entry';
 
 export default function Home() {
   return <StudioApp />;

@@ -30,7 +30,7 @@ Splinelet 使用单一前端工程，共享 React 应用、领域模型和 Worke
 
 ## 依赖与状态边界
 
-`app/page.tsx` 与 `src/desktop/main.tsx` 都引用 `src/components/studio/studio-app.tsx`。客户端边界放在共享组件上，Web 路由不承担应用实现，桌面入口不导入 Web 路由组件。`@/*` 映射到 `src/*`。
+`app/page.tsx` 与 `src/desktop/main.tsx` 都引用 `src/components/studio/studio-entry.tsx`；默认加载 `studio-app.tsx`，`?editor=v4` 加载隔离候选 `studio/v4/v4-studio-app.tsx`。客户端边界放在共享组件上，Web 路由不承担应用实现，桌面入口不导入 Web 路由组件。`@/*` 映射到 `src/*`。
 
 `src/lib/platform/index.mjs` 提供跨平台下载分派，并导出桌面能力；`desktop.mjs` 封装 Tauri API，`browser.mjs` 负责浏览器下载。工程绑定、打开、保存与恢复的编排仍留在共享应用中。继续提取时应按行为边界拆分，不复制两套保存状态，不改变 `window.traceStudio.call`。
 

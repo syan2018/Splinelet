@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：编辑运行时负责人；主代理复核并发
-- 执行状态：T12/T14 模块已实现；T13 普通命令已接线，T20 进行中
+- 执行状态：T12/T14 模块已实现；T13 普通/分区/挖孔命令已接线，T20 候选 API 已接线
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -178,7 +178,7 @@ node scripts/tests/unit/test-v4-authoring.mjs
 
 ## T14 · Worker 协议与会话求值协调
 
-- 状态：模块交付；真实 document-worker 入口已接线，浏览器正在验证
+- 状态：模块交付；真实 document-worker 入口已接线，两端基本浏览器旅程通过，完整并发旅程待验收
 - 执行者 / 验收者：未分配
 - 前置：[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)
 - 下游：[T16](07-editor-experience-2026-09-19.md#t16)、[T19](02-document-and-persistence-2026-09-19.md#t19)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)
@@ -245,7 +245,7 @@ node scripts/tests/unit/test-v4-worker-protocol.mjs
 
 ## T20 · Agent API、兼容投影与能力发现
 
-- 状态：进行中：API 5.0 独立入口与版本化写命令
+- 状态：候选 API 5.0 已接线；旧 HTTP/WebMCP 适配仍待实现
 - 执行者 / 验收者：未分配
 - 前置：[T11](05-relief-manufacturing-and-export-2026-09-19.md#t11)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)、[T18](02-document-and-persistence-2026-09-19.md#t18)
 - 下游：[T21](01-validation-2026-09-19.md#t21)

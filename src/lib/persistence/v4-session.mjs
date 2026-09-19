@@ -92,12 +92,16 @@ export function createV4PersistenceSession(options = {}) {
       dirty = true;
       return state();
     },
+    /** @param {{expectedEpoch:string, expectedRevision:number, previewId?:string|null}} options */
     async autosave({ expectedEpoch, expectedRevision, previewId = null } = {}) {
       const saved = capture({ expectedEpoch, expectedRevision, previewId });
       if (typeof drafts.write !== 'function') throw Error('未注入 V4 草稿存储');
-      await drafts.write(DRAFT_KEY, {
-        document: saved.document,
-        assets: saved.assets,
+      await enqueue(async () => {
+        if (epoch !== saved.epoch) return;
+        await drafts.write(DRAFT_KEY, {
+          document: saved.document,
+          assets: saved.assets,
+        });
       });
       return state();
     },

@@ -191,7 +191,28 @@ function verifyLegacyRegistry(directory = BROWSER_DIRECTORY) {
 
 function selectCases(options, cases = legacyCases) {
   if (options.suite === 'v4')
-    throw Error('V4 browser cases 尚未实施；请先交付对应 test-v4-* 用例。');
+    cases = [
+      {
+        name: 'region-authoring',
+        module: 'v4/test-region-authoring.cjs',
+        adapter: 'v4-page',
+      },
+      {
+        name: 'saving-recovery',
+        module: 'v4/test-saving-recovery.cjs',
+        adapter: 'v4-page',
+      },
+      {
+        name: 'basic-authoring',
+        module: 'v4/test-basic-authoring.cjs',
+        adapter: 'v4-page',
+      },
+      {
+        name: 'object-move',
+        module: 'v4/test-object-move.cjs',
+        adapter: 'v4-page',
+      },
+    ];
   const selected = options.caseName
     ? cases.filter((entry) => entry.name === options.caseName)
     : cases;
@@ -661,7 +682,13 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
     page.once?.('crash', () => record('page-crashed'));
     page.setDefaultTimeout(timeoutMs);
     page.setDefaultNavigationTimeout(timeoutMs);
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.goto(entry.adapter === 'v4-page' ? `${url}?editor=v4` : url, {
+      waitUntil: 'domcontentloaded',
+    });
+    if (entry.adapter === 'v4-page') {
+      await page.locator('[data-editor-model="v4"]').waitFor();
+      return await test(page, resolve(outputDirectory, entry.name));
+    }
     await page.waitForFunction(() => window.traceStudio);
     if (entry.adapter === 'page') return await test(page);
     if (entry.adapter === 'page-output')

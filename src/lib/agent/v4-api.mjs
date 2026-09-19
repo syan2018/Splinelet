@@ -332,8 +332,7 @@ export function createV4AgentAPI(options = {}) {
         revision: args.revision,
         domains,
       });
-      await pending;
-      const snapshot = await captured;
+      const [, snapshot] = await Promise.all([pending, captured]);
       const artifact = await exporter(snapshot, {
         ...clone(args.options || {}),
         format: capability.format,

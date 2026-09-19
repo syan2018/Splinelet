@@ -76,9 +76,10 @@ assert.throws(
   () => harness.selectCases({ suite: 'legacy', caseName: 'not-a-case' }),
   /未知或未实施/,
 );
+assert.equal(harness.selectCases({ suite: 'v4', caseName: null }).length, 4);
 assert.throws(
-  () => harness.selectCases({ suite: 'v4', caseName: null }),
-  /尚未实施/,
+  () => harness.selectCases({ suite: 'v4', caseName: 'not-implemented' }),
+  /未知或未实施/,
 );
 assert.match(harness.usage(), /--suite legacy\|v4/);
 const webArguments = harness.createWebServerArguments(

@@ -367,25 +367,29 @@ export function createAuthoringCommand(action) {
         if (!document.appearances.swatches[action.swatchId])
           throw Error('颜色不存在');
         const plan = firstPaintPlan(action);
+        const painted = Object.values(document.appearances.overrides).some(
+          (item) => sameOutputRef(item.target, action.target),
+        );
+        const previous = Object.values(
+          document.reliefDefinitions.overrides,
+        ).find((item) => sameOutputRef(item.target, action.target));
         assign(
           document.appearances.overrides,
           action.target,
           plan.appearance.value,
           idFactory,
         );
-        const already = Object.values(
-          document.reliefDefinitions.overrides,
-        ).some((item) => sameOutputRef(item.target, action.target));
         // Recoloring must retain thickness, placement and mode already authored.
-        if (
-          !already &&
-          !document.reliefDefinitions.defaults[action.target.ownerNodeId]
-            ?.enabled
-        )
+        if (!painted)
           assign(
             document.reliefDefinitions.overrides,
             action.target,
-            plan.relief.value,
+            {
+              ...plan.relief.value,
+              ...document.reliefDefinitions.defaults[action.target.ownerNodeId],
+              ...previous?.value,
+              enabled: true,
+            },
             idFactory,
           );
       } else

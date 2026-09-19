@@ -173,7 +173,7 @@ tasks/               复杂工程任务、模块工作包与验收管理
 dist/                Web 构建输出
 ```
 
-Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
+Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-entry.tsx`，默认仍加载现有 `studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
 
 部分核心回归检查：
 
@@ -210,3 +210,5 @@ node scripts/agent-server.mjs
 ```
 
 桥接监听 `127.0.0.1:4318`，浏览器连接限定为 `http://localhost:3000`。普通手工创作无需启动它；接口返回导出数据，不自动下载。
+
+V4 候选实现可通过当前应用 URL 的 `?editor=v4` 参数打开，提供部件/线条/区域的基本编辑、阶段求值、V4 文件另存及独立恢复草稿。它尚未完成完整功能和双端原生验收，默认切换以 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md) 为准。

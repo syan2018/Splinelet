@@ -108,7 +108,7 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ## T16 · 默认画布与直接编辑接入
 
-- 状态：进行中：真实 Worker 候选画布已挂载，浏览器正在验证
+- 状态：进行中：真实 Worker 候选画布已挂载，两端四项基本旅程通过，完整曲线交互仍待完成
 - 执行者 / 验收者：未分配
 - 前置：[T01](01-validation-2026-09-19.md#t01)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)
 - 下游：[T21](01-validation-2026-09-19.md#t21)
