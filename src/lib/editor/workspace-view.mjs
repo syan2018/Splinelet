@@ -28,6 +28,8 @@ export function projectWorkspaceView(editorState, evaluated, frame) {
     throw Error('工作区视图需要有效的编辑会话身份');
   if (
     !evaluated?.snapshot ||
+    (identity.previewId !== null &&
+      evaluated.previewVersion !== editorState.preview?.version) ||
     ['epoch', 'revision', 'previewId'].some(
       (key) => evaluated[key] !== identity[key],
     )

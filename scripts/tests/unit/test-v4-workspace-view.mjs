@@ -97,6 +97,53 @@ assert.throws(
     ),
   /不属于/,
 );
+const gesture = editor.beginPreview({
+  expectedRevision: editor.state.revision,
+});
+await evaluation.request({ domains });
+const oldPreview = Object.values(evaluation.state.results)[0];
+projectWorkspaceView(editor.state, oldPreview, frame);
+const nodeId = Object.keys(editor.state.document.nodes)[0];
+const move = createAuthoringCommand({
+  kind: 'set-node',
+  nodeId,
+  value: { name: 'drag preview' },
+});
+const updatePreview = () =>
+  editor.updatePreview(move, {
+    expectedRevision: editor.state.revision,
+    previewId: gesture.previewId,
+  });
+updatePreview();
+assert.equal(editor.state.previewId, gesture.previewId);
+assert.throws(
+  () => projectWorkspaceView(editor.state, oldPreview, frame),
+  /不属于/,
+  'an earlier result within the same gesture cannot become the current display',
+);
+await evaluation.request({ domains });
+const freshPreview = Object.values(evaluation.state.results)[0];
+const freshView = projectWorkspaceView(editor.state, freshPreview, frame);
+assert.equal(
+  freshView.creation.creation.objects.find((item) => item.id === nodeId).name,
+  'drag preview',
+);
+updatePreview();
+assert.throws(
+  () => projectWorkspaceView(editor.state, freshPreview, frame),
+  /不属于/,
+  'repeated preview coordinates still use the current sample identity',
+);
+await evaluation.request({ domains });
+projectWorkspaceView(
+  editor.state,
+  Object.values(evaluation.state.results)[0],
+  frame,
+);
+editor.cancelPreview({
+  expectedRevision: editor.state.revision,
+  previewId: gesture.previewId,
+});
 detach();
 evaluation.dispose();
 console.log(

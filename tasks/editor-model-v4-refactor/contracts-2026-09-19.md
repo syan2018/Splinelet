@@ -109,6 +109,8 @@ StageResult 为 `{domain,status:'ready'|'empty'|'absent'|'blocked',value,diagnos
 
 Document 与 EvalSnapshot 分离。Snapshot 标识 `{epoch,revision,previewId}`；提交快照 previewId=null，草案使用唯一 previewId。Worker 请求/响应另外携带 requestId 和 domains；旧 epoch、旧 revision 或已取消 previewId 的消息丢弃。新建/打开更换 epoch，提交/undo/redo 的 revision 严格单调；恢复旧 Document 不回退 revision。
 
+同一个拖动手势的 previewId 保持不变；EditorSession 的 `preview.version` 每次成功 updatePreview 递增。EvaluationSession 为预览结果附带请求捕获的 `previewVersion`，原工作区投影须与当前 `preview.version` 完全匹配。requestId 配对负责拒绝旧 Worker 请求，previewVersion 另外防止调用方保留的较早完成结果被误用；这些字段都不持久化。
+
 `evaluateDocument(document,{registry,services,cache,requestedDomains})` 纯读取文档；cache 以输入依赖值/版本作为键，不能只用数组位置。只有 pose 改变且无 world 输入时复用局部结果；接收者 world 输入变更必须失效。平面失败仍在当前 snapshot 中提供有效上游曲线，禁止显示上次成功面冒充完成。
 
 `createEvaluationSession({evaluate,workerClient})` 处理 pending/current/failed 与 awaitCommittedSnapshot；导出等待指定已提交 revision，用户继续编辑不会把旧异步结果标为当前。T14 先测试协议；I00 后接真实 Fill/Body 并做双端 Worker 验证。

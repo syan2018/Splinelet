@@ -47,6 +47,7 @@ export function createEditorSession(document, options = {}) {
       document: history.current(),
       preview: preview && {
         id: preview.id,
+        version: preview.version,
         baseRevision: preview.baseRevision,
         document: clone(preview.document),
       },
@@ -171,6 +172,7 @@ export function createEditorSession(document, options = {}) {
       if (preview) throw Error('已有进行中的 preview');
       preview = {
         id: `preview-${++previewSequence}-${idFactory()}`,
+        version: 0,
         baseRevision: revision,
         baseDocument: history.current(),
         document: history.current(),
@@ -187,6 +189,7 @@ export function createEditorSession(document, options = {}) {
         baseRevision: active.baseRevision,
       });
       active.document = clone(result.document);
+      active.version += 1;
       active.changedRefs = clone(result.changedRefs);
       active.selectionIntent = clone(result.selectionIntent);
       notify();

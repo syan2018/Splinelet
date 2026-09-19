@@ -67,6 +67,7 @@ const editorCapture = (state) => {
     epoch: state.epoch,
     revision: state.revision,
     previewId,
+    ...(previewId && { previewVersion: state.preview?.version ?? 0 }),
     document: clone(document),
   };
 };
@@ -212,6 +213,7 @@ export function createEvaluationSession(options = {}) {
       epoch: capture.epoch,
       revision: capture.revision,
       previewId: capture.previewId,
+      ...(capture.previewId && { previewVersion: capture.previewVersion }),
       domains: requestedDomains,
       document: capture.document,
     });
@@ -239,6 +241,7 @@ export function createEvaluationSession(options = {}) {
         epoch: request.epoch,
         revision: request.revision,
         previewId: request.previewId,
+        ...(request.previewId && { previewVersion: request.previewVersion }),
         domains: request.domains,
         snapshot,
       }),
@@ -259,6 +262,7 @@ export function createEvaluationSession(options = {}) {
       const next = editorCapture(editorState);
       if (
         sameIdentity(current, next) &&
+        current.previewVersion === next.previewVersion &&
         sameDocument(current.document, next.document)
       )
         return state();
