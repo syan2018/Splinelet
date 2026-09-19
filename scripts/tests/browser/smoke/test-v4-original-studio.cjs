@@ -83,6 +83,34 @@ async function main() {
     );
     await page.getByRole('button', { name: '适合画布', exact: true }).click();
     await page.getByText('底图就绪', { exact: true }).waitFor();
+    console.log('Checking canonical Sandrone body through worker');
+    const solidReport = await page.evaluate(() =>
+      Promise.race([
+        window.traceStudio.call('creation_export', { format: 'check' }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(Error('Body request timed out after 120 seconds')),
+            120000,
+          ),
+        ),
+      ]),
+    );
+    console.log('Body check completed');
+    assert.equal(solidReport.report.valid, true);
+    assert.ok(solidReport.report.volumeMM3 > 0);
+    const generic3mf = await page.evaluate(() =>
+      window.traceStudio.call('creation_export', { format: '3mf-generic' }),
+    );
+    assert.equal(generic3mf.report.valid, true);
+    const { unzipSync, strFromU8 } =
+      await import('three/addons/libs/fflate.module.js');
+    const archive = unzipSync(Buffer.from(generic3mf.base64, 'base64'));
+    assert.match(strFromU8(archive['3D/3dmodel.model']), /<triangle /);
+    assert.equal(
+      (await evidence()).dirty,
+      false,
+      'body generation and export are read-only',
+    );
     await page.getByRole('button', { name: '节点 (A)', exact: true }).click();
     // Real SVG geometry and DOM events; never dispatch editor commands from tests.
     const hit = page.locator('.source-path-layer path[aria-label]').first();
@@ -574,6 +602,8 @@ async function main() {
       JSON.stringify(
         {
           passed: true,
+          solidReport: solidReport.report,
+          generic3mfBytes: Buffer.from(generic3mf.base64, 'base64').length,
           scope:
             'Full original StudioApp with injected V4 host; actual Sandrone, original layout, node/object edits, undo, OPFS save/reopen, invalid file rejection, legacy import and example menu. Not default-entry acceptance.',
           sourceEdit: edited,

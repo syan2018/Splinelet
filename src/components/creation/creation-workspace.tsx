@@ -364,12 +364,18 @@ export default function CreationWorkspace(p: Props) {
   const calculating = engineCalculating || evaluatedProject !== p.project;
   const evaluationFailed = !calculating && !scene;
   const [outputPart, setOutputPartId] = useState('');
-  const outputParts = p.project.model?.parts.length
-    ? p.project.model.parts
-    : [{ id: 'main', name: '作品' }];
+  const outputSettings = p.runtime?.readOutputSettings(p.project);
+  const slicerTemplate = outputSettings
+    ? outputSettings.slicerTemplate
+    : p.project.model?.slicerTemplate;
+  const outputParts =
+    outputSettings?.parts ??
+    (p.project.model?.parts.length
+      ? p.project.model.parts
+      : [{ id: 'main', name: '作品' }]);
   const outputPartId = outputParts.some((part) => part.id === outputPart)
     ? outputPart
-    : outputParts[0].id;
+    : (outputSettings?.defaultPartId ?? outputParts[0].id);
   const [requestedPage, setTab] = useState('tool'),
     [brush, setBrush] = useState('cream'),
     [search, setSearch] = useState(''),
@@ -891,7 +897,7 @@ export default function CreationWorkspace(p: Props) {
         format === '3mf-generic' ||
         format === '3mf-bambu'
       ) {
-        if (format === '3mf-bambu' && !snapshot.model?.slicerTemplate)
+        if (format === '3mf-bambu' && !slicerTemplate)
           throw Error(
             '请先在「3MF 切片配置」载入一个 Bambu Studio 工程作为模板，之后可一直复用。',
           );
@@ -899,8 +905,7 @@ export default function CreationWorkspace(p: Props) {
           '3mf',
           {
             partId: outputPartId,
-            slicerTemplate:
-              format === '3mf-bambu' ? snapshot.model?.slicerTemplate : null,
+            slicerTemplate: format === '3mf-bambu' ? slicerTemplate : null,
           },
           snapshot,
         );
@@ -2374,6 +2379,7 @@ export default function CreationWorkspace(p: Props) {
                             画轮廓
                           </button>
                           <button
+                            disabled={p.busy || (!!p.runtime && calculating)}
                             onClick={() =>
                               safely(() => {
                                 nextRole.current = 'divider';
@@ -2386,6 +2392,7 @@ export default function CreationWorkspace(p: Props) {
                             画分区线
                           </button>
                           <button
+                            disabled={p.busy || (!!p.runtime && calculating)}
                             onClick={() =>
                               safely(() => {
                                 nextRole.current = 'hole';
@@ -2914,7 +2921,7 @@ export default function CreationWorkspace(p: Props) {
                   </p>
                   <SlicerTemplate
                     onExport={() => safely(() => exportWork('3mf-bambu'))}
-                    value={p.project.model?.slicerTemplate}
+                    value={slicerTemplate}
                     disabled={exporting || calculating || evaluationFailed}
                     onChange={(slicerTemplate) => {
                       if (ref.current.runtime)

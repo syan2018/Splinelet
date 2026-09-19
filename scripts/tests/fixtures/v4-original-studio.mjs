@@ -3,7 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import StudioApp from '../../../src/components/studio/studio-app.tsx';
 import { openProject } from '../../../src/lib/persistence/open-project.mjs';
-import { createStudioHost } from '../../../src/lib/editor/studio-host.mjs';
+import { createBrowserStudioHost } from '../../../src/lib/editor/browser-studio-host.ts';
 import { createStudioFileWriter } from '../../../src/lib/platform/studio-file-writer.mjs';
 import { sameDocument } from '../../../src/lib/editing/history.mjs';
 
@@ -13,7 +13,7 @@ const originalBytes = new Uint8Array(
 const opened = openProject({ bytes: originalBytes });
 const baseline = structuredClone(opened.document);
 let draft = null;
-const host = createStudioHost({
+const host = createBrowserStudioHost({
   opened,
   presentation: {
     fileName: 'sandrone-original-studio.spl',

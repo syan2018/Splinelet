@@ -1,6 +1,5 @@
 import { geometryContours } from '../region-engine.mjs';
-import { cleanMesh, initSolid } from '../solid-engine.mjs';
-import { inspectMesh } from '../mesh-format.mjs';
+import { initSolid, solidMesh } from '../solid-engine.mjs';
 import { partitionMaterialSolids } from '../material-solids.mjs';
 
 const clone = (value) => structuredClone(value);
@@ -21,7 +20,11 @@ const passthrough = (input) =>
   );
 
 /** Converts a PlacedReliefSet directly into cloneable meshes; no legacy Project is built. */
-export async function buildBodies(placedResult, options) {
+export async function buildBodies(
+  placedResult,
+  options,
+  meshToleranceMM = 0.005,
+) {
   if (!placedResult || placedResult.domain !== 'placed-relief')
     return stage('blocked', undefined, [
       { code: 'invalid-input', message: '需要 PlacedReliefSet' },
@@ -92,9 +95,11 @@ export async function buildBodies(placedResult, options) {
         solid = own(solid.subtract(tool));
       }
       if (solid.isEmpty()) continue;
-      const mesh = cleanMesh(own(solid.asOriginal()).getMesh());
-      const report = inspectMesh(mesh);
-      if (!report.valid) throw Error(`Part ${partId} 生成了无效实体`);
+      const { mesh, report } = solidMesh(solid, own, meshToleranceMM);
+      if (!report.valid)
+        throw Error(
+          `Part ${partId} 生成了无效实体：${report.invalidEdges} 条异常边，${report.zeroArea} 个零面积面，体积 ${report.volumeMM3} mm³`,
+        );
       const byId = new Map(features.map((item) => [item.id, item]));
       const height = {
         get: (id) => {
@@ -111,10 +116,11 @@ export async function buildBodies(placedResult, options) {
         height,
         crossFor,
       })) {
-        const materialMesh = cleanMesh(
-          own(materialSolid.asOriginal()).getMesh(),
+        const { mesh: materialMesh, report: materialReport } = solidMesh(
+          materialSolid,
+          own,
+          meshToleranceMM,
         );
-        const materialReport = inspectMesh(materialMesh);
         if (!materialReport.valid)
           throw Error(`输出 ${feature.ref.key} 的材料实体无效`);
         materialParts.push({

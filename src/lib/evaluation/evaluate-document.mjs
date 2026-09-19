@@ -58,7 +58,11 @@ export async function evaluateDocument(document, options = {}) {
       )
     : absent('placed-relief');
   const bodies = requested.has('bodies')
-    ? await buildBodies(placedRelief, options.solidOptions)
+    ? await buildBodies(
+        placedRelief,
+        options.solidOptions,
+        Math.min(document.geometrySettings.curveToleranceMM / 3, 0.005),
+      )
     : absent('bodies');
   return Object.freeze({
     ...evaluateExportViews(document, {

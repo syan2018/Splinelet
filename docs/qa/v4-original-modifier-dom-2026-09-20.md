@@ -230,3 +230,13 @@ V4 的原重新拟合入口从捕获的只读源视图按现有边逐段拟合�
 新增 fitted-path-intent 单测通过：不可变拟合输入、闭合曲线、保存重开、一次撤销/重做、失效计划拒绝、不连续曲线原子失败和开放曲线精确保持。原根浏览器 `outputs/v4-qa/original-candidates-2026-09-20.log` 退出 0，使用公开 create_path 生成候选并点击原丢弃/接受按钮；规范文档确认生成/丢弃不变，接受后撤销/重做精确恢复，撤销清理旧候选，直接创建返回实际源路径 ID，最终规范保存匹配。页面及控制台错误为空。该测试继续使用正式 Tailwind 处理器并覆盖此前 Sandrone、分区/孔、合并、重新拟合流程；默认入口和全部 API 仍待完成。
 
 最终 `pnpm check:all` 退出 0，108 项单测、类型/lint/格式、Rust 格式/检查与 Web/Desktop 构建通过，日志 `outputs/v4-qa/check-all-candidates-2026-09-20.log`。补充断言验证两段拟合曲线生成一个 ready 区域，局部单测通过。
+
+## 2026-09-20 原成品检查、3MF 与浏览器 Worker
+
+原输出面板的零件和模板由 V4 制造定义投影；solid/3mf 通过提交版本 BodySet 生成原面板 DTO，检查与导出复用该版本实体结果，禁止预览输出、失效句柄和异步迟到结果。browser-studio-host 装配现有 document-worker/WASM，释放时关闭客户端和 Worker。必须显式导入 worker-client.ts：省略扩展名时 Vite 会命中同目录旧 mjs 客户端，协议不匹配导致请求一直等待。该错误已通过真实浏览器定位，未把等待当作成功。
+
+真实 Sandrone 暴露网格序列化错误：按坐标焊接丢失 Manifold 顶点身份，造成 1 条异常边。V4 改用显式 mergeFromVert/mergeToVert 合并拓扑，再按已有浮点精度修复流程重检；保持检查严格，不删除检查条件。内置样例与金色徽章的只读实体/STL/3MF 检查通过，分别 19420/20412 个三角面、69/70 份材料区域；均一个连通实体、0 异常边、0 零面积面，材料体积与整体守恒，文档不变。日志 `outputs/v4-qa/body-samples-2026-09-20.log`。
+
+运行时测试覆盖体积、合法 3MF、结果复用、文档只读、未知零件/外来模板拒绝、预览拒绝和迟到拒绝。最终 `pnpm check:all` 退出 0，110 项单测、类型/lint/格式、Rust 格式/检查与双端构建通过，日志 `outputs/v4-qa/check-all-body-output-final-2026-09-20.log`。原高级 ModelWorkspace 完整写入、默认入口与原生窗口仍待签收，不能由这条输出管线替代。
+
+最终真实浏览器退出 0，日志 `outputs/v4-qa/original-body-output-ready-2026-09-20.log`。检查内置 Sandrone BodySet 报告有效且体积为正，通用 3MF 经 base64 解码、ZIP 读取后包含三角网格；操作保持已保存状态。随后全套原界面编辑/文件/区域/拟合/候选流程通过，页面与控制台错误为空，结果文件记录 solidReport 与 generic3mfBytes。Worker 异步刷新暴露分区/挖洞按钮过早可点，已在区域更新期间禁用这两个依赖区域结果的入口，原逻辑与样式保留。最终 UI 修复后类型/lint/全库格式和双端构建另行通过，构建日志 `outputs/v4-qa/build-body-output-ready-2026-09-20.log`。

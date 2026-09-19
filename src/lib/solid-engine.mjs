@@ -48,13 +48,24 @@ export function resolveHeights(model) {
   }
   return { get };
 }
-export function cleanMesh(raw) {
+export function cleanMesh(raw, preserveTopology = false) {
   const positions = [],
     map = new Map(),
     remap = [];
+  const parents = Array.from(
+    { length: raw.vertProperties.length / raw.numProp },
+    (_, i) => i,
+  );
+  const root = (i) => {
+    while (parents[i] !== i) i = parents[i];
+    return i;
+  };
+  if (preserveTopology)
+    for (let i = 0; i < (raw.mergeFromVert?.length || 0); i++)
+      parents[root(raw.mergeFromVert[i])] = root(raw.mergeToVert[i]);
   for (let i = 0; i < raw.vertProperties.length; i += raw.numProp) {
     const p = [0, 1, 2].map((k) => Math.fround(raw.vertProperties[i + k])),
-      key = p.join(',');
+      key = preserveTopology ? root(i / raw.numProp) : p.join(',');
     if (!map.has(key)) {
       map.set(key, positions.length / 3);
       positions.push(...p);
@@ -130,6 +141,27 @@ export function removeFlatTriangles(mesh) {
   }
   return { ...mesh, triangles: faces.filter(Boolean).flat() };
 }
+/** Serialize canonical bodies at STL precision using Manifold's explicit
+ * topology merges, never welding coincident but distinct topological vertices. */
+export function solidMesh(solid, own, toleranceMM = 0.005) {
+  let body = own(own(solid.asOriginal()).setTolerance(toleranceMM));
+  let mesh = cleanMesh(body.getMesh(), true),
+    report = inspectMesh(mesh);
+  let precisionRepaired = false;
+  if (!report.valid && (report.invalidEdges || report.zeroArea)) {
+    body = own(
+      body.warp((v) => {
+        for (let k = 0; k < 3; k++) v[k] = Math.fround(v[k]);
+      }),
+    );
+    body = own(body.simplify(toleranceMM));
+    mesh = cleanMesh(body.getMesh(), true);
+    report = inspectMesh(mesh);
+    precisionRepaired = true;
+  }
+  return { mesh, report, precisionRepaired };
+}
+
 export async function buildSolid(
   project,
   partId = 'main',

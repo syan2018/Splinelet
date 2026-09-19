@@ -1,4 +1,4 @@
-import type { Project } from '@/lib/project';
+import type { Project, BambuSlicerTemplate } from '@/lib/project';
 import type { CurvePreview } from '@/lib/modifier-types';
 
 export type CreationRuntimeContext = {
@@ -32,6 +32,11 @@ export type BoundCreationEvaluation = {
  * treat them as an alternate writable source model.
  */
 export type CreationRuntime = {
+  readOutputSettings: (project: Project) => {
+    parts: { id: string; name: string }[];
+    defaultPartId: string;
+    slicerTemplate: BambuSlicerTemplate | null;
+  };
   readCurvePreviews: (project: Project) => CurvePreview[];
   readCreationDocument: (project: Project) => unknown;
   evaluate: (

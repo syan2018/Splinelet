@@ -329,3 +329,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 原重新拟合接线：原确认弹窗、单段拟合器和忙碌状态保留；V4 使用当前源边的有向端点逐段拟合，不按旧锚点距离过滤短边，不替换整个 TracePath。结果通过捕获工程视图的 refit-path 命令写控制柄，保持 Vertex/Edge/Program 身份；异步期间工程变化则拒绝迟到结果，受关系驱动或共享边由既有命令明确拒绝。确认取消与执行、控制柄编辑后拟合及撤销重做的实际界面证据见本轮 QA。候选路径、工程尺寸、建模与默认切换仍待完成。
 
 2026-09-20 V4 候选路径接线：原 create_path 的逐段拟合结果通过 draw-path 像素意图转换为规范 Source，不经过旧 Project 写回。preview 只保留会话候选与捕获的提交计划，接受时一次写入；丢弃不创建节点、历史或文件变更，迟到拟合与失效接受由版本检查拒绝。普通新建沿用单独部件语义。候选返回的临时 id 仅用于预览，直接创建或 commit_preview 返回已提交的源路径显示 id；不将临时 TracePath 持久化。原接受按钮报告失效原因并保留候选供丢弃。原 batch API 与 UI 的实际验收见本轮 QA，完整 API 与默认入口仍待完成。
+
+2026-09-20 原成品输出接线：CreationWorkspace 的输出零件与切片模板直接读取规范制造定义，solid/3mf 请求经运行时求值 BodySet，再适配原检查和下载 DTO；同一提交版本复用实体结果，禁止预览导出和迟到结果。Web/Desktop 共用 browser-studio-host 装配现有 document-worker，资源随宿主释放；显式导入 worker-client.ts，避免与旧同名 mjs 客户端混用协议。原高级 ModelWorkspace 的全部面板与默认入口仍待接线。

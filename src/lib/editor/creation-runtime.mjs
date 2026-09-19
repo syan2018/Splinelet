@@ -10,6 +10,7 @@ import { projectSourceView } from './source-view.mjs';
 import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
 import { effectiveNodeState } from '../scene/hierarchy.mjs';
+import { creationOutput } from './creation-output.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -122,6 +123,16 @@ export function createV4CreationRuntime({
     readCreationDocument(project) {
       return metadata(project).view.creation;
     },
+    readOutputSettings(project) {
+      const document = metadata(project).state.document;
+      return freeze(
+        structuredClone({
+          parts: Object.values(document.manufacturing.parts),
+          defaultPartId: document.manufacturing.defaultPartId,
+          slicerTemplate: document.manufacturing.slicerTemplate,
+        }),
+      );
+    },
     beginObjectGesture(project, nodeIds) {
       const entry = current(project);
       if (!Array.isArray(nodeIds) || !nodeIds.length)
@@ -198,10 +209,30 @@ export function createV4CreationRuntime({
     },
     async evaluate(action, args, project) {
       const entry = metadata(project);
+      if (action === 'solid' || action === '3mf') {
+        current(project);
+        const request = structuredClone(args || {});
+        if (!entry.bodyEvaluation)
+          entry.bodyEvaluation = Promise.resolve()
+            .then(() =>
+              evaluate(entry.state.document, {
+                ...identity(entry.state),
+                requestedDomains: ['bodies'],
+              }),
+            )
+            .catch((error) => {
+              delete entry.bodyEvaluation;
+              throw error;
+            });
+        const snapshot = await entry.bodyEvaluation;
+        current(project);
+        return creationOutput(entry.state.document, snapshot, action, request);
+      }
       if (action !== 'creation') throw Error(`V4 创作求值尚未适配：${action}`);
       if (Object.keys(args || {}).length)
         throw Error('预览参数须先通过明确的预备命令编译');
       const snapshot = await evaluate(documentOf(entry.state), {
+        ...identity(entry.state),
         requestedDomains: ['curves', 'regions', 'relief', 'placed-relief'],
       });
       assertAlive();

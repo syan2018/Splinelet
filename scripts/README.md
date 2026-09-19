@@ -115,3 +115,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 原根浏览器另覆盖控制柄拖动后的重新拟合确认/取消、保留节点和边身份、撤销/重做。`test-v4-path-intents.mjs` 验证拟合端点转换、反向边和过期结果拒绝；`test-v4-path-geometry-command.mjs` 验证共享/驱动保护与精确控制柄写入。
 
 `test-v4-fitted-path-intent.mjs` 验证原批量拟合曲线的规范写入、两段曲线闭合、不可变候选、过期拒绝、保存重开与一次撤销；原根浏览器通过公开 create_path 生成候选，再点击原接受/丢弃按钮，并检查直接创建返回的路径 id 与规范保存。
+
+`test-v4-creation-output.mjs` 验证原输出运行时的规范实体/3MF、复用、只读及预览/过期拒绝；`test-v4-body-samples.mjs` 默认检查内置 Sandrone，可用额外路径参数检查其他本地样例，验证实体、STL、材料体积和 3MF。原根浏览器使用 browser-studio-host 和真实 document-worker/WASM，覆盖内置样例的成品检查与通用 3MF 内容。
