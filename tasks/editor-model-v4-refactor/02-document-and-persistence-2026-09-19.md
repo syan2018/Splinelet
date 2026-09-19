@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：文档与持久化负责人
-- 执行状态：见下面各检查点；当前均未开始
+- 执行状态：T02 模块交付已复核，待同提交全量检查；T18/T19 未开始
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -40,8 +40,8 @@ T02 先提供 DocumentV4/schema/codec 给其他包；待 P04/P05 管线可比较
 
 ## T02 · V4 文档、验证器与容器编解码
 
-- 状态：未开始
-- 执行者 / 验收者：未分配
+- 状态：模块交付已复核，待集成检查
+- 执行者 / 验收者：文档模块执行者 / 主代理
 - 前置：[T00](00-architecture-and-integration-2026-09-19.md#t00)
 - 下游：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)、[T18](02-document-and-persistence-2026-09-19.md#t18)、[T19](02-document-and-persistence-2026-09-19.md#t19)
 - 覆盖原工作包：R1/R2
@@ -50,6 +50,10 @@ T02 先提供 DocumentV4/schema/codec 给其他包；待 P04/P05 管线可比较
 ### 目标与代码背景
 
 实现唯一持久模型及纯验证/编码；V1–V3 导入归 T18，用户保存会话归 T19。
+
+2026-09-19 分发：起始 ee951b7，合同 v1。先交付并签收 types/schema 与文档单测，允许 T03/T04/T12 的文档消费者开始；codec 随后同包交付，不让 ZIP 细节阻塞纯模块。T02 总状态须两部分都验收才完成。
+
+2026-09-19 模块复核：types/schema/codec 与共享容器提取已交付。主代理补充修复资源 ID 大小写混排导致自身往返失败、编码总大小限额及解压前入口大小检查。`test-v4-document.mjs`、`test-v4-codec.mjs`、旧 `test-project-format.mjs`、类型检查与定向 lint/format 已通过；尚未接入产品打开/保存入口，不代表 T19 或 V4 默认切换完成。
 
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
@@ -64,6 +68,7 @@ T02 先提供 DocumentV4/schema/codec 给其他包；待 P04/P05 管线可比较
 - src/lib/document/schema.mjs（新增）
 - src/lib/document/codec.mjs（新增）
 - scripts/tests/fixtures/v4-document/（新增）
+- I00 本轮明确分配 `src/lib/project-container.mjs` 与 `src/lib/project-format.mjs` 的纯 ZIP/hash helper 机械提取；旧 codec 行为和测试须保持。两文件由本执行者独占，完成后交主代理审阅。
 
 另含下列命令对应的新单测文件。
 
