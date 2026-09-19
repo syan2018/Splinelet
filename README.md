@@ -144,6 +144,7 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 - [完整文档索引](docs/README.md)
 - [统一创作与 API](docs/creation-2026-09-19.md)
 - [源线编辑与快捷键](docs/source-editor.md)
+- [编辑模型评审与重构计划](docs/architecture/editor-model-review-and-refactor-2026-09-19.md)（对象组织、求值管线与渐进交互；设计提案，尚未实施）
 - [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/architecture/construction-pipeline.md)
 - [打印分层](docs/print-stack.md) · [3MF 导出](docs/3mf-export.md)
 - [Splinelet 工程格式](docs/project-format.md)
