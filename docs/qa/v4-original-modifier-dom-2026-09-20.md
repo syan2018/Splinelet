@@ -98,3 +98,11 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 `test-v4-point-gesture.mjs` 新增旋转部件、共享路径、开/闭合线、完整控制柄形状、取消、未知路径和一次撤销检查。原 Sandrone 浏览器 fixture 从真实 SVG 路径命中开始拖动，确认全部 cubic 点位移、预览不提交、松手一次提交、撤销恢复原文档。现有节点及控制柄鼠标检查仍通过。
 
 原 `translatePaths` 的涂色和分区种子联动仍需迁入明确的命令边界；这里验证的是源几何移动，不能据此签收对象移动或默认工作区全流程。`pnpm check:all` 退出 0，98 项单测、类型/lint/格式、Rust 检查和双端前端生产构建通过。全量检查日志：`outputs/v4-qa/check-all-source-path-drag-2026-09-20.log`。
+
+## 源移动与区域样式联动核验
+
+`test-v4-path-move-equivalence.mjs` 对内置 Sandrone 的头发部件源线移动 12/-8 像素，以原 `translatePaths` 和 `evaluateCreation` 的结果对比：69 个区域保持几何误差小于 0.001 mm²，颜色、厚度一致。旧 hair-partition fixture 的空间样式查找在移动后本身报歧义，故使用移动前已验证的分区单元平移作为基准，覆盖全部相关源线与外部边界移动后的 11 组涂色，包括跨多个单元的涂色。V4 实时区域保持相同 output ref，按原色及厚度解算，且不改写 programs/contracts 或 nodes；一次撤销恢复原文档。
+
+核验结论：导入时旧涂色几何及 split seed 已转为稳定引用绑定，V4 不需要额外补偿平移；上一节的待核验项据此解除。镜像/阵列中心和固定裁剪输入保持原参数语义；不能把“源线全选平移”当成最终结果的刚体平移。全图平移若改变与固定输入的拓扑关系，原实现也会阻断。默认根及原生文件仍需独立接线验收。
+
+本批 `pnpm check:all` 退出 0：99 项单测、类型/lint/格式、Rust 检查及 Web/桌面前端构建通过。日志：`outputs/v4-qa/check-all-path-move-equivalence-2026-09-20.log`。

@@ -1,7 +1,8 @@
 import { pathNodes } from './node-edit.mjs';
 
-/** Translate selected raw paths in the captured display frame. Owner poses,
- * paint and manufacturing inputs are deliberately separate editing operations.
+/** Translate selected raw paths in the captured display frame. Appearance and
+ * relief follow output refs when the construction contract remains valid.
+ * Owner poses and fixed operator parameters are not changed by source movement.
  * @param {{runtime: ReturnType<typeof import('../editor/creation-runtime.mjs').createV4CreationRuntime>, project: object, pathIds: string[]}} input
  */
 export function beginV4PathGesture({ runtime, project, pathIds }) {
