@@ -20,7 +20,12 @@ import {
   finishRegionBranch,
 } from './regions.mjs';
 import { findRegionDrawing } from '../region-drawing.mjs';
-import { createAppendBoundaryCommand } from './append-boundary.mjs';
+import { createCommandIdAllocator } from '../command-ids.mjs';
+import {
+  createAppendBoundaryCommand,
+  prepareBoundaryBranch,
+  finishBoundaryBranch,
+} from './append-boundary.mjs';
 import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
 import { createSourceTransferCommand } from './source-transfer.mjs';
 import { createResourceCommand, RESOURCE_ACTIONS } from './resources.mjs';
@@ -99,9 +104,9 @@ function createShape(document, action, idFactory) {
   };
   return id;
 }
-// The ordinary drawing command only extends a plain Source / Fill program.
-// Complex programs require an explicit authoring target, never silent replacement.
-function basicProgram(document, ownerNodeId) {
+// Only plain Source / Fill programs permit in-place input extension.
+// New contours in complex programs use an independent unpublished branch.
+function basicProgram(document, ownerNodeId, allowAdvanced = false) {
   writable(document, ownerNodeId);
   const node = document.nodes[ownerNodeId];
   if (node.kind !== 'shape') throw Error('线条必须属于部件');
@@ -122,8 +127,10 @@ function basicProgram(document, ownerNodeId) {
         fillSource?.type !== 'source' ||
         !fillSource.enabled ||
         program.outputs.regions?.operatorId !== fill.id))
-  )
+  ) {
+    if (allowAdvanced) return null;
     throw Error('高级构造需要明确指定线条来源，不能用普通绘制替换');
+  }
   return { program, source, fill };
 }
 function ensureFill(document, program, source, ownerNodeId, idFactory) {
@@ -173,7 +180,8 @@ function ensureFill(document, program, source, ownerNodeId, idFactory) {
   );
   program.outputs.regions = port(ownerNodeId, id, 'regions');
 }
-function drawPath(document, action, idFactory) {
+function drawPath(document, action, rawIdFactory) {
+  const idFactory = createCommandIdAllocator(document, rawIdFactory);
   if (
     !Array.isArray(action.points) ||
     action.points.length <
@@ -184,9 +192,11 @@ function drawPath(document, action, idFactory) {
   const ownerNodeId =
     action.ownerNodeId || createShape(document, action, idFactory);
   writable(document, ownerNodeId);
-  const { program, source: existing } = action.auxiliary
-    ? {}
-    : basicProgram(document, ownerNodeId);
+  const basic = action.auxiliary
+    ? null
+    : basicProgram(document, ownerNodeId, true);
+  const independentBoundary = !action.auxiliary && !basic;
+  const { program, source: existing } = basic || {};
   const matrix = inverseTransform(worldMatrix(document, ownerNodeId));
   const points = action.points.map((p) => transformPoint(matrix, p));
   const count = action.closed ? points.length : points.length - 1;
@@ -250,12 +260,19 @@ function drawPath(document, action, idFactory) {
   document.sketches[sketchId] = sketch;
   if (action.auxiliary)
     return { document, changedRefs: [{ kind: 'path', sketchId, id: pathId }] };
-  const source = existing || operator(idFactory(), 'source', { paths: [] });
-  source.inputs.paths.push({ kind: 'sketch', sketchId, pathIds: [pathId] });
-  program.operators[source.id] = source;
-  program.outputs.curves = port(ownerNodeId, source.id, 'curves');
-  if (action.closed || program.outputs.regions)
-    ensureFill(document, program, source, ownerNodeId, idFactory);
+  if (independentBoundary) {
+    const pathRef = { kind: 'path', sketchId, id: pathId };
+    const branch = prepareBoundaryBranch(document, pathRef, { idFactory });
+    if (action.closed)
+      finishBoundaryBranch(document, pathRef, branch, { idFactory });
+  } else {
+    const source = existing || operator(idFactory(), 'source', { paths: [] });
+    source.inputs.paths.push({ kind: 'sketch', sketchId, pathIds: [pathId] });
+    program.operators[source.id] = source;
+    program.outputs.curves = port(ownerNodeId, source.id, 'curves');
+    if (action.closed || program.outputs.regions)
+      ensureFill(document, program, source, ownerNodeId, idFactory);
+  }
   return {
     document,
     changedRefs: [nodeRef(ownerNodeId), { kind: 'path', sketchId, id: pathId }],
@@ -454,6 +471,8 @@ export function createAuthoringCommand(action) {
       };
       const branch = findRegionDrawing(document, pathRef);
       if (!branch) return { document, changedRefs: [] };
+      if (branch.role === 'boundary')
+        return finishBoundaryBranch(document, pathRef, branch, { idFactory });
       const sketch = document.sketches[pathRef.sketchId];
       const edges = sketch.paths[pathRef.id].edges;
       if (!edges.length) throw Error('区域绘制至少需要一段线条');
@@ -515,7 +534,14 @@ export function createAuthoringCommand(action) {
       if (drawingBranch) {
         writable(document, sketch.ownerNodeId);
         extendPath(document, { ...action, close: true }, { idFactory });
-        return finishRegionBranch(document, drawingBranch, { idFactory });
+        return drawingBranch.role === 'boundary'
+          ? finishBoundaryBranch(
+              document,
+              { kind: 'path', sketchId: sketch.id, id: path.id },
+              drawingBranch,
+              { idFactory },
+            )
+          : finishRegionBranch(document, drawingBranch, { idFactory });
       }
       const { program, source } = basicProgram(document, sketch.ownerNodeId);
       if (

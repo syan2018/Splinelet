@@ -478,20 +478,26 @@ const validateOperator = (key, operator, seen) => {
     if (
       operator.authoring.phase !== 'drawing' ||
       operator.enabled ||
-      !['partition', 'boolean'].includes(operator.type)
+      !['partition', 'boolean', 'fill'].includes(operator.type)
     )
-      fail('Operator.authoring 仅用于禁用且未完成的分区/挖孔');
-    if (
-      operator.params?.scope?.kind !== 'selected' ||
-      !Array.isArray(operator.params.scope.refs) ||
-      !operator.params.scope.refs.length ||
-      (operator.type === 'boolean' &&
-        operator.params.operation !== 'difference')
-    )
-      fail('Operator.authoring 必须保留明确的区域目标与挖孔语义');
-    operator.params.scope.refs.forEach((ref) =>
-      validateOutputRef(ref, 'Operator.authoring.scope'),
-    );
+      fail('Operator.authoring 仅用于禁用且未完成的轮廓/分区/挖孔');
+    if (operator.type === 'fill') {
+      exactKeys(operator.params, ['rule'], 'Operator.authoring.fill');
+      if (operator.params.rule !== 'even-odd')
+        fail('未完成轮廓必须使用 even-odd 构面');
+    } else {
+      if (
+        operator.params?.scope?.kind !== 'selected' ||
+        !Array.isArray(operator.params.scope.refs) ||
+        !operator.params.scope.refs.length ||
+        (operator.type === 'boolean' &&
+          operator.params.operation !== 'difference')
+      )
+        fail('Operator.authoring 必须保留明确的区域目标与挖孔语义');
+      operator.params.scope.refs.forEach((ref) =>
+        validateOutputRef(ref, 'Operator.authoring.scope'),
+      );
+    }
   }
   for (const [port, inputs] of Object.entries(
     table(operator.inputs, 'Operator.inputs'),

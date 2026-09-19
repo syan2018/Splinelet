@@ -192,3 +192,13 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 真实保存重开暴露了分区契约比较错误：原实现直接对成员对象 JSON.stringify，编码器排序字段后同一契约被误判改变。修复改为按明确字段比较成员集合，保留原区域 key；`test-v4-region-drawing.mjs` 增加已完成分区/孔的实际编码重开后求值等值断言。修复后全量检查再次退出 0，最终日志 `outputs/v4-qa/check-all-region-drawing-final-2026-09-20.log`。对两份实际 Sandrone 执行导入 → V4 编码/解码 → 平面求值的只读检查，69/70 个区域的发布状态、引用、几何、诊断和依赖集合保持一致；依赖集合比较不要求枚举顺序相同，日志 `outputs/v4-qa/sandrone-region-file-roundtrip-2026-09-20.log`。
 
 最终完整原根浏览器验收退出 0：从原工具建立闭合轮廓、画分区线并结束，撤销/重做；开始孔的第一点后用原保存/打开菜单重开，在原树选择该线、从尾续画并闭合，确认两个区域完成异步刷新且部件无“需检查”提示，再保存与规范文档精确对比。`output/playwright/v4-original-studio/result.json` 的 `pendingSaved` 为 1 条待完成分支，`cutHole` 为 0，最终 3 条源线；页面和控制台错误均为空。截图保留原布局和样式。命令日志 `outputs/v4-qa/original-region-drawing-browser-2026-09-20.log`；此次仍使用显式注入 host 的隔离 fixture，默认根与原生验收未据此签收。
+
+## 2026-09-20 高级部件追加轮廓的原界面接线
+
+普通画轮廓在复杂 Program 内建立未发布 Source → Fill 分支，首点即可保存，闭合后复用追加命令发布。原有分区、孔、镜像、阵列与 Join 不被重写；角色从真实链路推导，默认界面不增加构造节点。合同更新至 v1.3。
+
+`node scripts/tests/unit/test-v4-boundary-drawing.mjs output/agent-emblem/sandrone-gold-emblem.spl` 退出 0，覆盖两份真实样例与重复纹样的保存续画、旧定义与输出身份保持、完成后的文件往返、撤销/重做。新增 copy 测试验证整个高级部件复制后未完成 Fill 的引用重映射与独立闭合。
+
+`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 退出 0。原工具完成分区、保存重开孔并续画后，再使用“画轮廓”追加独立闭合轮廓；结果为 4 条源线、3 个区域，撤销/重做和规范保存通过，页面与控制台错误为空。证据为 `output/playwright/v4-original-studio/result.json` 的 appendedBoundary 与最终 evidence；截图 original-studio.png 已人工检查，保持原布局及样式。仍为原 StudioApp 注入 V4 host 的隔离 fixture，不签收默认根或原生窗口。
+
+本模块最终 `pnpm check:all` 退出 0：107 项单测、类型/lint/格式、Rust 格式/检查和 Web/Desktop 构建通过，日志 `outputs/v4-qa/check-all-boundary-drawing-2026-09-20.log`。首次运行因新增测试的 sort 缺少显式比较函数停止，修正后完整重跑通过。

@@ -86,22 +86,34 @@ assert.throws(
 );
 assert.equal(session.state.revision, before);
 const advanced = createEditorSession(repeatedRingDocument(), { idFactory });
-assert.throws(
-  () =>
-    advanced.dispatch(
-      createAuthoringCommand({
-        kind: 'draw-path',
-        ownerNodeId: 'shape',
-        points: [
-          [0, 0],
-          [1, 1],
-        ],
-      }),
-      { expectedRevision: 0 },
-    ),
-  /高级构造/,
+const advancedBefore = advanced.state.document;
+advanced.dispatch(
+  createAuthoringCommand({
+    kind: 'draw-path',
+    ownerNodeId: 'shape',
+    points: [
+      [0, 0],
+      [1, 1],
+    ],
+  }),
+  { expectedRevision: 0 },
 );
-assert.equal(advanced.state.revision, 0);
+assert.equal(advanced.state.revision, 1);
+assert.deepEqual(
+  advanced.state.document.programs.program.outputs,
+  advancedBefore.programs.program.outputs,
+  'advanced drawing keeps the old published ports while unfinished',
+);
+for (const [id, operator] of Object.entries(
+  advancedBefore.programs.program.operators,
+))
+  assert.deepEqual(
+    advanced.state.document.programs.program.operators[id],
+    operator,
+    'drawing must not replace existing advanced construction',
+  );
+advanced.undo({ expectedRevision: 1 });
+assert.deepEqual(advanced.state.document, advancedBefore);
 // Closed drawing is one atomic history entry, including its implicit Source/Fill.
 const simple = createEditorSession(createDocument({ idFactory }), {
   idFactory,

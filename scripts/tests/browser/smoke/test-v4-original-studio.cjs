@@ -343,6 +343,30 @@ async function main() {
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
     );
+    await page.locator('[data-tree-object]').first().click();
+    await page.getByRole('button', { name: '画轮廓', exact: true }).click();
+    await drawPoint(0.3, 0.5);
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
+    await drawPoint(0.38, 0.5);
+    await drawPoint(0.38, 0.58);
+    await drawPoint(0.3, 0.58);
+    await page.keyboard.press('c');
+    await page.waitForFunction(
+      () =>
+        window.originalStudioEvidence().pendingRegionDrawings === 0 &&
+        document.querySelectorAll('[data-creation-cell]').length === 3,
+    );
+    const appendedBoundary = await evidence();
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.equal((await evidence()).pendingRegionDrawings, 0);
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioSavedEvidence()),
+      { kind: 'v4', matchesCurrent: true },
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
@@ -365,6 +389,7 @@ async function main() {
           closed,
           divided,
           cutHole,
+          appendedBoundary,
           pendingSaved,
           evidence: await evidence(),
           errors,

@@ -1,6 +1,6 @@
-# V4 实施合同 v1.2
+# V4 实施合同 v1.3
 
-建档日期：2026-09-19。状态：**v1.2 于 2026-09-20 增加未完成区域绘制的持久标记**。设计依据为[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)；此处固定实现字段、服务边界与反例。变更须增加版本记录并重验消费者，不能用读取时 normalization 修补不一致。v1.1 不改变 DocumentV4 持久字段；v1.2 变更及消费者验收见下文 C03。
+建档日期：2026-09-19。状态：**v1.3 于 2026-09-20 将未完成绘制扩展到独立轮廓**。设计依据为[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)；此处固定实现字段、服务边界与反例。变更须增加版本记录并重验消费者，不能用读取时 normalization 修补不一致。v1.1 不改变 DocumentV4 持久字段；v1.2/v1.3 变更及消费者验收见下文 C03。
 
 ## C01 · 唯一持久文档
 
@@ -89,6 +89,8 @@ StageResult 为 `{domain,status:'ready'|'empty'|'absent'|'blocked',value,diagnos
 运行时 CurveSet 为 `{frame:{kind:'local',ownerNodeId},curves:[{key,pathRef,edges:[{key,cubic:[Vec2,Vec2,Vec2,Vec2],startKey,endKey,source:EdgeRef,instances,transform}],closed}],junctions,provenance}`。closed 只为本次派生信息；RegionSet 为同框架 `{regions:[{ref:OutputRef,geometry:GeoJSON Polygon|MultiPolygon}],provenance}`。JSTS/Manifold 实例不跨 Worker 传递，传可结构化克隆的结果 DTO。
 
 `evaluateProgram(document,nodeId,registry,context?) -> ShapeResult` 包含各已求值端口及发布结果。依赖键以 `node:<id>:world`、`sketch:<id>`、`datum:<id>`、`parameter:<id>`、`relation:<id>`、`operator:<id>:<port>`、`manufacturing:<id>` 区分；实际依赖才成边，不把整个对象压成单点。
+
+v1.3（2026-09-20）：高级部件新增普通轮廓使用 Source → Fill 未发布分支；Fill 允许 authoring 绘制标记，必须 disabled 且 params 严格为 even-odd 规则。绘制期间原曲线和区域发布端口均不改变。闭合事务复用同一 Fill，并通过 curve-collect / region-collect 追加到当前有效结果，保持原身份与赋值；开放轮廓不能完成。无需区域 scope，已有 Partition/Boolean 的准确目标保护不变。角色从真实输入链推导，不额外持久化。消费者覆盖 validator、编码往返、绘制命令、复制续画、撤销及原界面，见 test-v4-boundary-drawing.mjs 与 test-v4-boundary-drawing-copy.mjs。
 
 ## C04 · 场景与坐标
 

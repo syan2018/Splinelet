@@ -7,7 +7,16 @@ export function regionPathUses(document, pathRef) {
   const matches = [];
   for (const operator of Object.values(program?.operators || {})) {
     let sourceInput;
-    if (operator.type === 'partition' && operator.inputs.cutter?.length === 1)
+    if (
+      operator.type === 'fill' &&
+      operator.authoring?.phase === 'drawing' &&
+      operator.inputs.input?.length === 1
+    )
+      sourceInput = operator.inputs.input[0];
+    else if (
+      operator.type === 'partition' &&
+      operator.inputs.cutter?.length === 1
+    )
       sourceInput = operator.inputs.cutter[0];
     else if (
       operator.type === 'boolean' &&
@@ -36,7 +45,12 @@ export function regionPathUses(document, pathRef) {
     matches.push({
       ownerNodeId,
       operatorId: operator.id,
-      role: operator.type === 'partition' ? 'divider' : 'hole',
+      role:
+        operator.type === 'fill'
+          ? 'boundary'
+          : operator.type === 'partition'
+            ? 'divider'
+            : 'hole',
       drawing: operator.authoring?.phase === 'drawing',
     });
   }

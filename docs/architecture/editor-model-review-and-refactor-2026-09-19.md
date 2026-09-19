@@ -570,3 +570,5 @@ Blender 提供对象、数据和求值的边界经验；Splinelet 按自己的�
 - [Blender Geometry Socket](https://developer.blender.org/docs/features/nodes/geometry_socket/)：算子如何消费几何组件；本方案采用更受限的数据域。
 
 当前实施资料继续以[构造链约定](construction-pipeline.md)、[交互设计稿](../interaction-design-2026-09-19.md)、[工程格式](../project-format.md)和[脚本目录](../../scripts/README.md)为准。执行各包时同步替换对应当前文档，避免本提案与上线行为长期并列漂移。
+
+2026-09-20 实施补充：高级部件追加普通轮廓沿用同一绘制阶段标记，保存在未发布的 Source → Fill 分支。闭合后通过曲线/区域汇总追加，保留旧构造、输出身份及赋值。默认用户仍使用原画轮廓与续画入口，无需管理构造节点。
