@@ -24,7 +24,13 @@ node scripts/tests/browser/smoke/test-sandrone-restored-ui.cjs --target desktop-
 
 全库 `pnpm test` 此时在并行实施中的 V4 importer `test-v4-migration.mjs` 因 `surface-output-missing` 失败；`format:check` 尚有 importer 及其等价测试两处未格式化。不能据此声明全库验收完成。本次浏览器回归也不等于原生打开/保存对话框或 V4 迁移等价验收。
 
-## 原件只读核对
+## 后续运行时边界复验
+
+CreationWorkspace 增加可选运行时接口后，`pnpm typecheck`、`pnpm lint`、`pnpm build:all` 和 `node scripts/tests/unit/test-v4-creation-runtime.mjs` 通过。默认入口未注入 V4，双端原 UI smoke 再次通过，证据分别位于 `outputs/v4-qa/creation-runtime-web-2026-09-19` 和 `outputs/v4-qa/creation-runtime-desktop-2026-09-19`。这次结果覆盖原布局、两个 Sandrone 工程及内置工程厚度编辑/撤销；不代表 V4 已接管原界面。
+
+运行时单测另外覆盖同一 V4 会话中的上色、预备厚度事务、一次撤销、模板更新、外部展示句柄拒绝、异步过期结果拒绝，以及同一手势 ID 内预览变化。实体/导出求值、底板及源路径适配仍未完成。
+
+## 原件只读核对结果
 
 | 文件                                                                         | 运行后 SHA256（与运行前相同）                                      |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |

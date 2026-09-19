@@ -28,7 +28,9 @@
 - `source-view.mjs` 提供原源画布的精确像素 cubic 和 canonical EntityRef 反查；分段或反向不会让旧 identity 指向其他实体。局部坏路径只产生该路径诊断，不清空其他来源。
 - `creation-view.mjs` 提供原作品树、区域与属性的只读数据。路径 ID 与 source-view 一致；区域 key 包含完整 OutputRef。未计算的厚度/Z 不猜值，未启用打印层时不投影为分层模式。
 - `creation-intents.mjs` 把原 `run(action,args)` 的 paint/height/clear_paint/swatch/delete_swatch/object/new_object 转为 V4 同一事务；批量上色及新建色卡只产生一次撤销，过期视图和预览视图不能提交正式命令。尚未适配的动作显式拒绝，不删按钮作为替代。
-- 这些模块目前已通过真实求值→只读视图→上色事务→重新求值的单元闭环，**尚未接替原工作区的所有运行时读写**。DOM 接线与剩余命令是下一阶段，不能把模块测试算为原 UI 的 V4 验收。
+- `CreationWorkspace` 已支持可选 `CreationRuntime`：命令、求值、角色准备/确认、底板确认和模板更新有独立入口；未注入时保持原实现。没有修改 DOM/CSS。新建色卡与对象按前后 ID 差集定位，避免把数组排序当作身份。
+- `src/lib/editor/creation-runtime.mjs` 从唯一 EditorSession 签发只读展示句柄；普通命令、预备事务、撤销和模板更新均写同一会话。异步求值拒绝过期状态，同一个拖动中的预览文档变化也会使旧展示失效；展示 Project 不接受反向解析或持久化。
+- 这些模块已通过真实求值→只读视图→上色事务→重新求值的单元闭环，**父级 studio-app 尚未注入 V4 runtime**。当前 runtime 只支持已适配的创作命令和不带预览参数的 creation 求值；底板、实体/导出、角色及源路径接线仍需完成。双端默认 UI 复验只证明原行为保持，不能算为 V4 GUI 验收。
 
 默认只有部件/组与按需线/区，直接上色和调厚度；高级构造随重复、引用等任务展开；修复失效保持原部件上下文。
 
