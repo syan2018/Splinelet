@@ -350,6 +350,136 @@ async function main() {
       [1254, 1254],
     );
     const desiredMode = loaded.mode === 'symmetric' ? 'corner' : 'symmetric';
+    const node = page.locator('[data-node-index="1"]');
+    await node.scrollIntoViewIfNeeded();
+    let bounds = await node.boundingBox();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2 + 20,
+      bounds.y + bounds.height / 2 + 12,
+    );
+    await page.waitForFunction(
+      () =>
+        !!JSON.parse(document.getElementById('reference-evidence').textContent)
+          .previewId,
+    );
+    const dragged = await referenceState();
+    assert.equal(
+      dragged.revision,
+      loaded.revision,
+      'pointer moves are preview only',
+    );
+    assert.equal(
+      dragged.restored,
+      true,
+      'committed document stays unchanged until pointer-up',
+    );
+    assert.ok(
+      Math.abs(dragged.displayAnchor.x - loaded.displayAnchor.x - 10) < 1e-7,
+    );
+    assert.ok(
+      Math.abs(dragged.displayAnchor.y - loaded.displayAnchor.y - 6) < 1e-7,
+    );
+    await page.mouse.up();
+    await page.waitForFunction(
+      (rev) =>
+        JSON.parse(document.getElementById('reference-evidence').textContent)
+          .revision > rev,
+      loaded.revision,
+    );
+    assert.equal((await referenceState()).restored, false);
+    await page
+      .getByRole('button', { name: '撤销测试编辑', exact: true })
+      .click();
+    await page.waitForFunction(
+      () =>
+        JSON.parse(document.getElementById('reference-evidence').textContent)
+          .restored,
+    );
+    // Handle hit target, same original SVG; Escape must cancel its live preview.
+    const handle = page.locator('[data-control-handle="1:1"] circle').last();
+    await handle.scrollIntoViewIfNeeded();
+    bounds = await handle.boundingBox();
+    const beforeHandle = await referenceState();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2 + 16,
+      bounds.y + bounds.height / 2 + 20,
+    );
+    await page.waitForFunction(
+      () =>
+        !!JSON.parse(document.getElementById('reference-evidence').textContent)
+          .previewId,
+    );
+    assert.notDeepEqual(
+      (await referenceState()).displayHandle,
+      beforeHandle.displayHandle,
+    );
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+    assert.equal((await referenceState()).previewId, null);
+    assert.equal((await referenceState()).revision, beforeHandle.revision);
+    assert.deepEqual(
+      (await referenceState()).displayHandle,
+      beforeHandle.displayHandle,
+    );
+    await node.click();
+    await node.scrollIntoViewIfNeeded();
+    bounds = await node.boundingBox();
+    const beforeConstraint = await referenceState();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      bounds.x + bounds.width / 2 + 2,
+      bounds.y + bounds.height / 2 + 1,
+    );
+    assert.deepEqual(
+      (await referenceState()).displayAnchor,
+      beforeConstraint.displayAnchor,
+      'sub-threshold movement leaves geometry alone',
+    );
+    await page.keyboard.down('Shift');
+    await page.mouse.move(
+      bounds.x + bounds.width / 2 + 20,
+      bounds.y + bounds.height / 2 + 12,
+    );
+    const constrained = await referenceState();
+    assert.ok(
+      Math.abs(constrained.displayAnchor.y - beforeConstraint.displayAnchor.y) <
+        1e-7,
+    );
+    assert.ok(
+      Math.abs(
+        constrained.displayAnchor.x - beforeConstraint.displayAnchor.x - 10,
+      ) < 1e-7,
+    );
+    await page
+      .locator('svg.drawing-canvas')
+      .evaluate((svg) => svg.releasePointerCapture(1));
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await page.waitForFunction(
+      () =>
+        JSON.parse(document.getElementById('reference-evidence').textContent)
+          .previewId === null,
+    );
+    assert.equal((await referenceState()).revision, beforeConstraint.revision);
+    assert.deepEqual(
+      (await referenceState()).displayAnchor,
+      beforeConstraint.displayAnchor,
+      'lost capture cancels the source gesture',
+    );
     await page
       .getByRole('combobox', { name: '节点连接模式' })
       .selectOption(desiredMode);

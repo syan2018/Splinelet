@@ -21,6 +21,18 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 
 默认根入口仍使用原 UI 的旧后端。完整 goal 保持进行中。
 
+## 同日补充：原画布节点与控制柄
+
+默认 Studio 仍使用原手势状态机；仅把路径和节点/柄 SVG 提取为纯渲染组件，保留原 CSS、data 属性、选中外观及事件目标。V4 点手势将命中索引解析为已展示源的稳定身份，像素位移始终相对 pointer-down 基线，接入现有源预览与单一历史；没有反向导入展示曲线。
+
+专项单测覆盖多选、点击未选节点、闭合接缝、旋转部件、模式联动、非法命中、锁定/隐藏和旧工程手势失效。浏览器在内置 Sandrone 的同一原 SVG 组件上使用真实鼠标：节点移动在松开前只改变展示，松开后一次提交，撤销完全还原；控制柄拖动 Esc 还原且不增加 revision；不足 4px 不移动几何，Shift 只移动主轴，捕获丢失取消。之后继续进行原节点面板与 V4 文件副本保存重开。
+
+当前 hook 不承担吸附、整路径移动、框选和端点续画，默认根也尚未切换至该 hook；这些仍是完整验收前的工作。
+
+`pnpm check:all` 退出码 0：98 项 hermetic 单测、类型、lint、格式、Rust 和双端构建通过，日志 `outputs/v4-qa/check-all-original-canvas-2026-09-20.log`。补充的 pointer-up 主键保护及真实鼠标用例随后通过专项 lint/格式与浏览器验证。默认原工作区的 `spline-endpoints` 在双端通过，证据为 `outputs/v4-qa/original-canvas-desktop-2026-09-20/manifest.json` 与 `outputs/v4-qa/original-canvas-web-2026-09-20/manifest.json`。
+
+首次并发跑 `agent-spline-authoring` 暴露其文件选择后立即读取的旧时序问题：Sandrone 尚未加载完成时找不到杯子部件。测试现在从同一 fixture 解码期望路径/部件 ID，等完整工程就绪后再继续；原断言保持不变。修正后桌面前端通过，证据 `outputs/v4-qa/original-canvas-agent-ready-2026-09-20/manifest.json`；失败记录保留在 `original-canvas-agent-2026-09-20`。这些完整工作区回归仍使用旧后端，不能替代 V4 默认切换。
+
 ## 同日补充：参考图资源与真实浏览器文件副本
 
 `studio-presentation.mjs` 从文档 Reference 和通过大小/hash 校验的 asset bytes 创建 Blob URL，以参考图原有仿射推导原画布 frame。无图必须给出 frame，多图必须明确选择，不能显示的仿射明确拒绝；显示 URL 不写入文档或保存容器。`studio-host.mjs` 管理会话和图片资源：成功替换后释放旧 URL，失败保留原展示并释放候选资源，关闭幂等。恢复完成前发生工程替换时，候选图片也不能覆盖新工程的资源。

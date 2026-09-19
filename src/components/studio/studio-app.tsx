@@ -37,6 +37,10 @@ import {
   SplineNodeInspector,
   SplineTraceControls,
 } from '@/components/source-editor/spline-inspector';
+import {
+  SourceNodeHandles,
+  SourcePathLayers,
+} from '@/components/source-editor/source-canvas-layers';
 import { splineEndpoint, extendSpline } from '@/lib/source-editor/extend.mjs';
 import SplineEndpoints from '@/components/source-editor/spline-endpoints';
 import EndpointSnapOverlay, {
@@ -3749,204 +3753,37 @@ export default function StudioApp() {
                 />
               )}
               <g ref={setCreationLayer} />
-              {project.paths
-                .filter(
+              <SourcePathLayers
+                paths={project.paths.filter(
                   (p) =>
                     p.visible &&
                     !project.creation?.objects.some(
                       (o: { pathIds: string[]; visible: boolean }) =>
                         o.pathIds.includes(p.id) && !o.visible,
                     ),
-                )
-                .map((path) => (
-                  <g
-                    key={path.id}
-                    data-source-id={path.id}
-                    className={
-                      'source-path-layer' +
-                      (highlightSourceSelection &&
-                      selectedPaths.includes(path.id)
-                        ? ' selected'
-                        : '')
-                    }
-                  >
-                    {!path.curves.length && (
-                      <circle
-                        cx={path.start.x}
-                        cy={path.start.y}
-                        r={5 / view.s}
-                        fill={path.color}
-                        onPointerDown={(e) => selectCanvasPath(e, path.id)}
-                        onDoubleClick={() => {
-                          setActiveNow(path.id);
-                          chooseTool('edit');
-                        }}
-                      />
-                    )}
-                    <path
-                      d={d(path.curves) + (path.closed ? ' Z' : '')}
-                      fill={fill && path.closed ? path.color + '24' : 'none'}
-                      stroke={path.color}
-                      strokeWidth={
-                        (highlightSourceSelection &&
-                        selectedPaths.includes(path.id)
-                          ? 2.8
-                          : 1.5) / view.s
-                      }
-                      opacity={
-                        highlightSourceSelection &&
-                        selectedPaths.length &&
-                        !selectedPaths.includes(path.id)
-                          ? 0.55
-                          : 1
-                      }
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      aria-label={path.name}
-                      d={d(path.curves) + (path.closed ? ' Z' : '')}
-                      fill="none"
-                      stroke="transparent"
-                      strokeWidth={(tool === 'select' ? 3 : 14) / view.s}
-                      style={{
-                        pointerEvents: ['edit', 'select', 'move'].includes(tool)
-                          ? 'stroke'
-                          : 'none',
-                      }}
-                      onPointerDown={(e) => selectCanvasPath(e, path.id)}
-                      onDoubleClick={(e) => splitAt(e, path.id)}
-                    />
-                  </g>
-                ))}
+                )}
+                scale={view.s}
+                tool={tool}
+                selectedPaths={selectedPaths}
+                highlightSourceSelection={highlightSourceSelection}
+                fill={fill}
+                onSelectPath={selectCanvasPath}
+                onEditPath={(pathId) => {
+                  setActiveNow(pathId);
+                  chooseTool('edit');
+                }}
+                onSplitAt={splitAt}
+              />
               {current?.visible && (
                 <g>
                   {tool === 'edit' ? (
-                    <>
-                      {' '}
-                      {current.curves.map((c, i) => (
-                        <g key={i}>
-                          {[1, 2]
-                            .filter((k) => {
-                              const node =
-                                selectedNodes.length === 1
-                                  ? selectedNode(current, selection)
-                                  : null;
-                              return node !== null
-                                ? (k === 1
-                                    ? i
-                                    : current.closed
-                                      ? (i + 1) % current.curves.length
-                                      : i + 1) === node
-                                : !selectedNodes.length &&
-                                    selection?.curve === i;
-                            })
-                            .map((k) => (
-                              <g
-                                key={k}
-                                data-control-handle={i + ':' + k}
-                                onPointerDown={(e) => startPointDrag(e, i, k)}
-                                style={{ cursor: 'grab' }}
-                              >
-                                <line
-                                  x1={c[k === 1 ? 0 : 3].x}
-                                  y1={c[k === 1 ? 0 : 3].y}
-                                  x2={c[k].x}
-                                  y2={c[k].y}
-                                  stroke={current.color}
-                                  opacity=".6"
-                                  strokeWidth={1 / view.s}
-                                />
-                                <circle
-                                  cx={c[k].x}
-                                  cy={c[k].y}
-                                  r={9 / view.s}
-                                  fill="transparent"
-                                />
-                                <circle
-                                  cx={c[k].x}
-                                  cy={c[k].y}
-                                  r={4 / view.s}
-                                  stroke={current.color}
-                                  strokeWidth={1 / view.s}
-                                  fill={
-                                    selection?.curve === i &&
-                                    selection.point === k
-                                      ? current.color
-                                      : '#20272c'
-                                  }
-                                  pointerEvents="none"
-                                />
-                              </g>
-                            ))}
-                        </g>
-                      ))}
-                      {pathNodes(current).map((p: Point, index: number) => {
-                        const selected = selectedNodes.includes(index);
-                        const item = nodeSelection(current, index);
-                        return (
-                          <a
-                            key={'node-' + index}
-                            href={'#node-' + index}
-                            aria-label={'节点 ' + (index + 1)}
-                            data-node-index={index}
-                            data-node-mode={nodeModes(current)[index]}
-                            onPointerDown={(e) =>
-                              startPointDrag(e, item.curve, item.point)
-                            }
-                            style={{ cursor: 'move' }}
-                          >
-                            <circle
-                              cx={p.x}
-                              cy={p.y}
-                              r={11 / view.s}
-                              fill="transparent"
-                            />
-                            {selected && (
-                              <circle
-                                cx={p.x}
-                                cy={p.y}
-                                r={9 / view.s}
-                                fill="#ffbe5530"
-                                stroke="#ffbe55"
-                                strokeWidth={1 / view.s}
-                                pointerEvents="none"
-                              />
-                            )}
-                            <rect
-                              x={p.x - (selected ? 5 : 4) / view.s}
-                              y={p.y - (selected ? 5 : 4) / view.s}
-                              rx={
-                                nodeModes(current)[index] === 'corner'
-                                  ? 0
-                                  : 3 / view.s
-                              }
-                              width={(selected ? 10 : 8) / view.s}
-                              height={(selected ? 10 : 8) / view.s}
-                              fill={selected ? '#ffbe55' : current.color}
-                              stroke={selected ? '#fff5db' : '#102015'}
-                              strokeWidth={1.5 / view.s}
-                              pointerEvents="none"
-                            />
-                            {!current.closed &&
-                              [0, current.curves.length].includes(index) && (
-                                <text
-                                  x={p.x + 10 / view.s}
-                                  y={p.y - 12 / view.s}
-                                  fontSize={11 / view.s}
-                                  fill="#e5ffc5"
-                                  paintOrder="stroke"
-                                  stroke="#162321"
-                                  strokeWidth={3 / view.s}
-                                  pointerEvents="none"
-                                >
-                                  {index === 0 ? '头' : '尾'}
-                                </text>
-                              )}
-                          </a>
-                        );
-                      })}
-                    </>
+                    <SourceNodeHandles
+                      path={current}
+                      scale={view.s}
+                      selectedNodes={selectedNodes}
+                      selection={selection}
+                      onPointPointerDown={startPointDrag}
+                    />
                   ) : tool === 'trace' ||
                     (tool === 'select' &&
                       selectedPaths.length === 1 &&

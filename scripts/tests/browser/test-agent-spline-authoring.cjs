@@ -17,6 +17,24 @@ module.exports = async (page, outputDirectory) => {
   await page
     .locator('input[accept=".spl,.bezier.json,.json"]')
     .setInputFiles(fixture);
+  const expected = decodeProject(new Uint8Array(await fs.readFile(fixture)));
+  await page.waitForFunction(
+    async ({ pathIds, objectIds }) => {
+      const state = await window.traceStudio.call('state');
+      if (!state.ready || state.busy) return false;
+      const project = await window.traceStudio.call('get_project');
+      return (
+        JSON.stringify(project.paths.map((path) => path.id)) ===
+          JSON.stringify(pathIds) &&
+        JSON.stringify(project.creation?.objects.map((object) => object.id)) ===
+          JSON.stringify(objectIds)
+      );
+    },
+    {
+      pathIds: expected.paths.map((path) => path.id),
+      objectIds: expected.creation.objects.map((object) => object.id),
+    },
+  );
   const initial = await call('creation_inspect');
   const original = await call('get_project');
   const cupId = initial.creation.objects.find((o) => o.name === '杯子').id;
