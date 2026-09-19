@@ -26,6 +26,7 @@
 
 - `src/lib/editor/workspace-view.mjs` 的 `projectWorkspaceView(editorState, evaluated, frame)` 是统一读取边界；`evaluated` 必须携带 EvaluationSession 的 epoch/revision/previewId 和 snapshot，拒绝旧工程、旧 revision 或旧 preview 的结果。frame 显式提供旧画布使用的 width/height/widthMM。
 - `source-view.mjs` 提供原源画布的精确像素 cubic 和 canonical EntityRef 反查；分段或反向不会让旧 identity 指向其他实体。局部坏路径只产生该路径诊断，不清空其他来源。
+- `studio-display.mjs` 把工作区投影、显式 Reference/asset URL/frame 与文件和默认厚度会话状态组成深冻结展示数据；不生成旧 ModelDocument 或旧历史。当前只支持与原画布 frame 完全兼容的 Reference 仿射；无底图与任意仿射的原画布适配、展示类型替换仍未接线，不能用强制类型转换绕过。
 - `creation-view.mjs` 提供原作品树、区域与属性的只读数据。路径 ID 与 source-view 一致；区域 key 包含完整 OutputRef。未计算的厚度/Z 不猜值，未启用打印层时不投影为分层模式。
 - `creation-intents.mjs` 把原 `run(action,args)` 的 paint/height/clear_paint/swatch/delete_swatch/object/new_object 转为 V4 同一事务；批量上色及新建色卡只产生一次撤销，过期视图和预览视图不能提交正式命令。尚未适配的动作显式拒绝，不删按钮作为替代。
 - `CreationWorkspace` 已支持可选 `CreationRuntime`：命令、求值、角色准备/确认、底板确认和模板更新有独立入口；未注入时保持原实现。没有修改 DOM/CSS。新建色卡与对象按前后 ID 差集定位，避免把数组排序当作身份。
