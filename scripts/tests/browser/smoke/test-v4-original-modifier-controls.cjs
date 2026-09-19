@@ -14,6 +14,13 @@ async function main() {
     configFile: false,
     root,
     publicDir: false,
+    optimizeDeps: {
+      include: [
+        '@tauri-apps/api/core',
+        '@tauri-apps/api/event',
+        '@tauri-apps/api/window',
+      ],
+    },
     resolve: { alias: { '@': resolve(root, 'src') } },
     server: {
       host: '127.0.0.1',
@@ -27,10 +34,14 @@ async function main() {
         name: 'isolated-modifier-fixture',
         configureServer(devServer) {
           devServer.middlewares.use(async (req, res, next) => {
-            if (req.url !== '/') return next();
+            if (!['/', '/reference'].includes(req.url)) return next();
+            const fixture =
+              req.url === '/reference'
+                ? 'v4-sandrone-reference'
+                : 'v4-modifier-controls';
             const html = await devServer.transformIndexHtml(
               '/',
-              '<!doctype html><html><head><meta charset="utf-8"><title>原修改器组件验收</title><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="/scripts/tests/fixtures/v4-modifier-controls.mjs"></script></body></html>',
+              `<!doctype html><html><head><meta charset="utf-8"><title>原组件验收</title><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="/scripts/tests/fixtures/${fixture}.mjs"></script></body></html>`,
             );
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
             res.end(html);
@@ -320,6 +331,81 @@ async function main() {
     );
     console.log(
       'PASS original modifier and node DOM: V4 fields, source mode/straighten/delete, derived curves, single undo, parameter binding and lock',
+    );
+    await page.goto(
+      `http://127.0.0.1:${server.httpServer.address().port}/reference`,
+    );
+    await page.locator('#reference-evidence[data-ready="true"]').waitFor();
+    const referenceState = async () =>
+      JSON.parse(await page.locator('#reference-evidence').textContent());
+    await page.locator('#reference-image').evaluate((img) => img.decode());
+    const loaded = await referenceState();
+    assert.equal(loaded.paths, 76);
+    assert.equal(loaded.dirty, true);
+    assert.equal(loaded.targetKind, null);
+    assert.deepEqual(
+      await page
+        .locator('#reference-image')
+        .evaluate((img) => [img.naturalWidth, img.naturalHeight]),
+      [1254, 1254],
+    );
+    const desiredMode = loaded.mode === 'symmetric' ? 'corner' : 'symmetric';
+    await page
+      .getByRole('combobox', { name: '节点连接模式' })
+      .selectOption(desiredMode);
+    await page.waitForFunction((revision) => {
+      const el = document.getElementById('reference-evidence');
+      return (
+        el.dataset.ready === 'true' &&
+        JSON.parse(el.textContent).revision > revision
+      );
+    }, loaded.revision);
+    assert.equal((await referenceState()).restored, false);
+    await page
+      .getByRole('button', { name: '撤销测试编辑', exact: true })
+      .click();
+    await page.waitForFunction(
+      () =>
+        JSON.parse(document.getElementById('reference-evidence').textContent)
+          .restored,
+    );
+    await page
+      .getByRole('button', { name: '保存并重开测试副本', exact: true })
+      .click();
+    await page.waitForFunction(() => {
+      const el = document.getElementById('reference-evidence');
+      const state = JSON.parse(el.textContent);
+      return el.dataset.ready === 'true' && state.savedSize > 0 && !state.dirty;
+    });
+    await page.locator('#reference-image').evaluate((img) => img.decode());
+    const reopened = await referenceState();
+    assert.equal(reopened.restored, true);
+    assert.equal(reopened.targetKind, 'web');
+    assert.equal(reopened.paths, 76);
+    assert.equal(reopened.created, 2);
+    assert.deepEqual(reopened.revoked, [loaded.image]);
+    assert.notEqual(reopened.image, loaded.image);
+    assert.equal(await page.locator('#reference-error').textContent(), '');
+    assert.deepEqual(failures, []);
+    await page.screenshot({
+      path: resolve(output, 'sandrone-reference-reopened.png'),
+      fullPage: true,
+    });
+    await writeFile(
+      resolve(output, 'reference-result.json'),
+      JSON.stringify(
+        {
+          passed: true,
+          scope:
+            'actual Sandrone V4 import, original node inspector, image decode and private OPFS save/reopen; not default workspace or native acceptance',
+          evidence: reopened,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      'PASS Sandrone reference: real image, original node edit/undo, V4 save/reopen through browser file handle and URL release',
     );
   } catch (error) {
     if (page)

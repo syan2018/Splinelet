@@ -21,6 +21,16 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 
 默认根入口仍使用原 UI 的旧后端。完整 goal 保持进行中。
 
+## 同日补充：参考图资源与真实浏览器文件副本
+
+`studio-presentation.mjs` 从文档 Reference 和通过大小/hash 校验的 asset bytes 创建 Blob URL，以参考图原有仿射推导原画布 frame。无图必须给出 frame，多图必须明确选择，不能显示的仿射明确拒绝；显示 URL 不写入文档或保存容器。`studio-host.mjs` 管理会话和图片资源：成功替换后释放旧 URL，失败保留原展示并释放候选资源，关闭幂等。恢复完成前发生工程替换时，候选图片也不能覆盖新工程的资源。
+
+`studio-file-writer.mjs` 只写已经选择的目标。Web 分支检查 readwrite 授权并复用 FileWriter 的串行、close/abort；桌面分支调用已有原子写入能力。测试用注入平台能力覆盖拒绝、顺序与失败后重试，不接触真实用户文件。
+
+浏览器中的内置 Sandrone 验证实际解码 1254×1254 图片、76 条源路径，通过原 `SplineNodeInspector` 改节点连接方式后撤销恢复。随后在独立 context 的私有 OPFS 中使用真实 `FileSystemFileHandle` 保存 V4 副本并重开：文档等价、dirty=false、Web 绑定有效、原图片 URL 释放且新图片可解码。结果为 `output/playwright/v4-original-modifier-controls/reference-result.json`，已检查截图 `sandrone-reference-reopened.png`。这是实际资源、节点组件与浏览器文件能力验证；不是完整默认工作区或原生桌面验收，未修改内置 `.spl`。
+
+`pnpm check:all` 退出码 0：97 项 hermetic 单测及类型、lint、格式、Rust 和双端前端构建通过，日志 `outputs/v4-qa/check-all-studio-host-2026-09-20.log`。内置样例 SHA-256 仍为 `0997DD9A6D41AE21DEF3E1555C0BE4286668A29F4273FA4E9758C188CC883A86`。
+
 ## 同日补充：根会话与文件状态
 
 `createStudioSession` 建立原工作区待接入的根会话：唯一 EditorSession、持久化会话和源/构造运行时共同发出稳定订阅 snapshot。展示 Project 由原 Studio 投影生成并由运行时签发，包含真实源路径；既不存入历史，也不写入 `.spl`。打开新文件前验证文档、参考系及可克隆输入，替换时抑制中间订阅通知，只发布完整的新状态。旧运行时关闭，旧命令不能写进新文件。
