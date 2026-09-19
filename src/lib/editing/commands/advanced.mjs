@@ -761,7 +761,7 @@ const setManufacturingLayer = (document, request, allocate) => {
  *     Generated mirror/array operator IDs are deliberately not accepted.
  * - reference-source { source:PortRef, space, transform?, name?, parentId?, pose? }
  * - cut-reference-regions { targets, sourceRegionPort, space, transform?, name? }
- * - set-operator { ownerNodeId, operatorId, enabled?, params? }
+ * - set-operator { ownerNodeId, operatorId, name?, enabled?, params? }
  * - rotate-nodes { nodeIds, angleRad, centerMM }
  * - reparent-nodes { nodeIds, parentId, keepWorld?, index? }
  * - rebase-node { nodeId, pose }
@@ -815,8 +815,17 @@ export function createAdvancedCommand(action) {
       const program = shapeProgram(document, request.ownerNodeId);
       const current = program.operators[request.operatorId];
       if (!current) throw Error('算子不存在或不属于指定 Shape');
-      if (request.enabled === undefined && request.params === undefined)
-        throw Error('set-operator 需要 enabled 或 params');
+      if (
+        request.enabled === undefined &&
+        request.params === undefined &&
+        request.name === undefined
+      )
+        throw Error('set-operator 需要 name、enabled 或 params');
+      if (
+        request.name !== undefined &&
+        (typeof request.name !== 'string' || !request.name.trim())
+      )
+        throw Error('算子名称不能为空');
       if (request.enabled !== undefined && typeof request.enabled !== 'boolean')
         throw Error('enabled 必须是布尔值');
       if (
@@ -827,6 +836,7 @@ export function createAdvancedCommand(action) {
       )
         throw Error('params 必须是 JSON object');
       if (request.enabled !== undefined) current.enabled = request.enabled;
+      if (request.name !== undefined) current.name = request.name;
       if (request.params !== undefined) current.params = clone(request.params);
       return { document, changedRefs: [nodeRef(request.ownerNodeId)] };
     }

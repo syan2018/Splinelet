@@ -223,7 +223,7 @@ assert.throws(
       modifierId: mirrorId,
       changes: { count: 5 },
     }),
-  /无等价 V4/,
+  /curve-mirror 不支持修改字段：count/,
 );
 assert.throws(
   () => intent('print_layer_remove', { layerId: secondLayerId }),

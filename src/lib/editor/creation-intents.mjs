@@ -1,5 +1,6 @@
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { outputIdentity } from '../relief/appearance.mjs';
+import { compileModifierUpdate } from './modifier-intents.mjs';
 
 export const CREATION_INTENTS = Object.freeze([
   'paint',
@@ -172,20 +173,7 @@ export function createCreationIntent(action, args, displayed) {
           partId,
         });
     } else if (action === 'modifier_update') {
-      const changes = request.changes || {};
-      if (
-        request.sourceFeatureId !== undefined ||
-        Object.keys(changes).some((key) => key !== 'enabled')
-      )
-        throw Error('此修改器属性尚无等价 V4 算子命令');
-      if (typeof changes.enabled !== 'boolean')
-        throw Error('修改器启用状态必须是布尔值');
-      run({
-        kind: 'set-operator',
-        ownerNodeId: request.objectId,
-        operatorId: request.modifierId,
-        enabled: changes.enabled,
-      });
+      run(compileModifierUpdate(document, request));
     } else if (action === 'print_settings') {
       requirePrintStack();
       run({ kind: 'set-print-settings', layerHeightMM: request.layerHeightMM });

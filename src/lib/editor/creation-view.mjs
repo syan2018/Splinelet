@@ -4,6 +4,7 @@ import { outputIdentity, resolveAppearance } from '../relief/appearance.mjs';
 import { isExcluded } from '../manufacturing/parts.mjs';
 import { sourcePathId } from './source-view.mjs';
 import { orderedSourcePaths } from '../geometry/source-order.mjs';
+import { projectModifierControls } from './modifier-view.mjs';
 
 const clone = (value) => structuredClone(value);
 const absent = (domain) => ({
@@ -135,6 +136,7 @@ const operatorStatus = (document, snapshot, node) => {
         type: operator.type,
         name: operator.name,
         enabled: operator.enabled,
+        controls: projectModifierControls(document, node.id, operator.id),
         status: blocked
           ? 'blocked'
           : stages.some((stage) => stage.status === 'ready')
