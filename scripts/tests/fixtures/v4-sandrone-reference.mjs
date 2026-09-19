@@ -11,7 +11,7 @@ import {
   SourcePathLayers,
   SourceNodeHandles,
 } from '../../../src/components/source-editor/source-canvas-layers.tsx';
-import { useSourcePointDrag } from '../../../src/hooks/use-source-point-drag.ts';
+import { useSourceDrag } from '../../../src/hooks/use-source-drag.ts';
 import { screenToDocument } from '../../../src/lib/source-editor/canvas-gestures.mjs';
 
 const h = React.createElement;
@@ -60,6 +60,7 @@ function Fixture() {
   const snapshot = useSyncExternalStore(host.subscribe, host.getSnapshot);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [movingPath, setMovingPath] = useState(false);
   const [nodes, setNodes] = useState([1]);
   const [selection, setSelection] = useState({ curve: 1, point: 0 });
   const canvas = useRef(null);
@@ -72,7 +73,7 @@ function Fixture() {
     onCommit: () => {},
   });
   const scale = view.s;
-  const drag = useSourcePointDrag({
+  const drag = useSourceDrag({
     runtime: snapshot.runtime,
     project: snapshot.project,
     pathId: path.id,
@@ -114,6 +115,9 @@ function Fixture() {
     displayHandle: path.curves[1][1],
     selectedNodes: nodes,
     mode: path.nodeModes[1],
+    movingPath,
+    activePathId: path.id,
+    displayedCurves: path.curves,
     created: created.length,
     revoked: [...revoked],
     savedSize,
@@ -122,6 +126,11 @@ function Fixture() {
     'main',
     { style: { padding: 20, width: 540 } },
     h('h2', null, '内置 Sandrone · 原节点面板与参考图'),
+    h(
+      'button',
+      { onClick: () => setMovingPath(!movingPath) },
+      movingPath ? '测试节点拖动' : '测试整线拖动',
+    ),
     h('img', {
       id: 'reference-image',
       src: snapshot.project.image,
@@ -160,22 +169,25 @@ function Fixture() {
           h(SourcePathLayers, {
             paths: snapshot.project.paths.filter((path) => path.visible),
             scale,
-            tool: 'edit',
+            tool: movingPath ? 'move' : 'edit',
             selectedPaths: [path.id],
             highlightSourceSelection: true,
             fill: false,
-            onSelectPath: () => {},
+            onSelectPath: (event, id) => {
+              if (movingPath) drag.onPathPointerDown(event, [id]);
+            },
             onEditPath: () => {},
             onSplitAt: () => {},
           }),
-          h(SourceNodeHandles, {
-            path,
-            scale,
-            selectedNodes: nodes,
-            selection,
-            onPointPointerDown: (event, curve, point) =>
-              drag.onPointPointerDown(event, curve, point),
-          }),
+          !movingPath &&
+            h(SourceNodeHandles, {
+              path,
+              scale,
+              selectedNodes: nodes,
+              selection,
+              onPointPointerDown: (event, curve, point) =>
+                drag.onPointPointerDown(event, curve, point),
+            }),
         ),
       ),
     ),

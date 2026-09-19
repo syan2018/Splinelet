@@ -90,3 +90,11 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 原组件浏览器用例实际验证 SVG：镜像 2 条→新增阵列 6 条→选择镜像阶段 2 条→最终 6 条；关闭显示没有路径，重新开启恢复；参数缺失后最终路径为空，不能用成功的中间阶段冒充。`test-v4-curve-preview.mjs` 和 `test-v4-curve-preview-runtime.mjs` 覆盖坐标、拓扑、多分支、真实 Fill 输入、隐藏和实时状态边界。
 
 `pnpm check:all` 退出码 0，92 项 hermetic 单元测试及类型、lint、格式、Rust 和双端构建通过；日志为 `outputs/v4-qa/check-all-original-curve-preview-2026-09-20.log`。阶段键补充后专项单测、组件浏览器、全库 lint/格式亦通过。默认根尚未注入 V4 会话，真实源画布拖动、完整模型/文件旅程仍未签收。
+
+## 原整线拖动和统一指针生命周期
+
+`beginV4PathGesture` 把源路径选区转换为去重的稳定源节点批次，使用捕获基线计算每次位移。共享节点不重复移动，闭合接缝不生成新顶点；控制柄保持相对向量，部件 pose 不变。`useSourceDrag` 同时承接节点、控制柄和路径命中，共用 4px 门槛、Shift 限轴、Esc/失去捕获取消和单次提交。原默认根事件尚未改接。
+
+`test-v4-point-gesture.mjs` 新增旋转部件、共享路径、开/闭合线、完整控制柄形状、取消、未知路径和一次撤销检查。原 Sandrone 浏览器 fixture 从真实 SVG 路径命中开始拖动，确认全部 cubic 点位移、预览不提交、松手一次提交、撤销恢复原文档。现有节点及控制柄鼠标检查仍通过。
+
+原 `translatePaths` 的涂色和分区种子联动仍需迁入明确的命令边界；这里验证的是源几何移动，不能据此签收对象移动或默认工作区全流程。`pnpm check:all` 退出 0，98 项单测、类型/lint/格式、Rust 检查和双端前端生产构建通过。全量检查日志：`outputs/v4-qa/check-all-source-path-drag-2026-09-20.log`。

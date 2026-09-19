@@ -4,6 +4,7 @@ import { createAuthoringCommand } from '../../../src/lib/editing/commands/author
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createStudioSession } from '../../../src/lib/editor/studio-session.mjs';
 import { beginV4PointGesture } from '../../../src/lib/source-editor/point-gesture.mjs';
+import { beginV4PathGesture } from '../../../src/lib/source-editor/path-gesture.mjs';
 
 let serial = 0;
 const idFactory = () => `point-gesture-${++serial}`;
@@ -28,7 +29,11 @@ const offset = (point, delta) => ({
   y: point.y + delta.y,
 });
 
-function authoredDocument({ closed = false, rotated = false } = {}) {
+function authoredDocument({
+  closed = false,
+  rotated = false,
+  shared = false,
+} = {}) {
   const editor = createEditorSession(createDocument({ idFactory }), {
     idFactory,
   });
@@ -86,6 +91,12 @@ function authoredDocument({ closed = false, rotated = false } = {}) {
     { expectedRevision: editor.state.revision },
   );
   const document = structuredClone(editor.state.document);
+  if (shared) {
+    const sketch = Object.values(document.sketches)[0];
+    const path = Object.values(sketch.paths)[0];
+    const id = idFactory();
+    sketch.paths[id] = { ...structuredClone(path), id, name: 'Shared path' };
+  }
   if (rotated) {
     const owner = Object.values(document.nodes)[0];
     owner.pose = {
@@ -314,6 +325,72 @@ const begin = (session, path, curve, point, nodes) =>
   assert.throws(() => stale.commit(), /关闭|结束或失效/);
   assert.throws(() => stale.cancel(), /关闭|结束或失效/);
   assert.deepEqual(session.getSnapshot().editorState, afterOpen);
+  session.dispose();
+}
+
+// Whole-path movement preserves curve shape (including all control handles),
+// source identities and owner poses. Shared path uses never double the delta.
+for (const closed of [false, true]) {
+  const session = makeSession({ closed, rotated: true, shared: true });
+  const original = session.getSnapshot();
+  const paths = original.runtime.readSourceView(original.project).source.paths;
+  assert.equal(paths.length, 2);
+  const gesture = beginV4PathGesture({
+    runtime: original.runtime,
+    project: original.project,
+    pathIds: [paths[0].id, paths[1].id, paths[0].id],
+  });
+  gesture.update({ x: 8, y: 16 });
+  gesture.update({ x: 40, y: -24 });
+  const preview = session.getSnapshot();
+  const moved = preview.runtime.readSourceView(preview.project).source.paths;
+  paths.forEach((path, index) => {
+    assert.deepEqual(moved[index].identity, path.identity);
+    path.curves.forEach((curve, ci) =>
+      curve.forEach((point, pi) => {
+        near(moved[index].curves[ci][pi].x, point.x + 40);
+        near(moved[index].curves[ci][pi].y, point.y - 24);
+      }),
+    );
+  });
+  assert.deepEqual(preview.editorState.document, original.editorState.document);
+  gesture.commit();
+  const committed = session.getSnapshot();
+  assert.equal(
+    committed.editorState.revision,
+    original.editorState.revision + 1,
+  );
+  assert.deepEqual(
+    committed.editorState.document.nodes,
+    original.editorState.document.nodes,
+  );
+  session.undo();
+  assert.deepEqual(
+    session.getSnapshot().editorState.document,
+    original.editorState.document,
+  );
+  const current = session.getSnapshot();
+  assert.throws(
+    () =>
+      beginV4PathGesture({
+        runtime: current.runtime,
+        project: current.project,
+        pathIds: [paths[0].id, 'missing'],
+      }),
+    /不可编辑/,
+  );
+  assert.equal(session.getSnapshot().editorState.previewId, null);
+  const cancel = beginV4PathGesture({
+    runtime: current.runtime,
+    project: current.project,
+    pathIds: [paths[0].id],
+  });
+  cancel.update({ x: 14, y: 5 });
+  cancel.cancel();
+  assert.deepEqual(
+    session.getSnapshot().editorState.document,
+    original.editorState.document,
+  );
   session.dispose();
 }
 

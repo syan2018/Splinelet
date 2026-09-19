@@ -6,13 +6,17 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { beginV4PointGesture } from '@/lib/source-editor/point-gesture.mjs';
+import { beginV4PathGesture } from '@/lib/source-editor/path-gesture.mjs';
 import { nodeSelection, selectedNode } from '@/lib/source-editor/node-edit.mjs';
 
 type Point = { x: number; y: number };
 type Selection = { curve: number; point: number } | null;
 type SourceInput = Parameters<typeof beginV4PointGesture>[0];
 type Active = {
-  gesture: ReturnType<typeof beginV4PointGesture>;
+  gesture: Pick<
+    ReturnType<typeof beginV4PointGesture>,
+    'update' | 'commit' | 'cancel'
+  >;
   pointerId: number;
   target: Element;
   client: Point;
@@ -20,10 +24,10 @@ type Active = {
   moved: boolean;
 };
 
-/** Original point-drag interactions with a V4 source-command backend. Camera,
+/** Original source-drag interactions with a V4 source-command backend. Camera,
  * path selection and endpoint snapping remain explicit caller responsibilities.
  */
-export function useSourcePointDrag({
+export function useSourceDrag({
   runtime,
   project,
   pathId,
@@ -73,7 +77,44 @@ export function useSourcePointDrag({
     },
     [],
   );
+  const start = (
+    event: PointerEvent,
+    target: HTMLElement | SVGElement,
+    origin: Point,
+    gesture: Active['gesture'],
+  ) => {
+    active.current = {
+      gesture,
+      pointerId: event.pointerId,
+      target,
+      origin,
+      client: { x: event.clientX, y: event.clientY },
+      moved: false,
+    };
+    target.setPointerCapture(event.pointerId);
+  };
   return {
+    onPathPointerDown(event: PointerEvent, pathIds: string[]) {
+      if (active.current || disabled || isPanning() || event.button !== 0)
+        return;
+      event.stopPropagation();
+      event.preventDefault();
+      const target = getCaptureTarget();
+      const origin = toPoint(event);
+      if (!target || !origin) return;
+      target.focus({ preventScroll: true });
+      try {
+        start(
+          event,
+          target,
+          origin,
+          beginV4PathGesture({ runtime, project, pathIds }),
+        );
+      } catch (error) {
+        finish(false);
+        onError(error);
+      }
+    },
     onPointPointerDown(event: PointerEvent, curve: number, point: number) {
       if (active.current || disabled || isPanning() || event.button !== 0)
         return;
@@ -119,15 +160,7 @@ export function useSourcePointDrag({
           point,
           nodes: selected,
         });
-        active.current = {
-          gesture,
-          pointerId: event.pointerId,
-          target,
-          origin,
-          client: { x: event.clientX, y: event.clientY },
-          moved: false,
-        };
-        target.setPointerCapture(event.pointerId);
+        start(event, target, origin, gesture);
       } catch (error) {
         finish(false);
         onError(error);

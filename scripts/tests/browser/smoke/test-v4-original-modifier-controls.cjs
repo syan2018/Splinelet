@@ -481,6 +481,56 @@ async function main() {
       'lost capture cancels the source gesture',
     );
     await page
+      .getByRole('button', { name: '测试整线拖动', exact: true })
+      .click();
+    const beforePath = await referenceState();
+    const hit = await page
+      .locator(`[data-source-id="${beforePath.activePathId}"] path[aria-label]`)
+      .evaluate((path) => {
+        const canvas = path.closest('svg').getBoundingClientRect();
+        const length = path.getTotalLength();
+        for (let i = 1; i < 100; i++) {
+          const local = path.getPointAtLength((length * i) / 100);
+          const point = new DOMPoint(local.x, local.y).matrixTransform(
+            path.getScreenCTM(),
+          );
+          if (
+            point.x > canvas.left + 30 &&
+            point.x < canvas.right - 30 &&
+            point.y > canvas.top + 30 &&
+            point.y < canvas.bottom - 30 &&
+            document.elementFromPoint(point.x, point.y) === path
+          )
+            return { x: point.x, y: point.y };
+        }
+        throw Error('No unobscured original source-path hit target');
+      });
+    await page.mouse.move(hit.x, hit.y);
+    await page.mouse.down();
+    await page.mouse.move(hit.x + 20, hit.y + 12);
+    const pathPreview = await referenceState();
+    assert.equal(pathPreview.revision, beforePath.revision);
+    assert.equal(pathPreview.restored, true);
+    beforePath.displayedCurves.forEach((curve, ci) =>
+      curve.forEach((point, pi) => {
+        assert.ok(
+          Math.abs(pathPreview.displayedCurves[ci][pi].x - point.x - 10) < 1e-7,
+        );
+        assert.ok(
+          Math.abs(pathPreview.displayedCurves[ci][pi].y - point.y - 6) < 1e-7,
+        );
+      }),
+    );
+    await page.mouse.up();
+    assert.equal((await referenceState()).revision, beforePath.revision + 1);
+    await page
+      .getByRole('button', { name: '撤销测试编辑', exact: true })
+      .click();
+    assert.equal((await referenceState()).restored, true);
+    await page
+      .getByRole('button', { name: '测试节点拖动', exact: true })
+      .click();
+    await page
       .getByRole('combobox', { name: '节点连接模式' })
       .selectOption(desiredMode);
     await page.waitForFunction((revision) => {

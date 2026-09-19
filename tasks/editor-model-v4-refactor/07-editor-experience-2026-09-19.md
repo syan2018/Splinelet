@@ -137,7 +137,7 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ### 执行与验收记录
 
-2026-09-20 原源画布渲染边界：默认 Studio 的路径及节点/控制柄 SVG 机械抽取到 `source-canvas-layers.tsx`，保留 data 属性、样式、命中宽度和原事件回调。`beginV4PointGesture` 把该 DOM 的曲线/点命中映射成捕获的稳定源身份，`useSourcePointDrag` 管理指针生命周期、门槛、限轴和取消。内置 Sandrone fixture 用相同组件验证实际节点/控制柄拖动和单次撤销；默认根尚未注入 V4 手势，框选、整路径移动、吸附和端点双击续画还需要逐项接线，不可提前签收完整画布旅程。
+2026-09-20 原源画布渲染边界：默认 Studio 的路径及节点/控制柄 SVG 机械抽取到 `source-canvas-layers.tsx`，保留 data 属性、样式、命中宽度和原事件回调。`beginV4PointGesture` 把该 DOM 的曲线/点命中映射成捕获的稳定源身份，`useSourceDrag` 管理指针生命周期、门槛、限轴和取消。内置 Sandrone fixture 用相同组件验证实际节点/控制柄拖动和单次撤销；默认根尚未注入 V4 手势，框选、整路径移动、吸附和端点双击续画还需要逐项接线，不可提前签收完整画布旅程。
 
 2026-09-20 参考图与文件能力适配：`createStudioHost` 为根控制器管理打开/恢复/释放的资源生命周期，`createStudioPresentation` 从明确参考图与规范 asset bytes 建立原画布 frame 和可释放 URL；无图要求显式 frame，多图要求显式选择，不偷偷改写不兼容仿射。`createStudioFileWriter` 接收已经选定的 Web 句柄或桌面路径，复用授权及串行/原子写入。内置 Sandrone 已通过真实浏览器图片解码、原节点面板编辑/撤销和 OPFS 文件副本保存重开。默认根接线、文件选择对话框、参考图编辑后的展示更新与原生窗口验收仍未完成。
 
@@ -297,3 +297,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 派生样条预览：原 `useCurvePreview` 接受同一 CreationRuntime，通过 V4 当前曲线快照同步投影世界毫米坐标，保留原开关、阶段选择及 SVG/3D DTO。预览从明确的曲线发布端口取最终结果；失效不回退中间成功步骤。端点依据共享顶点和显式 Join，显示读取不生成可写 Path。单测覆盖拖动同 ID 更新、取消和过期句柄；原组件浏览器覆盖实际曲线 SVG、阶段切换及失效空输出。默认根 runtime 注入、实际源画布拖动和双端完整旅程仍未签收。
 
 2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。
+
+2026-09-20 原整线拖动适配：`beginV4PathGesture` 从捕获的源视图收集并去重节点身份，重复预览始终相对按下时基线；`useSourceDrag` 统一节点、控制柄和整线的指针捕获、门槛、限轴、取消和单次提交。单测验证旋转部件、闭合线、共享路径使用不重复位移、控制柄形状和撤销；内置 Sandrone 原 SVG 命中层验证实际整线拖动与撤销。此动作仅修改源几何；原 `translatePaths` 还联动涂色和分区种子，默认根接线前必须明确保留其可见结果，不能把该适配器直接视为完整对象移动。

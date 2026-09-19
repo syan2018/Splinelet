@@ -52,7 +52,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 ## 目录
 
-`test-v4-point-gesture.mjs` 检查原画布 `(curve, point)` 命中到 V4 源身份的拖动适配：捕获基线、批量节点、闭合接缝、部件旋转、控制柄连续性、取消与一次撤销。原源路径和节点/柄 DOM 已抽取为 `SourcePathLayers` / `SourceNodeHandles`，默认 Studio 仍绑定原事件。Sandrone 浏览器 fixture 使用同一 DOM 和 V4 手势 hook，真实鼠标验证节点预览/提交/撤销、控制柄 Esc、4px 门槛、Shift 限轴和捕获丢失取消；不替代整条路径移动、吸附或续画的默认根接线。
+`test-v4-point-gesture.mjs` 检查原画布 `(curve, point)` 命中到 V4 源身份的拖动适配：捕获基线、批量节点、闭合接缝、部件旋转、控制柄连续性、取消与一次撤销；同时检查整线位移的闭合线、旋转部件、共享节点去重和所有控制柄形状。原源路径和节点/柄 DOM 已抽取为 `SourcePathLayers` / `SourceNodeHandles`，默认 Studio 仍绑定原事件。Sandrone 浏览器 fixture 使用同一 DOM 和 V4 手势 hook，真实鼠标验证节点及整线预览/提交/撤销、控制柄 Esc、4px 门槛、Shift 限轴和捕获丢失取消；不替代整条路径移动、吸附或续画的默认根接线。
 
 `test-v4-studio-host.mjs` 用内置 Sandrone 验证参考图的规范资源字节、像素坐标及 Blob URL 生命周期：替换后释放旧 URL，失败保留旧资源，关闭幂等，保存容器不混入显示 URL。`test-v4-studio-file-writer.mjs` 验证已选择的浏览器句柄/桌面路径写入适配，包括授权拒绝、串行写入、abort 恢复与路径路由；原生磁盘写入在此使用注入函数，不冒充原生验收。
 
