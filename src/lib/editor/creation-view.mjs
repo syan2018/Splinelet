@@ -127,9 +127,13 @@ const operatorStatus = (document, snapshot, node) => {
     .filter(
       (operator) =>
         operator.authoring?.phase !== 'drawing' &&
-        !['source', 'fill', 'curve-collect', 'region-collect'].includes(
-          operator.type,
-        ),
+        ![
+          'source',
+          'fill',
+          'curve-collect',
+          'curve-filter',
+          'region-collect',
+        ].includes(operator.type),
     )
     .map((operator) => {
       const component =

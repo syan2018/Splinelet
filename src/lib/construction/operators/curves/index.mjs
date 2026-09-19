@@ -7,6 +7,7 @@ import {
   transformPoint,
 } from '../../../scene/transforms.mjs';
 import { transformScalarPoint } from '../../../scene/rebase.mjs';
+import { curveFilterOperator } from './filter.mjs';
 
 const sort = (a, b) => String(a).localeCompare(String(b));
 const clone = (value) => structuredClone(value);
@@ -674,6 +675,7 @@ export const joinOperator = {
 
 export const curveOperatorSpecifications = [
   sourceOperator,
+  curveFilterOperator,
   curveCollectOperator,
   curveReferenceOperator,
   curveTransformOperator,

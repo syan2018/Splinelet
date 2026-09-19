@@ -36,6 +36,7 @@ const AUTHORING_ACTIONS = Object.freeze([
   'close-path',
   'create-shape',
   'create-support',
+  'set-region-path-membership',
   'draw-path',
   'draw-guide',
   'start-path',

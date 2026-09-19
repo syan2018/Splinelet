@@ -58,6 +58,7 @@ import {
   SOURCE_ORGANIZATION_ACTIONS,
 } from './source-organization.mjs';
 import { createSupportCommand } from './support.mjs';
+import { createRegionPathMembershipCommand } from './region-path-membership.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -321,6 +322,8 @@ export function createAuthoringCommand(action) {
   const request = structuredClone(action);
   return (document, { idFactory }) => {
     const action = request;
+    if (action.kind === 'set-region-path-membership')
+      return createRegionPathMembershipCommand(action)(document, { idFactory });
     if (action.kind === 'create-support')
       return createSupportCommand(action)(document, { idFactory });
     if (action.kind === 'append-boundary')

@@ -361,3 +361,7 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 承托命令与原预览接线：create-support 用 world-result 引用所选部件发布区域，经各部件 region-outline、union 与 offset 构造新底板，保留源 Sketch/Program/厚度。普通模式改 placement 为顶面依附，打印模式插入新的最底层；唯一制造零件由底板继承，多零件顶面依附明确拒绝。creation_base 生成会话预备命令和只读预览，commitPreparedDisplay 仅接受所属预览句柄，确认一次提交；原组件不再复制 V4 预览工程而丢失命令身份。取消无文档写入，过期/重复/伪造预览拒绝。原按钮及文件验收见 QA。
 
 2026-09-20 原用途面板读侧修复：regionPathUses 原先仅识别未完成 Fill 的边界，且要求 Source 恰含一条路径，导致普通已发布边界被当作参考线显示。现依据 Fill 发布/消费者连接识别普通边界，支持多成员与省略 pathIds 的 Sketch 输入；仅作 difference operand 的私有 Fill 仍只表示洞。真正多用途不任意择一，findRegionDrawing 仍只返回绘制中的分支。原角色切换写命令仍待接线，此项只修正已存在构造的展示事实。
+
+2026-09-20 用途切换底层成员命令：新增 curve-filter 与 set-region-path-membership，在特定构面输入中排除/恢复 PathRef，保留原 Source/Fill 及 even-odd 内圈语义。regionPathMemberships 可读取暂停的成员关系；原只读 roles 只显示当前参与的成员。共享筛选复制后再改，同一 Fill 输入有多个区域用途时拒绝隐式联动；源定义、发布端口和下游赋值不重建。结构性筛选默认隐藏。此项仍是原 roles 接线的底层能力，尚未签收原按钮的完整边界/参考/分区/挖洞切换。
+
+用途按钮接线前还须处理普通绘制延续：basicProgram/ensureFill 当前仅认识直接 Source → Fill。应使成员筛选仍属于普通构面输入管理，保证暂停/恢复用途后再画内圈不会被误判成高级构造并追加独立填充区域；同时覆盖参考线改为开放路径后继续绘制，不可因重新枚举闭合路径而丢失暂停成员关系。这是明确待办，当前底层命令验收不涵盖该组合旅程。

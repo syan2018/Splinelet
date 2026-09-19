@@ -328,3 +328,11 @@ create-support 已通过原 creation_base 预览/确认接入：选中部件外�
 regionPathUses 现在识别已发布 Fill 及普通区域消费者的边界，支持多个 Source 成员和未限定 pathIds 的 Sketch；差集独占的私有 Fill 仍只计为洞，真正多用途保留歧义。消费者索引一次建立，避免对每个 Fill 重扫全部构造。未完成绘制仍要求独占的一条源路径，没有扩大续画匹配范围。
 
 original-role-projection-2026-09-20.log 为 PASS：原界面创建的闭合样条正确回读 boundary，其他 Sandrone、样式、源编辑、承托及保存回读继续通过。boundary-drawing-role-projection-2026-09-20.log 中真实样例的高级分支、保存续画与一次撤销通过。check-all-role-projection-2026-09-20.log 记录完整 pnpm check:all 退出 0，覆盖 117 项单元测试、类型、lint、格式、Rust 与双端生产构建。用途切换写命令和默认入口仍待完成。
+
+## 2026-09-20 区域输入成员暂停与恢复
+
+curve-filter 仅筛选构造输入，不创建新的曲线/边身份。set-region-path-membership 保留 Source、Fill 与发布端口，成员恢复后 even-odd 内圈和区域身份准确恢复。新单元覆盖面积 300→400→300、源曲线持续可见、一次撤销/重做、共享筛选隔离、共享 Fill 多用途拒绝、锁定/变换保护、空输入、复制引用重映射及缺失引用阻断。内部筛选不进入默认修改器或重复派生预览。
+
+check-all-path-membership-final-2026-09-20.log 记录 pnpm check:all 退出 0；前一轮因算子注册清单测试未包含 curve-filter 失败，更新清单后完整重跑通过。original-path-membership-2026-09-20.log 为 PASS，原 Studio 的 Sandrone、样式、编辑、撤销、保存、V4/旧工程/示例打开及无效文件保护继续通过。
+
+本轮只完成成员命令，未签收原 roles 按钮。其接线和“用途往返后继续普通绘制”的组合行为仍需完成；默认入口、宽度和 ModelWorkspace 等剩余事项保持未签收。

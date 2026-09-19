@@ -1,5 +1,18 @@
 /** Derive region uses from actual branch inputs, never a parallel role table. */
 export function regionPathUses(document, pathRef) {
+  return regionPathMemberships(document, pathRef)
+    .filter((use) => use.included)
+    .map(({ ownerNodeId, operatorId, role, drawing }) => ({
+      ownerNodeId,
+      operatorId,
+      role,
+      drawing,
+    }));
+}
+
+/** Includes suspended membership so restoring a boundary keeps its original
+ * Fill (and even-odd holes), rather than appending an unrelated filled region. */
+export function regionPathMemberships(document, pathRef) {
   const sketch = document.sketches[pathRef?.sketchId];
   if (pathRef?.kind !== 'path' || !sketch?.paths[pathRef.id]) return [];
   const ownerNodeId = sketch.ownerNodeId;
@@ -29,6 +42,8 @@ export function regionPathUses(document, pathRef) {
   const matches = [];
   for (const operator of operators) {
     let sourceInput;
+    let inputOperatorId = operator.id;
+    let inputPort = 'input';
     if (
       operator.type === 'fill' &&
       boundaryFill(operator) &&
@@ -38,9 +53,10 @@ export function regionPathUses(document, pathRef) {
     else if (
       operator.type === 'partition' &&
       operator.inputs.cutter?.length === 1
-    )
+    ) {
       sourceInput = operator.inputs.cutter[0];
-    else if (
+      inputPort = 'cutter';
+    } else if (
       operator.type === 'boolean' &&
       operator.params.operation === 'difference' &&
       operator.inputs.operand?.length === 1
@@ -49,18 +65,28 @@ export function regionPathUses(document, pathRef) {
       const fill =
         fillRef.ownerNodeId === ownerNodeId &&
         program.operators[fillRef.operatorId];
-      if (fill?.type === 'fill' && fill.inputs.input?.length === 1)
+      if (fill?.type === 'fill' && fill.inputs.input?.length === 1) {
         sourceInput = fill.inputs.input[0];
+        inputOperatorId = fill.id;
+      }
     }
-    const source =
+    let source =
       sourceInput?.ownerNodeId === ownerNodeId &&
       program.operators[sourceInput.operatorId];
+    let filter;
+    if (source?.type === 'curve-filter' && source.inputs.input?.length === 1) {
+      filter = source;
+      const ref = filter.inputs.input[0];
+      source =
+        ref.ownerNodeId === ownerNodeId && program.operators[ref.operatorId];
+      if (!Array.isArray(filter.params?.excludedPaths)) continue;
+    }
     const paths = source?.type === 'source' ? source.inputs.paths : [];
     // Incremental drawing remains an exclusive single-path branch. Broader
     // committed membership must not make another path resumable as this branch.
     if (
       operator.authoring?.phase === 'drawing' &&
-      (paths.length !== 1 || paths[0].pathIds?.length !== 1)
+      (filter || paths.length !== 1 || paths[0].pathIds?.length !== 1)
     )
       continue;
     if (
@@ -82,6 +108,15 @@ export function regionPathUses(document, pathRef) {
             ? 'divider'
             : 'hole',
       drawing: operator.authoring?.phase === 'drawing',
+      inputOperatorId,
+      inputPort,
+      sourceId: source.id,
+      filterId: filter?.id,
+      included:
+        !filter?.enabled ||
+        !filter.params.excludedPaths.some(
+          (ref) => ref?.sketchId === pathRef.sketchId && ref.id === pathRef.id,
+        ),
     });
   }
   return matches;

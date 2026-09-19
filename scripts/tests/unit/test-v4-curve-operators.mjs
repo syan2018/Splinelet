@@ -69,6 +69,7 @@ assert.deepEqual(
   curveOperatorSpecifications.map((spec) => spec.type),
   [
     'source',
+    'curve-filter',
     'curve-collect',
     'curve-reference',
     'curve-transform',

@@ -125,7 +125,7 @@ export function projectCurvePreviews(document, snapshot) {
       stages.every(
         ({ operator, stage }) =>
           operator.type === 'source' ||
-          (operator.type === 'curve-collect' &&
+          (['curve-collect', 'curve-filter'].includes(operator.type) &&
             ['ready', 'empty'].includes(stage.status) &&
             operator.inputs.input?.length > 0 &&
             operator.inputs.input.every(
