@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：编辑体验负责人
-- 执行状态：T15 真实投影通过，T16/T17 候选界面装配中；未签收完整用户旅程
+- 执行状态：T15 纯投影模块已有证据；T16/T17 简化候选界面方向撤销，改为原工作区适配，尚未签收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -12,7 +12,15 @@
 
 ## 背景与要交付的改变
 
-作品树和选择目前依赖 paths/cells；纯派生部件难移动，面失败容易丢选区，聚焦不能覆盖最终阵列。新 UI 必须读稳定 Node 与求值结果的任务投影，而不是把 Document 顶层表逐个显示成技术目录。
+作品树和选择目前依赖 paths/cells；纯派生部件难移动，面失败容易丢选区，聚焦不能覆盖最终阵列。必须保留原工作区的 DOM 结构、样式、布局、工具与基本交互，让现有组件读取稳定 Node 与求值结果的任务投影。数据重构不授权重写一个简化编辑器。
+
+### 原工作区接入顺序（2026-09-19 校正）
+
+1. P00 负责 `studio-app.tsx` 的文件、会话、撤销边界；未完成原界面适配前，生产入口继续使用原工作区。不能通过 URL 参数替换整套界面。
+2. P07 提供只读 UI 视图与稳定身份映射；保留 `CreationWorkspace` 的画布、作品树、属性导航和既有 CSS。只读投影不能成为另一份可保存、可写的旧 Project。
+3. P06 补齐现有 `CreationWorkspace.run`、`ModelWorkspace.commit/mutate` 和源编辑手势所需的语义命令；P00 再逐项接线。禁止把编辑后的旧 Project 整体反向转换为 V4，禁止用每次重新导入替代稳定命令。
+4. 首先覆盖实际 Sandrone 所用的边界/分区/挖洞/参考角色、布尔构造、逐区域颜色和厚度、分层、底图，以及 gold emblem 的镜像→阵列→构面；功能缺口必须显式记录，不能删掉旧按钮来通过测试。
+5. 在同一原工作区中验证两份工程打开、选取、编辑、撤销、保存重开和预览。此前 `studio/v4` 简化组件与其浏览器用例只是试验材料，不作为交付前端或行为保持的证据。
 
 默认只有部件/组与按需线/区，直接上色和调厚度；高级构造随重复、引用等任务展开；修复失效保持原部件上下文。
 
@@ -128,7 +136,7 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ### 可写范围
 
-- src/components/source-editor/v4/（新增适配组件）
+- src/components/source-editor/ 下现有组件的投影与命令适配（具体文件由 P00 分配，保留 DOM/CSS）
 - src/hooks/use-v4-canvas-gestures.ts（新增）
 - scripts/tests/browser/v4/test-basic-authoring.cjs（新增）
 - scripts/tests/browser/v4/test-object-move.cjs（新增）
@@ -175,7 +183,7 @@ pnpm test:browser --suite v4 --case object-move --target desktop-frontend
 
 ## T17 · 作品树、区域属性与按需构造详情
 
-- 状态：进行中：默认部件/颜色/厚度入口已挂载，高级属性尚待补齐
+- 状态：待重接：原作品树与属性面板保持，简化候选面板的挂载不计交付
 - 执行者 / 验收者：未分配
 - 前置：[T01](01-validation-2026-09-19.md#t01)、[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T15](07-editor-experience-2026-09-19.md#t15)
 - 下游：[T21](01-validation-2026-09-19.md#t21)
@@ -196,7 +204,7 @@ pnpm test:browser --suite v4 --case object-move --target desktop-frontend
 
 ### 可写范围
 
-- src/components/creation/v4/（新增作品树/属性/构造面板）
+- src/components/creation/ 下现有作品树/属性/构造面板的只读投影与命令适配（具体文件由 P00 分配）
 - scripts/tests/browser/v4/test-progressive-workspace.cjs（新增）
 - scripts/tests/browser/v4/test-repeated-motif.cjs（新增，U04）
 - scripts/tests/browser/v4/test-reference-space.cjs（新增，U05）

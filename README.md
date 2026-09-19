@@ -211,4 +211,4 @@ node scripts/agent-server.mjs
 
 桥接监听 `127.0.0.1:4318`，浏览器连接限定为 `http://localhost:3000`。普通手工创作无需启动它；接口返回导出数据，不自动下载。
 
-V4 候选实现可通过当前应用 URL 的 `?editor=v4` 参数打开，提供部件/线条/区域的基本编辑、阶段求值、V4 文件另存及独立恢复草稿。它尚未完成完整功能和双端原生验收，默认切换以 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md) 为准。
+V4 数据模型重构仍在进行中，Web 与桌面端保持现有工作区的布局、样式、工具和基本行为。简化候选界面的 URL 入口已撤销；后续从原界面的数据与命令边界接入，进度与真实工程验收见 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md)。

@@ -4,7 +4,7 @@
 
 - Splinelet 是 Web 与 Tauri 桌面端共用前端的 2.5D 浮雕建模工具，使用 React 19、TypeScript、Vinext/Vite、Cloudflare/Wrangler、Three.js、JSTS 与 Manifold。
 - `app/` 只放路由入口与全局样式。`src/components/` 按工作区或功能域组织界面，`src/hooks/` 放可复用 React 状态逻辑，`src/lib/` 放领域模型、几何、实体、导出与命令逻辑，`src/types/` 放环境类型声明。`@/*` 映射到 `src/*`。
-- `app/page.tsx` 与 `src/desktop/main.tsx` 共同引用 `src/components/studio/studio-entry.tsx`，默认加载 `studio-app.tsx`；V4 候选通过 `?editor=v4` 加载 `studio/v4/v4-studio-app.tsx`；桌面入口不依赖 Web 路由组件。`src/lib/platform/` 放浏览器与 Tauri 能力适配，`src-tauri/src/` 放原生命令、文件权限与应用装配。
+- `app/page.tsx` 与 `src/desktop/main.tsx` 共同引用 `src/components/studio/studio-entry.tsx`，统一加载原有 `studio-app.tsx`；数据模型重构必须保持原有布局、样式和交互，禁止通过候选参数替换整套前端；桌面入口不依赖 Web 路由组件。`src/lib/platform/` 放浏览器与 Tauri 能力适配，`src-tauri/src/` 放原生命令、文件权限与应用装配。
 - `src/lib/source-editor/` 放编辑算法，`src/lib/persistence/` 放恢复草稿与文件写入队列。根目录主要保留 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/`、`docs/` 和 `tasks/`；`dist/` 是不纳入版本控制的 Web 构建生成目录，桌面前端输出位于 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。`public/` 只保留静态资源及有兼容 URL 的 `trace-worker.js` / `geometry.mjs`；后者仍被应用与 Node 测试导入。改动时同时检查页面、Worker 和 Node 测试。
 - `scripts/` 包含测试、样例、维护和外部验证工具；fixture 必须是可进入版本控制的最小复现数据。具体分类见 `scripts/README.md`。
 - `docs/` 放当前指南与架构说明；`docs/qa/` 仅存历史验收快照。产品事实以 README 和当前专题文档为准。
