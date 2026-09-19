@@ -44,6 +44,10 @@ import {
   PATH_GEOMETRY_ACTIONS,
 } from './path-geometry.mjs';
 import {
+  createPathReplacementCommand,
+  PATH_REPLACEMENT_ACTIONS,
+} from './path-replacement.mjs';
+import {
   createPathNodeDeletionCommand,
   PATH_NODE_DELETION_ACTIONS,
 } from './path-node-deletion.mjs';
@@ -374,6 +378,8 @@ export function createAuthoringCommand(action) {
       return createPathDeletionCommand(action)(document);
     if (PATH_GEOMETRY_ACTIONS.includes(action.kind))
       return createPathGeometryCommand(action)(document);
+    if (PATH_REPLACEMENT_ACTIONS.includes(action.kind))
+      return createPathReplacementCommand(action)(document, { idFactory });
     if (PATH_NODE_DELETION_ACTIONS.includes(action.kind))
       return createPathNodeDeletionCommand(action)(document, { idFactory });
     if (PATH_MERGE_ACTIONS.includes(action.kind))

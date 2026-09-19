@@ -15,6 +15,7 @@ export function createPathIntent(request, displayed) {
       'close-path',
       'finish-path',
       'refit-path',
+      'replace-path-geometry',
       'straighten-edge',
       'delete-path-vertices',
       'merge-paths',
@@ -120,6 +121,7 @@ export function createPathIntent(request, displayed) {
     };
   } else if (
     action.kind === 'refit-path' ||
+    action.kind === 'replace-path-geometry' ||
     action.kind === 'straighten-edge' ||
     action.kind === 'delete-path-vertices'
   ) {
@@ -167,6 +169,14 @@ export function createPathIntent(request, displayed) {
         kind: action.kind,
         pathRef,
         expectedEdges: expectedEdges(path),
+        ...(action.kind === 'replace-path-geometry'
+          ? {
+              closed: action.closed,
+              ...(action.handleModes === undefined
+                ? {}
+                : { handleModes: action.handleModes }),
+            }
+          : {}),
         cubics: action.pixelCubics.map((cubic) => {
           if (!Array.isArray(cubic) || cubic.length !== 4)
             throw Error('重拟合每段必须是 cubic');

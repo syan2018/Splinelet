@@ -294,3 +294,9 @@ outputs/v4-qa/original-api-handle-2026-09-20.log 为 PASS：原界面中通过 s
 原 spline_apply 的输入解析已抽入独立 spline-proposal：冻结的 frame/paths/objects 视图可直接生成无新 ID 的精确曲线提案，原 writer 消费提案。单元覆盖矩阵和控制柄与原结果一致、无输入别名、整批失败以及新样条用途。没有更改原界面；V4 批量样条命令仍待完成。
 
 outputs/v4-qa/check-all-spline-proposal-2026-09-20.log 记录 pnpm check:all 退出 0，涵盖 112 项单元测试、类型、lint、格式、Rust 检查和双端生产构建。
+
+## 2026-09-20 精确源路径替换命令
+
+replace-path-geometry 与捕获 path-intent 支持原像素坐标转世界/owner 局部坐标的精确替换。等拓扑保留反向使用及内部身份，变拓扑保留 Path/Program 并返回被移除的内部引用。共享、驱动、锁定、失效、ID 冲突及批量后续失败均保持原子性；开闭/节点数/单点继续编辑及一次撤销通过。原 spline_apply 整批接线尚未完成，本轮没有改原界面。
+
+outputs/v4-qa/check-all-path-replacement-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 113 项单元测试、类型、lint、格式、Rust 与双端构建。随后补充关系消费者回归：关系定义保留，失效源经 resolveRelation 返回 blocked；受驱动 Handle 拒绝覆盖。补充测试及该文件 lint/格式检查通过。
