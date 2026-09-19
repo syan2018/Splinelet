@@ -8,6 +8,7 @@ import {
 import { beginV4PointGesture } from '@/lib/source-editor/point-gesture.mjs';
 import { beginV4PathGesture } from '@/lib/source-editor/path-gesture.mjs';
 import { nodeSelection, selectedNode } from '@/lib/source-editor/node-edit.mjs';
+import { snapEndpoint } from '@/lib/source-editor/endpoint-snap.mjs';
 
 type Point = { x: number; y: number };
 type Selection = { curve: number; point: number } | null;
@@ -22,10 +23,12 @@ type Active = {
   client: Point;
   origin: Point;
   moved: boolean;
+  snapContext?: ReturnType<SourceInput['runtime']['readEndpointSnapContext']>;
+  snapId?: string;
 };
 
 /** Original source-drag interactions with a V4 source-command backend. Camera,
- * path selection and endpoint snapping remain explicit caller responsibilities.
+ * path selection and snap feedback rendering remain caller responsibilities.
  */
 export function useSourceDrag({
   runtime,
@@ -38,6 +41,9 @@ export function useSourceDrag({
   getCaptureTarget,
   onSelectionChange,
   onError,
+  snapEnabled = false,
+  scale = 1,
+  onSnapFeedback = () => {},
 }: Pick<SourceInput, 'runtime' | 'project' | 'pathId'> & {
   nodes: number[];
   disabled?: boolean;
@@ -46,12 +52,16 @@ export function useSourceDrag({
   getCaptureTarget: () => HTMLElement | SVGElement | null;
   onSelectionChange: (nodes: number[], selection: Selection) => void;
   onError: (error: unknown) => void;
+  snapEnabled?: boolean;
+  scale?: number;
+  onSnapFeedback?: (feedback: ReturnType<typeof snapEndpoint>) => void;
 }) {
   const active = useRef<Active | null>(null);
   const finish = (commit: boolean) => {
     const current = active.current;
     if (!current) return;
     active.current = null;
+    onSnapFeedback(null);
     try {
       if (commit && current.moved) current.gesture.commit();
       else current.gesture.cancel();
@@ -82,6 +92,7 @@ export function useSourceDrag({
     target: HTMLElement | SVGElement,
     origin: Point,
     gesture: Active['gesture'],
+    snapContext?: Active['snapContext'],
   ) => {
     active.current = {
       gesture,
@@ -90,6 +101,7 @@ export function useSourceDrag({
       origin,
       client: { x: event.clientX, y: event.clientY },
       moved: false,
+      snapContext,
     };
     target.setPointerCapture(event.pointerId);
   };
@@ -152,6 +164,10 @@ export function useSourceDrag({
           );
           if (modified) return;
         } else onSelectionChange([], { curve, point });
+        const snapContext =
+          snapEnabled && selected.length === 1
+            ? runtime.readEndpointSnapContext(project, pathId, selected[0])
+            : null;
         const gesture = beginV4PointGesture({
           runtime,
           project,
@@ -160,7 +176,7 @@ export function useSourceDrag({
           point,
           nodes: selected,
         });
-        start(event, target, origin, gesture);
+        start(event, target, origin, gesture, snapContext);
       } catch (error) {
         finish(false);
         onError(error);
@@ -191,6 +207,23 @@ export function useSourceDrag({
         else x = 0;
       }
       try {
+        const snap =
+          snapEnabled && !event.altKey && !event.shiftKey && current.snapContext
+            ? snapEndpoint(
+                current.snapContext,
+                {
+                  x: current.snapContext.origin.x + x,
+                  y: current.snapContext.origin.y + y,
+                },
+                { scale, previousId: current.snapId },
+              )
+            : null;
+        if (snap && current.snapContext) {
+          x = snap.position.x - current.snapContext.origin.x;
+          y = snap.position.y - current.snapContext.origin.y;
+        }
+        current.snapId = snap?.id;
+        onSnapFeedback(snap);
         current.gesture.update({ x, y });
       } catch (error) {
         finish(false);

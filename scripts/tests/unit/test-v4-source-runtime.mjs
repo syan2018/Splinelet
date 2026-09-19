@@ -64,6 +64,22 @@ assert.deepEqual(
   [1, 0],
 );
 sourceFrame.width = 400;
+const snapContext = runtime.readEndpointSnapContext(initialProject, path.id, 0);
+assert.deepEqual(
+  snapContext.origin,
+  path.start,
+  'snap projection shares the immutable source frame',
+);
+assert.ok(Object.isFrozen(snapContext));
+assert.throws(
+  () =>
+    runtime.readEndpointSnapContext(
+      structuredClone(initialProject),
+      path.id,
+      0,
+    ),
+  /外部|可写/,
+);
 assert.deepEqual(
   runtime.readSourceView(initialProject).source.paths[0].start,
   path.start,
@@ -103,6 +119,14 @@ assert.equal(
 );
 assert.throws(() => runtime.readSourceView(first), /过期|失效/);
 assert.throws(() => runtime.readCurvePreviews(first), /过期|失效/);
+assert.throws(
+  () => runtime.readEndpointSnapContext(first, path.id, 0),
+  /过期|失效/,
+);
+assert.throws(
+  () => runtime.readEndpointSnapContext(repeated, path.id, 0),
+  /拖动/,
+);
 assert.throws(() =>
   runtime.commandSource(move(0, path.start), { project: first }),
 );

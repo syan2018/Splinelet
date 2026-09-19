@@ -6,6 +6,7 @@ import { sameDocument } from '../editing/history.mjs';
 import { evaluatePlanar } from '../construction/document-evaluation.mjs';
 import { projectCurvePreviews } from './curve-preview.mjs';
 import { createSourceRuntime } from './source-runtime.mjs';
+import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -101,19 +102,29 @@ export function createV4CreationRuntime({
     prepared.delete(handle);
     return issue(state);
   };
+  const sourceRuntime = createSourceRuntime({
+    editorSession,
+    sourceFrame,
+    getEntry: metadata,
+    issueProject: issue,
+    sameState,
+  });
   return Object.freeze({
-    ...createSourceRuntime({
-      editorSession,
-      sourceFrame,
-      getEntry: metadata,
-      issueProject: issue,
-      sameState,
-    }),
+    ...sourceRuntime,
     project() {
       return issue(editorSession.state);
     },
     readCreationDocument(project) {
       return metadata(project).view.creation;
+    },
+    readEndpointSnapContext(project, pathId, nodeIndex) {
+      const entry = current(project);
+      return projectEndpointSnapContext(
+        entry.state.document,
+        sourceRuntime.readSourceView(project).source,
+        pathId,
+        nodeIndex,
+      );
     },
     readCurvePreviews(project) {
       const entry = metadata(project);

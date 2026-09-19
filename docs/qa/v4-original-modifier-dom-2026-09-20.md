@@ -106,3 +106,13 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 核验结论：导入时旧涂色几何及 split seed 已转为稳定引用绑定，V4 不需要额外补偿平移；上一节的待核验项据此解除。镜像/阵列中心和固定裁剪输入保持原参数语义；不能把“源线全选平移”当成最终结果的刚体平移。全图平移若改变与固定输入的拓扑关系，原实现也会阻断。默认根及原生文件仍需独立接线验收。
 
 本批 `pnpm check:all` 退出 0：99 项单测、类型/lint/格式、Rust 检查及 Web/桌面前端构建通过。日志：`outputs/v4-qa/check-all-path-move-equivalence-2026-09-20.log`。
+
+## 原画布端点吸附
+
+`endpoint-snap-view.mjs` 从 V4 当前源身份、明确发布的曲线实例和已求值 affine 变换生成只读吸附 DTO。当前部件使用其真实镜像/阵列实例，其他部件保持原来的仅源端点目标；源顶点身份用于排除自身及共享该顶点的随动副本。显式连通性和同坐标端点的保守计数共同避免向已连接处吸附。固定集提供对称轴/旋转中心；轴上端点保留原接缝拖动约束，此辅助行为不创建持久 Join。失效发布分支不使用陈旧派生目标，源线仍可编辑。
+
+CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标，并复用冻结 frame。`useSourceDrag` 捕获一次目标后复用原 `snapEndpoint` 的屏幕距离与滞回规则；Alt 临时绕过，Shift 限轴时不吸附，取消和提交清理反馈。默认根事件尚未换接。
+
+新增单测覆盖位姿后的镜像/阵列、共享源顶点、隐藏、独立部件源端点、显式 Join、同坐标防分叉、失效发布和不可变 DTO；原组件浏览器新增 `/snap`，通过原 SVG 节点实际鼠标验证吸附、Alt/Shift、Esc 和一次撤销。证据：`output/playwright/v4-original-modifier-controls/snap-result.json`。实际 Sandrone 源编辑/保存重开 fixture 同批回归，仍不代替默认根或原生文件验收。
+
+本批 `pnpm check:all` 退出 0，100 项单测、类型/lint/格式、Rust 检查与双端构建通过。日志：`outputs/v4-qa/check-all-original-source-snap-2026-09-20.log`。全量检查启动后补强的“其他部件真实镜像仍只提供源端点”断言另行通过该单测与定向 lint/格式检查；产品实现未再改变。

@@ -34,11 +34,13 @@ async function main() {
         name: 'isolated-modifier-fixture',
         configureServer(devServer) {
           devServer.middlewares.use(async (req, res, next) => {
-            if (!['/', '/reference'].includes(req.url)) return next();
+            if (!['/', '/reference', '/snap'].includes(req.url)) return next();
             const fixture =
-              req.url === '/reference'
-                ? 'v4-sandrone-reference'
-                : 'v4-modifier-controls';
+              req.url === '/snap'
+                ? 'v4-source-snap'
+                : req.url === '/reference'
+                  ? 'v4-sandrone-reference'
+                  : 'v4-modifier-controls';
             const html = await devServer.transformIndexHtml(
               '/',
               `<!doctype html><html><head><meta charset="utf-8"><title>原组件验收</title><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="/scripts/tests/fixtures/${fixture}.mjs"></script></body></html>`,
@@ -586,6 +588,62 @@ async function main() {
     );
     console.log(
       'PASS Sandrone reference: real image, original node edit/undo, V4 save/reopen through browser file handle and URL release',
+    );
+    await page.goto(
+      `http://127.0.0.1:${server.httpServer.address().port}/snap`,
+    );
+    await page.locator('#snap-evidence').waitFor();
+    const snapState = async () =>
+      JSON.parse(await page.locator('#snap-evidence').textContent());
+    const initialSnap = await snapState();
+    const snapCanvas = await page.locator('svg.drawing-canvas').boundingBox();
+    const startSnap = async () => {
+      await page.mouse.move(snapCanvas.x + 100, snapCanvas.y + 100);
+      await page.mouse.down();
+    };
+    await startSnap();
+    await page.mouse.move(snapCanvas.x + 107, snapCanvas.y + 94);
+    assert.deepEqual((await snapState()).point, { x: 110, y: 92 });
+    assert.ok((await snapState()).feedback);
+    assert.equal((await snapState()).revision, initialSnap.revision);
+    await page.keyboard.down('Alt');
+    await page.mouse.move(snapCanvas.x + 108, snapCanvas.y + 94);
+    assert.deepEqual((await snapState()).point, { x: 108, y: 94 });
+    assert.equal((await snapState()).feedback, null);
+    await page.keyboard.up('Alt');
+    await page.mouse.move(snapCanvas.x + 107, snapCanvas.y + 94);
+    assert.deepEqual((await snapState()).point, { x: 110, y: 92 });
+    await page.mouse.up();
+    assert.equal((await snapState()).revision, initialSnap.revision + 1);
+    assert.equal((await snapState()).feedback, null);
+    await page.getByRole('button', { name: '撤销吸附测试' }).click();
+    assert.deepEqual((await snapState()).point, initialSnap.point);
+    await startSnap();
+    await page.keyboard.down('Shift');
+    await page.mouse.move(snapCanvas.x + 107, snapCanvas.y + 94);
+    assert.deepEqual((await snapState()).point, { x: 107, y: 100 });
+    assert.equal((await snapState()).feedback, null);
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    assert.deepEqual((await snapState()).point, initialSnap.point);
+    assert.equal(await page.locator('#snap-error').textContent(), '');
+    assert.deepEqual(failures, []);
+    await writeFile(
+      resolve(output, 'snap-result.json'),
+      JSON.stringify(
+        {
+          passed: true,
+          scope:
+            'original SVG and V4 gesture hook; endpoint magnet, Alt bypass, Shift constraint, Escape cancellation and one undo; not default-root acceptance',
+          evidence: await snapState(),
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      'PASS original source snap DOM: endpoint magnet, Alt bypass, Shift constraint, cancel and single undo',
     );
   } catch (error) {
     if (page)
