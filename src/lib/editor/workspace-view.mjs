@@ -33,6 +33,12 @@ export function projectWorkspaceView(editorState, evaluated, frame) {
     )
   )
     throw Error('求值快照不属于当前工作区');
+  if (
+    !['curves', 'regions', 'relief', 'placed-relief'].every((domain) =>
+      evaluated.domains?.includes(domain),
+    )
+  )
+    throw Error('求值快照缺少工作区所需阶段');
   const document =
     identity.previewId === null
       ? editorState.document

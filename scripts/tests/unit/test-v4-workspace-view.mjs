@@ -44,6 +44,11 @@ const capture = async () => {
 const evaluated = await capture();
 const before = editor.state;
 const view = projectWorkspaceView(before, evaluated, frame);
+assert.throws(
+  () =>
+    projectWorkspaceView(before, { ...evaluated, domains: ['curves'] }, frame),
+  /缺少工作区所需阶段/,
+);
 assert(Object.isFrozen(view.creation.cells[0].outputRef));
 assert.deepEqual(
   view.creation.creation.objects[0].pathIds,
