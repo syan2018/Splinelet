@@ -12,7 +12,7 @@
     "desktop:dev": "vite --config vite.desktop.config.ts",
     "desktop:build": "vite build --config vite.desktop.config.ts",
     "desktop": "tauri dev",
-    "desktop:bundle": "tauri build",
+    "desktop:release": "tauri build --no-bundle",
     "desktop:check": "cargo check --locked --manifest-path src-tauri/Cargo.toml",
     "desktop:format:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "build:all": "pnpm build && pnpm desktop:build",

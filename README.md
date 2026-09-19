@@ -44,10 +44,12 @@ pnpm start  # 运行构建后的本地服务，地址以终端输出为准
 ```sh
 pnpm desktop         # 启动 Tauri 开发应用
 pnpm desktop:build   # 只构建桌面前端
-pnpm desktop:bundle  # 构建当前平台安装包
+pnpm desktop:release # 构建免安装桌面程序
 ```
 
-桌面版支持 `.spl` 文件关联、双击打开、单实例传递和原子保存，并使用与工作区一致的无终端自绘窗口框架。Web 版与桌面版共用同一套 React、Worker 和几何实现。
+Windows 发布产物为 `src-tauri/target/release/splinelet.exe`，前端资源已内嵌，直接运行即可，不需要附带 `dist-desktop/`。目标电脑需要已安装 WebView2 Runtime；应用不再生成安装包，也不自动注册 `.spl` 文件关联。恢复草稿仍保存在用户数据目录，免安装不代表数据随 EXE 携带。
+
+桌面版支持通过“打开工程”或命令行路径打开 `.spl`、单实例传递和原子保存。用户也可在 Windows 中手动设置打开方式，但移动 EXE 后需重新指定路径。应用使用与工作区一致的无终端自绘窗口框架；Web 版与桌面版共用同一套 React、Worker 和几何实现。
 
 应用目前以中文界面为主。初次启动会载入内置的 Sandrone 完整工程；浏览器已有工程时优先恢复。
 
@@ -157,7 +159,7 @@ pnpm test
 pnpm build
 ```
 
-完整双端检查使用 `pnpm check:all`（需要 Rust 与 Tauri 系统依赖），涵盖类型、lint、单测、格式、原生编译检查及双端前端构建。仅构建两端前端使用 `pnpm build:all`；原生安装包使用 `pnpm desktop:bundle`。
+完整双端检查使用 `pnpm check:all`（需要 Rust 与 Tauri 系统依赖），涵盖类型、lint、单测、格式、原生编译检查及双端前端构建。仅构建两端前端使用 `pnpm build:all`；原生发布程序使用 `pnpm desktop:release`。
 
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
 

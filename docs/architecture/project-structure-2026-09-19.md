@@ -35,6 +35,8 @@ Rust 的 `lib.rs` 装配应用，`commands.rs` 定义 IPC，`files.rs` 管理路
 
 `vite.config.ts` 负责 Vinext / Cloudflare Web 构建；`vite.desktop.config.ts` 负责桌面客户端构建。两个构建共享应用源码，分别输出 `dist/` 与 `dist-desktop/`，生成目录不纳入版本控制。
 
+桌面交付采用免安装原生程序。`pnpm desktop:release` 使用 `tauri build --no-bundle` 将前端嵌入可执行文件，Windows 产物为 `src-tauri/target/release/splinelet.exe`。Tauri 配置中 `bundle.active` 为 `false`，仅保留应用图标配置；不生成 MSI / NSIS、不安装 WebView2、不自动注册文件关联。目标电脑需自行具备 WebView2 Runtime。用户可手动关联 `.spl`，命令行打开和单实例转交仍由 `open_files.rs` 处理。
+
 `public/trace-worker.js` 继续通过 `/trace-worker.js` 加载，并相对导入 `geometry.mjs`。该几何模块同时供应用和 Node 测试使用，所以桌面构建仍通过 `scripts/build/vite-public-assets.ts` 提供静态资源服务与复制。这里保留一份几何实现，不能直接删除插件或启用普通 `publicDir` 而不验证模块导入。
 
 `/reference.png`、`/sandrone-example.spl`、`/trace-worker.js` 和 `/geometry.mjs` 保持现有路径。模型 Worker 的 `?worker` 与 Manifold 的 `?url` 导入需要双端生产构建验证。
@@ -60,4 +62,4 @@ Rust 的 `lib.rs` 装配应用，`commands.rs` 定义 IPC，`files.rs` 管理路
 
 从仓库根目录运行 `pnpm check:all`：依次执行类型检查、lint、Node 单测、前端格式检查、Rust 格式检查、Rust 编译检查以及 Web / 桌面前端构建。需要 Node、pnpm、Rust 与当前平台的 Tauri 系统依赖。
 
-`pnpm check` 只检查前端，`pnpm build:all` 只构建两端前端。`pnpm desktop:bundle` 验证当前平台安装包，不能用前端构建成功代替原生打包验收。浏览器回归须使用新的隔离 context 和独立端口，不能操作日常工程页面。具体脚本见 [Scripts 目录](../../scripts/README.md)。
+`pnpm check` 只检查前端，`pnpm build:all` 只构建两端前端。`pnpm desktop:release` 验证原生发布程序，不能用前端构建成功代替原生构建验收。浏览器回归须使用新的隔离 context 和独立端口，不能操作日常工程页面。具体脚本见 [Scripts 目录](../../scripts/README.md)。

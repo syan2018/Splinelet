@@ -26,7 +26,7 @@ pnpm desktop:check
 
 - 使用 `pnpm test:core` 检查构造链、修改器与打印分层。
 - 使用 `pnpm test:export` 检查通用 3MF 与 Bambu 3MF。
-- `pnpm check:all` 串行执行上述全部检查与双端前端构建，需要 Rust 工具链和当前平台 Tauri 系统依赖；`pnpm desktop:bundle` 另行验证原生安装包。
+- `pnpm check:all` 串行执行上述全部检查与双端前端构建，需要 Rust 工具链和当前平台 Tauri 系统依赖；`pnpm desktop:release` 另行验证免安装原生发布程序。保持 Tauri 的 `bundle.active` 为 `false`，不生成安装包或自动注册文件关联；`bundle.icon` 仍供程序图标使用。
 - `pnpm format` 会直接修改文件；只读检查使用 `pnpm format:check`。
 - 全库 lint 与格式检查应保持通过。不要用放宽产品代码规则来掩盖问题；浏览器注入脚本和 `.cjs` 应使用适合其运行环境的独立规则。
 

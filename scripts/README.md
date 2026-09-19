@@ -24,7 +24,8 @@ pnpm desktop:check
 - `pnpm format:check`：只检查格式，不修改文件。
 - `pnpm check`：类型、lint、Node 单测与前端格式检查。
 - `pnpm build:all`：Web 与桌面前端构建。
-- `pnpm check:all`：上述检查、Rust 格式与编译检查、双端前端构建；需要 Rust 和当前平台 Tauri 系统依赖。安装包另用 `pnpm desktop:bundle` 验证。
+- `pnpm check:all`：上述检查、Rust 格式与编译检查、双端前端构建；需要 Rust 和当前平台 Tauri 系统依赖。
+- `pnpm desktop:release`：构建免安装原生发布程序，跳过安装包生成；Windows 输出 `src-tauri/target/release/splinelet.exe`，运行时需要 WebView2。`desktop:build` 只构建前端，不能代替该发布检查。
 
 交互回归使用隔离浏览器与独立开发端口。`tests/browser/test-pointer-lifecycle.cjs` 接收一个 Playwright `page`，自建工程并验证选择工具不改几何、节点多选／全选移动、拖动释放、取消、失焦和撤销；`tests/browser/test-saving-browser.cjs` 验证手动写文件与自动恢复草稿的边界。不要在日常工程标签页注入这些脚本。
 
