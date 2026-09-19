@@ -38,25 +38,28 @@ const validateWorkspace = (workspaceView) => {
 };
 
 const validatePresentation = (presentation, sourceFrame) => {
+  if (!presentation || !Object.hasOwn(presentation, 'reference'))
+    throw Error('studio display 的 reference 必须显式提供；无底图时使用 null');
   const reference = presentation?.reference;
   const frame = presentation?.frame;
   const session = presentation?.session;
   if (
-    !reference ||
-    !text(reference.id) ||
-    !text(reference.assetId) ||
-    !text(reference.name) ||
-    !text(reference.url) ||
-    !Number.isInteger(reference.pixelWidth) ||
-    reference.pixelWidth <= 0 ||
-    !Number.isInteger(reference.pixelHeight) ||
-    reference.pixelHeight <= 0 ||
-    !transform(reference.pixelToWorld) ||
-    typeof reference.visible !== 'boolean' ||
-    typeof reference.locked !== 'boolean' ||
-    !Number.isFinite(reference.opacity) ||
-    reference.opacity < 0 ||
-    reference.opacity > 1
+    reference !== null &&
+    (!reference ||
+      !text(reference.id) ||
+      !text(reference.assetId) ||
+      !text(reference.name) ||
+      !text(reference.url) ||
+      !Number.isInteger(reference.pixelWidth) ||
+      reference.pixelWidth <= 0 ||
+      !Number.isInteger(reference.pixelHeight) ||
+      reference.pixelHeight <= 0 ||
+      !transform(reference.pixelToWorld) ||
+      typeof reference.visible !== 'boolean' ||
+      typeof reference.locked !== 'boolean' ||
+      !Number.isFinite(reference.opacity) ||
+      reference.opacity < 0 ||
+      reference.opacity > 1)
   )
     throw Error('studio display 需要显式且完整的 Reference 与 asset URL');
   if (
@@ -67,8 +70,9 @@ const validatePresentation = (presentation, sourceFrame) => {
   )
     throw Error('studio display 需要显式正有限 frame');
   if (
-    frame.width !== reference.pixelWidth ||
-    frame.height !== reference.pixelHeight
+    reference !== null &&
+    (frame.width !== reference.pixelWidth ||
+      frame.height !== reference.pixelHeight)
   )
     throw Error('studio display frame 必须使用 Reference 的像素尺寸');
   if (
@@ -80,6 +84,7 @@ const validatePresentation = (presentation, sourceFrame) => {
   )
     throw Error('studio display frame 与 source projection 不一致');
   if (
+    reference !== null &&
     !reference.pixelToWorld.every((value, index) =>
       near(value, sourceFrame.pixelToWorld[index]),
     )
@@ -118,8 +123,8 @@ export function projectStudioDisplay(workspaceView, presentation) {
   };
   const project = {
     version: 4,
-    image: reference.url,
-    imageName: reference.name,
+    image: reference?.url ?? '',
+    imageName: reference?.name ?? '',
     width: frame.width,
     height: frame.height,
     widthMM: frame.widthMM,

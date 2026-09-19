@@ -135,7 +135,7 @@ assert.equal(display.project.depthMM, 2.4, 'presentation input is cloned');
 assert.throws(
   () =>
     projectStudioDisplay(workspace, { frame, session: presentation.session }),
-  /Reference 与 asset URL/,
+  /reference 必须显式提供/,
 );
 assert.throws(
   () =>
@@ -169,6 +169,67 @@ assert.throws(
     projectStudioDisplay({ ...workspace, creation: undefined }, presentation),
   /完整的 V4 workspace view/,
 );
+
+const noReferenceEditor = createEditorSession(createDocument({ idFactory }), {
+  idFactory,
+});
+noReferenceEditor.dispatch(
+  createAuthoringCommand({
+    kind: 'draw-path',
+    closed: false,
+    points: [
+      [-5, 0],
+      [5, 0],
+    ],
+  }),
+  { expectedRevision: 0 },
+);
+const noReferenceEvaluation = createEvaluationSession({
+  capabilities: domains,
+  evaluate: (request) =>
+    evaluateDocument(request.document, { requestedDomains: request.domains }),
+});
+const detachNoReference = noReferenceEvaluation.attach(noReferenceEditor);
+await noReferenceEvaluation.request({ domains });
+const noReferenceWorkspace = projectWorkspaceView(
+  noReferenceEditor.state,
+  noReferenceEvaluation.capture({
+    epoch: noReferenceEditor.state.epoch,
+    revision: noReferenceEditor.state.revision,
+    domains,
+  }),
+  frame,
+);
+const noReferenceDocumentBefore = structuredClone(
+  noReferenceEditor.state.document,
+);
+const noReferenceDisplay = projectStudioDisplay(noReferenceWorkspace, {
+  reference: null,
+  frame,
+  session: {
+    newReliefDepthMM: 1.6,
+    fileName: null,
+    storageStatus: '',
+    dirty: false,
+  },
+});
+assert.equal(noReferenceDisplay.reference, null);
+assert.equal(noReferenceDisplay.project.image, '');
+assert.equal(noReferenceDisplay.project.imageName, '');
+assert.deepEqual(
+  noReferenceDisplay.project.paths,
+  noReferenceWorkspace.source.paths,
+);
+assert.deepEqual(
+  noReferenceDisplay.project.creation,
+  noReferenceWorkspace.creation.creation,
+);
+assert.deepEqual(noReferenceEditor.state.document.references, {});
+assert.deepEqual(noReferenceEditor.state.document, noReferenceDocumentBefore);
+assert(Object.isFrozen(noReferenceDisplay.project.paths));
+
+detachNoReference();
+noReferenceEvaluation.dispose();
 
 detach();
 evaluation.dispose();
