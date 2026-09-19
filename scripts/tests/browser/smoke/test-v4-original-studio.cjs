@@ -326,11 +326,35 @@ async function main() {
     const divided = await evidence();
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).pendingRegionDrawings, 1);
+    // The public completion API must publish the same pending branch as Enter.
+    const apiFinished = await page.evaluate(async (pathId) => {
+      await window.traceStudio.call('resume_path', { pathId, end: 'end' });
+      return window.traceStudio.call('finish_path', {});
+    }, divided.pathGeometry.at(-1).id);
+    assert.deepEqual(apiFinished, { finished: true });
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().pendingRegionDrawings === 0,
+    );
+    assert.equal((await evidence()).revision, divided.revision + 2);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
     await page.getByRole('button', { name: '重做', exact: true }).click();
     assert.equal((await evidence()).pendingRegionDrawings, 0);
     await page.locator('[data-tree-object]').first().click();
     await page.getByRole('button', { name: '画挖洞轮廓', exact: true }).click();
     await drawPoint(0.53, 0.34);
+    const unfinishedHole = await evidence();
+    const finishIssue = await page.evaluate(async () => {
+      try {
+        await window.traceStudio.call('finish_path', {});
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    });
+    assert.match(finishIssue, /线条已保留/);
+    assert.equal((await evidence()).revision, unfinishedHole.revision);
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
     await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
     const pendingSaved = await evidence();

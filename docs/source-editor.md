@@ -116,6 +116,8 @@ await window.traceStudio.call('export', { format: 'svg' });
 
 `create_path` 接受候选编号或点坐标，返回 fitError / needsAnchor。`manage_group` 支持 create / rename / assign / visibility / delete。`move_path` 保留单条移动兼容入口；`select_path` 现在进入路径选择模式，节点编辑使用 `select_node`。`delete_node`、`merge_paths`、`straighten_span`、`get_project`、`inspect_geometry`、`undo`、`set_view`、`load_project` 保持可用。`refit_path` 仅打开确认框，不能绕过用户确认。拖动期间拒绝 API 修改工程。
 
+注入 V4 会话的原界面中，`finish_path` 与结束按钮、Enter 使用同一完成管线：不添加曲线几何，但会将有效的待完成分区发布为一次可撤销命令。未闭合孔、无效目标等会返回错误，并保留原始线条供续画；不会仅退出绘制就报告构造成功。默认旧会话仍沿用原结束行为。
+
 ## 精确样条 API 4.1
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。

@@ -240,3 +240,9 @@ V4 的原重新拟合入口从捕获的只读源视图按现有边逐段拟合�
 运行时测试覆盖体积、合法 3MF、结果复用、文档只读、未知零件/外来模板拒绝、预览拒绝和迟到拒绝。最终 `pnpm check:all` 退出 0，110 项单测、类型/lint/格式、Rust 格式/检查与双端构建通过，日志 `outputs/v4-qa/check-all-body-output-final-2026-09-20.log`。原高级 ModelWorkspace 完整写入、默认入口与原生窗口仍待签收，不能由这条输出管线替代。
 
 最终真实浏览器退出 0，日志 `outputs/v4-qa/original-body-output-ready-2026-09-20.log`。检查内置 Sandrone BodySet 报告有效且体积为正，通用 3MF 经 base64 解码、ZIP 读取后包含三角网格；操作保持已保存状态。随后全套原界面编辑/文件/区域/拟合/候选流程通过，页面与控制台错误为空，结果文件记录 solidReport 与 generic3mfBytes。Worker 异步刷新暴露分区/挖洞按钮过早可点，已在区域更新期间禁用这两个依赖区域结果的入口，原逻辑与样式保留。最终 UI 修复后类型/lint/全库格式和双端构建另行通过，构建日志 `outputs/v4-qa/build-body-output-ready-2026-09-20.log`。
+
+## 2026-09-20 完成绘制 API 与原交互对齐
+
+原 finish_path 曾只清理绘制会话，未提交待完成分区却返回 finished。现在复用 finishDrawing：有效分区一次提交，构造失败返回原因并保留原线，忙碌/拖动/保存期间拒绝。原界面浏览器新增 Enter 完成后撤销，再通过 resume_path/finish_path 完成并撤销重做；单点孔结束失败不改变 revision，随后保存重开、续画闭合通过。
+
+验证：outputs/v4-qa/original-finish-api-2026-09-20.log 为 PASS，包含真实 Sandrone Worker 实体检查及原界面流程；outputs/v4-qa/check-all-finish-api-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖类型、lint、全部单元测试、格式、Rust 检查和 Web/桌面前端生产构建。完整 API 和默认入口仍未签收。

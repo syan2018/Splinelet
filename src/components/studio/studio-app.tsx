@@ -1408,7 +1408,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     setStatus('点击新的轮廓起点');
   };
   const finishDrawing = () => {
-    if (busyRef.current) return;
+    if (busyRef.current) return '请先完成当前描线';
     let issue: string | null = null;
     if (host && drawingRef.current && ar.current) {
       try {
@@ -1425,6 +1425,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     }
     finish();
     if (issue) setStatus(issue);
+    return issue;
   };
   const resumePath = (pathId: string, end: 'start' | 'end') => {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
@@ -3214,7 +3215,10 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       add_anchor: (a: { position: Point } & Partial<TraceSettings>) =>
         addAnchor(a.position, a),
       finish_path: () => {
-        finish();
+        if (busyRef.current || fileBusyRef.current || drag.current)
+          throw Error('请先完成当前描线、拖动或保存');
+        const issue = finishDrawing();
+        if (issue) throw Error(issue);
         return { finished: true };
       },
       close_path: (a: Partial<TraceSettings>) => closePath(a),
@@ -3550,7 +3554,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                     add_anchor:
                       'Add one point at the current drawing endpoint, with exactly one new cubic. If no drawing is active, starts a new path. Original-image pixel coordinates. Undoable.',
                     finish_path:
-                      'Finish the current drawing session without changing geometry.',
+                      'Finish the current drawing session without adding geometry. In V4, publish a valid pending divider as one undoable command. Incomplete or invalid construction rejects and retains its raw path for resuming.',
                     close_path:
                       'Close the active open path from the current drawing endpoint with one cubic. Undoable.',
                     refit_path:
