@@ -52,6 +52,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 ## 目录
 
+`test-v4-source-runtime.mjs` 验证源编辑、路径命令和修改器共用同一 V4 会话及展示句柄：像素身份映射、固定参考坐标系、拖动按起点重算、派生预览同步、取消不留历史、提交一次撤销，以及换文档/撤销/重复坐标采样后的旧句柄拒绝。运行命令为 `node scripts/tests/unit/test-v4-source-runtime.mjs`；这属于共享运行时验证，尚不代表原主画布回调完成接线。
+
 `test-v4-modifier-intents.mjs` 检查原修改器字段到 V4 算子的所有权、世界/局部坐标、参数引用保护和字段约束；`test-v4-modifier-control-runtime.mjs` 验证只读控件值→原 `modifier_update` 意图→同一 V4 会话→重新求值与一次撤销。它们不替代修改器面板的实际 DOM 接线验收。
 
 `test-v4-modifier-add.mjs` 验证原 `modifier_add` 的纯曲线阶段镜像/阵列：世界坐标转换、发布端口接线、原线不变、一次撤销和错误原子拒绝；已有区域、锁定或不可用曲线不能通过简化入口追加。上述原组件浏览器用例同时验证实际新增阵列、三倍曲线输出、正确前序引用和撤销。构面接合、已有区域的修改器增删排序尚需独立接线，不属于这一项通过范围。

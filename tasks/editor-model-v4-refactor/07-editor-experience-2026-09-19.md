@@ -137,6 +137,8 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ### 执行与验收记录
 
+2026-09-20 源编辑共享运行时：`CreationRuntime` 同时提供 `readSourceView`、`commandSource`、`commandPath` 和 `beginSourceGesture`，共用私有展示句柄、单一 EditorSession 和历史。源命令从已展示的稳定身份编译，拖动使用固定基线；参考图坐标系在运行时创建时捕获，屏幕缩放/平移不改变它，参考系变更须重建运行时。连续相同坐标采样仍按预览版本使旧句柄失效。专项测试覆盖共享历史、实时派生结果及取消/换文档保护；原主画布回调和默认根会话注入仍待完成，不能签收完整源编辑旅程。
+
 - 认领人 / 时间：
 - 起始提交 / 合同版本：
 - 实现提交 / 关键变更：

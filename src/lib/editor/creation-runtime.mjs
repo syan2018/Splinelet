@@ -5,6 +5,7 @@ import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { sameDocument } from '../editing/history.mjs';
 import { evaluatePlanar } from '../construction/document-evaluation.mjs';
 import { projectCurvePreviews } from './curve-preview.mjs';
+import { createSourceRuntime } from './source-runtime.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -25,7 +26,9 @@ const documentOf = (state) =>
   state.previewId ? state.preview.document : state.document;
 const sameState = (a, b) =>
   sameIdentity(a, b) &&
-  (!a.previewId || sameDocument(documentOf(a), documentOf(b)));
+  (!a.previewId ||
+    (a.preview.version === b.preview.version &&
+      sameDocument(documentOf(a), documentOf(b))));
 
 /**
  * Backend for the established CreationWorkspace. Display projects are opaque
@@ -37,6 +40,7 @@ export function createV4CreationRuntime({
   toDisplayProject,
   evaluate = evaluateDocument,
   intent = createCreationIntent,
+  sourceFrame,
 }) {
   if (!editorSession?.dispatch || typeof toDisplayProject !== 'function')
     throw Error('创作运行时需要编辑会话和只读展示投影');
@@ -98,6 +102,13 @@ export function createV4CreationRuntime({
     return issue(state);
   };
   return Object.freeze({
+    ...createSourceRuntime({
+      editorSession,
+      sourceFrame,
+      getEntry: metadata,
+      issueProject: issue,
+      sameState,
+    }),
     project() {
       return issue(editorSession.state);
     },
