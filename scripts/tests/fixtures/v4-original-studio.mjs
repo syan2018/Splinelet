@@ -57,6 +57,8 @@ window.showOpenFilePicker = async () => [
 window.showSaveFilePicker = async () =>
   directory.getFileHandle('new-image-project.spl', { create: true });
 // Read-only instrumentation: all edits below must originate in original UI.
+window.originalStudioDocument = () =>
+  structuredClone(host.getSnapshot().editorState.document);
 window.originalStudioEvidence = () => {
   const { editorState, project, storage } = host.getSnapshot();
   return {

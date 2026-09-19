@@ -2951,14 +2951,23 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   };
   const refitPath = async (args: { id?: string } = {}) =>
     lock(async () => {
-      const original = pr.current.paths.find(
+      const captured = host?.getSnapshot();
+      const sourceProject: Project = captured?.project ?? pr.current;
+      const original = sourceProject.paths.find(
         (p) => p.id === (args.id || ar.current),
       );
       if (!original) throw Error('请先选中路径');
-      const points = original.anchors.filter(
-        (p, i, all) => !i || dist(p, all[i - 1]) > 0.1,
-      );
+      // V4 refits current source spans without collapsing short edges or
+      // changing their identities. Legacy files retain their anchor workflow.
+      const points = captured
+        ? original.curves.map((curve) => curve[0])
+        : original.anchors.filter(
+            (p, i, all) => !i || dist(p, all[i - 1]) > 0.1,
+          );
+      if (captured && !original.closed && original.curves.length)
+        points.push(original.curves.at(-1)![3]);
       if (
+        !captured &&
         original.closed &&
         points.length > 1 &&
         dist(points[0], points.at(-1)) < 0.1
@@ -2985,9 +2994,21 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         path.fitError = Math.max(path.fitError, r.fitError);
         a = b;
       }
-      transact((p) => {
-        p.paths[p.paths.findIndex((q) => q.id === original.id)] = path;
-      });
+      if (captured)
+        pr.current = captured.runtime
+          .commandPath(
+            {
+              kind: 'refit-path',
+              pathId: original.id,
+              pixelCubics: path.curves,
+            },
+            { project: captured.project },
+          )
+          .commit();
+      else
+        transact((p) => {
+          p.paths[p.paths.findIndex((q) => q.id === original.id)] = path;
+        });
       finish();
       setTool('edit');
       setActiveNow(path.id);

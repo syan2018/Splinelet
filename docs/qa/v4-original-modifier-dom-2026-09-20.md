@@ -212,3 +212,13 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 原根浏览器完整通过原有 Sandrone 编辑/保存/重开和轮廓/分区/孔操作后，使用原工具在同一部件画两条开放线，选尾节点按 M，再点击另一条的起点，得到一条三段曲线；撤销恢复两条，重做恢复合并。从原“路径操作”删除该线，撤销恢复。页面和控制台错误均为空。初步修复日志 `outputs/v4-qa/original-source-actions-final-2026-09-20.log` 退出 0；最终缓存版本与全量结果在下文补记。默认入口、原生文件及完整用户旅程仍未签收。
 
 最终缓存版本原根浏览器退出 0，日志 `outputs/v4-qa/original-source-actions-cached-2026-09-20.log`；`output/playwright/v4-original-studio/result.json` 的 mergedPaths 为 1 条源线/3 段曲线，最终 evidence 为删除撤销后的恢复状态。`pnpm check:all` 退出 0，107 项单测、Rust 格式/检查及 Web/Desktop 构建通过，日志 `outputs/v4-qa/check-all-source-actions-final-2026-09-20.log`。查询缓存补充后类型/lint/全库格式和 source-runtime 单测另行通过；预览首次查询的补充断言通过。该次完整构建已包含缓存实现。
+
+## 2026-09-20 原确认弹窗与重新拟合
+
+V4 的原重新拟合入口从捕获的只读源视图按现有边逐段拟合，提交 refit-path 修改控制柄；保留节点/边身份及 Program，不用旧 TracePath 替换规范源数据，也不按像素距离过滤短边。用户确认、取消、忙碌提示及旧后端行为保留。异步写回受捕获视图版本保护，关系驱动/共享边使用命令既有拒绝逻辑。
+
+首次真实弹窗测试发现隔离 Vite 配置没有正式 Web/Desktop 的 Tailwind PostCSS 处理器。弹窗透明拦截层因此挡住未正确定位的内容。这是测试环境不完整，不据此修改产品弹窗或添加覆盖样式。原根 fixture 已接入与产品相同的 Tailwind 插件；此前截图仅证明手写 CSS 的部分表现，不能独立作为全部 utility 样式保真的签收证据，以修正后的真实浏览器重跑为准。
+
+`pnpm check:all` 退出 0，包含 107 项单测、类型/lint/格式、Rust 格式/检查及双端构建；日志 `outputs/v4-qa/check-all-refit-2026-09-20.log`。首次检查因捕获 Project 的回调类型推断错误停止，补上明确 Project 类型后完整重跑通过。测试环境修正后 lint 与全库格式另行通过。
+
+修正样式管线后，`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 退出 0，日志 `outputs/v4-qa/original-refit-styled-2026-09-20.log`。先实际拖动控制柄，再打开原重新拟合弹窗；取消后规范文档不变，确认后源控制柄改变而 Vertex、Edge IDs 和 Program 不变，撤销恢复确认前完整文档，重做恢复拟合后完整文档。前面的 Sandrone 编辑、文件、区域绘制及源合并删除流程同时通过；页面与控制台错误为空。最终截图使用正式 Tailwind 管线。仍为注入 host 的隔离原根，不签收默认入口与原生文件。

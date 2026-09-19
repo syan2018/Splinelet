@@ -111,3 +111,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-boundary-drawing.mjs` 验证高级部件新增普通轮廓的首点保存、编码重开续画、闭合追加与撤销，保留旧曲线/区域身份及赋值；`test-v4-boundary-drawing-copy.mjs` 验证未完成轮廓的复制重映射与独立闭合。原根浏览器测试继续覆盖分区、挖洞后追加普通轮廓、撤销重做和保存。
 
 原根 `test-v4-original-studio.cjs` 进一步覆盖同部件两条开放源线的端点合并、撤销重做及删除恢复；`test-v4-source-runtime.mjs` 验证预览期间端点吸附查询固定使用提交基线，不接受过期展示句柄。
+
+原根浏览器另覆盖控制柄拖动后的重新拟合确认/取消、保留节点和边身份、撤销/重做。`test-v4-path-intents.mjs` 验证拟合端点转换、反向边和过期结果拒绝；`test-v4-path-geometry-command.mjs` 验证共享/驱动保护与精确控制柄写入。

@@ -10,10 +10,12 @@ const output = resolve(root, 'output/playwright/v4-original-studio');
 
 async function main() {
   const { createServer } = await import('vite');
+  const { default: tailwindcss } = await import('@tailwindcss/postcss');
   const server = await createServer({
     configFile: false,
     root,
     publicDir: resolve(root, 'public'),
+    css: { postcss: { plugins: [tailwindcss()] } },
     optimizeDeps: {
       include: [
         '@tauri-apps/api/core',
@@ -413,6 +415,85 @@ async function main() {
     );
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).paths, 1);
+    await page.locator('[data-tree-path]').first().click();
+    await page.getByRole('button', { name: '节点 (A)', exact: true }).click();
+    await page.locator('[data-node-index="0"] rect').first().click();
+    const handleBox = await page
+      .locator('[data-control-handle="0:1"] circle')
+      .first()
+      .boundingBox();
+    assert.ok(handleBox);
+    const beforeHandle = await evidence();
+    await page.mouse.move(
+      handleBox.x + handleBox.width / 2,
+      handleBox.y + handleBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox.x + handleBox.width / 2,
+      handleBox.y + handleBox.height / 2 + 25,
+      { steps: 4 },
+    );
+    await page.mouse.up();
+    await page.waitForFunction(
+      (revision) => window.originalStudioEvidence().revision > revision,
+      beforeHandle.revision,
+    );
+    const beforeRefit = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    const requestRefit = async () => {
+      await page.getByRole('button', { name: '选择 (V)', exact: true }).click();
+      await page.locator('[data-tree-path]').first().click();
+      const details = page.locator('.spline-more-actions');
+      if (
+        !(await details.getAttribute('open')) &&
+        !(await details.evaluate((el) => el.open))
+      )
+        await page.getByText('路径操作', { exact: true }).click();
+      await page
+        .getByRole('button', { name: '重新拟合当前路径…', exact: true })
+        .click();
+    };
+    await requestRefit();
+    await page
+      .getByRole('button', { name: '取消，保留现有曲线', exact: true })
+      .click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeRefit,
+    );
+    await requestRefit();
+    const refitRevision = (await evidence()).revision;
+    await page
+      .getByRole('button', { name: '确认替换并重拟合', exact: true })
+      .click();
+    await page.waitForFunction(
+      (revision) => window.originalStudioEvidence().revision > revision,
+      refitRevision,
+    );
+    const afterRefit = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.notDeepEqual(afterRefit.sketches, beforeRefit.sketches);
+    for (const [id, sketch] of Object.entries(beforeRefit.sketches)) {
+      assert.deepEqual(afterRefit.sketches[id].vertices, sketch.vertices);
+      assert.deepEqual(
+        Object.keys(afterRefit.sketches[id].edges),
+        Object.keys(sketch.edges),
+      );
+    }
+    assert.deepEqual(afterRefit.programs, beforeRefit.programs);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeRefit,
+    );
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      afterRefit,
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
