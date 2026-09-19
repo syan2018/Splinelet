@@ -5,12 +5,13 @@
 ## 入门与工作流
 
 - [项目首页与完整工作流](../README.md)
-- [统一创作与 Agent API](../CREATION.md)
+- [统一创作与 Agent API](creation-2026-09-19.md)
 - [源线编辑器与兼容 API](source-editor.md)
-- [高级构面与实体操作](../MODELING.md)
+- [高级构面与实体操作](modeling-2026-09-19.md)
 
 ## 专题说明
 
+- [工程结构与平台边界](architecture/project-structure-2026-09-19.md)
 - [面修改器](modifiers.md)
 - [构造链与失效处理](architecture/construction-pipeline.md)
 - [打印分层](print-stack.md)

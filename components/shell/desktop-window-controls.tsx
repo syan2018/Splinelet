@@ -6,7 +6,7 @@ import {
   desktopMinimizeWindow,
   desktopToggleMaximizeWindow,
   isDesktopRuntime,
-} from '@/lib/desktop-runtime.mjs';
+} from '@/lib/platform/index.mjs';
 
 const runWindowAction = (action: () => Promise<void>) => {
   void action().catch((error) => console.error('窗口操作失败', error));

@@ -3,7 +3,7 @@ import {
   mergeSplines,
   connectionSettings,
   straightCubic,
-} from '../../../public/connect.mjs';
+} from '../../../lib/source-editor/connect.mjs';
 import { evaluate } from '../../../public/geometry.mjs';
 const P = (x, y) => ({ x, y });
 const a = {

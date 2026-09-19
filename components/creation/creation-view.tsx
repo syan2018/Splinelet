@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { pickVisibleIntersection } from '@/public/creation-pick.mjs';
+import { pickVisibleIntersection } from '@/lib/creation-pick.mjs';
 
 type Coordinate = [number, number];
 type CreationCell = {

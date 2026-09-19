@@ -1,4 +1,4 @@
-import { saveThroughRuntime } from './desktop-runtime.mjs';
+import { saveThroughRuntime } from './platform/index.mjs';
 
 export function deliver3MF<
   T extends { bytes: ArrayBuffer; mimeType: string; filename: string },

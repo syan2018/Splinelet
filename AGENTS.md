@@ -2,9 +2,10 @@
 
 ## 项目边界
 
-- Splinelet 是浏览器端 2.5D 浮雕建模工具，使用 React 19、TypeScript、Vinext/Vite、Cloudflare/Wrangler、Three.js、JSTS 与 Manifold。
+- Splinelet 是 Web 与 Tauri 桌面端共用前端的 2.5D 浮雕建模工具，使用 React 19、TypeScript、Vinext/Vite、Cloudflare/Wrangler、Three.js、JSTS 与 Manifold。
 - `app/` 只放路由入口与全局样式。`components/` 按工作区或功能域组织界面，`hooks/` 放可复用 React 状态逻辑，`lib/` 放领域模型、几何、实体、导出与命令逻辑。
-- `public/` 中的 `.mjs` 是浏览器直接加载的运行时代码，也被 Node 回归脚本导入。改动时同时检查页面、Worker 和 Node 测试。
+- `app/page.tsx` 与 `desktop/main.tsx` 共同引用 `components/studio/studio-app.tsx`；桌面入口不依赖 Web 路由组件。`lib/platform/` 放浏览器与 Tauri 能力适配，`src-tauri/src/` 放原生命令、文件权限与应用装配。
+- `lib/source-editor/` 放编辑算法，`lib/persistence/` 放恢复草稿与文件写入队列。`public/` 只保留静态资源及有兼容 URL 的 `trace-worker.js` / `geometry.mjs`；后者仍被应用与 Node 测试导入。改动时同时检查页面、Worker 和 Node 测试。
 - `scripts/` 包含测试、样例、维护和外部验证工具；fixture 必须是可进入版本控制的最小复现数据。具体分类见 `scripts/README.md`。
 - `docs/` 放当前指南与架构说明；`docs/qa/` 仅存历史验收快照。产品事实以 README 和当前专题文档为准。
 
@@ -18,16 +19,20 @@ pnpm lint
 pnpm test
 pnpm format:check
 pnpm build
+pnpm desktop:build
+pnpm desktop:format:check
+pnpm desktop:check
 ```
 
 - 使用 `pnpm test:core` 检查构造链、修改器与打印分层。
 - 使用 `pnpm test:export` 检查通用 3MF 与 Bambu 3MF。
+- `pnpm check:all` 串行执行上述全部检查与双端前端构建，需要 Rust 工具链和当前平台 Tauri 系统依赖；`pnpm desktop:bundle` 另行验证原生安装包。
 - `pnpm format` 会直接修改文件；只读检查使用 `pnpm format:check`。
 - 全库 lint 与格式检查应保持通过。不要用放宽产品代码规则来掩盖问题；浏览器注入脚本和 `.cjs` 应使用适合其运行环境的独立规则。
 
 ## 高风险区域
 
-- 保持 `app/page.tsx` 为根路由入口。拆分时优先抽取纯 helper、hook 或 props 边界清晰的面板，不要顺手改变全局状态、持久化、选择语义或 `window.traceStudio.call`。
+- 保持 `app/page.tsx` 为薄根路由入口。共享应用位于 `components/studio/studio-app.tsx`；继续拆分时优先抽取纯 helper、hook 或 props 边界清晰的面板，不要顺手改变全局状态、持久化、选择语义或 `window.traceStudio.call`。
 - `public/trace-worker.js` 由绝对 URL `/trace-worker.js` 加载，并相对导入 `./geometry.mjs`。移动前必须统一更新 Worker URL、相对导入、页面调用、Node 脚本与文档。
 - `/reference.png` 与 `/sandrone-example.spl` 是兼容路径。重命名时同步校验器、fetch、生成脚本和恢复测试。
 - `model-worker.ts?worker` 与 `manifold.wasm?url` 使用构建器特殊加载。移动后必须执行生产构建，不能只依赖 TypeScript。

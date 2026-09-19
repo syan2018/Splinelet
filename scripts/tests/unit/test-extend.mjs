@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { extendSpline, splineEndpoint } from '../../../public/extend.mjs';
-import { straightCubic } from '../../../public/connect.mjs';
-import { pathNodes } from '../../../public/node-edit.mjs';
+import {
+  extendSpline,
+  splineEndpoint,
+} from '../../../lib/source-editor/extend.mjs';
+import { straightCubic } from '../../../lib/source-editor/connect.mjs';
+import { pathNodes } from '../../../lib/source-editor/node-edit.mjs';
 
 const point = (x, y) => ({ x, y });
 const base = {

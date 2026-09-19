@@ -1,7 +1,7 @@
 import { validateModel } from './model-schema.mjs';
 import { validateCreation } from './creation-schema.mjs';
 import type { SurfaceModifier } from './modifier-types';
-import { saveThroughRuntime } from './desktop-runtime.mjs';
+import { saveThroughRuntime } from './platform/index.mjs';
 export type Point = { x: number; y: number };
 export type Cubic = [Point, Point, Point, Point];
 export type TracePath = {

@@ -6,7 +6,7 @@ import {
   useState,
   type RefObject,
 } from 'react';
-import { pickSelection } from '@/public/selection.mjs';
+import { pickSelection } from '@/lib/source-editor/selection.mjs';
 
 export type CreationSelection = {
   kind: 'object' | 'path' | 'cell';

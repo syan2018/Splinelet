@@ -1,8 +1,8 @@
 'use client';
 import { CornerDownLeft, Link, MousePointer2, Check } from 'lucide-react';
 import type { TracePath } from '@/lib/project';
-import { pathNodes } from '@/public/node-edit.mjs';
-import { nodeModes, nodeSides } from '@/public/continuity.mjs';
+import { pathNodes } from '@/lib/source-editor/node-edit.mjs';
+import { nodeModes, nodeSides } from '@/lib/source-editor/continuity.mjs';
 
 type End = 'start' | 'end';
 type Resume = (end: End) => void;

@@ -6,10 +6,10 @@ import {
   translateNodes,
   deleteNodes,
   pathHitsBox,
-} from '../../../public/selection.mjs';
-import { setContinuity } from '../../../public/continuity.mjs';
-import { pathNodes } from '../../../public/node-edit.mjs';
-import { straightCubic } from '../../../public/connect.mjs';
+} from '../../../lib/source-editor/selection.mjs';
+import { setContinuity } from '../../../lib/source-editor/continuity.mjs';
+import { pathNodes } from '../../../lib/source-editor/node-edit.mjs';
+import { straightCubic } from '../../../lib/source-editor/connect.mjs';
 const points = [
   { x: 10, y: 10 },
   { x: 50, y: 20 },

@@ -183,4 +183,4 @@
 | 切换选区和属性标签             | 工具与工程数据不被隐式改变                                 |
 | 编辑、等待草稿、刷新           | 草稿可恢复，工程文件在 Ctrl+S 前不变                       |
 
-当前实现与操作说明见 [统一创作指南](../CREATION.md)、[源线编辑器](source-editor.md)。可复现测试入口见 [Scripts 目录](../scripts/README.md)。
+当前实现与操作说明见 [统一创作指南](creation-2026-09-19.md)、[源线编辑器](source-editor.md)。可复现测试入口见 [Scripts 目录](../scripts/README.md)。

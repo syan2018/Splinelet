@@ -1,13 +1,22 @@
 module.exports = async (page) => {
   const assert = require('node:assert/strict');
+  const { decodeProject } = await import('../../../lib/project-format.mjs');
   const call = (action, args = {}) =>
     page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
       action,
       args,
     });
-  const readSaved = () =>
-    page.evaluate(async () =>
-      JSON.parse(await (await window.testSaveHandle.getFile()).text()),
+  const readSaved = async () =>
+    decodeProject(
+      new Uint8Array(
+        await page.evaluate(async () =>
+          Array.from(
+            new Uint8Array(
+              await (await window.testSaveHandle.getFile()).arrayBuffer(),
+            ),
+          ),
+        ),
+      ),
     );
   const waitSaved = (text) =>
     page.waitForFunction(
@@ -61,11 +70,11 @@ module.exports = async (page) => {
   await page.evaluate(async () => {
     window.testSaveHandle = await (
       await navigator.storage.getDirectory()
-    ).getFileHandle('manual-save-test.json', { create: true });
+    ).getFileHandle('manual-save-test.spl', { create: true });
     window.showSaveFilePicker = async () => window.testSaveHandle;
   });
   await page.getByRole('button', { name: '保存工程', exact: true }).click();
-  await waitSaved('已保存到 manual-save-test.json');
+  await waitSaved('已保存到 manual-save-test.spl');
   const beforeEdit = await readSaved();
 
   const created = await call('manage_group', {
@@ -87,8 +96,11 @@ module.exports = async (page) => {
   await page.reload();
   await page.waitForFunction(() => window.traceStudio);
   await page.evaluate(async () => {
-    const { workspaceDB } = await import('/persistence.mjs');
-    window.testSaveHandle = (await workspaceDB('get')).handle;
+    // Reopen the test-owned OPFS file; the application independently restores
+    // its bound handle from IndexedDB. Do not depend on a public source URL.
+    window.testSaveHandle = await (
+      await navigator.storage.getDirectory()
+    ).getFileHandle('manual-save-test.spl');
   });
   await waitSaved('浏览器草稿已保存');
   assert(
@@ -102,7 +114,7 @@ module.exports = async (page) => {
   );
 
   await page.keyboard.press('Control+s');
-  await waitSaved('已保存到 manual-save-test.json');
+  await waitSaved('已保存到 manual-save-test.spl');
   assert(
     (await readSaved()).groups.some((group) => group.id === created.id),
     'Ctrl+S writes the latest project to the bound file',

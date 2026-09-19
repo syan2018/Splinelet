@@ -7,7 +7,7 @@ import {
 import { creationCommand } from '../../../lib/creation-commands.mjs';
 import { bindSurfaceGraphs } from '../../../lib/surface-lineage.mjs';
 import { validateCreation } from '../../../lib/creation-schema.mjs';
-import { translatePaths } from '../../../public/selection.mjs';
+import { translatePaths } from '../../../lib/source-editor/selection.mjs';
 import {
   liveSurfaces,
   rectangle,

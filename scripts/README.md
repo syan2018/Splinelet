@@ -12,6 +12,9 @@ pnpm lint
 pnpm test
 pnpm format:check
 pnpm build
+pnpm desktop:build
+pnpm desktop:format:check
+pnpm desktop:check
 ```
 
 - `pnpm test:core`：构造链、修改器和打印分层回归。
@@ -19,11 +22,15 @@ pnpm build
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
 - `pnpm format:check`：只检查格式，不修改文件。
+- `pnpm check`：类型、lint、Node 单测与前端格式检查。
+- `pnpm build:all`：Web 与桌面前端构建。
+- `pnpm check:all`：上述检查、Rust 格式与编译检查、双端前端构建；需要 Rust 和当前平台 Tauri 系统依赖。安装包另用 `pnpm desktop:bundle` 验证。
 
 交互回归使用隔离浏览器与独立开发端口。`tests/browser/test-pointer-lifecycle.cjs` 接收一个 Playwright `page`，自建工程并验证选择工具不改几何、节点多选／全选移动、拖动释放、取消、失焦和撤销；`tests/browser/test-saving-browser.cjs` 验证手动写文件与自动恢复草稿的边界。不要在日常工程标签页注入这些脚本。
 
 ## 目录
 
+- `build/`：供 Vite 配置导入的构建辅助模块；`vite-public-assets.ts` 服务和复制兼容静态资源，保留描线 Worker 的绝对 URL。
 - `tests/unit/`：可直接用 Node 运行的核心、几何和导出回归。
 - `tests/browser/`：隔离浏览器或 Playwright 注入脚本；每个脚本必须自建测试数据或接收 `tests/fixtures/` 中的已提交 fixture，不能依赖先前脚本、当前页面工程或本机私有文件。不要在日常工程标签页运行。
 - `tests/fixtures/`：进入版本库的最小可复现测试数据。

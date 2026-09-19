@@ -1,6 +1,6 @@
 # Unified creation acceptance
 
-> Status: historical QA snapshot from 2026-09-12. Current behavior is documented in [统一创作](../../CREATION.md); local `outputs/` evidence mentioned below is not stored in this repository.
+> Status: historical QA snapshot from 2026-09-12. Current behavior is documented in [统一创作](../creation-2026-09-19.md); local `outputs/` evidence mentioned below is not stored in this repository.
 
 Functional and visual checks use an isolated Playwright context. Original Sandrone files are read only.
 

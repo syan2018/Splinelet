@@ -138,14 +138,16 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 ## 文档与开发
 
 - [完整文档索引](docs/README.md)
-- [统一创作与 API](CREATION.md)
+- [统一创作与 API](docs/creation-2026-09-19.md)
 - [源线编辑与快捷键](docs/source-editor.md)
 - [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/architecture/construction-pipeline.md)
 - [打印分层](docs/print-stack.md) · [3MF 导出](docs/3mf-export.md)
 - [Splinelet 工程格式](docs/project-format.md)
-- [高级构面与实体操作](MODELING.md)
+- [高级构面与实体操作](docs/modeling-2026-09-19.md)
 
 主要使用 React、TypeScript、Vinext / Vite、Three.js、JSTS 和 Manifold。底图、曲线与几何计算在浏览器中处理，构面和实体运算放在 Worker 中。
+
+Web 路由 `app/page.tsx` 和桌面入口 `desktop/main.tsx` 共用 `components/studio/studio-app.tsx`。浏览器与 Tauri 能力位于 `lib/platform/`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
 
 部分核心回归检查：
 
@@ -154,6 +156,8 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+完整双端检查使用 `pnpm check:all`（需要 Rust 与 Tauri 系统依赖），涵盖类型、lint、单测、格式、原生编译检查及双端前端构建。仅构建两端前端使用 `pnpm build:all`；原生安装包使用 `pnpm desktop:bundle`。
 
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
 

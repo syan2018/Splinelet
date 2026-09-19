@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import Home from '@/app/page';
+import StudioApp from '@/components/studio/studio-app';
 import '@/app/globals.css';
 import '@/app/creation.css';
 
@@ -10,6 +10,6 @@ if (!root) throw new Error('桌面应用缺少根节点');
 
 createRoot(root).render(
   <StrictMode>
-    <Home />
+    <StudioApp />
   </StrictMode>,
 );

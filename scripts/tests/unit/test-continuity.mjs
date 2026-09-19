@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { setContinuity, moveHandle } from '../../../public/continuity.mjs';
-import { removeNode } from '../../../public/node-edit.mjs';
-import { mergeSplines } from '../../../public/connect.mjs';
+import {
+  setContinuity,
+  moveHandle,
+} from '../../../lib/source-editor/continuity.mjs';
+import { removeNode } from '../../../lib/source-editor/node-edit.mjs';
+import { mergeSplines } from '../../../lib/source-editor/connect.mjs';
 import { svg, blender, validateProject } from '../../../lib/project.ts';
 import fs from 'node:fs';
 const pt = (x, y) => ({ x, y });
