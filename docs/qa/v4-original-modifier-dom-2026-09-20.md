@@ -288,3 +288,9 @@ outputs/v4-qa/original-api-handle-2026-09-20.log 为 PASS：原界面中通过 s
 纯路径集合投影为原只读 groups，保留完整 pathIds/groupIds；唯一归属才给旧 groupId，混合实体集合不作路径分组。assign-path-collection 维护原显式移入的单分组行为，其他纯路径组移出选中成员、混合集合保持。原 Ctrl+G、按钮、manage_group 和 move_path(s) 经 group-intents 一次提交，排序仅写 Path.order。单元覆盖旧顺序对照、原子失败、重叠、锁定与一次撤销。原根浏览器新增编组/撤销重做、成员转移/显隐/命名/解散、排序及持久化验证；结果记录在 original-groups-2026-09-20.log 与 check-all-original-groups-2026-09-20.log。
 
 结果：原浏览器日志为 PASS；完整 pnpm check:all 退出 0，涵盖 112 项单元测试、类型、lint、格式、Rust 检查与 Web/桌面前端生产构建。默认入口切换和完整 API 验收仍未完成。
+
+## 2026-09-20 精确样条输入管线拆分
+
+原 spline_apply 的输入解析已抽入独立 spline-proposal：冻结的 frame/paths/objects 视图可直接生成无新 ID 的精确曲线提案，原 writer 消费提案。单元覆盖矩阵和控制柄与原结果一致、无输入别名、整批失败以及新样条用途。没有更改原界面；V4 批量样条命令仍待完成。
+
+outputs/v4-qa/check-all-spline-proposal-2026-09-20.log 记录 pnpm check:all 退出 0，涵盖 112 项单元测试、类型、lint、格式、Rust 检查和双端生产构建。

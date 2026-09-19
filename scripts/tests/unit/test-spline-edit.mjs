@@ -4,6 +4,8 @@ import {
   inspectSplines,
 } from '../../../src/lib/source-editor/spline-edit.mjs';
 import { liveSurfaces } from '../fixtures/live-surfaces.mjs';
+import { prepareSplineEdits } from '../../../src/lib/source-editor/spline-proposal.mjs';
+import { creationDocument } from '../../../src/lib/creation-schema.mjs';
 
 const p = liveSurfaces();
 const before = structuredClone(p);
@@ -90,6 +92,68 @@ const outside = editSplines(p, {
   ],
 });
 assert.deepEqual(outside.project.paths.at(-1).curves[0][1], { x: -40, y: -50 });
+
+// The shared parser works on readonly geometry/ownership only, without a legacy
+// creation document, ID allocation or a writable projected project.
+const freeze = (value) => {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  return value;
+};
+const source = freeze({
+  frame: { width: p.width, height: p.height, widthMM: p.widthMM },
+  paths: structuredClone(result.project.paths),
+  objects: creationDocument(result.project).objects.map(({ id, pathIds }) => ({
+    id,
+    pathIds,
+  })),
+});
+const sourceBefore = structuredClone(source);
+const request = freeze({
+  units: 'model',
+  splines: [{ id, matrix: [0, 1, -1, 0, 2, 3] }],
+});
+const [proposal] = prepareSplineEdits(source, request);
+assert.equal(proposal.pathId, id);
+assert.equal(proposal.ownerId, null);
+assert.deepEqual(proposal.curves, moved.project.paths.at(-1).curves);
+assert.deepEqual(proposal.nodeModes, result.project.paths.at(-1).nodeModes);
+proposal.curves[0][0].x += 100;
+proposal.nodeModes[0] = 'symmetric';
+assert.deepEqual(source, sourceBefore);
+
+const preparedNew = prepareSplineEdits(source, {
+  units: 'model',
+  objectId: 'owner',
+  splines: [
+    { closed: true, nodes, role: 'hole' },
+    { nodes: nodes.slice(0, 2) },
+  ],
+});
+assert.deepEqual(
+  preparedNew.map(({ pathId, ownerId, role }) => ({ pathId, ownerId, role })),
+  [
+    { pathId: null, ownerId: 'owner', role: 'hole' },
+    { pathId: null, ownerId: 'owner', role: 'guide' },
+  ],
+);
+assert.throws(
+  () =>
+    prepareSplineEdits(source, {
+      splines: [{ nodes: nodes.slice(0, 2) }, { id: 'missing' }],
+    }),
+  /不存在/,
+);
+assert.deepEqual(source, sourceBefore);
+assert.throws(
+  () =>
+    prepareSplineEdits(source, {
+      splines: [{ nodes, closed: true, role: 'hole' }],
+    }),
+  /objectId/,
+);
 console.log(
   'PASS: exact handles, model-space roundtrip, affine transforms, ID/owner preservation, atomic failure and out-of-image controls',
 );
