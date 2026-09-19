@@ -367,6 +367,52 @@ async function main() {
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
     );
+    // Open paths made through the original tools share one owner and merge
+    // through endpoint selection, not a fixture-side command.
+    await page
+      .locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]')
+      .setInputFiles(resolve(root, 'public/reference.png'));
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().paths === 0,
+    );
+    await page.getByText('底图就绪', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '描线 (P)', exact: true }).click();
+    await page.getByRole('tab', { name: '手动', exact: true }).click();
+    await drawPoint(0.25, 0.25);
+    await drawPoint(0.35, 0.25);
+    await page.keyboard.press('Enter');
+    await page.locator('[data-tree-object]').first().click();
+    await page.getByRole('button', { name: '画轮廓', exact: true }).click();
+    await drawPoint(0.45, 0.25);
+    await drawPoint(0.55, 0.25);
+    await page.keyboard.press('Enter');
+    assert.equal((await evidence()).paths, 2);
+    assert.equal((await evidence()).objects, 1);
+    await page.getByRole('button', { name: '节点 (A)', exact: true }).click();
+    await page.locator('[data-tree-path]').first().click();
+    const firstTail = page.locator('[data-node-index="1"] rect').first();
+    await firstTail.click();
+    await page.keyboard.press('m');
+    const mergeTarget = page.locator('[data-merge-endpoint]');
+    await mergeTarget.first().click();
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().paths === 1,
+    );
+    const mergedPaths = await evidence();
+    assert.equal(mergedPaths.pathGeometry[0].segments, 3);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).paths, 2);
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.equal((await evidence()).paths, 1);
+    await page.getByRole('button', { name: '选择 (V)', exact: true }).click();
+    await page.locator('[data-tree-path]').first().click();
+    await page.getByText('路径操作', { exact: true }).click();
+    await page.getByRole('button', { name: /删除当前路径/ }).click();
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().paths === 0,
+    );
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).paths, 1);
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
@@ -390,6 +436,7 @@ async function main() {
           divided,
           cutHole,
           appendedBoundary,
+          mergedPaths,
           pendingSaved,
           evidence: await evidence(),
           errors,

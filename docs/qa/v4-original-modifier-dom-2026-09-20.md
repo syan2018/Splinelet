@@ -202,3 +202,13 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 `node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 退出 0。原工具完成分区、保存重开孔并续画后，再使用“画轮廓”追加独立闭合轮廓；结果为 4 条源线、3 个区域，撤销/重做和规范保存通过，页面与控制台错误为空。证据为 `output/playwright/v4-original-studio/result.json` 的 appendedBoundary 与最终 evidence；截图 original-studio.png 已人工检查，保持原布局及样式。仍为原 StudioApp 注入 V4 host 的隔离 fixture，不签收默认根或原生窗口。
 
 本模块最终 `pnpm check:all` 退出 0：107 项单测、类型/lint/格式、Rust 格式/检查和 Web/Desktop 构建通过，日志 `outputs/v4-qa/check-all-boundary-drawing-2026-09-20.log`。首次运行因新增测试的 sort 缺少显式比较函数停止，修正后完整重跑通过。
+
+## 2026-09-20 原源线合并、删除与端点辅助线
+
+原根隐藏/显示、删除源路径和端点合并已接捕获源视图的 V4 命令；公开单节点删除入口复用既有节点适配器。合并继续使用原节点选择、M 快捷键和蓝色端点，无新增面板；同部件不同 Sketch 的来源转移和合并作为一次事务提交。
+
+实际浏览器发现原端点辅助线仍进入旧 creationDocument，缺少旧 featureIds 导致渲染异常；改用 V4 运行时后又发现拖动预览不能使用仅接受已提交视图的查询。最终查询严格验证当前展示身份，但预览期间固定读取提交文档与不可变 frame；按 epoch/revision/路径/端点复用结果，避免随着移动副本改变目标或每帧重复求值。运行时单测覆盖首次在预览中查询、固定基线、外部/过期句柄拒绝及不可变 frame。
+
+原根浏览器完整通过原有 Sandrone 编辑/保存/重开和轮廓/分区/孔操作后，使用原工具在同一部件画两条开放线，选尾节点按 M，再点击另一条的起点，得到一条三段曲线；撤销恢复两条，重做恢复合并。从原“路径操作”删除该线，撤销恢复。页面和控制台错误均为空。初步修复日志 `outputs/v4-qa/original-source-actions-final-2026-09-20.log` 退出 0；最终缓存版本与全量结果在下文补记。默认入口、原生文件及完整用户旅程仍未签收。
+
+最终缓存版本原根浏览器退出 0，日志 `outputs/v4-qa/original-source-actions-cached-2026-09-20.log`；`output/playwright/v4-original-studio/result.json` 的 mergedPaths 为 1 条源线/3 段曲线，最终 evidence 为删除撤销后的恢复状态。`pnpm check:all` 退出 0，107 项单测、Rust 格式/检查及 Web/Desktop 构建通过，日志 `outputs/v4-qa/check-all-source-actions-final-2026-09-20.log`。查询缓存补充后类型/lint/全库格式和 source-runtime 单测另行通过；预览首次查询的补充断言通过。该次完整构建已包含缓存实现。

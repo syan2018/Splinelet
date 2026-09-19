@@ -123,9 +123,15 @@ assert.throws(
   () => runtime.readEndpointSnapContext(first, path.id, 0),
   /过期|失效/,
 );
-assert.throws(
-  () => runtime.readEndpointSnapContext(repeated, path.id, 0),
-  /拖动/,
+assert.deepEqual(
+  runtime.readEndpointSnapContext(repeated, path.id, 0),
+  snapContext,
+  'preview guides retain the committed source and immutable frame',
+);
+assert.deepEqual(
+  runtime.readEndpointSnapContext(repeated, path.id, path.curves.length).origin,
+  path.curves.at(-1)[3],
+  'a guide first requested during preview also uses the committed frame',
 );
 assert.throws(() =>
   runtime.commandSource(move(0, path.start), { project: first }),

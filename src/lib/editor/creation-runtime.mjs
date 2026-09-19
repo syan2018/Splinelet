@@ -6,6 +6,7 @@ import { sameDocument } from '../editing/history.mjs';
 import { evaluatePlanar } from '../construction/document-evaluation.mjs';
 import { projectCurvePreviews } from './curve-preview.mjs';
 import { createSourceRuntime } from './source-runtime.mjs';
+import { projectSourceView } from './source-view.mjs';
 import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
 import { effectiveNodeState } from '../scene/hierarchy.mjs';
@@ -48,6 +49,8 @@ export function createV4CreationRuntime({
   if (!editorSession?.dispatch || typeof toDisplayProject !== 'function')
     throw Error('创作运行时需要编辑会话和只读展示投影');
   const projects = new WeakMap();
+  const snapFrame = structuredClone(sourceFrame);
+  let snapCache = null;
   const scenes = new WeakMap();
   const prepared = new WeakMap();
   let currentDisplay = null;
@@ -153,13 +156,32 @@ export function createV4CreationRuntime({
       });
     },
     readEndpointSnapContext(project, pathId, nodeIndex) {
-      const entry = current(project);
-      return projectEndpointSnapContext(
+      const entry = metadata(project);
+      if (entry.token || !sameState(entry.state, editorSession.state))
+        throw Error('吸附展示工程已过期或尚未提交');
+      if (
+        snapCache?.epoch !== entry.state.epoch ||
+        snapCache?.revision !== entry.state.revision
+      )
+        snapCache = {
+          epoch: entry.state.epoch,
+          revision: entry.state.revision,
+          values: new Map(),
+        };
+      const key = JSON.stringify([pathId, nodeIndex]);
+      if (snapCache.values.has(key)) return snapCache.values.get(key);
+      // Guides remain anchored to the committed source throughout a preview;
+      // moving copies must never become their own evolving snap targets.
+      const context = projectEndpointSnapContext(
         entry.state.document,
-        sourceRuntime.readSourceView(project).source,
+        entry.state.previewId
+          ? projectSourceView(entry.state.document, snapFrame)
+          : sourceRuntime.readSourceView(project).source,
         pathId,
         nodeIndex,
       );
+      snapCache.values.set(key, context);
+      return context;
     },
     readCurvePreviews(project) {
       const entry = metadata(project);

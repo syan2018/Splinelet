@@ -557,11 +557,20 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   };
   const setVisible = (ids: string[], visible: boolean) => {
     if (busyRef.current || drag.current) return;
-    transact((p) =>
-      p.paths
-        .filter((p) => ids.includes(p.id))
-        .forEach((p) => (p.visible = visible)),
-    );
+    if (host) {
+      const captured = host.getSnapshot();
+      pr.current = captured.runtime
+        .commandPath(
+          { kind: 'set-paths', pathIds: ids, value: { visible } },
+          { project: captured.project },
+        )
+        .commit();
+    } else
+      transact((p) =>
+        p.paths
+          .filter((p) => ids.includes(p.id))
+          .forEach((p) => (p.visible = visible)),
+      );
     if (!visible)
       selectPathsNow(pathsRef.current.filter((id) => !ids.includes(id)));
     setStatus(visible ? '已显示路径 · 可撤销' : '已隐藏路径 · 可撤销');
@@ -588,7 +597,16 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const deletePaths = () => {
     if (busyRef.current || drag.current || !pathsRef.current.length) return;
     const ids = pathsRef.current;
-    transact((p) => (p.paths = p.paths.filter((p) => !ids.includes(p.id))));
+    if (host) {
+      const captured = host.getSnapshot();
+      pr.current = captured.runtime
+        .commandPath(
+          { kind: 'delete-paths', pathIds: ids },
+          { project: captured.project },
+        )
+        .commit();
+    } else
+      transact((p) => (p.paths = p.paths.filter((p) => !ids.includes(p.id))));
     clearSelection();
     setStatus('已删除 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
   };
@@ -1663,11 +1681,14 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     const original = pr.current.paths.find((p) => p.id === pathId);
     if (!original) throw Error('路径不存在');
     const result = removeNode(original, nodeIndex, sr.current.tolerance);
-    transact((p) => {
-      const index = p.paths.findIndex((q) => q.id === pathId);
-      if (result.path) p.paths[index] = result.path;
-      else p.paths.splice(index, 1);
-    });
+    if (host)
+      nodeActions().deleteNodes(pathId, [nodeIndex], sr.current.tolerance);
+    else
+      transact((p) => {
+        const index = p.paths.findIndex((q) => q.id === pathId);
+        if (result.path) p.paths[index] = result.path;
+        else p.paths.splice(index, 1);
+      });
     finish();
     setActiveNow(result.path ? pathId : null);
     setTool('edit');
@@ -1774,11 +1795,26 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     const a = pr.current.paths.find((p) => p.id === args.firstId),
       b = pr.current.paths.find((p) => p.id === args.secondId);
     const result = mergeSplines(a, args.firstEnd, b, args.secondEnd);
-    transact((p) => {
-      p.paths = p.paths
-        .filter((p) => p.id !== args.secondId)
-        .map((p) => (p.id === args.firstId ? result.path : p));
-    });
+    if (host) {
+      const captured = host.getSnapshot();
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'merge-paths',
+            firstPathId: args.firstId,
+            secondPathId: args.secondId,
+            firstEnd: args.firstEnd,
+            secondEnd: args.secondEnd,
+          },
+          { project: captured.project },
+        )
+        .commit();
+    } else
+      transact((p) => {
+        p.paths = p.paths
+          .filter((p) => p.id !== args.secondId)
+          .map((p) => (p.id === args.firstId ? result.path : p));
+      });
     finish();
     setTool('edit');
     setActiveNow(result.path.id);
@@ -3618,9 +3654,16 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     if (!nodeSnap || tool !== 'edit' || !current || selectedNodes.length !== 1)
       return [];
     return (
-      endpointSnapContext(project, current.id, selectedNodes[0])?.lines || []
+      (studioSnapshot
+        ? studioSnapshot.runtime.readEndpointSnapContext(
+            project,
+            current.id,
+            selectedNodes[0],
+          )
+        : endpointSnapContext(project, current.id, selectedNodes[0])
+      )?.lines || []
     );
-  }, [project, current, tool, selectedNodes, nodeSnap]);
+  }, [project, current, tool, selectedNodes, nodeSnap, studioSnapshot]);
   const projectSettings = (
     <>
       {' '}

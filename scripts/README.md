@@ -109,3 +109,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-region-drawing.mjs` 验证增量分区/挖孔首点保存未发布分支，编码重开可续画，完成复用同一分支并迁移赋值，撤销恢复未完成状态，旧目标变化则拒绝提交；`test-v4-region-drawing-copy.mjs` 验证两种 pending 分支的复制重映射与续画，及删除源路径后保留诊断而不发布结果。原整根界面的对应真实鼠标验收并入 `tests/browser/smoke/test-v4-original-studio.cjs`，写入其独立浏览器 origin 的 OPFS。
 
 `test-v4-boundary-drawing.mjs` 验证高级部件新增普通轮廓的首点保存、编码重开续画、闭合追加与撤销，保留旧曲线/区域身份及赋值；`test-v4-boundary-drawing-copy.mjs` 验证未完成轮廓的复制重映射与独立闭合。原根浏览器测试继续覆盖分区、挖洞后追加普通轮廓、撤销重做和保存。
+
+原根 `test-v4-original-studio.cjs` 进一步覆盖同部件两条开放源线的端点合并、撤销重做及删除恢复；`test-v4-source-runtime.mjs` 验证预览期间端点吸附查询固定使用提交基线，不接受过期展示句柄。
