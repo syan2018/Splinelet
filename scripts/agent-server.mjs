@@ -71,6 +71,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const allowed = [
+      'capabilities.get',
+      'document.get',
+      'selection.get',
+      'legacy.read',
+      'authoring.run',
+      'preview.begin',
+      'preview.update',
+      'preview.commit',
+      'preview.cancel',
+      'evaluation.request',
+      'export.run',
+      'redo',
       'spline_inspect',
       'spline_apply',
       'creation_inspect',
