@@ -665,6 +665,69 @@ async function main() {
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
     );
+    const beforeApiLoad = await evidence();
+    const beforeApiDocument = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    const savedApiCopy = await page.evaluate(() =>
+      window.traceStudio.call('export', { format: 'json' }),
+    );
+    const loadError = await page.evaluate(async () => {
+      try {
+        await window.traceStudio.call('load_project', { base64: 'AAAA' });
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    });
+    assert.equal(typeof loadError, 'string');
+    assert.deepEqual(await evidence(), beforeApiLoad);
+    const loadedApiCopy = await page.evaluate(
+      (base64) =>
+        window.traceStudio.call('load_project', {
+          base64,
+          filename: 'api-copy.spl',
+        }),
+      savedApiCopy.base64,
+    );
+    assert.equal(loadedApiCopy.paths, beforeApiLoad.paths);
+    assert.notEqual((await evidence()).epoch, beforeApiLoad.epoch);
+    assert.equal((await evidence()).canUndo, false);
+    assert.equal((await evidence()).targetKind, null);
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeApiDocument,
+    );
+    await page.getByText('底图就绪', { exact: true }).waitFor();
+    await batch(false);
+    assert.equal((await evidence()).paths, beforeApiLoad.paths + 1);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeApiDocument,
+    );
+    const concurrentLoads = await page.evaluate(async (base64) => {
+      const { decodeProject } = await import('/src/lib/project-format.mjs');
+      const bytes = new Uint8Array(
+        await (await fetch('/sandrone-example.spl')).arrayBuffer(),
+      );
+      return Promise.all([
+        window.traceStudio.call('load_project', { base64 }),
+        window.traceStudio.call('load_project', {
+          project: decodeProject(bytes),
+        }),
+      ]);
+    }, savedApiCopy.base64);
+    assert.equal(concurrentLoads[0].paths, beforeApiLoad.paths);
+    assert.equal(concurrentLoads[1].paths, 76);
+    assert.equal((await evidence()).targetKind, null);
+    assert.equal((await evidence()).dirty, true);
+    assert.equal((await evidence()).canUndo, false);
+    await page.getByText('底图就绪', { exact: true }).waitFor();
+    await batch(false);
+    assert.equal((await evidence()).paths, 77);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).paths, 76);
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({

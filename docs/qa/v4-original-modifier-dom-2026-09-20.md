@@ -262,3 +262,9 @@ outputs/v4-qa/original-project-copy-2026-09-20.log 为 PASS：原浏览器对真
 outputs/v4-qa/original-export-preference-2026-09-20.log 为 PASS：原导出对话框输入 7.5，解析 Blender Python 中的 DATA 核对 depthMM；比较完整 Sandrone 工程证据不变，实际下载工程副本与输入前 API 副本解码结果一致，后续原编辑/保存流程继续通过。
 
 全库验证：outputs/v4-qa/check-all-export-preference-2026-09-20.log 记录 pnpm check:all 退出 0，包含类型、lint、全部单元测试、格式、Rust 检查以及 Web/桌面前端生产构建。
+
+## 2026-09-20 原 load_project API 接入文件管线
+
+API 的旧 project 对象和完整容器 base64 现在共用原文件打开流程；输入互斥、文件资源经规范解码校验，旧工程通过正式迁移。无效输入保持当前工程；成功后清空历史和选区、解绑目标，旧导入标为 dirty。异步 API 返回对应打开快照的路径数，原旧文件与示例调用也等待 API 错误，不留未处理 Promise。
+
+outputs/v4-qa/original-api-load-final-2026-09-20.log 为 PASS：V4 导出回读与文档完全一致，无效容器保持当前状态，V4/旧 Sandrone 导入后均可继续绘制和撤销；同一批次打开不同路径数的工程，各自返回正确路径数，最终当前工程为后一个。outputs/v4-qa/check-all-api-load-2026-09-20.log 记录 pnpm check:all 退出 0（111 个单元测试、类型、lint、格式、Rust 与双端生产构建）。完整 API、工程宽度和默认入口仍未签收。

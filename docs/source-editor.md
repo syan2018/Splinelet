@@ -122,6 +122,8 @@ await window.traceStudio.call('export', { format: 'svg' });
 
 V4 会话中，源曲线导出窗口的“挤出厚度”是 Blender 脚本的导出偏好。它由会话持有，不改变作品的区域厚度、规范文件或撤销记录；设置后 `export({format:'blender'})` 使用新值。区域的实际厚度仍通过原“高低”工具和区域属性编辑。
 
+`load_project` 接受 `{project: 旧版工程对象}` 或 `{base64: 完整工程容器}`，二者只能提供一个，可附带显示用 `filename`。V4 会话复用文件打开管线：旧对象正式迁移，V4 容器校验文档与资源；成功后重置历史和选区，保持无文件绑定，旧工程导入标为待保存。可以将 V4 `export({format:'json'})` 返回的 `base64` 传回此入口；不要传只读展示对象或缺少资源的裸 V4 JSON。失败保留当前工程；绘制计算、保存或拖动期间拒绝替换。
+
 ## 精确样条 API 4.1
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。

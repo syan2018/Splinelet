@@ -15,7 +15,9 @@ export type AgentViewArgs =
   | { fit: true }
   | { x: number; y: number; scale: number; fit?: false };
 export type AgentExportArgs = { format: 'svg' | 'blender' | 'json' };
-export type AgentLoadProjectArgs = { project: Project };
+export type AgentLoadProjectArgs =
+  | { project: Project; filename?: string }
+  | { base64: string; filename?: string };
 export type AgentVisibilityArgs = { visible: boolean };
 export type AgentPathListArgs = { pathIds: string[] };
 export type AgentMovePathsArgs = AgentPathListArgs & {

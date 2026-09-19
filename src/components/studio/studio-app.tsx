@@ -161,6 +161,7 @@ import {
 import { useStudioProject, type StudioHost } from '@/hooks/use-studio-project';
 import { useSourceDrag } from '@/hooks/use-source-drag';
 import { openProject } from '@/lib/persistence/open-project.mjs';
+import { readAgentProjectInput } from '@/lib/persistence/agent-project-input.mjs';
 import { encodeDocument } from '@/lib/document/codec.mjs';
 import { createReferenceProject } from '@/lib/editor/new-reference-project.mjs';
 
@@ -927,10 +928,10 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
             ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
             : '已打开工程副本 · Ctrl+S 选择保存位置',
       );
-      return;
+      return { paths: next.project.paths.length };
     }
     const parsed = decodeProject(bytes) as Project;
-    apiRef.current?.load_project({ project: parsed });
+    await apiRef.current?.load_project({ project: parsed });
     if (binding?.kind === 'desktop') bindDesktopFile(binding.path);
     else if (binding?.kind === 'web') bindFile(binding.handle);
     else if (isDesktopRuntime()) bindDesktopFile(null);
@@ -947,6 +948,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
         : '旧版 JSON 已导入 · 保存时将创建 .spl 工程',
     );
+    return { paths: parsed.paths.length };
   };
   const openProjectFile = async () => {
     if (busyRef.current || fileBusyRef.current) return;
@@ -3327,10 +3329,12 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           };
         throw Error('format 必须是 svg、blender 或 json');
       },
-      load_project: (a: AgentLoadProjectArgs) => {
+      load_project: async (a: AgentLoadProjectArgs) => {
         if (busyRef.current || fileBusyRef.current)
           throw Error('请等待拟合或保存完成');
-        const p = validateProject(a.project);
+        const input = readAgentProjectInput(a);
+        if (host) return loadProjectFile(input.bytes, input.name, null);
+        const p = decodeProject(input.bytes) as Project;
         bindFile(null);
         finish();
         setActiveNow(null);
@@ -4017,7 +4021,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                 const bytes = new Uint8Array(await r.arrayBuffer());
                 if (host)
                   return loadProjectFile(bytes, 'sandrone-example.spl', null);
-                apiRef.current?.load_project({ project: decodeProject(bytes) });
+                return apiRef.current?.load_project({
+                  project: decodeProject(bytes),
+                });
               }),
             )
           }

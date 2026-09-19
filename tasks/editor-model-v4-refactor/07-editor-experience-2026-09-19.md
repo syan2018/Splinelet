@@ -339,3 +339,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 工程宽度待实施契约澄清：原控件只改 widthMM，像素源曲线和 guide 在求值时按新比例转成 mm；mirror/radial_array 的 centerMM、offset 的 distanceMM、stroke 的 widthMM、接合/采样容差及厚度仍保持绝对毫米值（region-engine.mjs、curve-modifiers.mjs、curve-transforms.mjs、modifier-engine.mjs）。因此原宽度控制不等于整体 XY 等比缩放；V4 不能把所有算子参数一并乘比例来冒充兼容。后续须将像素来源对应的 Source 与 Reference/frame 更新、节点 pose 与 Relation 的坐标归属及 runtime 重建纳入同一原子命令，并以旧引擎改宽度结果对照验收。此项尚未实现。
 
 2026-09-20 源曲线导出偏好归属修正：原挤出厚度只用于 Blender 源曲线脚本，V4 会话字段由 newReliefDepthMM 明确更名为 blenderExtrusionMM，相关宿主、投影及 fixture 统一更新，不涉及规范文档字段。原输入通过 setBlenderExtrusion 刷新只读展示，不重建编辑会话、不加入历史、不改变 dirty 或区域浮雕；预览期间拒绝。原浏览器输入 7.5 后核对 Blender 脚本数据，且工程证据和 API/下载容器不变。此项不代表工程宽度、完整 API 或默认入口签收。
+
+2026-09-20 API 工程打开接线：load_project 支持旧 project 或完整容器 base64 的互斥输入，共用 loadProjectFile 与 openProject 的规范迁移/校验和替换后清理；V4 裸 JSON 不作为资源完整工程接受。成功重置历史、解绑并清理候选/拟合/选区，旧导入 dirty；失败在 host.open 之前保留当前工程。返回捕获的那次打开结果，避免连续调用的迟到响应读取下一份工程。旧文件与示例调用现在等待异步 API 结果并接收错误。完整精确样条 API、工程宽度和默认入口仍待完成。
