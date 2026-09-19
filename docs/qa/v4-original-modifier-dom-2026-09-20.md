@@ -21,6 +21,16 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 
 默认根入口仍使用原 UI 的旧后端。完整 goal 保持进行中。
 
+## 同日补充：原节点面板动作接线
+
+原主界面的连接方式、指定段直连和批量删除节点使用统一的 `node-actions.mjs` 边界；公开 API 的连接方式也走同一入口，统一清除失效的拟合误差。旧后端继续用原样条算法及事务，V4 后端只从捕获的展示句柄解析稳定源身份并提交命令。原面板 DOM、样式、选区更新和状态提示未替换。
+
+`test-v4-node-actions.mjs` 在旋转部件及非整数比例显示坐标下对比新旧后端的曲线与节点模式，检查单次撤销、过期控制器、非法索引不提交及最后一个节点删除。原组件浏览器用例挂载原 `SplineNodeInspector`，实际选择对称模式、点击前段直连和删除，再分别撤销回同一文档；派生预览随源改变，模式/直连不移动锚点。截图 `output/playwright/v4-original-modifier-controls/source-node-inspector.png` 已检查，保留原控件与样式；fixture 中绝对定位的预览工具条限制在自己的画布容器内，避免遮盖节点控件。
+
+这一步尚未完成主画布拖动、续画或根文件会话的 V4 切换。根会话审阅发现，当前 V4 持久化 `open()` 的初始 revision 固定为 0，随后 `update()` 会把新打开的干净文档置脏；正式接入时须让打开管线直接对齐 EditorSession 身份与干净状态，并通过真实保存/重开验证，不能靠跳过一致性检查解决。
+
+`pnpm check:all` 退出码 0：94 项 hermetic 单测、类型、lint、格式、Rust 检查和双端构建全部通过，日志 `outputs/v4-qa/check-all-original-node-actions-2026-09-20.log`。原工作区 `spline-endpoints` 浏览器用例在 Web 与桌面前端均通过，覆盖相邻段直连、节点连接方式、删除、续画及撤销；证据分别为 `outputs/v4-qa/original-node-actions-web-2026-09-20/manifest.json` 和 `outputs/v4-qa/original-node-actions-desktop-2026-09-20/manifest.json`。使用内置 Sandrone 的 `agent-spline-authoring` 在桌面前端通过：`outputs/v4-qa/original-node-agent-desktop-2026-09-20/manifest.json`。这些完整原工作区用例仍使用旧后端，V4 的本次浏览器覆盖限于原组件接线。
+
 ## 同日补充：源编辑与构造共享会话
 
 `source-runtime.mjs` 通过 CreationRuntime 的私有句柄表接入同一 EditorSession。源点/柄命令与路径命令复用已有稳定身份编译器，不反向转换展示 Project；手势更新始终基于捕获的起始文档，取消无历史、提交一次撤销。源视图和派生曲线读取同一预览状态。相同几何的新采样也有独立预览版本，旧句柄不能继续被读取或绑定。

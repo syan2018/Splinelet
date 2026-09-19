@@ -225,6 +225,62 @@ async function main() {
         .isDisabled(),
       true,
     );
+    await page
+      .getByRole('button', { name: '测试节点基线', exact: true })
+      .click();
+    await page.locator('.node-inspector').waitFor();
+    assert.equal(
+      await page
+        .locator('.node-inspector')
+        .evaluate((el) => getComputedStyle(el).padding),
+      '0px',
+    );
+    assert.equal(
+      await page
+        .locator('.node-inspector .spline-operation-group')
+        .first()
+        .evaluate((el) => getComputedStyle(el).display),
+      'grid',
+    );
+    const sourceBase = await evidence();
+    assert.equal(sourceBase.source.curves.length, 2);
+    const sourceDerived = await derived.getAttribute('d');
+    const mode = page.getByRole('combobox', { name: '节点连接模式' });
+    assert.equal(await mode.inputValue(), 'corner');
+    await mode.selectOption('symmetric');
+    await waitRevision(sourceBase.revision);
+    const symmetric = await evidence();
+    assert.equal(symmetric.source.modes[1], 'symmetric');
+    assert.equal(symmetric.revision, sourceBase.revision + 1);
+    assert.deepEqual(symmetric.source.anchors, sourceBase.source.anchors);
+    assert.notEqual(await derived.getAttribute('d'), sourceDerived);
+    await page.locator('.node-inspector').screenshot({
+      path: resolve(output, 'source-node-inspector.png'),
+    });
+    await page.getByRole('button', { name: '测试撤销', exact: true }).click();
+    await waitRevision(symmetric.revision);
+    assert.equal((await evidence()).sourceBaselineRestored, true);
+    assert.equal(await mode.inputValue(), 'corner');
+    before = await evidence();
+    await page.getByRole('button', { name: /前一段改为直连/ }).click();
+    await waitRevision(before.revision);
+    const straightened = await evidence();
+    assert.deepEqual(straightened.source.anchors, before.source.anchors);
+    assert.notDeepEqual(straightened.source.curves[0], before.source.curves[0]);
+    assert.deepEqual(straightened.source.curves[1], before.source.curves[1]);
+    await page.getByRole('button', { name: '测试撤销', exact: true }).click();
+    await waitRevision(straightened.revision);
+    assert.equal((await evidence()).sourceBaselineRestored, true);
+    before = await evidence();
+    await page.locator('.node-inspector summary').click();
+    await page.locator('.node-inspector .spline-danger').click();
+    await waitRevision(before.revision);
+    const deleted = await evidence();
+    assert.equal(deleted.source.curves.length, 1);
+    assert.equal(deleted.revision, before.revision + 1);
+    await page.getByRole('button', { name: '测试撤销', exact: true }).click();
+    await waitRevision(deleted.revision);
+    assert.equal((await evidence()).sourceBaselineRestored, true);
     assert.deepEqual(failures, []);
     await writeFile(
       resolve(output, 'result.json'),
@@ -240,7 +296,7 @@ async function main() {
       ),
     );
     console.log(
-      'PASS original modifier DOM: V4 values, append array and graph connection, edit and undo, parameter binding, missing value and lock',
+      'PASS original modifier and node DOM: V4 fields, source mode/straighten/delete, derived curves, single undo, parameter binding and lock',
     );
   } catch (error) {
     if (page)

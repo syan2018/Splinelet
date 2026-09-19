@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import CreationModifiers from '../../../src/components/creation/creation-modifiers.tsx';
+import { SplineNodeInspector } from '../../../src/components/source-editor/spline-inspector.tsx';
+import { createV4NodeActions } from '../../../src/lib/source-editor/node-actions.mjs';
 import {
   useCurvePreview,
   CurvePreviewOverlay,
@@ -52,6 +54,7 @@ dispatch((document) => {
 const baseline = structuredClone(editor.state.document);
 const runtime = createV4CreationRuntime({
   editorSession: editor,
+  sourceFrame: { width: 100, height: 100, widthMM: 100 },
   toDisplayProject: (_state, view) => ({
     version: 4,
     width: 100,
@@ -73,6 +76,8 @@ function Fixture() {
   const [display, setDisplay] = useState(initial);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sourceBaseline, setSourceBaseline] = useState(null);
+  const [selectedNodes, setSelectedNodes] = useState([1]);
   const run = async (action) => {
     setBusy(true);
     try {
@@ -86,7 +91,25 @@ function Fixture() {
     }
   };
   const document = editor.state.document;
+  const sourcePath = sourceBaseline
+    ? runtime.readSourceView(previewProject).source.paths[0]
+    : null;
+  const nodeActions = sourceBaseline
+    ? createV4NodeActions({
+        runtime,
+        project: previewProject,
+        onCommit: (project) => setDisplay({ project, scene: display.scene }),
+      })
+    : null;
   const evidence = {
+    source: sourcePath && {
+      curves: sourcePath.curves,
+      modes: sourcePath.nodeModes,
+      anchors: sourcePath.anchors,
+    },
+    sourceBaselineRestored:
+      sourceBaseline !== null &&
+      JSON.stringify(document) === JSON.stringify(sourceBaseline),
     operators: Object.values(document.programs[owner.programId].operators).map(
       ({ id, type, inputs, params }) => ({ id, type, inputs, params }),
     ),
@@ -108,6 +131,59 @@ function Fixture() {
     h(
       'nav',
       null,
+      h(
+        'button',
+        {
+          disabled: busy,
+          onClick: () =>
+            run(() => {
+              editor.replaceDocument(structuredClone(baseline), {
+                expectedRevision: editor.state.revision,
+              });
+              let project = runtime.project();
+              let path = runtime.readSourceView(project).source.paths[0];
+              project = runtime
+                .commandSource(
+                  {
+                    kind: 'split-span',
+                    pathId: path.id,
+                    identityId: path.identity.edgeIds[0],
+                    t: 0.5,
+                  },
+                  { project },
+                )
+                .commit();
+              path = runtime.readSourceView(project).source.paths[0];
+              project = runtime
+                .commandSource(
+                  {
+                    kind: 'set-handle-mode',
+                    pathId: path.id,
+                    identityId: path.identity.anchorIds[1],
+                    mode: 'corner',
+                  },
+                  { project },
+                )
+                .commit();
+              path = runtime.readSourceView(project).source.paths[0];
+              const handle = path.curves[0][2];
+              runtime
+                .commandSource(
+                  {
+                    kind: 'move-handle',
+                    pathId: path.id,
+                    identityId: path.identity.handleIds[0][1],
+                    pixelPoint: { x: handle.x + 5, y: handle.y + 4 },
+                  },
+                  { project },
+                )
+                .commit();
+              setSourceBaseline(structuredClone(editor.state.document));
+              setSelectedNodes([1]);
+            }),
+        },
+        '测试节点基线',
+      ),
       h(
         'button',
         {
@@ -183,22 +259,61 @@ function Fixture() {
       onCommand: (action, args) =>
         run(() => runtime.command(action, args, display).commit()),
     }),
-    preview.controls,
-    h(
-      'svg',
-      {
-        viewBox: '0 0 100 100',
-        width: 340,
-        height: 240,
-        'aria-label': '测试派生曲线画布',
-      },
-      h(CurvePreviewOverlay, {
-        previews: preview.previews,
-        project: previewProject,
-        scale: 1,
+    sourcePath &&
+      h(SplineNodeInspector, {
+        path: sourcePath,
+        nodes: selectedNodes,
+        selection: null,
+        disabled: busy || sourcePath.locked,
+        merging: false,
+        canMerge: false,
+        onResume: () => {},
+        onMode: (mode) =>
+          run(() => nodeActions.setModes(sourcePath.id, selectedNodes, mode)),
+        onStraighten: (curve) =>
+          run(() => nodeActions.straighten(sourcePath.id, curve)),
+        onDelete: () =>
+          run(() => {
+            nodeActions.deleteNodes(sourcePath.id, selectedNodes, 1.5);
+            setSelectedNodes([]);
+          }),
+        onClear: () => setSelectedNodes([]),
+        onMerge: () => {},
+        onCancelMerge: () => {},
       }),
+    h(
+      'section',
+      { style: { position: 'relative' } },
+      preview.controls,
+      h(
+        'svg',
+        {
+          viewBox: '0 0 100 100',
+          width: 340,
+          height: 240,
+          'aria-label': '测试派生曲线画布',
+        },
+        h(CurvePreviewOverlay, {
+          previews: preview.previews,
+          project: previewProject,
+          scale: 1,
+        }),
+      ),
     ),
-    h('pre', { id: 'evidence', 'data-ready': !busy }, JSON.stringify(evidence)),
+    h(
+      'pre',
+      {
+        id: 'evidence',
+        'data-ready': !busy,
+        style: {
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere',
+          maxHeight: 160,
+          overflow: 'auto',
+        },
+      },
+      JSON.stringify(evidence),
+    ),
     h('p', { id: 'fixture-error', role: 'status' }, error),
   );
 }

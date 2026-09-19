@@ -83,7 +83,6 @@ import {
   movePaths,
   translatePaths,
   translateNodes,
-  deleteNodes,
   inBox,
   pathHitsBox,
 } from '@/lib/source-editor/selection.mjs';
@@ -147,10 +146,10 @@ import {
 import { workspaceDB, FileWriter } from '@/lib/persistence/workspace.mjs';
 import {
   nodeModes,
-  setContinuity,
   moveHandle,
   enforceContinuity,
 } from '@/lib/source-editor/continuity.mjs';
+import { createLegacyNodeActions } from '@/lib/source-editor/node-actions.mjs';
 
 type ModelApi = {
   state: (input?: unknown) => unknown;
@@ -856,6 +855,11 @@ export default function StudioApp() {
     fn(p);
     setDoc(p);
   };
+  const nodeActions = () =>
+    createLegacyNodeActions({
+      getProject: () => pr.current,
+      transact,
+    });
   const setActiveNow = (id: string | null) => {
     if (ar.current !== id) {
       setSelection(null);
@@ -1407,15 +1411,13 @@ export default function StudioApp() {
       return;
     }
     try {
-      const result = deleteNodes(path, ids, sr.current.tolerance);
-      transact(
-        (p) =>
-          (p.paths = result
-            ? p.paths.map((p) => (p.id === path.id ? result : p))
-            : p.paths.filter((p) => p.id !== path.id)),
+      const result = nodeActions().deleteNodes(
+        path.id,
+        ids,
+        sr.current.tolerance,
       );
       setSelection(null);
-      if (!result) selectPathsNow([]);
+      if (result.removed) selectPathsNow([]);
       setStatus(
         '已删除 ' + ids.length + ' 个节点 · 相邻节点直接连接 · Ctrl+Z 撤销',
       );
@@ -1439,16 +1441,7 @@ export default function StudioApp() {
           : (path?.curves.length || 0) - 1);
     if (!path || !Number.isInteger(index) || !path.curves[index])
       throw Error('请先绘制一段曲线，或选中要调整的节点/控制柄');
-    transact((p) => {
-      const q = p.paths.find((p) => p.id === pathId)!;
-      const c = q.curves[index];
-      q.curves[index] = straightCubic(c[0], c[3]) as Cubic;
-      q.nodeModes = nodeModes(q);
-      q.nodeModes![index] = 'corner';
-      q.nodeModes![q.closed ? (index + 1) % q.curves.length : index + 1] =
-        'corner';
-      delete q.fitError;
-    });
+    nodeActions().straighten(pathId, index);
     setPreview([]);
     previewToken.current++;
     setStatus('第 ' + (index + 1) + ' 段已改为直连 · 端点不动 · Ctrl+Z 撤销');
@@ -2459,14 +2452,7 @@ export default function StudioApp() {
     mode: string;
   }) => {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
-    const original = pr.current.paths.find((p) => p.id === args.pathId);
-    if (!original) throw Error('路径不存在');
-    const changed = cloneTraceValue(original);
-    setContinuity(changed, args.nodeIndex, args.mode);
-    delete changed.fitError;
-    transact((p) => {
-      p.paths[p.paths.findIndex((p) => p.id === args.pathId)] = changed;
-    });
+    nodeActions().setModes(args.pathId, [args.nodeIndex], args.mode);
     setStatus(
       args.mode === 'corner'
         ? '节点已设为尖角 · 控制柄独立'
@@ -3366,12 +3352,7 @@ export default function StudioApp() {
                 onResume={resumeSelected}
                 onMode={(mode) => {
                   try {
-                    transact((p) => {
-                      const path = p.paths.find((p) => p.id === current.id)!;
-                      selectedNodes.forEach((i) =>
-                        setContinuity(path, i, mode),
-                      );
-                    });
+                    nodeActions().setModes(current.id, selectedNodes, mode);
                     setStatus(
                       '已更新 ' +
                         selectedNodes.length +

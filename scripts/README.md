@@ -52,6 +52,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 ## 目录
 
+`test-v4-node-actions.mjs` 对比原节点操作算法和 V4 源命令的连接方式、直连、批量删点结果，验证稳定身份、错误原子性和一次撤销。原主界面及节点 API 复用这个动作边界；原组件浏览器用例同时挂载 `SplineNodeInspector`，验证实际下拉框、直连/删除按钮、实时派生结果和撤销。
+
 `test-v4-source-runtime.mjs` 验证源编辑、路径命令和修改器共用同一 V4 会话及展示句柄：像素身份映射、固定参考坐标系、拖动按起点重算、派生预览同步、取消不留历史、提交一次撤销，以及换文档/撤销/重复坐标采样后的旧句柄拒绝。运行命令为 `node scripts/tests/unit/test-v4-source-runtime.mjs`；这属于共享运行时验证，尚不代表原主画布回调完成接线。
 
 `test-v4-modifier-intents.mjs` 检查原修改器字段到 V4 算子的所有权、世界/局部坐标、参数引用保护和字段约束；`test-v4-modifier-control-runtime.mjs` 验证只读控件值→原 `modifier_update` 意图→同一 V4 会话→重新求值与一次撤销。它们不替代修改器面板的实际 DOM 接线验收。

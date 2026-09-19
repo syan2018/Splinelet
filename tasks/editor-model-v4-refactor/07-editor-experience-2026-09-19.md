@@ -137,6 +137,8 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ### 执行与验收记录
 
+2026-09-20 原节点动作边界：原主界面的连接方式、指定段直连、批量删点及公开 API 的连接方式统一调用 `source-editor/node-actions.mjs`。旧后端保留原算法，V4 后端将已显示路径的节点/段索引解析为稳定源身份后提交命令；面板继续使用原 `SplineNodeInspector`。主界面状态提示、选区处理与快捷键保留在原位置。该边界不涵盖单节点拟合删除 API、画布拖动、续画、接合或文件会话，因此不能据此签收默认根 V4 切换。
+
 2026-09-20 源编辑共享运行时：`CreationRuntime` 同时提供 `readSourceView`、`commandSource`、`commandPath` 和 `beginSourceGesture`，共用私有展示句柄、单一 EditorSession 和历史。源命令从已展示的稳定身份编译，拖动使用固定基线；参考图坐标系在运行时创建时捕获，屏幕缩放/平移不改变它，参考系变更须重建运行时。连续相同坐标采样仍按预览版本使旧句柄失效。专项测试覆盖共享历史、实时派生结果及取消/换文档保护；原主画布回调和默认根会话注入仍待完成，不能签收完整源编辑旅程。
 
 - 认领人 / 时间：
