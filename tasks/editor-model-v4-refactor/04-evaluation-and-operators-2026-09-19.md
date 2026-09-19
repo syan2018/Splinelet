@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：构造管线负责人；主代理复核 DAG/几何
-- 执行状态：见下面各检查点；当前均未开始
+- 执行状态：求值与算子模块已实现，真实 C03 联合链通过；完整业务覆盖待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -40,7 +40,7 @@ T06 交付后 T07 与 T08 可以并行；T08 独占 Fill/Path 构面语义，T07
 
 ## T06 · 有类型 Program、依赖调度与结果快照
 
-- 状态：未开始
+- 状态：模块交付；域/端口/依赖/缓存/四状态测试通过
 - 执行者 / 验收者：未分配
 - 前置：[T02](02-document-and-persistence-2026-09-19.md#t02)、[T03](03-scene-and-source-geometry-2026-09-19.md#t03)
 - 下游：[T07](04-evaluation-and-operators-2026-09-19.md#t07)、[T08](04-evaluation-and-operators-2026-09-19.md#t08)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)
@@ -109,7 +109,7 @@ node scripts/tests/unit/test-v4-evaluation.mjs
 
 ## T07 · 曲线来源、重复与连接算子
 
-- 状态：未开始
+- 状态：模块交付；真实 Source/Mirror/Array/Join 联合测试通过
 - 执行者 / 验收者：未分配
 - 前置：[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)
 - 下游：[T11](05-relief-manufacturing-and-export-2026-09-19.md#t11)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T18](02-document-and-persistence-2026-09-19.md#t18)
@@ -174,7 +174,7 @@ node scripts/tests/unit/test-v4-curve-operators.mjs
 
 ## T08 · 区域算子、输出身份与局部作用域
 
-- 状态：未开始
+- 状态：模块交付；Fill/区域算子/来源测试通过，业务命令接线进行中
 - 执行者 / 验收者：未分配
 - 前置：[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)
 - 下游：[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T11](05-relief-manufacturing-and-export-2026-09-19.md#t11)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T18](02-document-and-persistence-2026-09-19.md#t18)
@@ -243,7 +243,7 @@ node scripts/tests/unit/test-v4-provenance.mjs
 
 ## C03 联合签收：真实曲线到区域
 
-这是包内合同接通检查，不增加分发工作包。状态：未开始；执行者 P04，验收者 P00；前置为 T07 与 T08 各自独立签收。
+这是包内合同接通检查，不增加分发工作包。状态：真实联合测试通过，完整集成门待验收；执行者 P04，验收者 P00；前置为 T07 与 T08 各自独立签收。
 
 在 `scripts/tests/unit/test-v4-program-interop.mjs` 新增真实 Source → Mirror → Array → Join → Fill 链，验证正常环/孔、合法 empty 与未闭合 blocked；同时保留当前上游曲线、稳定身份及局部/世界变换断言。不得用手工伪造 RegionSet 替代 Fill。
 
@@ -252,3 +252,5 @@ T11/T13 的真实链交付与 G1 须引用本次签收；T09 可继续用已交�
 - [ ] 运行 `node scripts/tests/unit/test-v4-program-interop.mjs`（拟新增）。
 - [ ] 实现提交 / C03 版本 / fixture / 实际结果已记录。
 - [ ] P00 验收人 / 日期 / 结论已记录。
+
+2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。

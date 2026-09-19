@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：编辑体验负责人
-- 执行状态：见下面各检查点；当前均未开始
+- 执行状态：T15 真实投影通过，T16/T17 候选界面装配中；未签收完整用户旅程
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -40,7 +40,7 @@ T15 投影先完成；T16 画布和 T17 属性可并行且分目录写。共享�
 
 ## T15 · 编辑器投影、拾取与语义选择
 
-- 状态：未开始
+- 状态：模块交付；真实发布结果、选择与世界 bounds 测试通过
 - 执行者 / 验收者：未分配
 - 前置：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)
 - 下游：[T16](07-editor-experience-2026-09-19.md#t16)、[T17](07-editor-experience-2026-09-19.md#t17)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)
@@ -108,7 +108,7 @@ node scripts/tests/unit/test-v4-editor-projection.mjs
 
 ## T16 · 默认画布与直接编辑接入
 
-- 状态：未开始
+- 状态：进行中：真实 Worker 候选画布已挂载，浏览器正在验证
 - 执行者 / 验收者：未分配
 - 前置：[T01](01-validation-2026-09-19.md#t01)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)
 - 下游：[T21](01-validation-2026-09-19.md#t21)
@@ -175,7 +175,7 @@ pnpm test:browser --suite v4 --case object-move --target desktop-frontend
 
 ## T17 · 作品树、区域属性与按需构造详情
 
-- 状态：未开始
+- 状态：进行中：默认部件/颜色/厚度入口已挂载，高级属性尚待补齐
 - 执行者 / 验收者：未分配
 - 前置：[T01](01-validation-2026-09-19.md#t01)、[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T13 基础签收](06-editing-runtime-and-api-2026-09-19.md#t13)、[T15](07-editor-experience-2026-09-19.md#t15)
 - 下游：[T21](01-validation-2026-09-19.md#t21)
@@ -239,3 +239,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 - P00 接线提交 / 合同或范围变更：
 - 遗留问题 / 阻塞条件：
 - 验收人 / 日期 / 结论：
+
+2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。

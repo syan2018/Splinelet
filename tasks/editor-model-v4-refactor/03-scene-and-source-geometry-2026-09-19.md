@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：场景与几何负责人；主代理复核几何语义
-- 执行状态：见下面各检查点；当前均未开始
+- 执行状态：场景、源与有限关系模块已实现；源转移/复制的完整命令装配待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -40,8 +40,8 @@ T03 和 T04 目录不重叠，可由两个执行者并行，T05 等两者接口�
 
 ## T03 · 场景身份、编组与坐标变换
 
-- 状态：未开始
-- 执行者 / 验收者：未分配
+- 状态：模块交付；pose、编组与重表达测试通过，命令接线进行中
+- 执行者 / 验收者：主代理 / 独立模块审阅者
 - 前置：[T02](02-document-and-persistence-2026-09-19.md#t02)
 - 下游：[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T10](05-relief-manufacturing-and-export-2026-09-19.md#t10)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T15](07-editor-experience-2026-09-19.md#t15)
 - 覆盖原工作包：R1/R5
@@ -50,6 +50,8 @@ T03 和 T04 目录不重叠，可由两个执行者并行，T05 等两者接口�
 ### 目标与代码背景
 
 提供不依赖 UI 或几何内核的场景操作；部件身份独立于产物种类与数量。
+
+2026-09-19：v1 合同已冻结，先实现纯坐标与框架转换；文档操作在 T02 types/schema 签收后接入。`test-v4-transforms.mjs` 已验证嵌套框架、两种引用空间、共享基准、刚性限制和输入不可变；不以此替代整个 T03 验收。
 
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
@@ -104,7 +106,7 @@ node scripts/tests/unit/test-v4-scene.mjs
 
 ## T04 · 稳定 Sketch 拓扑与源编辑算法
 
-- 状态：未开始
+- 状态：模块交付；精确 cubic/拓扑/转移闭包通过，关系源转移待接线
 - 执行者 / 验收者：未分配
 - 前置：[T02](02-document-and-persistence-2026-09-19.md#t02)
 - 下游：[T05](03-scene-and-source-geometry-2026-09-19.md#t05)、[T07](04-evaluation-and-operators-2026-09-19.md#t07)、[T08](04-evaluation-and-operators-2026-09-19.md#t08)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T16](07-editor-experience-2026-09-19.md#t16)
@@ -173,7 +175,7 @@ node scripts/tests/unit/test-v4-sketch.mjs
 
 ## T05 · 基准、有限关系与编辑自由量
 
-- 状态：未开始
+- 状态：模块交付；有限关系与 rebase/ungroup 不变量测试通过
 - 执行者 / 验收者：未分配
 - 前置：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)
 - 下游：[T07](04-evaluation-and-operators-2026-09-19.md#t07)、[T17](07-editor-experience-2026-09-19.md#t17)
@@ -235,3 +237,5 @@ node scripts/tests/unit/test-v4-relations.mjs
 - P00 接线提交 / 合同或范围变更：
 - 遗留问题 / 阻塞条件：
 - 验收人 / 日期 / 结论：
+
+2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。

@@ -1,6 +1,6 @@
-# V4 实施合同 v1
+# V4 实施合同 v1.1
 
-日期：2026-09-19。状态：**v1 已冻结，经独立走查签收**。设计依据为[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)；此处固定实现字段、服务边界与反例。变更须增加版本记录并重验消费者，不能用读取时 normalization 修补不一致。
+日期：2026-09-19。状态：**v1 已冻结；v1.1 补充运行时访问器与几何交接细节**。设计依据为[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)；此处固定实现字段、服务边界与反例。变更须增加版本记录并重验消费者，不能用读取时 normalization 修补不一致。v1.1 不改变 DocumentV4 持久字段；变更及消费者验收见文末。
 
 ## C01 · 唯一持久文档
 
@@ -38,13 +38,15 @@ Datum = { id, name, ownerNodeId, kind: 'point', position: [Scalar,Scalar] } |
 
 首版 Relation 白名单：
 
-| kind                | 字段/自由量                                                                      | 输出与写回                                                                        |
-| ------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `point-on-axis`     | `id,target:VertexRef,axisId,distance:Scalar,frame:RelationFrame`                 | 在基准源框架从轴原点沿方向解算后映射到 target owner；拖动只改 distance 所属自由量 |
-| `coincident`        | `id,target:VertexRef,source:PointRef,offset:[Scalar,Scalar],frame:RelationFrame` | 在引用点源框架加偏移后映射到 target owner；零偏移为重合，拖动改偏移或显式解绑定   |
-| `handle-continuity` | `id,target:EdgeEndRef,source:EdgeEndRef,mode:'smooth'                            | 'symmetric'                                                                       | 'auto',length?:Scalar` | smooth 与源柄反向且使用独立 length；symmetric 等长反向；auto 从这两条邻接边的另一端点计算切向，长度按相邻弦长三分之一，不读取自身派生柄 |
+| kind                | 字段/自由量                                                                      | 输出与写回                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `point-on-axis`     | `id,target:VertexRef,axisId,distance:Scalar,frame:RelationFrame`                 | 在基准源框架从轴原点沿方向解算后映射到 target owner；拖动只改 distance 所属自由量                                      |
+| `coincident`        | `id,target:VertexRef,source:PointRef,offset:[Scalar,Scalar],frame:RelationFrame` | 在引用点源框架加偏移后映射到 target owner；零偏移为重合，拖动改偏移或显式解绑定                                        |
+| `handle-continuity` | `id,target:EdgeEndRef,source:EdgeEndRef,mode,length?:Scalar`                     | mode 为 smooth/symmetric/auto；smooth 与源柄反向且使用独立 length，symmetric 等长反向，auto 使用两条边另一端点计算切向 |
 
 Vertex/Handle 的 relationId 必须与 Relation.target 一致；同一目标不能有第二个关系或自由坐标。smooth 的 length 必填，symmetric/auto 不保存多余长度。auto 只处理明确两条相邻边，不将分叉顶点假设成统一左右柄。解除关系是事务：取本次解算值变为 free 并移除关系，可撤销；Alt 只关闭临时吸附。
+
+auto 的方向与长度固定为：共享顶点 V、source 另一端 S、target 另一端 T，target 柄向量为 `normalize(T-S) * |T-V|/3`；零方向 blocked，不读取 source 或自身派生柄。smooth 为 `-normalize(sourceHandle)*length`，symmetric 为 `-sourceHandle`。
 
 `RelationFrame={space:'owner-local'|'world',transform:Affine2D}` 必须显式持久化，transform 限制为 XY 刚性变换。owner-local 使用 transform×源局部值；world 使用 transform×inverse(targetOwnerWorld)×sourceOwnerWorld×源局部值（工程 owner 的世界矩阵为 identity）。distance/offset 在映射前计算，因此仍是源毫米单位。创建命令对同 owner 使用 owner-local/identity，对跨 owner 的可见基准绑定默认 world/identity；需要形状关联时才明确使用 owner-local 输入框架。world 引用将两侧世界矩阵列入依赖，owner-local 不因两侧 pose 改变而失效。handle-continuity 的两个 EdgeEnd 必须属于同一 Sketch 且共享被约束端点，不跨 owner。
 
@@ -152,3 +154,5 @@ Agent API 5.0 与文档版本分开。GUI/API 共用 dispatcher；旧读格式�
 - v1 冻结：2026-09-19；基于 1fc9902 和当前代码核对，主代理编制，独立合同审阅者签收。
 - 独立走查：五例与 U01–U06、单一权威、各域四状态、服务调用方向通过；修正同 owner Sketch 输入限制、引用首算子、输出契约 port、关系框架和引用别名后复核通过。
 - 合同变更：在本节追加影响的 C 编号、消费者、迁移与测试要求。
+- v1.1（2026-09-19）：C02 明确 auto 柄公式；C03 运行时 `junctions=[{id,endpoints:[{edgeKey,end}]}]`，每次复制实例的 edge/vertex/junction 派生键全部隔离。注册器增加可选 `copy(operator,{idMap})`，只改已声明的参数引用；scene 负责所有权、输入端口和字段表重挂。求值器唯一应用输入框架，包含停用旁路，算子接收接收者局部结果；新增 `settings:geometry` 依赖键用于容差失效。持久字段不变，不需读取迁移。消费者为 T03/T05/T06/T07/T08；relation、curve 和 evaluation 模块单测已运行，完整 C03 链与集成检查仍须签收。
+- v1.1 补充：C03 Join 的端点允许 `instances:[{operatorId,index}]` 固定过滤祖先实例，再用单个 each/next/previous/wrap selector 配对，禁止多命中时取首项。C04 rebase 变换镜像轴角与中心，但阵列步进角不变。C05 attached Shape 取同 Part 的启用 add 输出最高顶面，不接受 cut/through/跨 Part 支持者。真实 C03 联合测试已通过；完整 gate 仍待实际会话/双端验证。普通绘制将开放线条与填面输入分开，闭合路径成员由任务命令显式保存，求值器不猜用途。

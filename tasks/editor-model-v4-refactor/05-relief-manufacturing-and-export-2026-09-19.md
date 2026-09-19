@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：浮雕、制造与实体负责人
-- 执行状态：见下面各检查点；当前均未开始
+- 执行状态：三个模块已接通真实 Manifold 与导出，用户制造旅程待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -40,7 +40,7 @@
 
 ## T09 · 外观与浮雕赋值解析
 
-- 状态：未开始
+- 状态：模块交付；逐输出赋值与意图测试通过
 - 执行者 / 验收者：未分配
 - 前置：[T02](02-document-and-persistence-2026-09-19.md#t02)、[T08](04-evaluation-and-operators-2026-09-19.md#t08)
 - 下游：[T10](05-relief-manufacturing-and-export-2026-09-19.md#t10)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T15](07-editor-experience-2026-09-19.md#t15)、[T18](02-document-and-persistence-2026-09-19.md#t18)
@@ -105,7 +105,7 @@ node scripts/tests/unit/test-v4-relief.mjs
 
 ## T10 · 层数、依附、放置与制造映射
 
-- 状态：未开始
+- 状态：模块交付；层、依附、Part 与世界放置测试通过
 - 执行者 / 验收者：未分配
 - 前置：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)
 - 下游：[T11](05-relief-manufacturing-and-export-2026-09-19.md#t11)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T18](02-document-and-persistence-2026-09-19.md#t18)
@@ -169,7 +169,7 @@ node scripts/tests/unit/test-v4-manufacturing.mjs
 
 ## T11 · 实体内核适配与分阶段导出
 
-- 状态：未开始
+- 状态：模块交付；全管线 Manifold/STL/3MF 测试通过，完整导出旅程待验收
 - 执行者 / 验收者：未分配
 - 前置：[T07](04-evaluation-and-operators-2026-09-19.md#t07)、[T08](04-evaluation-and-operators-2026-09-19.md#t08)、[T10](05-relief-manufacturing-and-export-2026-09-19.md#t10) 及 [C03 联合签收](04-evaluation-and-operators-2026-09-19.md#c03-interop)
 - 下游：[T18](02-document-and-persistence-2026-09-19.md#t18)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)、[T21](01-validation-2026-09-19.md#t21)
@@ -233,3 +233,5 @@ pnpm test:export
 - P00 接线提交 / 合同或范围变更：
 - 遗留问题 / 阻塞条件：
 - 验收人 / 日期 / 结论：
+
+2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。

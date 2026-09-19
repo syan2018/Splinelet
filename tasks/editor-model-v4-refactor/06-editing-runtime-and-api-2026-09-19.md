@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：编辑运行时负责人；主代理复核并发
-- 执行状态：T12 模块已交付复核；其余检查点未开始
+- 执行状态：T12/T14 模块已实现；T13 普通命令已接线，T20 进行中
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -109,7 +109,7 @@ node scripts/tests/unit/test-v4-transactions.mjs
 
 ## T13 · 任务命令与基础构造自动编制
 
-- 状态：未开始
+- 状态：进行中：普通绘制/闭合/上色/厚度/移动已接通；分区与高级命令继续
 - 执行者 / 验收者：未分配
 - 前置：[T03](03-scene-and-source-geometry-2026-09-19.md#t03)、[T04](03-scene-and-source-geometry-2026-09-19.md#t04)、[T07](04-evaluation-and-operators-2026-09-19.md#t07)、[T08](04-evaluation-and-operators-2026-09-19.md#t08)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)；基础交付还需 [C03 联合签收](04-evaluation-and-operators-2026-09-19.md#c03-interop)，制造签收另需 [T10](05-relief-manufacturing-and-export-2026-09-19.md#t10)
 - 下游：[T16](07-editor-experience-2026-09-19.md#t16)、[T17](07-editor-experience-2026-09-19.md#t17)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)
@@ -178,7 +178,7 @@ node scripts/tests/unit/test-v4-authoring.mjs
 
 ## T14 · Worker 协议与会话求值协调
 
-- 状态：未开始
+- 状态：模块交付；真实 document-worker 入口已接线，浏览器正在验证
 - 执行者 / 验收者：未分配
 - 前置：[T06](04-evaluation-and-operators-2026-09-19.md#t06)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)
 - 下游：[T16](07-editor-experience-2026-09-19.md#t16)、[T19](02-document-and-persistence-2026-09-19.md#t19)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)
@@ -245,7 +245,7 @@ node scripts/tests/unit/test-v4-worker-protocol.mjs
 
 ## T20 · Agent API、兼容投影与能力发现
 
-- 状态：未开始
+- 状态：进行中：API 5.0 独立入口与版本化写命令
 - 执行者 / 验收者：未分配
 - 前置：[T11](05-relief-manufacturing-and-export-2026-09-19.md#t11)、[T13](06-editing-runtime-and-api-2026-09-19.md#t13)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T15](07-editor-experience-2026-09-19.md#t15)、[T18](02-document-and-persistence-2026-09-19.md#t18)
 - 下游：[T21](01-validation-2026-09-19.md#t21)
@@ -311,3 +311,5 @@ pnpm test:browser --suite v4 --case api-parity --target web
 - P00 接线提交 / 合同或范围变更：
 - 遗留问题 / 阻塞条件：
 - 验收人 / 日期 / 结论：
+
+2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。

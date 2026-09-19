@@ -4,7 +4,7 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：文档与持久化负责人
-- 执行状态：T02 模块交付已复核，待同提交全量检查；T18/T19 未开始
+- 执行状态：T02/T18/T19 模块已实现；导入等价性、平台文件恢复装配待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
@@ -114,7 +114,7 @@ node scripts/tests/unit/test-v4-codec.mjs
 
 ## T18 · 旧工程单向导入与全链对照
 
-- 状态：未开始
+- 状态：模块交付，真实样例可导入；待独立等价比较
 - 执行者 / 验收者：未分配
 - 前置：[T01](01-validation-2026-09-19.md#t01)、[T02](02-document-and-persistence-2026-09-19.md#t02)、[T07](04-evaluation-and-operators-2026-09-19.md#t07)、[T08](04-evaluation-and-operators-2026-09-19.md#t08)、[T09](05-relief-manufacturing-and-export-2026-09-19.md#t09)、[T10](05-relief-manufacturing-and-export-2026-09-19.md#t10)、[T11](05-relief-manufacturing-and-export-2026-09-19.md#t11)
 - 下游：[T19](02-document-and-persistence-2026-09-19.md#t19)、[T20](06-editing-runtime-and-api-2026-09-19.md#t20)、[T21](01-validation-2026-09-19.md#t21)
@@ -185,7 +185,7 @@ node scripts/tests/unit/test-v4-migration.mjs
 
 ## T19 · 打开、保存、恢复与平台边界接入
 
-- 状态：未开始
+- 状态：模块交付，竞态测试通过；待真实平台保存与恢复
 - 执行者 / 验收者：未分配
 - 前置：[T02](02-document-and-persistence-2026-09-19.md#t02)、[T12](06-editing-runtime-and-api-2026-09-19.md#t12)、[T14](06-editing-runtime-and-api-2026-09-19.md#t14)、[T18](02-document-and-persistence-2026-09-19.md#t18)
 - 下游：[T21](01-validation-2026-09-19.md#t21)
@@ -253,3 +253,5 @@ pnpm test:browser --suite v4 --case failure-repair-reopen --target web
 - P00 接线提交 / 合同或范围变更：
 - 遗留问题 / 阻塞条件：
 - 验收人 / 日期 / 结论：
+
+2026-09-19 模块证据与阶段限制统一记录于[验收索引](acceptance-2026-09-19.md#实施检查记录--2026-09-19)。模块测试通过不等于完整旅程或默认切换签收。
