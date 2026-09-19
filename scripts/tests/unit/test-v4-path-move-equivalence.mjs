@@ -46,7 +46,7 @@ for (const [name, project] of samples) {
         height: project.height,
         widthMM: project.widthMM,
       },
-      newReliefDepthMM: 2,
+      blenderExtrusionMM: 2,
       fileName: null,
     },
     persistence: { writeFile: async () => {} },

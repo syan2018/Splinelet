@@ -55,7 +55,7 @@ const baseline = structuredClone(editor.state.document);
 const presentation = {
   reference: null,
   frame: { width: 100, height: 100, widthMM: 100 },
-  newReliefDepthMM: 2,
+  blenderExtrusionMM: 2,
   fileName: 'fixture.spl',
 };
 const saved = [];

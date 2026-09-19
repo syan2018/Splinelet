@@ -120,6 +120,11 @@ export function createV4CreationRuntime({
     project() {
       return issue(editorSession.state);
     },
+    refreshDisplay() {
+      assertAlive();
+      currentDisplay = null;
+      return issue(editorSession.state);
+    },
     readCreationDocument(project) {
       return metadata(project).view.creation;
     },

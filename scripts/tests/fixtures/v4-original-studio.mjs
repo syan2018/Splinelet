@@ -17,7 +17,7 @@ const host = createBrowserStudioHost({
   opened,
   presentation: {
     fileName: 'sandrone-original-studio.spl',
-    newReliefDepthMM: 2,
+    blenderExtrusionMM: 2,
   },
   persistence: {
     writeFile: createStudioFileWriter(),

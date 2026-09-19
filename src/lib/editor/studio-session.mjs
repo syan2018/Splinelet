@@ -53,7 +53,7 @@ export function createStudioSession({
         reference: nextLayout.reference,
         frame: nextLayout.frame,
         session: {
-          newReliefDepthMM: nextLayout.newReliefDepthMM,
+          blenderExtrusionMM: nextLayout.blenderExtrusionMM,
           fileName: nextLayout.fileName,
           storageStatus: '',
           dirty: storage?.dirty ?? false,
@@ -179,6 +179,17 @@ export function createStudioSession({
       return () => listeners.delete(listener);
     },
     open,
+    setBlenderExtrusion(depthMM) {
+      alive();
+      if (!Number.isFinite(depthMM) || depthMM < 0 || depthMM > 1000)
+        throw Error('Blender 挤出厚度必须为 0–1000 mm');
+      if (editor.state.previewId) throw Error('请先完成当前拖动');
+      if (layout.blenderExtrusionMM === depthMM) return snapshot;
+      // An export preference is not document geometry, relief or history.
+      layout = freeze({ ...layout, blenderExtrusionMM: depthMM });
+      runtime.refreshDisplay();
+      return publish(editor.state);
+    },
     dispatch(command) {
       alive();
       return editor.dispatch(command, {

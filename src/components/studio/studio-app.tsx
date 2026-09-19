@@ -907,7 +907,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       });
       const next = host.open(opened, {
         fileName: name,
-        newReliefDepthMM: host.getSnapshot().presentation.newReliefDepthMM,
+        blenderExtrusionMM: host.getSnapshot().presentation.blenderExtrusionMM,
         ...(Object.keys(opened.document.references).length === 0
           ? { frame: host.getSnapshot().presentation.frame }
           : {}),
@@ -2653,7 +2653,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       });
       const next = host.open(opened, {
         fileName: null,
-        newReliefDepthMM: initialTraceProject.depthMM,
+        blenderExtrusionMM: initialTraceProject.depthMM,
       });
       pr.current = next.project as Project;
       finish();
@@ -4762,7 +4762,10 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                     value={project.depthMM}
                     onChange={(e) => {
                       const v = +e.target.value;
-                      if (v >= 0 && v <= 1000) transact((p) => (p.depthMM = v));
+                      if (v >= 0 && v <= 1000) {
+                        if (host) host.setBlenderExtrusion(v);
+                        else transact((p) => (p.depthMM = v));
+                      }
                     }}
                   />
                   <span>mm</span>

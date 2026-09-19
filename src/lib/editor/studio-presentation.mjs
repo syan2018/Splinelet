@@ -19,15 +19,15 @@ export function createStudioPresentation(opened, options, urls = URL) {
     referenceId,
     frame: suppliedFrame,
     fileName,
-    newReliefDepthMM,
+    blenderExtrusionMM,
   } = options;
   if (
     !(fileName === null || typeof fileName === 'string') ||
-    !Number.isFinite(newReliefDepthMM) ||
-    newReliefDepthMM < 0 ||
-    newReliefDepthMM > 1000
+    !Number.isFinite(blenderExtrusionMM) ||
+    blenderExtrusionMM < 0 ||
+    blenderExtrusionMM > 1000
   )
-    throw Error('参考图展示需要明确的文件名和新建厚度');
+    throw Error('参考图展示需要明确的文件名和 Blender 挤出厚度');
   const references = Object.values(opened.document.references);
   let reference = null;
   if (referenceId !== null) {
@@ -76,7 +76,7 @@ export function createStudioPresentation(opened, options, urls = URL) {
     reference: reference ? { ...structuredClone(reference), url } : null,
     frame,
     fileName,
-    newReliefDepthMM,
+    blenderExtrusionMM,
   });
   let released = false;
   return Object.freeze({

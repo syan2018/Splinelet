@@ -130,6 +130,23 @@ async function main() {
     await page
       .getByRole('button', { name: '源曲线 SVG · 精确贝塞尔', exact: true })
       .click();
+    const beforeExportPreference = await evidence();
+    await page
+      .getByRole('spinbutton', { name: '挤出厚度', exact: true })
+      .fill('7.5');
+    await page.waitForFunction(
+      async () => (await window.traceStudio.call('state')).depthMM === 7.5,
+    );
+    const blenderCopy = await page.evaluate(() =>
+      window.traceStudio.call('export', { format: 'blender' }),
+    );
+    const blenderData = JSON.parse(
+      JSON.parse(
+        blenderCopy.content.match(/DATA = json.loads\((.*)\)\nscale/)[1],
+      ),
+    );
+    assert.equal(blenderData.depthMM, 7.5);
+    assert.deepEqual(await evidence(), beforeExportPreference);
     const downloadPending = page.waitForEvent('download');
     await page
       .getByRole('button', { name: '导出 .spl 工程副本', exact: true })

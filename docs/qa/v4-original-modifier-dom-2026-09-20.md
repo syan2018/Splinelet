@@ -254,3 +254,11 @@ V4 的原重新拟合入口从捕获的只读源视图按现有边逐段拟合�
 outputs/v4-qa/original-project-copy-2026-09-20.log 为 PASS：原浏览器对真实 Sandrone 的 API 副本与按钮下载分别 decodeDocument，核对当前规范文档、底图资产与两份完整结果相等，再继续原编辑/撤销/保存/重开流程。完整 API 与默认切换仍未签收。
 
 全库验证：outputs/v4-qa/check-all-project-copy-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖类型、lint、全部单元测试、格式、Rust 检查和 Web/桌面前端生产构建。
+
+## 2026-09-20 Blender 源曲线挤出偏好
+
+原 V4 展示将 Blender 源曲线导出用的 depthMM 误称为新建浮雕默认值，输入又调用旧事务。现统一内部命名 blenderExtrusionMM，由会话 setBlenderExtrusion 刷新展示，文档/资源/历史/文件状态不变，runtime 保持同一实例；非法值、预览及关闭状态拒绝。单元验证改值后撤销几何仍保留偏好，导出规范文档不含此值。
+
+outputs/v4-qa/original-export-preference-2026-09-20.log 为 PASS：原导出对话框输入 7.5，解析 Blender Python 中的 DATA 核对 depthMM；比较完整 Sandrone 工程证据不变，实际下载工程副本与输入前 API 副本解码结果一致，后续原编辑/保存流程继续通过。
+
+全库验证：outputs/v4-qa/check-all-export-preference-2026-09-20.log 记录 pnpm check:all 退出 0，包含类型、lint、全部单元测试、格式、Rust 检查以及 Web/桌面前端生产构建。

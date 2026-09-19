@@ -120,6 +120,8 @@ await window.traceStudio.call('export', { format: 'svg' });
 
 同一 V4 会话中的“导出 .spl 工程副本”读取当前已提交文档及资源，生成可重新打开的完整容器。API `export({format:'json'})` 保留调用名称，但在 V4 下返回 `{filename, mimeType, base64}`，其中 base64 是 `.spl` 容器，不能当成 JSON 文本解析；旧会话仍返回 JSON `content`。导出副本不绑定文件、不清除未保存状态，也不加入撤销历史；拖动预览期间拒绝导出。SVG 与 Blender 源曲线导出入口保持原格式。
 
+V4 会话中，源曲线导出窗口的“挤出厚度”是 Blender 脚本的导出偏好。它由会话持有，不改变作品的区域厚度、规范文件或撤销记录；设置后 `export({format:'blender'})` 使用新值。区域的实际厚度仍通过原“高低”工具和区域属性编辑。
+
 ## 精确样条 API 4.1
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。

@@ -47,7 +47,7 @@ const session = createStudioSession({
   presentation: {
     reference: null,
     frame: { width: 200, height: 100, widthMM: 100 },
-    newReliefDepthMM: 2,
+    blenderExtrusionMM: 2,
     fileName: null,
   },
   persistence: { writeFile: async () => {} },

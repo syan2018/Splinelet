@@ -22,7 +22,7 @@ const opened = openProject({ bytes: originalBytes });
 const baseline = structuredClone(opened.document);
 const created = [],
   revoked = [];
-const presentation = { fileName: 'sandrone.spl', newReliefDepthMM: 2 };
+const presentation = { fileName: 'sandrone.spl', blenderExtrusionMM: 2 };
 const host = createStudioHost({
   opened,
   presentation,

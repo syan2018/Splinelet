@@ -19,7 +19,7 @@ const idFactory = () => `studio-session-${++serial}`;
 const presentation = (fileName = 'a.spl') => ({
   reference: null,
   frame: { width: 800, height: 600, widthMM: 100 },
-  newReliefDepthMM: 2,
+  blenderExtrusionMM: 2,
   fileName,
 });
 const command = (action) => createAuthoringCommand(action);
@@ -305,6 +305,34 @@ assert.equal(previewRecovery.getSnapshot(), currentPreview);
 pendingGesture.cancel();
 previewRecovery.dispose();
 assert.throws(() => previewRecovery.exportBytes(), /关闭/);
+
+const preferences = makeSession();
+const beforePreference = preferences.getSnapshot();
+const preferred = preferences.setBlenderExtrusion(7.5);
+assert.equal(preferred.project.depthMM, 7.5);
+assert.equal(preferred.presentation.blenderExtrusionMM, 7.5);
+assert.deepEqual(preferred.editorState, beforePreference.editorState);
+assert.equal(preferred.storage, beforePreference.storage);
+assert.equal(preferred.runtime, beforePreference.runtime);
+assert.notEqual(preferred.project, beforePreference.project);
+assert.equal(preferences.setBlenderExtrusion(7.5), preferred);
+assert.deepEqual(
+  decodeDocument(preferences.exportBytes()).document,
+  beforePreference.editorState.document,
+);
+for (const value of [-1, 1001, Infinity, NaN, '2'])
+  assert.throws(() => preferences.setBlenderExtrusion(value), /0–1000/);
+assert.equal(preferences.getSnapshot(), preferred);
+preferences.dispatch(draw());
+preferences.undo();
+assert.equal(preferences.getSnapshot().project.depthMM, 7.5);
+const preferenceGesture = preferences
+  .getSnapshot()
+  .runtime.beginSourceGesture(preferences.getSnapshot().project);
+assert.throws(() => preferences.setBlenderExtrusion(3), /拖动/);
+preferenceGesture.cancel();
+preferences.dispose();
+assert.throws(() => preferences.setBlenderExtrusion(3), /关闭/);
 
 console.log(
   'PASS: Studio session owns real V4 editor/runtime snapshots, storage lifecycle, replacement and persistence races.',

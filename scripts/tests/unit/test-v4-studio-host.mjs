@@ -17,7 +17,7 @@ const legacyProject = decodeProject(fixtureBytes);
 const frame = { width: 4, height: 2, widthMM: 2 };
 const presentation = (fileName = 'project.spl', extra = {}) => ({
   fileName,
-  newReliefDepthMM: 2,
+  blenderExtrusionMM: 2,
   ...extra,
 });
 let documentSerial = 0;
@@ -216,7 +216,7 @@ assert.deepEqual(lifecycleUrls.events.slice(-2), [
 ]);
 assert.throws(
   () => lifecycleHost.open(sourceDocument(), { fileName: 'bad.spl' }),
-  /明确的文件名和新建厚度/,
+  /明确的文件名和 Blender 挤出厚度/,
 );
 assert.strictEqual(lifecycleHost.getSnapshot(), oldSnapshot);
 const corrupt = sourceDocument();

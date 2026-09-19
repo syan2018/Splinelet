@@ -71,7 +71,7 @@ const presentation = {
   },
   frame,
   session: {
-    newReliefDepthMM: 2.4,
+    blenderExtrusionMM: 2.4,
     fileName: 'sample.spl',
     storageStatus: '有修改未保存',
     dirty: true,
@@ -129,7 +129,7 @@ assert.deepEqual(
   'display projection cannot write reference URLs or view coordinates into V4',
 );
 assert.equal(Object.isFrozen(presentation), false);
-presentation.session.newReliefDepthMM = 9;
+presentation.session.blenderExtrusionMM = 9;
 assert.equal(display.project.depthMM, 2.4, 'presentation input is cloned');
 
 assert.throws(
@@ -160,9 +160,9 @@ assert.throws(
   () =>
     projectStudioDisplay(workspace, {
       ...presentation,
-      session: { ...presentation.session, newReliefDepthMM: undefined },
+      session: { ...presentation.session, blenderExtrusionMM: undefined },
     }),
-  /默认厚度/,
+  /Blender 挤出厚度/,
 );
 assert.throws(
   () =>
@@ -207,7 +207,7 @@ const noReferenceDisplay = projectStudioDisplay(noReferenceWorkspace, {
   reference: null,
   frame,
   session: {
-    newReliefDepthMM: 1.6,
+    blenderExtrusionMM: 1.6,
     fileName: null,
     storageStatus: '',
     dirty: false,

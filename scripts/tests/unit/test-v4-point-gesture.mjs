@@ -16,7 +16,7 @@ const frame = {
 const presentation = () => ({
   reference: null,
   frame,
-  newReliefDepthMM: 2,
+  blenderExtrusionMM: 2,
   fileName: 'point-gesture.spl',
 });
 const near = (actual, expected, message) =>

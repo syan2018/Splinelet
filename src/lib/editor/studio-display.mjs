@@ -92,14 +92,14 @@ const validatePresentation = (presentation, sourceFrame) => {
     throw Error('Reference 仿射无法由当前原 Studio frame 精确显示');
   if (
     !session ||
-    !Number.isFinite(session.newReliefDepthMM) ||
-    session.newReliefDepthMM < 0 ||
-    session.newReliefDepthMM > 1000 ||
+    !Number.isFinite(session.blenderExtrusionMM) ||
+    session.blenderExtrusionMM < 0 ||
+    session.blenderExtrusionMM > 1000 ||
     !(session.fileName === null || typeof session.fileName === 'string') ||
     typeof session.storageStatus !== 'string' ||
     typeof session.dirty !== 'boolean'
   )
-    throw Error('studio display 需要显式的文件状态与新建 relief 默认厚度');
+    throw Error('studio display 需要显式的文件状态与 Blender 挤出厚度');
 };
 
 /**
@@ -128,7 +128,7 @@ export function projectStudioDisplay(workspaceView, presentation) {
     width: frame.width,
     height: frame.height,
     widthMM: frame.widthMM,
-    depthMM: session.newReliefDepthMM,
+    depthMM: session.blenderExtrusionMM,
     paths: source.paths,
     creation: creation.creation,
   };

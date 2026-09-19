@@ -47,7 +47,7 @@
 - `src/lib/editor/workspace-view.mjs` 的 `projectWorkspaceView(editorState, evaluated, frame)` 是统一读取边界；`evaluated` 必须携带 EvaluationSession 的 epoch/revision/previewId 和 snapshot，拒绝旧工程、旧 revision 或旧 preview 的结果。frame 显式提供旧画布使用的 width/height/widthMM。
 - `source-view.mjs` 提供原源画布的精确像素 cubic 和 canonical EntityRef 反查；分段或反向不会让旧 identity 指向其他实体。局部坏路径只产生该路径诊断，不清空其他来源。
 - `source-intents.mjs` 将已捕获源视图中的稳定锚点/柄/边身份编译成命令；处理像素→世界→所属部件局部坐标、反向边的拆分参数和 revision 保护。整次拖动使用同一基准视图与 Preview，只提交一次。已有模块测试，原画布事件尚未接入；绘制、续画、删除、连接及关系自由度编辑仍待适配。
-- `studio-display.mjs` 把工作区投影、显式 Reference/asset URL/frame 与文件和默认厚度会话状态组成深冻结展示数据；不生成旧 ModelDocument 或旧历史。显式 reference:null 支持无底图，不伪造默认资产。有底图时只支持与原画布 frame 完全兼容的 Reference 仿射；任意仿射的原画布适配和展示类型替换仍未接线，不能用强制类型转换绕过。
+- `studio-display.mjs` 把工作区投影、显式 Reference/asset URL/frame 与文件和 Blender 源曲线挤出偏好会话状态组成深冻结展示数据；不生成旧 ModelDocument 或旧历史。显式 reference:null 支持无底图，不伪造默认资产。有底图时只支持与原画布 frame 完全兼容的 Reference 仿射；任意仿射的原画布适配和展示类型替换仍未接线，不能用强制类型转换绕过。
 - `creation-view.mjs` 提供原作品树、区域与属性的只读数据。路径 ID 与 source-view 一致；区域 key 包含完整 OutputRef。未计算的厚度/Z 不猜值，未启用打印层时不投影为分层模式。
 - `creation-intents.mjs` 把原 `run(action,args)` 的 paint/height/clear_paint/swatch/delete_swatch/object/new_object 转为 V4 同一事务；批量上色及新建色卡只产生一次撤销，过期视图和预览视图不能提交正式命令。尚未适配的动作显式拒绝，不删按钮作为替代。
 - `CreationWorkspace` 已支持可选 `CreationRuntime`：命令、求值、角色准备/确认、底板确认和模板更新有独立入口；未注入时保持原实现。没有修改 DOM/CSS。新建色卡与对象按前后 ID 差集定位，避免把数组排序当作身份。
@@ -312,7 +312,7 @@ pnpm test:browser --suite v4 --case reference-space --target web
 
 2026-09-20 文件打开接线：V4 分支的原浏览器选择器、文件 input、桌面选择器及原生打开事件共用 `loadProjectFile` → `openProject` → `host.open`，保持格式识别、参考资源生命周期、历史清空和文件绑定在统一会话内；旧工程不绑定原文件。“载入示例工程”不再经过旧可写 Project API。真实原界面测试覆盖 V4 重开、旧版导入、损坏文件保留当前工程和示例菜单。原生对话框与实际磁盘打开仍待原生验收；新建、参考图编辑、描绘、建模和完整 API 写入仍未完成。
 
-2026-09-20 从图片新建：保留原图片类型/大小检查、解码及超大图缩小流程，V4 分支通过 `createReferenceProject` 直接创建空规范文档和资源，不经旧工程导入。新工程默认宽 100 mm、新建厚度 2 mm，未保存且无绑定，历史和选区清空；读取期间工程变化则拒绝迟到的新建结果。单测覆盖资源所有权和容器往返；原根浏览器覆盖新图显示、空源/部件、历史/绑定清空及保存副本。描绘、参考图编辑、建模和完整 API 写入仍待接线。
+2026-09-20 从图片新建：保留原图片类型/大小检查、解码及超大图缩小流程，V4 分支通过 `createReferenceProject` 直接创建空规范文档和资源，不经旧工程导入。新工程默认宽 100 mm、Blender 源曲线挤出偏好 2 mm，未保存且无绑定，历史和选区清空；读取期间工程变化则拒绝迟到的新建结果。单测覆盖资源所有权和容器往返；原根浏览器覆盖新图显示、空源/部件、历史/绑定清空及保存副本。描绘、参考图编辑、建模和完整 API 写入仍待接线。
 
 2026-09-20 普通轮廓描绘接线：原 CreationWorkspace 暴露只读 `trace_target`，返回当前部件与待画线语义；原根通过 `start-path` / `extend-path` / `close-path` 写统一 V4 会话，保留原落点吸附、拟合、预览、手动直连和首尾方向。命令使用拟合前捕获的项目视图，迟到结果不能写入已变化的工程。普通 source/fill 部件可追加轮廓；复杂构造沿用显式来源保护，分区/挖洞待适配，不允许静默退化为普通轮廓。后续仍须补齐角色化绘制、批量候选路径与高级拟合等入口。
 
@@ -337,3 +337,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 原工程副本接线：导出 .spl 副本与 export(json) 从 V4 文件会话捕获已提交 Document/资源并编码完整容器，不序列化旧展示 Project。API 在 V4 下返回 filename/mimeType/base64，旧会话保留 content；原按钮经既有平台下载入口输出。导出不绑定目标、不清除 dirty、不增加历史，预览和已关闭宿主拒绝；原浏览器实际下载和 API 容器均解码核对真实 Sandrone 文档及底图资源。工程物理比例、完整 API 与默认入口仍待完成。
 
 2026-09-20 工程宽度待实施契约澄清：原控件只改 widthMM，像素源曲线和 guide 在求值时按新比例转成 mm；mirror/radial_array 的 centerMM、offset 的 distanceMM、stroke 的 widthMM、接合/采样容差及厚度仍保持绝对毫米值（region-engine.mjs、curve-modifiers.mjs、curve-transforms.mjs、modifier-engine.mjs）。因此原宽度控制不等于整体 XY 等比缩放；V4 不能把所有算子参数一并乘比例来冒充兼容。后续须将像素来源对应的 Source 与 Reference/frame 更新、节点 pose 与 Relation 的坐标归属及 runtime 重建纳入同一原子命令，并以旧引擎改宽度结果对照验收。此项尚未实现。
+
+2026-09-20 源曲线导出偏好归属修正：原挤出厚度只用于 Blender 源曲线脚本，V4 会话字段由 newReliefDepthMM 明确更名为 blenderExtrusionMM，相关宿主、投影及 fixture 统一更新，不涉及规范文档字段。原输入通过 setBlenderExtrusion 刷新只读展示，不重建编辑会话、不加入历史、不改变 dirty 或区域浮雕；预览期间拒绝。原浏览器输入 7.5 后核对 Blender 脚本数据，且工程证据和 API/下载容器不变。此项不代表工程宽度、完整 API 或默认入口签收。
