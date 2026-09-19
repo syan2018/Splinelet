@@ -18,6 +18,11 @@ import { createRegionCommand } from './regions.mjs';
 import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
 import { createSourceTransferCommand } from './source-transfer.mjs';
 import { createResourceCommand, RESOURCE_ACTIONS } from './resources.mjs';
+import { extendPath } from '../../geometry/extend-path.mjs';
+import {
+  createPathMetadataCommand,
+  PATH_METADATA_ACTIONS,
+} from './path-metadata.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -310,6 +315,8 @@ export function createAuthoringCommand(action) {
       return createAdvancedCommand(action)(document, { idFactory });
     if (SOURCE_ACTIONS.includes(action.kind))
       return createSourceCommand(action)(document, { idFactory });
+    if (PATH_METADATA_ACTIONS.includes(action.kind))
+      return createPathMetadataCommand(action)(document);
     if (action.kind === 'set-node') {
       const node = document.nodes[action.nodeId];
       if (!node) throw Error('部件不存在');
@@ -356,6 +363,12 @@ export function createAuthoringCommand(action) {
     }
     if (action.kind === 'draw-path')
       return drawPath(document, action, idFactory);
+    if (action.kind === 'extend-path') {
+      const sketch = document.sketches[action.sketchId];
+      if (!sketch) throw Error('线条来源不存在');
+      writable(document, sketch.ownerNodeId);
+      return extendPath(document, { ...action, close: false }, { idFactory });
+    }
     if (action.kind === 'create-shape') {
       const id = createShape(document, action, idFactory);
       return {
@@ -405,21 +418,16 @@ export function createAuthoringCommand(action) {
         sketch.edges[last.edgeId][
           last.reversed ? 'startVertexId' : 'endVertexId'
         ];
-      if (start !== end) {
-        const id = idFactory();
-        sketch.edges[id] = {
-          id,
-          startVertexId: end,
-          endVertexId: start,
-          startHandle: { kind: 'free', vector: [0, 0] },
-          endHandle: { kind: 'free', vector: [0, 0] },
-        };
-        path.edges.push({ edgeId: id, reversed: false });
-      }
+      const extended =
+        start !== end
+          ? extendPath(document, { ...action, close: true }, { idFactory })
+          : {
+              changedRefs: [{ kind: 'path', sketchId: sketch.id, id: path.id }],
+            };
       ensureFill(document, program, source, sketch.ownerNodeId, idFactory);
       return {
         document,
-        changedRefs: [{ kind: 'path', sketchId: sketch.id, id: path.id }],
+        changedRefs: extended.changedRefs,
       };
     }
     if (action.kind === 'paint-region' || action.kind === 'set-thickness') {
