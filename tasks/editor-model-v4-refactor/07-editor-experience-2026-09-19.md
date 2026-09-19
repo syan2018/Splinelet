@@ -24,6 +24,16 @@
 
 ### 当前接入合同
 
+原 `studio-app.tsx` 的接线按以下行为切片推进，不新增工作包文档：
+
+1. 节点、柄、拆边：替换 `startPointDrag`/pointer move/up 与双击拆边；单次 Preview 提交，多节点拖动及批量模式切换须补原子命令。
+2. 绘制、续画、闭合：补零边路径创建和 exact cubic append/prepend/close；保留每次落点可撤销与树中即时出现的行为。拟合在事务外，迟到结果用 epoch/revision 拒绝。
+3. 删除、直连、合并：不能用 remove-edge 代替旧节点删除；保留重拟合与稳定路径身份。共享 Edge/Vertex 的拓扑影响须先查询，跨 owner 合并不能暗中转移来源。
+4. 名称、可见性、分组、顺序：Path 元数据与 Collection 不等于 Shape 所有权。补原子批量命令，并明确未分组路径的持久显示顺序，不能依赖对象键次序。
+5. 整路径重拟合：准备结果按稳定 Vertex/Edge 身份提交，保持确认对话框；一次撤销，校验原拓扑与会话版本，Relation 或共享源冲突显式处理。
+
+源命令与只读类型/文件会话可独立推进；父级接线由 P00 串行集成。每个切片在原组件中验收，不能以新候选组件或删掉旧操作代替。
+
 - `src/lib/editor/workspace-view.mjs` 的 `projectWorkspaceView(editorState, evaluated, frame)` 是统一读取边界；`evaluated` 必须携带 EvaluationSession 的 epoch/revision/previewId 和 snapshot，拒绝旧工程、旧 revision 或旧 preview 的结果。frame 显式提供旧画布使用的 width/height/widthMM。
 - `source-view.mjs` 提供原源画布的精确像素 cubic 和 canonical EntityRef 反查；分段或反向不会让旧 identity 指向其他实体。局部坏路径只产生该路径诊断，不清空其他来源。
 - `source-intents.mjs` 将已捕获源视图中的稳定锚点/柄/边身份编译成命令；处理像素→世界→所属部件局部坐标、反向边的拆分参数和 revision 保护。整次拖动使用同一基准视图与 Preview，只提交一次。已有模块测试，原画布事件尚未接入；绘制、续画、删除、连接及关系自由度编辑仍待适配。
