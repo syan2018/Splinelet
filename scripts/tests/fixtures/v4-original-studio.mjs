@@ -50,6 +50,8 @@ window.originalStudioChooseFile = (name) => {
   pickerChoice = name;
 };
 window.showOpenFilePicker = async () => [pickerFiles[pickerChoice]];
+window.showSaveFilePicker = async () =>
+  directory.getFileHandle('new-image-project.spl', { create: true });
 // Read-only instrumentation: all edits below must originate in original UI.
 window.originalStudioEvidence = () => {
   const { editorState, project, storage } = host.getSnapshot();
@@ -78,8 +80,9 @@ window.originalStudioEvidence = () => {
   };
 };
 window.originalStudioSavedEvidence = async () => {
+  const currentHandle = host.getSnapshot().storage.target?.handle ?? handle;
   const saved = openProject({
-    bytes: new Uint8Array(await (await handle.getFile()).arrayBuffer()),
+    bytes: new Uint8Array(await (await currentHandle.getFile()).arrayBuffer()),
   });
   return {
     kind: saved.kind,

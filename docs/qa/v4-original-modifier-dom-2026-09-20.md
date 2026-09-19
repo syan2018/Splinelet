@@ -150,3 +150,11 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 `pnpm check:all` 退出 0，101 项单测、类型/lint/格式、Rust 检查和双端构建通过：`outputs/v4-qa/check-all-original-file-open-2026-09-20.log`。之后补充示例菜单浏览器断言并通过定向 lint/格式与完整浏览器执行。文件 codec 已被打开入口静态依赖，最终将无效动态导入统一为静态导入并复查类型/lint和双端构建，日志 `outputs/v4-qa/build-original-file-open-final-2026-09-20.log`。
 
 此次系统文件选择器以返回隔离 OPFS 句柄的端口代替；真实读取、格式识别、会话替换和菜单行为来自产品代码，不构成操作系统原生对话框/磁盘或默认入口切换签收。
+
+## 从图片新建 V4 工程
+
+原图片 input/拖放共用的 `importImage` 保留原格式、30 MB 限制、解码与 4096 像素缩小处理。V4 分支直接通过 `createReferenceProject` 构建空文档、独立图片资源及居中毫米参考变换；默认宽 100 mm、厚度 2 mm 与原界面一致。读取过程中已有工程修改或切换时拒绝迟到结果；新建成功后不保留旧选区、临时绘制、文件绑定及历史。
+
+新增单测覆盖空模型、资源字节不共享、坐标映射、非法输入及真实 PNG 的 V4 编码/解码往返。完整原根浏览器测试实际上传 `public/reference.png`，验证 0 路径/0 部件、未保存/无绑定/无撤销、Worker 完成分析，再通过原保存按钮写入单独 OPFS 目标并读取校验当前 V4 文档；无页面或控制台错误。证据 `output/playwright/v4-original-studio/result.json` 的 `newImage` 和最终 `evidence`，截图 `original-studio.png`。
+
+`pnpm check:all` 退出 0，102 项单测、类型/lint/格式、Rust 检查和双端构建通过，日志 `outputs/v4-qa/check-all-original-new-image-2026-09-20.log`。全量检查期间补充的新图保存浏览器断言另行通过定向 lint/格式与完整浏览器执行；产品实现未再改变。描绘、建模、参考图编辑及完整 API 接线仍待完成，默认入口仍未切换。

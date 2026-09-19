@@ -194,6 +194,31 @@ async function main() {
       await page.locator('.project-name').innerText(),
       /sandrone-example/,
     );
+    const beforeImage = await evidence();
+    await page
+      .locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]')
+      .setInputFiles(resolve(root, 'public/reference.png'));
+    await page.waitForFunction(
+      (epoch) => window.originalStudioEvidence().epoch !== epoch,
+      beforeImage.epoch,
+    );
+    const newImage = await evidence();
+    assert.equal(newImage.paths, 0);
+    assert.equal(newImage.objects, 0);
+    assert.equal(newImage.dirty, true);
+    assert.equal(newImage.targetKind, null);
+    assert.equal(newImage.canUndo, false);
+    await page.getByText('底图就绪', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioSavedEvidence()),
+      { kind: 'v4', matchesCurrent: true },
+    );
+    assert.match(
+      await page.locator('.project-name').innerText(),
+      /new-image-project/,
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
@@ -211,6 +236,7 @@ async function main() {
           objectMove: moved,
           reopened,
           legacyOpened,
+          newImage,
           evidence: await evidence(),
           errors,
           consoleErrors,

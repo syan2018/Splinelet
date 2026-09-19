@@ -162,6 +162,7 @@ import { useStudioProject, type StudioHost } from '@/hooks/use-studio-project';
 import { useSourceDrag } from '@/hooks/use-source-drag';
 import { openProject } from '@/lib/persistence/open-project.mjs';
 import { encodeDocument } from '@/lib/document/codec.mjs';
+import { createReferenceProject } from '@/lib/editor/new-reference-project.mjs';
 
 type ModelApi = {
   state: (input?: unknown) => unknown;
@@ -2476,6 +2477,8 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     if (!/^image\/(png|jpeg|webp)$/.test(f.type))
       throw Error('请导入 PNG、JPG 或 WebP 图片');
     if (f.size > 30 * 1024 * 1024) throw Error('图片不能超过 30 MB');
+    const startingState = host?.getSnapshot().editorState;
+    if (startingState?.previewId) throw Error('请先完成或取消拖动，再新建工程');
     const data = await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result as string);
@@ -2500,6 +2503,36 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       c.height = h;
       c.getContext('2d')!.drawImage(img, 0, 0, w, h);
       src = c.toDataURL('image/png');
+    }
+    if (host && startingState) {
+      const image = await fetch(src);
+      const bytes = new Uint8Array(await image.arrayBuffer());
+      const current = host.getSnapshot().editorState;
+      if (
+        current.epoch !== startingState.epoch ||
+        current.revision !== startingState.revision ||
+        current.previewId
+      )
+        throw Error('读取图片期间工程已改变，请重新新建工程');
+      const opened = createReferenceProject({
+        bytes,
+        mediaType: image.headers.get('content-type'),
+        name: f.name,
+        width: w,
+        height: h,
+      });
+      const next = host.open(opened, {
+        fileName: null,
+        newReliefDepthMM: initialTraceProject.depthMM,
+      });
+      pr.current = next.project as Project;
+      finish();
+      setActiveNow(null);
+      setProposed(null);
+      setPendingRefit(null);
+      creationApi.current?.clear();
+      setStatus('正在分析新底图…');
+      return;
     }
     finish();
     setActiveNow(null);
