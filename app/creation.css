@@ -193,7 +193,7 @@
   fill-opacity: 0;
 }
 .creation-stage.tool-select .creation-cell:hover {
-  cursor: move;
+  cursor: pointer;
 }
 .creation-object-row.contains-selection {
   box-shadow: inset 2px 0 #abc68c;

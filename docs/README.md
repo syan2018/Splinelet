@@ -16,6 +16,10 @@
 - [打印分层](print-stack.md)
 - [3MF 打印导出](3mf-export.md)
 
+## 设计评审
+
+- [交互设计稿（2026-09-19）](interaction-design-2026-09-19.md)：目标交互、当前修正范围与待实现项。
+
 ## 历史 QA 快照
 
 - [统一创作验收（2026-09-12）](qa/creation-acceptance-2026-09-12.md)

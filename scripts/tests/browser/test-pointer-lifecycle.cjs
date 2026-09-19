@@ -1,11 +1,13 @@
 module.exports = async (page) => {
   const assert = require('node:assert/strict');
   const checks = [];
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = async (action, args = {}) => {
+    await page.waitForFunction(() => window.traceStudio);
+    return page.evaluate(
+      ({ action, args }) => window.traceStudio.call(action, args),
+      { action, args },
+    );
+  };
   const settle = async () => {
     await page.waitForFunction(
       async () =>
@@ -89,10 +91,11 @@ module.exports = async (page) => {
     );
   };
   const edge = await at(300, 140);
+  const node = await at(180, 140);
   const beginDrag = async () => {
-    await page.mouse.move(edge.x, edge.y);
+    await page.mouse.move(node.x, node.y);
     await page.mouse.down();
-    await page.mouse.move(edge.x + 28, edge.y + 22, { steps: 4 });
+    await page.mouse.move(node.x + 28, node.y + 22, { steps: 4 });
     assert.equal((await call('state')).gesturing, true);
     assert.notDeepEqual(await paths(), before, 'drag should move geometry');
   };
@@ -114,6 +117,95 @@ module.exports = async (page) => {
   checks.push(
     'path click with one-pixel jitter ends cleanly and later hover cannot move geometry',
   );
+
+  const center = await at(300, 225);
+  for (const [kind, point] of [
+    ['path', edge],
+    ['cell', center],
+  ]) {
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    await page.mouse.move(point.x + 45, point.y + 35, { steps: 5 });
+    assert.equal((await call('state')).gesturing, false);
+    assert.deepEqual(await paths(), before, `V cannot drag a ${kind}`);
+    await page.mouse.up();
+    await idle();
+    assert.equal((await call('state')).creation.selection.kind, kind);
+    await page.keyboard.press('l');
+    await page.keyboard.press('Delete');
+    await idle();
+    assert.deepEqual(await paths(), before, `V L/Delete cannot edit ${kind}`);
+    checks.push(`V ${kind} drag and L/Delete leave geometry unchanged`);
+  }
+
+  await page.keyboard.press('a');
+  await settle();
+  await page.mouse.click(node.x, node.y);
+  const second = await at(420, 140);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(second.x, second.y);
+  await page.keyboard.up('Shift');
+  assert.deepEqual(
+    [...(await call('state')).selectedNodes].sort((a, b) => a - b),
+    [0, 1],
+    'Shift selects two nodes in the active path',
+  );
+  await beginDrag();
+  await page.mouse.up();
+  await idle();
+  const multiMoved = (await paths())[0];
+  const dx = multiMoved.curves[0][0].x - before[0].curves[0][0].x;
+  const dy = multiMoved.curves[0][0].y - before[0].curves[0][0].y;
+  assert(dx !== 0 && dy !== 0);
+  for (const index of [0, 1]) {
+    assert.equal(
+      multiMoved.curves[index][0].x,
+      before[0].curves[index][0].x + dx,
+    );
+    assert.equal(
+      multiMoved.curves[index][0].y,
+      before[0].curves[index][0].y + dy,
+    );
+  }
+  for (const index of [2, 3])
+    assert.deepEqual(multiMoved.curves[index][0], before[0].curves[index][0]);
+  await page.keyboard.press('Control+z');
+  await idle();
+  assert.deepEqual(
+    await paths(),
+    before,
+    'one undo restores a multi-node drag',
+  );
+  checks.push('A Shift multi-select moves only selected nodes in one undo');
+
+  await page.keyboard.press('Control+a');
+  assert.deepEqual(
+    [...(await call('state')).selectedNodes].sort((a, b) => a - b),
+    [0, 1, 2, 3],
+    'A Ctrl+A selects every node of the current path',
+  );
+  await beginDrag();
+  await page.mouse.up();
+  await idle();
+  const allMoved = (await paths())[0];
+  const allDx = allMoved.curves[0][0].x - before[0].curves[0][0].x;
+  const allDy = allMoved.curves[0][0].y - before[0].curves[0][0].y;
+  for (let index = 0; index < 4; index++)
+    for (let point = 0; point < 4; point++) {
+      assert.equal(
+        allMoved.curves[index][point].x,
+        before[0].curves[index][point].x + allDx,
+      );
+      assert.equal(
+        allMoved.curves[index][point].y,
+        before[0].curves[index][point].y + allDy,
+      );
+    }
+  await page.keyboard.press('Control+z');
+  await idle();
+  assert.deepEqual(await paths(), before, 'one undo restores all-node drag');
+  checks.push('A Ctrl+A moves every node and control handle in one undo');
+  await page.mouse.click(node.x, node.y);
 
   await beginDrag();
   await page.mouse.up();
@@ -198,7 +290,7 @@ module.exports = async (page) => {
     );
   }
 
-  const center = await at(300, 225);
+  await page.keyboard.press('v');
   await page.mouse.click(center.x, center.y);
   await idle();
   const selection = (await call('state')).creation.selection;

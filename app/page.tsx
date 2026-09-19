@@ -70,7 +70,6 @@ import type {
 import {
   pickSelection,
   movePaths,
-  translatePaths,
   translateNodes,
   deleteNodes,
   inBox,
@@ -191,7 +190,6 @@ type DragBase = {
   base?: Project;
   origin?: Point;
   moved?: boolean;
-  collapsePath?: string | null;
   collapseNode?: number;
   path?: string | null;
   curve?: number;
@@ -204,7 +202,6 @@ type DragBase = {
 type DragGesture = DragBase &
   (
     | { kind: 'pan'; view: { x: number; y: number; s: number } }
-    | { kind: 'paths'; ids: string[]; base: Project; origin: Point }
     | {
         kind: 'box';
         origin: Point;
@@ -423,8 +420,8 @@ export default function Home() {
     setStatus(
       next === 'select'
         ? unified
-          ? '选择 · 点击区域或线条 · Ctrl / Shift 多选 · 空白取消'
-          : '选择路径 · 多选后可整体移动或编组'
+          ? '选择 · 点击面或线 · 空白框选线条 · 按 A 编辑节点'
+          : '选择路径 · 按 A 编辑节点 · Ctrl / Shift 多选'
         : next === 'edit'
           ? '编辑节点 · Shift 多选 · 空白拖动框选'
           : next === 'trace'
@@ -463,7 +460,7 @@ export default function Home() {
     if (!e.shiftKey) rangeAnchor.current = id;
     setStatus(
       ids.length
-        ? '已选 ' + ids.length + ' 条路径 · 拖动移动或编组'
+        ? '已选 ' + ids.length + ' 条路径 · 按 A 编辑节点或编组'
         : '已取消选择',
     );
   };
@@ -482,7 +479,7 @@ export default function Home() {
     );
     setStatus(
       pathsRef.current.length
-        ? '已选 ' + pathsRef.current.length + ' 条路径 · 拖动移动或编组'
+        ? '已选 ' + pathsRef.current.length + ' 条路径 · 按 A 编辑节点或编组'
         : '已取消选择',
     );
   };
@@ -1279,13 +1276,13 @@ export default function Home() {
   const deleteSelection = () => {
     if (busyRef.current || drag.current) return;
     if (tool === 'select') {
-      deletePaths();
+      setStatus('选择工具不修改形状 · 按 A 选择节点后删除');
       return;
     }
     const path = pr.current.paths.find((p) => p.id === ar.current),
       ids = nodesRef.current;
     if (tool !== 'edit' || !path || !ids.length) {
-      setStatus('请选择节点后删除；路径选择模式可删除整条路径');
+      setStatus('请按 A 并选择节点后删除');
       return;
     }
     try {
@@ -1415,11 +1412,7 @@ export default function Home() {
     setGesturing(false);
     setStatus('已取消拖动，恢复原位置');
   };
-  const startPathDrag = (
-    e: React.PointerEvent,
-    id: string,
-    fromSource = true,
-  ) => {
+  const selectCanvasPath = (e: React.PointerEvent, id: string) => {
     if (drag.current) return;
     if (space.current || e.button === 1 || tool === 'pan') return;
     if (
@@ -1436,50 +1429,22 @@ export default function Home() {
       setActiveNow(id);
       setSelection(null);
       setPropertyTab('node');
-      if (unified && fromSource) creationApi.current?.select_paths([id]);
+      if (unified) creationApi.current?.select_paths([id]);
       return;
     }
     setSelection(null);
     const modified = e.shiftKey || e.ctrlKey || e.metaKey;
     const existing =
-      unified && fromSource && creationSelectionKind !== 'path'
-        ? []
-        : pathsRef.current;
+      unified && creationSelectionKind !== 'path' ? [] : pathsRef.current;
     const ids = (
-      modified
-        ? pickSelection(existing, id, [], { toggle: true })
-        : existing.includes(id)
-          ? existing
-          : [id]
+      modified ? pickSelection(existing, id, [], { toggle: true }) : [id]
     ).filter(
-      (id: string) =>
-        !fromSource || pr.current.paths.find((p) => p.id === id)?.visible,
+      (id: string) => pr.current.paths.find((p) => p.id === id)?.visible,
     );
-    // A face projects its owner paths for movement; that projection must not
-    // replace the semantic face selection or leave hidden boundary lines behind.
-    if (fromSource) {
-      selectPathsNow(ids, id);
-      if (unified) creationApi.current?.select_paths(ids);
-    }
+    selectPathsNow(ids, id);
+    if (unified) creationApi.current?.select_paths(ids);
     setPropertyTab('paths');
-    if (modified) return;
-    drag.current = {
-      kind: 'paths',
-      pointerId: e.pointerId,
-      button: e.button,
-      ids: ids.filter(
-        (id: string) =>
-          !fromSource || pr.current.paths.find((p) => p.id === id)?.visible,
-      ),
-      base: pr.current,
-      origin: coordinate(e),
-      x: e.clientX,
-      y: e.clientY,
-      moved: false,
-      collapsePath: fromSource && ids.length > 1 ? id : null,
-    };
-    setGesturing(true);
-    stage.current?.setPointerCapture(e.pointerId);
+    setStatus('已选择线条 · 按 A 编辑节点 · 选择工具不会移动形状');
   };
   const pointerDown = (e: React.PointerEvent) => {
     if (drag.current) return;
@@ -1520,9 +1485,10 @@ export default function Home() {
         y: e.clientY,
         moved: false,
         add: e.shiftKey || e.ctrlKey || e.metaKey,
-        oldPaths: pathsRef.current.filter(
-          (id) => pr.current.paths.find((p) => p.id === id)?.visible,
-        ),
+        oldPaths: (unified && creationSelectionKind !== 'path'
+          ? []
+          : pathsRef.current
+        ).filter((id) => pr.current.paths.find((p) => p.id === id)?.visible),
         oldNodes: [...nodesRef.current],
       };
       stage.current?.setPointerCapture(e.pointerId);
@@ -1573,9 +1539,7 @@ export default function Home() {
       const q: Project = {
         ...g.base,
         paths: g.base.paths.map((path: TracePath) =>
-          (g.kind === 'paths' ? g.ids.includes(path.id) : path.id === g.path)
-            ? cloneTraceValue(path)
-            : path,
+          path.id === g.path ? cloneTraceValue(path) : path,
         ),
       };
       let dx = p.x - g.origin.x,
@@ -1584,8 +1548,7 @@ export default function Home() {
         if (Math.abs(dx) > Math.abs(dy)) dy = 0;
         else dx = 0;
       }
-      if (g.kind === 'paths') translatePaths(q, g.ids, dx, dy);
-      else {
+      {
         const path = q.paths.find((p) => p.id === g.path);
         if (!path) return;
         if (g.kind === 'nodes') translateNodes(path, g.ids, dx, dy);
@@ -1696,10 +1659,6 @@ export default function Home() {
       stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
-    if (!g.moved && g.collapsePath) {
-      selectPathsNow([g.collapsePath], g.collapsePath);
-      if (unified) creationApi.current?.select_paths([g.collapsePath]);
-    }
     if (!g.moved && g.collapseNode !== undefined) {
       const path = pr.current.paths.find((p) => p.id === g.path);
       if (path) setSelection(nodeSelection(path, g.collapseNode));
@@ -1773,8 +1732,7 @@ export default function Home() {
         setHistoryTick((t) => t + 1);
       }
       setStatus(
-        (g.kind === 'paths' ? '路径' : g.kind === 'nodes' ? '节点' : '控制柄') +
-          '已移动 · Ctrl+Z 撤销',
+        (g.kind === 'nodes' ? '节点' : '控制柄') + '已移动 · Ctrl+Z 撤销',
       );
     }
   };
@@ -2008,7 +1966,11 @@ export default function Home() {
         !e.metaKey
       )
         startMerge();
-      else if (e.key.toLowerCase() === 'l' && !e.ctrlKey && !e.metaKey) {
+      else if (
+        e.key.toLowerCase() === 'l' &&
+        ((tool === 'edit' && !!selection) ||
+          (tool === 'trace' && drawingRef.current))
+      ) {
         e.preventDefault();
         try {
           straightenSpan(ar.current || '');
@@ -2017,8 +1979,7 @@ export default function Home() {
         }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        if ((e.target as HTMLElement).closest('.outliner')) deletePaths();
-        else deleteSelection();
+        deleteSelection();
       }
     };
     const up = (e: KeyboardEvent) => {
@@ -3656,7 +3617,7 @@ export default function Home() {
                     : tool === 'pan'
                       ? '空格 / 中键拖动画布 · 滚轮缩放'
                       : tool === 'select'
-                        ? '路径选择'
+                        ? '选择 · 不移动形状'
                         : '平移画布'}
             </span>
             <span>
@@ -3729,7 +3690,7 @@ export default function Home() {
                         cy={path.start.y}
                         r={5 / view.s}
                         fill={path.color}
-                        onPointerDown={(e) => startPathDrag(e, path.id)}
+                        onPointerDown={(e) => selectCanvasPath(e, path.id)}
                         onDoubleClick={() => {
                           setActiveNow(path.id);
                           chooseTool('edit');
@@ -3769,7 +3730,7 @@ export default function Home() {
                           ? 'stroke'
                           : 'none',
                       }}
-                      onPointerDown={(e) => startPathDrag(e, path.id)}
+                      onPointerDown={(e) => selectCanvasPath(e, path.id)}
                       onDoubleClick={(e) => splitAt(e, path.id)}
                     />
                   </g>
@@ -4200,7 +4161,6 @@ export default function Home() {
             onSelectPaths={(ids) => selectPathsNow(ids)}
             onSelectionKind={setCreationSelectionKind}
             onFramePaths={framePaths}
-            onStartDrag={startPathDrag}
             onCanvasPointerDown={pointerDown}
             sourceInspector={legacyInspector}
             onAdvanced={(mode) => {
@@ -4448,7 +4408,7 @@ export default function Home() {
               <p>
                 <b>选择路径 · V</b>　单击曲线选择，Shift / Ctrl
                 单击增减选择；空白拖动框选相交曲线，按住 Shift
-                追加。拖动已选曲线移动整个选择集。双击曲线进入节点编辑。
+                追加。选择工具不移动形状；按 A 或双击曲线进入节点编辑。
               </p>
               <p>
                 <b>编辑节点 · A</b>　编辑当前一条路径。Shift / Ctrl
@@ -4493,10 +4453,9 @@ export default function Home() {
               </p>
               <p>
                 <b>视图与保存</b>
-                　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。工程自动备份，Ctrl+S
-                绑定并写回同一文件，Ctrl+Shift+S 另存为。制作标签导出分色 SVG、
-                打印 STL 和 Blender 实体与源线；精确贝塞尔 SVG
-                在源线工作台导出。
+                　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
+                才保存工程文件，Ctrl+Shift+S 另存为。制作标签导出分色 SVG、 打印
+                STL 和 Blender 实体与源线；精确贝塞尔 SVG 在源线工作台导出。
               </p>
             </div>
           )}

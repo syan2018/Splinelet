@@ -249,11 +249,6 @@ type Props = {
   selectedPaths: string[];
   onSelectPaths: (ids: string[]) => void;
   onSelectionKind: (kind: 'object' | 'path' | 'cell') => void;
-  onStartDrag: (
-    e: React.PointerEvent,
-    id: string,
-    fromSource?: boolean,
-  ) => void;
   onCanvasPointerDown: (e: React.PointerEvent) => void;
   onFramePaths: (ids: string[], options?: { force?: boolean }) => void;
   sourceInspector: ReactNode;
@@ -361,13 +356,6 @@ export default function CreationWorkspace(p: Props) {
     [showLines, setShowLines] = useState(true),
     [displayMode, setDisplayMode] = useState('reference');
   const space = useRef(false),
-    cellClick = useRef<{
-      key: string;
-      x: number;
-      y: number;
-      pointerId: number;
-      moved: boolean;
-    } | null>(null),
     moving = useRef<MoveState | null>(null),
     root = useRef<HTMLElement>(null),
     nextRole = useRef('boundary'),
@@ -633,7 +621,6 @@ export default function CreationWorkspace(p: Props) {
   const heightMinimum = printHeight ? 1 : 0.01;
   const heightMaximum = printHeight ? Math.floor(1000 / printHeight) : 1000;
   const cancel = () => {
-    cellClick.current = null;
     heightDrag.current = null;
     paintDrag.current = null;
     setDraftHeight(null);
@@ -684,7 +671,6 @@ export default function CreationWorkspace(p: Props) {
         return;
       }
       if (e.key === 'Escape') {
-        cellClick.current = null;
         // The source editor owns in-progress source gestures and their rollback.
         if (p.busy && !heightDrag.current && !paintDrag.current) return;
         // Let its own Escape ladder finish tracing, cancel merging or clear
@@ -739,43 +725,18 @@ export default function CreationWorkspace(p: Props) {
       space.current = false;
       cancel();
     };
-    const pointerMove = (e: PointerEvent) => {
-      const g = cellClick.current;
-      if (
-        g &&
-        g.pointerId === e.pointerId &&
-        Math.hypot(e.clientX - g.x, e.clientY - g.y) >= 4
-      )
-        g.moved = true;
-    };
-    const pointerCancel = () => {
-      cellClick.current = null;
-    };
-    const pointerUp = (e: PointerEvent) => {
-      const g = cellClick.current;
-      cellClick.current = null;
-      if (
-        g &&
-        g.pointerId === e.pointerId &&
-        !g.moved &&
-        Math.hypot(e.clientX - g.x, e.clientY - g.y) < 4
-      )
-        selectCell(g.key);
+    const pointerUp = () => {
       if (paintDrag.current) commitPaint();
     };
     window.addEventListener('keydown', down, true);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
     window.addEventListener('pointerup', pointerUp);
-    window.addEventListener('pointermove', pointerMove);
-    window.addEventListener('pointercancel', pointerCancel);
     return () => {
       window.removeEventListener('keydown', down, true);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
       window.removeEventListener('pointerup', pointerUp);
-      window.removeEventListener('pointermove', pointerMove);
-      window.removeEventListener('pointercancel', pointerCancel);
     };
   });
   const svgExport = () => {
@@ -1157,29 +1118,11 @@ export default function CreationWorkspace(p: Props) {
                     }
                     if (e.button !== 0 || space.current) return;
                     if (p.tool === 'select') {
-                      if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                        selectionState.choose('cell', c.key, e);
-                        e.stopPropagation();
-                        return;
-                      }
-                      if (
-                        selection.kind !== 'cell' ||
-                        !cellKeys.includes(c.key)
-                      )
-                        selectCell(c.key);
-                      else if (cellKeys.length > 1)
-                        cellClick.current = {
-                          key: c.key,
-                          x: e.clientX,
-                          y: e.clientY,
-                          pointerId: e.pointerId,
-                          moved: false,
-                        };
-                      const id = o.pathIds.find((id: string) =>
-                        p.project.paths.some((path) => path.id === id),
-                      );
-                      if (id) p.onStartDrag(e, id, false);
-                      else e.stopPropagation();
+                      e.preventDefault();
+                      e.stopPropagation();
+                      selectionState.choose('cell', c.key, {
+                        ctrlKey: e.ctrlKey || e.metaKey || e.shiftKey,
+                      });
                     } else if (p.tool === 'paint') {
                       e.preventDefault();
                       e.stopPropagation();
@@ -1256,7 +1199,13 @@ export default function CreationWorkspace(p: Props) {
                 }
                 tool={p.tool}
                 onSelect={(key, modifiers) => {
-                  if (key) selectionState.choose('cell', key, modifiers);
+                  if (key)
+                    selectionState.choose('cell', key, {
+                      ctrlKey:
+                        modifiers.ctrlKey ||
+                        modifiers.metaKey ||
+                        modifiers.shiftKey,
+                    });
                   else clear();
                   if (key && p.tool === 'paint')
                     safely(() =>
