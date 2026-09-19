@@ -3,6 +3,10 @@ import {
   validateDocument,
 } from '../document/schema.mjs';
 import { childrenOf, descendantsOf, selectedRoots } from './hierarchy.mjs';
+import {
+  allocateSourcePathOrders,
+  orderedSourcePaths,
+} from '../geometry/source-order.mjs';
 
 export function ownedEntities(document, nodeIds) {
   const roots = selectedRoots(document, nodeIds);
@@ -81,6 +85,16 @@ export function copyNodes(
 ) {
   validateDocument(document);
   const owned = ownedEntities(document, nodeIds);
+  const copiedPaths = orderedSourcePaths(document).filter(({ sketch }) =>
+    owned.sketches.has(sketch.id),
+  );
+  const allocatedPathOrders = allocateSourcePathOrders(
+    document,
+    copiedPaths.length,
+  );
+  const copiedPathOrders = new Map(
+    copiedPaths.map(({ path }, index) => [path.id, allocatedPathOrders[index]]),
+  );
   const next = structuredClone(document);
   const reserved = new Set();
   const scanIds = (value) => {
@@ -179,6 +193,7 @@ export function copyNodes(
       sketch.paths[mapped(path.id)] = {
         ...structuredClone(path),
         id: mapped(path.id),
+        order: copiedPathOrders.get(path.id),
         edges: path.edges.map((use) => ({
           ...use,
           edgeId: mapped(use.edgeId),

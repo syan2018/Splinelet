@@ -1,6 +1,9 @@
 import { resolveRelation } from '../geometry/relations.mjs';
 import { effectiveNodeState } from '../scene/hierarchy.mjs';
-import { orderedSourcePaths } from '../geometry/source-order.mjs';
+import {
+  orderedSourcePaths,
+  compareSourceIds,
+} from '../geometry/source-order.mjs';
 import {
   inverseTransform,
   transformPoint,
@@ -391,7 +394,8 @@ export function projectSourceView(document, frame) {
     ),
     collections: Object.values(document.collections)
       .sort(
-        (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id),
+        (a, b) =>
+          (a.order ?? 0) - (b.order ?? 0) || compareSourceIds(a.id, b.id),
       )
       .map((collection) => ({
         id: collection.id,

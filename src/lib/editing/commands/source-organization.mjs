@@ -90,8 +90,10 @@ const nextCollectionOrder = (document) => {
   const values = Object.values(document.collections).map(
     (item) => item.order ?? 0,
   );
-  const order = values.length ? Math.max(...values) + 1 : 0;
-  if (!Number.isFinite(order)) throw Error('无法分配 Collection.order');
+  const maximum = values.reduce((max, value) => Math.max(max, value), -1);
+  const order = maximum + 1;
+  if (!Number.isFinite(order) || order <= maximum)
+    throw Error('无法分配 Collection.order');
   return order;
 };
 

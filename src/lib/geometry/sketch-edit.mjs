@@ -5,6 +5,7 @@ import {
   transformVector,
 } from '../scene/transforms.mjs';
 import { reversePathUses } from './sketch.mjs';
+import { nextSourcePathOrder } from './source-order.mjs';
 import {
   cleanPathHandleModes,
   movePathHandle,
@@ -298,6 +299,7 @@ export function editSketch(document, edit, options = {}) {
     sketch.paths[pathId] = {
       id: pathId,
       name: edit.name,
+      order: nextSourcePathOrder(next),
       edges: structuredClone(edit.edges),
       visible: edit.visible ?? true,
     };

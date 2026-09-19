@@ -17,6 +17,10 @@ import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 import { createPathIntent } from '../../../src/lib/editor/path-intents.mjs';
 import { projectCreationView } from '../../../src/lib/editor/creation-view.mjs';
+import {
+  compareSourceIds,
+  allocateSourcePathOrders,
+} from '../../../src/lib/geometry/source-order.mjs';
 
 const legacy = v1Project();
 legacy.groups = [
@@ -179,6 +183,15 @@ unordered.sketches[first.sketchId].paths[first.id].order = Infinity;
 assert.throws(() => validateDocument(unordered), /不是 JSON/);
 unordered.sketches[first.sketchId].paths[first.id].order = 'first';
 assert.throws(() => validateDocument(unordered), /Path.order/);
+assert.deepEqual(
+  ['ä', 'z', 'a'].sort(compareSourceIds),
+  ['a', 'z', 'ä'],
+  'fallback ordering uses fixed code units rather than host locale',
+);
+unordered.sketches[first.sketchId].paths[first.id].order = Number.MAX_VALUE;
+validateDocument(unordered);
+assert.throws(() => allocateSourcePathOrders(unordered, 1), /超出可分配范围/);
+assert.deepEqual(allocateSourcePathOrders(unordered, 0), []);
 console.log(
   'PASS source display order and collection membership survive import, canonical save, append, undo and missing references',
 );
