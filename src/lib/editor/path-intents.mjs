@@ -10,6 +10,7 @@ export function createPathIntent(request, displayed) {
       'set-paths',
       'delete-paths',
       'start-path',
+      'draw-path',
       'extend-path',
       'close-path',
       'finish-path',
@@ -44,7 +45,28 @@ export function createPathIntent(request, displayed) {
         'end',
     }));
   let command;
-  if (action.kind === 'start-path') {
+  if (action.kind === 'draw-path') {
+    if (!Array.isArray(action.pixelCubics) || !action.pixelCubics.length)
+      throw Error('拟合路径需要至少一段 cubic');
+    if (typeof action.closed !== 'boolean') throw Error('必须明确路径是否闭合');
+    const cubics = action.pixelCubics.map((cubic) => {
+      if (!Array.isArray(cubic) || cubic.length !== 4)
+        throw Error('拟合路径每段必须是 cubic');
+      return cubic.map((point) => sourceViewToWorld(view.source.frame, point));
+    });
+    const points = cubics.map((cubic) => cubic[0]);
+    if (!action.closed) points.push(cubics.at(-1)[3]);
+    command = {
+      kind: 'draw-path',
+      points,
+      cubics,
+      closed: action.closed,
+      ...(action.name !== undefined ? { name: action.name } : {}),
+      ...(action.ownerNodeId !== undefined
+        ? { ownerNodeId: action.ownerNodeId }
+        : {}),
+    };
+  } else if (action.kind === 'start-path') {
     command = {
       kind: action.kind,
       point: sourceViewToWorld(view.source.frame, action.pixelPoint),

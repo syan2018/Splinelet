@@ -185,7 +185,13 @@ function drawPath(document, action, rawIdFactory) {
   if (
     !Array.isArray(action.points) ||
     action.points.length <
-      (action.kind === 'start-path' ? 1 : action.closed ? 3 : 2) ||
+      (action.kind === 'start-path'
+        ? 1
+        : action.closed
+          ? action.cubics
+            ? 1
+            : 3
+          : 2) ||
     !action.points.every(vec)
   )
     throw Error('线条需要有限的世界坐标点');

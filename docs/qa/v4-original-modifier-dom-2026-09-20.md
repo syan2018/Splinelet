@@ -222,3 +222,11 @@ V4 的原重新拟合入口从捕获的只读源视图按现有边逐段拟合�
 `pnpm check:all` 退出 0，包含 107 项单测、类型/lint/格式、Rust 格式/检查及双端构建；日志 `outputs/v4-qa/check-all-refit-2026-09-20.log`。首次检查因捕获 Project 的回调类型推断错误停止，补上明确 Project 类型后完整重跑通过。测试环境修正后 lint 与全库格式另行通过。
 
 修正样式管线后，`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 退出 0，日志 `outputs/v4-qa/original-refit-styled-2026-09-20.log`。先实际拖动控制柄，再打开原重新拟合弹窗；取消后规范文档不变，确认后源控制柄改变而 Vertex、Edge IDs 和 Program 不变，撤销恢复确认前完整文档，重做恢复拟合后完整文档。前面的 Sandrone 编辑、文件、区域绘制及源合并删除流程同时通过；页面与控制台错误为空。最终截图使用正式 Tailwind 管线。仍为注入 host 的隔离原根，不签收默认入口与原生文件。
+
+## 2026-09-20 原候选路径与公开批量描绘
+
+原 create_path 捕获拟合前工程视图，完成后编译 draw-path 意图；原接受按钮和 commit_preview 提交同一计划，不将临时 TracePath 导入或持久化。生成/丢弃候选不写工程，过期视图拒绝写回；临时候选 id 与实际提交路径 id 明确区分。规范命令支持两段曲线组成的闭合路径，保留拟合控制柄和端点拓扑，不将短曲线简化成折线。
+
+新增 fitted-path-intent 单测通过：不可变拟合输入、闭合曲线、保存重开、一次撤销/重做、失效计划拒绝、不连续曲线原子失败和开放曲线精确保持。原根浏览器 `outputs/v4-qa/original-candidates-2026-09-20.log` 退出 0，使用公开 create_path 生成候选并点击原丢弃/接受按钮；规范文档确认生成/丢弃不变，接受后撤销/重做精确恢复，撤销清理旧候选，直接创建返回实际源路径 ID，最终规范保存匹配。页面及控制台错误为空。该测试继续使用正式 Tailwind 处理器并覆盖此前 Sandrone、分区/孔、合并、重新拟合流程；默认入口和全部 API 仍待完成。
+
+最终 `pnpm check:all` 退出 0，108 项单测、类型/lint/格式、Rust 格式/检查与 Web/Desktop 构建通过，日志 `outputs/v4-qa/check-all-candidates-2026-09-20.log`。补充断言验证两段拟合曲线生成一个 ready 区域，局部单测通过。

@@ -351,6 +351,12 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     [opacity, setOpacity] = useState(85),
     [vectorsOnly, setVectorsOnly] = useState(false),
     [fill, setFill] = useState(false);
+  const proposedCommit = useRef<{ id: string; commit: () => TracePath } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!proposed) proposedCommit.current = null;
+  }, [proposed]);
   const [candidates, setCandidates] = useState<TraceCandidate[]>([]),
     cr = useRef(candidates);
   const allCandidates = useRef<CandidatePoint[]>([]);
@@ -2735,6 +2741,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     args: import('@/hooks/trace-agent-contract').AgentCreatePathArgs,
   ) =>
     lock(async () => {
+      const captured = host?.getSnapshot();
       if (
         !Array.isArray(args.points) ||
         args.points.length < 2 ||
@@ -2797,7 +2804,29 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         a = r.end;
       }
       if (!path.curves.length) throw Error('锚点不能全部重合');
+      const plan = captured?.runtime.commandPath(
+        {
+          kind: 'draw-path',
+          pixelCubics: path.curves,
+          closed: path.closed,
+          name: path.name,
+        },
+        { project: captured.project },
+      );
+      const commit = () => {
+        if (!captured || !plan) throw Error('候选路径缺少工程上下文');
+        const beforeIds = new Set(
+          captured.project.paths.map((item: TracePath) => item.id),
+        );
+        const next: Project = plan.commit();
+        pr.current = next;
+        const added = next.paths.find((item) => !beforeIds.has(item.id));
+        if (!added) throw Error('新增源路径无法显示');
+        return added;
+      };
+      let createdId = path.id;
       if (args.preview) {
+        proposedCommit.current = captured ? { id: path.id, commit } : null;
         setProposed(path);
         setStatus(
           `候选路径已生成 · ${path.curves.length} 段曲线` +
@@ -2806,8 +2835,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
               : '，检查后接受'),
         );
       } else {
-        transact((p) => p.paths.push(path));
-        setActiveNow(path.id);
+        if (captured) createdId = commit().id;
+        else transact((p) => p.paths.push(path));
+        setActiveNow(createdId);
         finish();
         setStatus(
           `已创建「${path.name}」· ${path.curves.length} 段曲线` +
@@ -2817,7 +2847,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         );
       }
       return {
-        id: path.id,
+        id: createdId,
         name: path.name,
         segments: path.curves.length,
         quality: path.quality,
@@ -3029,11 +3059,16 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     });
   const acceptPreview = () => {
     if (!proposed) throw Error('没有候选路径');
+    let id = proposed.id;
+    if (host) {
+      if (proposedCommit.current?.id !== proposed.id)
+        throw Error('候选路径上下文已失效，请重新生成');
+      id = proposedCommit.current.commit().id;
+    } else transact((p) => p.paths.push(proposed));
     setStatus('候选路径已接受');
-    transact((p) => p.paths.push(proposed));
-    setActiveNow(proposed.id);
+    setActiveNow(id);
     setProposed(null);
-    return { id: proposed.id };
+    return { id };
   };
   const apiRef = useRef<TraceApi | null>(null);
   useEffect(() => {
@@ -4474,7 +4509,16 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                   ? ' · 建议手动补点'
                   : ''}
               </span>
-              <button className="primary" onClick={acceptPreview}>
+              <button
+                className="primary"
+                onClick={() => {
+                  try {
+                    acceptPreview();
+                  } catch (error) {
+                    setStatus(errorMessage(error));
+                  }
+                }}
+              >
                 <Check size={15} />
                 接受
               </button>

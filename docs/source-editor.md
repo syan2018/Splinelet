@@ -171,3 +171,7 @@ pnpm build
 ```
 
 浏览器注入脚本必须在隔离测试浏览器中运行，并自行建立工程或使用 `scripts/tests/fixtures/` 中已提交的最小 fixture。当前源编辑器保留 `test-spline-endpoints.cjs` 的端点续画/闭合覆盖，以及 `test-restore-race.cjs` 的恢复竞争覆盖。依赖当前页面、前序脚本状态或 OS 私有文件选择器的旧调试脚本已删除。
+
+### V4 后端接线进度（2026-09-20）
+
+原界面注入 V4 host 时，批量 `create_path` 已通过捕获版本的 `draw-path` 意图保存原始贝塞尔。`preview:true` 不写工程；返回 id 是临时候选标识，`commit_preview` 返回实际已提交路径 id。直接创建返回实际路径 id。候选过期不能接受，重新拟合使用原确认框并保持源拓扑身份。此项为后端接线说明，默认入口与全部 API 的 V4 切换尚未完成；当前验收见[原界面 QA](qa/v4-original-modifier-dom-2026-09-20.md)。

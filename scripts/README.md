@@ -113,3 +113,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 原根 `test-v4-original-studio.cjs` 进一步覆盖同部件两条开放源线的端点合并、撤销重做及删除恢复；`test-v4-source-runtime.mjs` 验证预览期间端点吸附查询固定使用提交基线，不接受过期展示句柄。
 
 原根浏览器另覆盖控制柄拖动后的重新拟合确认/取消、保留节点和边身份、撤销/重做。`test-v4-path-intents.mjs` 验证拟合端点转换、反向边和过期结果拒绝；`test-v4-path-geometry-command.mjs` 验证共享/驱动保护与精确控制柄写入。
+
+`test-v4-fitted-path-intent.mjs` 验证原批量拟合曲线的规范写入、两段曲线闭合、不可变候选、过期拒绝、保存重开与一次撤销；原根浏览器通过公开 create_path 生成候选，再点击原接受/丢弃按钮，并检查直接创建返回的路径 id 与规范保存。

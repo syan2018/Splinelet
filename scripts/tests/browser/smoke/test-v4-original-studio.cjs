@@ -494,6 +494,75 @@ async function main() {
       await page.evaluate(() => window.originalStudioDocument()),
       afterRefit,
     );
+    // Public batch-authoring API prepares the same candidate accepted by the
+    // original UI. No fixture-side editor mutation is used.
+    const batch = async (preview) =>
+      page.evaluate(
+        (preview) =>
+          window.traceStudio.call('create_path', {
+            name: 'candidate path',
+            mode: 'manual',
+            snap: false,
+            closed: true,
+            preview,
+            points: [
+              { x: 220, y: 650 },
+              { x: 320, y: 650 },
+              { x: 270, y: 730 },
+            ],
+          }),
+        preview,
+      );
+    const beforeCandidate = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    await batch(true);
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeCandidate,
+    );
+    await page.getByRole('button', { name: '丢弃', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeCandidate,
+    );
+    const candidate = await batch(true);
+    await page.getByRole('button', { name: '接受', exact: true }).click();
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().paths === 2,
+    );
+    const acceptedCandidate = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.equal(
+      (await evidence()).pathGeometry.at(-1).segments,
+      candidate.segments,
+    );
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeCandidate,
+    );
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      acceptedCandidate,
+    );
+    await batch(true);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    // Undo clears the candidate, so it cannot later write into a different revision.
+    assert.equal(
+      await page.getByRole('button', { name: '接受', exact: true }).count(),
+      0,
+    );
+    const direct = await batch(false);
+    assert.equal((await evidence()).pathGeometry.at(-1).id, direct.id);
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioSavedEvidence()),
+      { kind: 'v4', matchesCurrent: true },
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
