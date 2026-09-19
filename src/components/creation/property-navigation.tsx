@@ -37,7 +37,7 @@ export default function PropertyNavigation({
       entries: [
         {
           id: 'project',
-          label: '工程',
+          label: '设置',
           title: '工程设置 · 全局',
           icon: Settings2,
         },
@@ -50,8 +50,8 @@ export default function PropertyNavigation({
         { id: 'print', label: '分层', title: '打印方案 · 全局', icon: Layers },
         {
           id: 'make',
-          label: '输出',
-          title: '制作与导出 · 全局',
+          label: '导出',
+          title: '检查与导出 · 全局',
           icon: Download,
         },
       ],

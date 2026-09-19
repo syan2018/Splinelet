@@ -255,6 +255,7 @@ type Props = {
   onCanvasPointerDown: (e: React.PointerEvent) => void;
   onFramePaths: (ids: string[], options?: { force?: boolean }) => void;
   sourceInspector: ReactNode;
+  displaySettings: ReactNode;
   projectSettings: ReactNode;
   onSourceExport: () => void;
   onAdvanced: (mode: string) => void;
@@ -677,7 +678,7 @@ export default function CreationWorkspace(p: Props) {
     const down = (e: KeyboardEvent) => {
       if (
         (e.target as HTMLElement).closest(
-          'input,textarea,select,[contenteditable],[role="dialog"]',
+          'input,textarea,select,[contenteditable],[role="menu"],[role="dialog"]',
         )
       )
         return;
@@ -1285,29 +1286,31 @@ export default function CreationWorkspace(p: Props) {
                 </fieldset>
               )}
               {p.viewMode === 'flat' && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={showLines}
-                    onChange={(e) => {
-                      setShowLines(e.target.checked);
-                    }}
-                  />
-                  全部线条
-                </label>
-              )}
-              {p.viewMode === 'flat' && (
-                <label>
-                  底图
-                  <input
-                    aria-label="创作底图透明度"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={p.opacity}
-                    onChange={(e) => p.onOpacity(+e.target.value)}
-                  />
-                </label>
+                <details className="canvas-display-options">
+                  <summary>显示选项</summary>
+                  <div>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={showLines}
+                        onChange={(e) => setShowLines(e.target.checked)}
+                      />
+                      全部线条
+                    </label>
+                    <label>
+                      底图透明度
+                      <input
+                        aria-label="创作底图透明度"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={p.opacity}
+                        onChange={(e) => p.onOpacity(+e.target.value)}
+                      />
+                    </label>
+                    {p.displaySettings}
+                  </div>
+                </details>
               )}
             </div>
             {scope !== 'source' &&
@@ -1825,7 +1828,7 @@ export default function CreationWorkspace(p: Props) {
                     : tab === 'print'
                       ? '打印方案'
                       : tab === 'make'
-                        ? '制作与导出'
+                        ? '检查与导出'
                         : tab === 'tool'
                           ? '当前工具'
                           : tab === 'modifiers'

@@ -4,7 +4,7 @@
   background: #151b20;
 }
 .creation-studio header {
-  height: 60px;
+  height: 52px;
   padding: 0 18px;
   background: #20282d;
 }
@@ -16,13 +16,61 @@
   display: none;
 }
 .creation-studio .project-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
 }
+.creation-studio .project-name > span,
 .creation-studio .project-name i {
-  display: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.creation-studio .project-name i {
+  display: block;
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  background: #829084;
+}
+.creation-studio .header-actions .header-save {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #aab6bd;
+}
+.creation-studio .header-actions .header-save:hover {
+  background: #354049;
+  color: #e7ecef;
+}
+.creation-studio .header-actions .header-export {
+  padding: 6px 12px;
+  border: 1px solid #52634a;
+  background: #c6ed9614;
+  color: #d4efb1;
+  font-size: 13px;
+}
+.creation-studio .header-actions .header-export:hover {
+  background: #c6ed9626;
+}
+@media (max-width: 700px) {
+  .creation-studio header {
+    gap: 8px;
+  }
+  .studio-brand-menu > span {
+    display: none;
+  }
 }
 .creation-studio .header-actions {
   gap: 7px;
@@ -50,45 +98,96 @@
   flex: 1;
   font-size: 13px;
 }
-.creation-mode-menu {
-  position: relative;
+.studio-brand-menu {
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-left: -8px;
+  border: 0;
+  background: transparent;
+  color: #dbe4e9;
+  font-size: 16px;
+  font-weight: 600;
 }
-.creation-mode-menu summary {
-  cursor: pointer;
-  list-style: none;
-  font-size: 13px;
-  color: #b3bec3;
-  padding: 7px 12px;
+.studio-brand-menu > svg:first-child {
+  color: #c6ed96;
 }
-.header-actions .creation-mode-menu summary {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  border: 1px solid #3b4249;
-  border-radius: 7px;
-  background: #272d33;
+.studio-brand-menu > svg:last-child {
+  color: #819098;
+}
+.studio-brand-menu:hover,
+.studio-brand-menu[data-popup-open] {
+  background: #354049;
+}
+.studio-menu-group-label {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #95a5ae;
+}
+.studio-menu-popup [role='group'] + [role='group'] {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #3b484f;
+}
+.studio-menu-positioner {
+  z-index: 100;
+}
+.studio-menu-popup {
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid #46545a;
+  background: #242f34;
   color: #e7ecef;
-  padding: 9px 13px;
+  box-shadow: 0 12px 30px #0008;
+  border-radius: 10px;
+  outline: none;
 }
-.header-actions .creation-mode-menu summary:hover {
-  background: #39424a;
+.studio-menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
 }
-.header-actions .creation-mode-menu > div {
-  top: calc(100% + 8px);
+.studio-menu-item[data-highlighted] {
+  background: #39494f;
 }
-.creation-mode-menu > div {
+.studio-menu-item[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+.studio-menu-item kbd {
+  font-size: 11px;
+  color: #a8b6bf;
+}
+.canvas-display-options {
+  position: relative;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.canvas-display-options summary {
+  cursor: pointer;
+  padding: 7px;
+}
+.canvas-display-options > div {
   position: absolute;
+  top: calc(100% + 8px);
   right: 0;
-  top: 35px;
-  z-index: 50;
-  display: grid;
-  padding: 8px;
-  gap: 5px;
-  width: 180px;
+  width: 220px;
+  padding: 14px;
   border: 1px solid #46545a;
   background: #242f34;
   box-shadow: 0 12px 30px #0008;
   border-radius: 10px;
+}
+.canvas-display-options > div > label,
+.canvas-display-options .switch-label {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 0;
 }
 .creation-studio .toolrail {
   width: 68px;
@@ -1443,12 +1542,6 @@
   background: #1b2528;
 }
 @media (max-width: 1050px) {
-  .creation-studio header .project-name {
-    display: none;
-  }
-  .creation-canvas-bar > label {
-    display: none;
-  }
   .creation-workspace-switch > span {
     display: none;
   }
@@ -1464,7 +1557,7 @@
 }
 @media (max-width: 760px) {
   .creation-studio header {
-    height: 56px;
+    height: 52px;
     gap: 8px;
     padding: 0 10px;
   }

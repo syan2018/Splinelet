@@ -20,6 +20,32 @@ module.exports = async (page, fixture) => {
   await call('load_project', { project: fixture });
   await settle();
   const original = await call('get_project');
+  const header = page.getByRole('banner');
+  const mainMenu = header.getByRole('button', { name: 'Splinelet 主菜单' });
+  assert.equal(await header.getByRole('button').count(), 3);
+  const tools = page.getByRole('navigation', { name: '绘图工具' });
+  assert.equal(await tools.getByRole('button').count(), 8);
+  await mainMenu.click();
+  const menu = page.getByRole('menu', { name: 'Splinelet 主菜单' });
+  await menu.getByRole('menuitem').first().waitFor({ state: 'visible' });
+  assert.equal(await menu.getByRole('menuitem').count(), 7);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await menu.locator('[data-highlighted]').count(), 1);
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'hidden' });
+  assert(await mainMenu.evaluate((el) => el === document.activeElement));
+  await mainMenu.click();
+  await menu.getByRole('menuitem', { name: '操作帮助', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'visible' });
+  await menu.waitFor({ state: 'hidden' });
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await tools.getByRole('button', { name: '描线 (P)', exact: true }).click();
+  assert(await page.getByRole('button', { name: '标记候选拐点' }).isVisible());
+  await tools.getByRole('button', { name: '选择 (V)', exact: true }).click();
+  checks.push(
+    'compact header menu supports keyboard dismissal and contextual tools remain reachable',
+  );
   const scene = await call('creation_inspect');
   const object = scene.creation.objects.find((o) => o.pathIds.length);
   const rail = page.getByRole('navigation', { name: '属性分类' });
@@ -46,7 +72,7 @@ module.exports = async (page, fixture) => {
     '工程设置 · 全局',
     '项目色卡 · 全局',
     '打印方案 · 全局',
-    '制作与导出 · 全局',
+    '检查与导出 · 全局',
   ]) {
     await rail.getByRole('button', { name, exact: true }).click();
     await call('creation_focus', { objectId: object.id });
@@ -178,7 +204,7 @@ module.exports = async (page, fixture) => {
     'advanced construction is a named modal editor; legacy API and return-to-creation remain usable',
   );
 
-  await page.getByRole('button', { name: '制作与导出', exact: true }).click();
+  await page.getByRole('button', { name: '导出', exact: true }).click();
   assert(
     await page
       .getByRole('combobox', { name: '实体输出零件', exact: true })

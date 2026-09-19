@@ -11,7 +11,6 @@ import {
   PenTool,
   MousePointer2,
   Hand,
-  Upload,
   Download,
   Spline,
   Plus,
@@ -20,15 +19,13 @@ import {
   Redo2,
   Check,
   Target,
-  HelpCircle,
   Save,
-  FolderOpen,
-  Code2,
   Minus,
   PaintBucket,
   ArrowUpFromLine,
   Box,
 } from 'lucide-react';
+import StudioFileMenu from '@/components/studio/studio-file-menu';
 import NumberEdit from '@/components/shared/creation-number';
 import { modelTools } from '@/lib/model-api';
 import ModelWorkspace from '@/components/modeling/model-workspace';
@@ -1955,7 +1952,7 @@ export default function StudioApp() {
         (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
       if (
         (e.target as HTMLElement).closest(
-          'input,textarea,[role="slider"],[contenteditable="true"],[role="dialog"]:not(.workspace-dialog-wide)',
+          'input,textarea,[role="menu"],[role="slider"],[contenteditable="true"],[role="dialog"]:not(.workspace-dialog-wide)',
         ) ||
         ((e.target as HTMLElement).closest('select') && !historyShortcut) ||
         dialog ||
@@ -3107,17 +3104,16 @@ export default function StudioApp() {
       {' '}
       <div aria-label="工程设置">
         <section>
-          <h3>当前工程</h3>
+          <h3>参考底图</h3>
           <p>
             {project.imageName} · {project.width} × {project.height}
           </p>
-          <p>{saved}</p>
         </section>
         <section>
           <h3>工程尺寸</h3>
-          <span>作品宽度（mm）</span>
+          <span>底图对应宽度（mm）</span>
           <NumberEdit
-            label="作品宽度"
+            label="底图对应宽度"
             value={project.widthMM}
             min={0.1}
             max={10000}
@@ -3128,60 +3124,6 @@ export default function StudioApp() {
             }
           />
           <p>按整张底图宽度设置物理比例，影响整个作品。</p>
-        </section>
-        <section>
-          <h3>底图与预览</h3>
-          <label>
-            底图不透明度 <span>{opacity}%</span>
-          </label>
-          <Slider
-            aria-label="底图不透明度"
-            min={0}
-            max={100}
-            value={[opacity]}
-            onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
-          />
-          <label className="switch-label">
-            仅看曲线{' '}
-            <Switch
-              aria-label="仅看曲线"
-              checked={vectorsOnly}
-              onCheckedChange={setVectorsOnly}
-            />
-          </label>
-          <label className="switch-label">
-            闭合区域填充{' '}
-            <Switch
-              aria-label="闭合区域填充"
-              checked={fill}
-              onCheckedChange={setFill}
-            />
-          </label>
-        </section>
-        <section className="workflow">
-          <b>从轮廓到浮雕成品</b>
-          <p>
-            描闭合轮廓 → 填色与调高低 → 检查实体 → 导出 3MF。
-            二维描线不会自动恢复立体角色。
-          </p>
-          <button
-            className="example-button"
-            disabled={busy}
-            onClick={() =>
-              report(
-                fetch('/sandrone-example.spl')
-                  .then(async (r) => {
-                    if (!r.ok) throw Error('示例读取失败');
-                    return decodeProject(new Uint8Array(await r.arrayBuffer()));
-                  })
-                  .then((p) => apiRef.current?.load_project({ project: p })),
-              )
-            }
-          >
-            <FolderOpen size={15} />
-            载入桑多涅完整示例
-          </button>
-          <p>76 条路径 · 含建模与切片参数 · 可撤销载入</p>
         </section>
       </div>{' '}
     </>
@@ -3273,6 +3215,24 @@ export default function StudioApp() {
           </section>
         </div>
         <div aria-label="描线参数" hidden={propertyTab !== 'trace'}>
+          <button
+            title="标记候选拐点"
+            aria-label="标记候选拐点"
+            className={showCandidates ? 'selected' : ''}
+            onClick={() => {
+              if (showCandidates) setShowCandidates(false);
+              else
+                try {
+                  detect();
+                } catch (error: unknown) {
+                  setStatus(errorMessage(error));
+                }
+            }}
+            disabled={!ready}
+          >
+            <Target size={20} />
+            <small>候选点</small>
+          </button>
           <SplineTraceControls
             path={selectedPaths.length === 1 ? current : undefined}
             drawing={drawing}
@@ -3382,85 +3342,53 @@ export default function StudioApp() {
       }}
     >
       <header data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}>
-        <div
-          className="brand"
-          data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
-        >
-          <Spline />
-          <b>Splinelet</b>
-          <span>BÉZIER STUDIO</span>
-        </div>
+        <StudioFileMenu
+          fileBusy={fileBusy}
+          busy={busy}
+          onOpen={() => void openProjectFile()}
+          onNewFromImage={() => file.current?.click()}
+          onSave={() => void saveProject()}
+          onSaveAs={() => void saveProject(true)}
+          onHelp={() => setDialog('help')}
+          onApi={() => setDialog('api')}
+          onExample={() =>
+            report(
+              fetch('/sandrone-example.spl')
+                .then(async (r) => {
+                  if (!r.ok) throw Error('示例读取失败');
+                  return decodeProject(new Uint8Array(await r.arrayBuffer()));
+                })
+                .then((p) => apiRef.current?.load_project({ project: p })),
+            )
+          }
+        />
         <span
           className="project-name"
           data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
         >
           <span title={fileName || '未绑定文件'}>
-            {fileName || '角色轮廓研究'}
+            {fileName || '未命名工程'}
           </span>{' '}
-          <i title={saved}>{saved}</i>
+          <i title={saved} aria-label={saved}>
+            <span className="sr-only">{saved}</span>
+          </i>
         </span>
         <div className="header-actions">
           <button
+            className="header-save"
             aria-label="保存工程"
             title={saved + ' · Ctrl S 保存到同一文件'}
             disabled={fileBusy}
             onClick={() => void saveProject()}
           >
             <Save size={16} />
-            <span className="wide-label">保存工程</span>
           </button>
           <button
-            title="另存为 Ctrl Shift S"
-            disabled={fileBusy}
-            onClick={() => void saveProject(true)}
-          >
-            另存为
-          </button>
-          <button onClick={() => file.current?.click()} disabled={busy}>
-            <Upload size={16} />
-            导入底图
-          </button>
-          <details className="creation-mode-menu">
-            <summary>更多</summary>
-            <div>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
-                  void openProjectFile();
-                }}
-              >
-                <FolderOpen size={15} />
-                打开工程
-              </button>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
-                  setDialog('help');
-                }}
-              >
-                <HelpCircle size={15} />
-                操作帮助
-              </button>
-              <button
-                onClick={(e) => {
-                  e.currentTarget.closest('details')?.removeAttribute('open');
-                  setDialog('api');
-                }}
-              >
-                <Code2 size={15} />
-                Agent API
-              </button>
-            </div>
-          </details>
-          <button onClick={() => creationApi.current?.show_project()}>
-            工程设置
-          </button>
-          <button
-            className="primary"
+            className="header-export"
             onClick={() => creationApi.current?.show_output()}
           >
             <Download size={16} />
-            制作与导出
+            导出
           </button>
         </div>
         <DesktopWindowControls />
@@ -3569,48 +3497,6 @@ export default function StudioApp() {
           >
             <Redo2 size={19} />
           </button>
-          <hr />
-          <button
-            title="标记候选拐点"
-            aria-label="标记候选拐点"
-            className={showCandidates ? 'selected' : ''}
-            onClick={() => {
-              if (showCandidates) setShowCandidates(false);
-              else
-                try {
-                  detect();
-                } catch (error: unknown) {
-                  setStatus(errorMessage(error));
-                }
-            }}
-            disabled={!ready}
-          >
-            <Target size={20} />
-            <small>候选点</small>
-          </button>
-          <div className="rail-bottom">
-            <button
-              title="打开工程"
-              aria-label="打开工程"
-              onClick={() => void openProjectFile()}
-            >
-              <FolderOpen size={19} />
-            </button>
-            <button
-              title="Agent API"
-              aria-label="Agent API"
-              onClick={() => setDialog('api')}
-            >
-              <Code2 size={19} />
-            </button>
-            <button
-              title="操作帮助"
-              aria-label="操作帮助"
-              onClick={() => setDialog('help')}
-            >
-              <HelpCircle size={19} />
-            </button>
-          </div>
         </nav>
         <div
           role="application"
@@ -4204,6 +4090,29 @@ export default function StudioApp() {
             onSourceExport={() => {
               setDialog('export');
             }}
+            displaySettings={
+              <>
+                {' '}
+                <section>
+                  <label className="switch-label">
+                    隐藏底图{' '}
+                    <Switch
+                      aria-label="隐藏底图"
+                      checked={vectorsOnly}
+                      onCheckedChange={setVectorsOnly}
+                    />
+                  </label>
+                  <label className="switch-label">
+                    源线闭合填充{' '}
+                    <Switch
+                      aria-label="源线闭合填充"
+                      checked={fill}
+                      onCheckedChange={setFill}
+                    />
+                  </label>
+                </section>
+              </>
+            }
             projectSettings={projectSettings}
             onAdvanced={(mode) => {
               finish();
@@ -4423,16 +4332,6 @@ export default function StudioApp() {
                 WebMCP 的浏览器会注册 bezier_ 前缀工具。本地配套 HTTP
                 服务可连接同一工作台，供 Agent 批量调用与读回验证。
               </p>
-              <button
-                onClick={() => {
-                  detect();
-                  setDialog(null);
-                }}
-                disabled={!ready}
-              >
-                <Target size={16} />
-                生成并显示候选点
-              </button>
             </>
           ) : (
             <div className="help-content">
@@ -4466,7 +4365,7 @@ export default function StudioApp() {
                 <b>填色与高低</b>　选中部件后画轮廓、分区线或挖洞线。
                 底部选色，上色工具点击或按住扫过区域；右侧切换局部与整个对象，输入厚度或拖动调高。
                 平面与立体保留同一选择。项目色可双击编辑，引用它的区域一起改变。
-                制作标签中预览底板、检查实体并导出。
+                在“工程 → 导出”中检查实体并导出。
               </p>
               <p>
                 <b>高级源线路径树</b>　单击名称选择，Ctrl 增减，Shift
@@ -4495,8 +4394,8 @@ export default function StudioApp() {
               <p>
                 <b>视图与保存</b>
                 　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
-                才保存工程文件，Ctrl+Shift+S 另存为。制作标签导出分色 SVG、 打印
-                STL 和 Blender 实体与源线；精确贝塞尔 SVG 在“制作与导出 → 源曲线
+                才保存工程文件，Ctrl+Shift+S 另存为。导出面板提供分色 SVG、3MF
+                和 Blender 实体与源线；精确贝塞尔 SVG 在“工程 → 导出 → 源曲线
                 SVG”导出。
               </p>
             </div>

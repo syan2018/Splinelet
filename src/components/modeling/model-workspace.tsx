@@ -2246,7 +2246,7 @@ export default function ModelWorkspace(p: Props) {
                       检查与导出当前零件…
                     </button>
                     <p className="model-help">
-                      前往统一的制作与导出属性，继续使用当前零件。切片模板也在那里管理。
+                      前往统一的检查与导出面板，继续使用当前零件。切片模板也在那里管理。
                     </p>
                     <details>
                       <summary>构造面数据</summary>
