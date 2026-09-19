@@ -22,6 +22,14 @@
 4. 首先覆盖实际 Sandrone 所用的边界/分区/挖洞/参考角色、布尔构造、逐区域颜色和厚度、分层、底图，以及 gold emblem 的镜像→阵列→构面；功能缺口必须显式记录，不能删掉旧按钮来通过测试。
 5. 在同一原工作区中验证两份工程打开、选取、编辑、撤销、保存重开和预览。此前 `studio/v4` 简化组件与其浏览器用例只是试验材料，不作为交付前端或行为保持的证据。
 
+### 当前接入合同
+
+- `src/lib/editor/workspace-view.mjs` 的 `projectWorkspaceView(editorState, evaluated, frame)` 是统一读取边界；`evaluated` 必须携带 EvaluationSession 的 epoch/revision/previewId 和 snapshot，拒绝旧工程、旧 revision 或旧 preview 的结果。frame 显式提供旧画布使用的 width/height/widthMM。
+- `source-view.mjs` 提供原源画布的精确像素 cubic 和 canonical EntityRef 反查；分段或反向不会让旧 identity 指向其他实体。局部坏路径只产生该路径诊断，不清空其他来源。
+- `creation-view.mjs` 提供原作品树、区域与属性的只读数据。路径 ID 与 source-view 一致；区域 key 包含完整 OutputRef。未计算的厚度/Z 不猜值，未启用打印层时不投影为分层模式。
+- `creation-intents.mjs` 把原 `run(action,args)` 的 paint/height/clear_paint/swatch/delete_swatch/object/new_object 转为 V4 同一事务；批量上色及新建色卡只产生一次撤销，过期视图和预览视图不能提交正式命令。尚未适配的动作显式拒绝，不删按钮作为替代。
+- 这些模块目前已通过真实求值→只读视图→上色事务→重新求值的单元闭环，**尚未接替原工作区的所有运行时读写**。DOM 接线与剩余命令是下一阶段，不能把模块测试算为原 UI 的 V4 验收。
+
 默认只有部件/组与按需线/区，直接上色和调厚度；高级构造随重复、引用等任务展开；修复失效保持原部件上下文。
 
 ## 在整条管线中的位置

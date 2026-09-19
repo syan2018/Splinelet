@@ -4,11 +4,13 @@
 
 - 包负责人 / 验收者：未分配
 - 建议角色：编辑运行时负责人；主代理复核并发
-- 执行状态：T12/T14 模块已实现；T13 普通/分区/挖孔命令已接线，T20 候选 API 已接线
+- 执行状态：T12/T14 模块已实现；T13 与 T20 的纯命令/API 有验证，简化候选 UI 入口已撤销，原工作区接线尚未完成
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
 - 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
+
+2026-09-19 接入进展：`editing/commands/resources.mjs` 提供色卡增改删、部件默认色、打印层/零件创建重命名删除及切片模板更新，统一经 authoring 与 API 5.0 的 `authoring.run` 分派。删除仍被引用的资源必须给出明确替代 ID；引用替换与删除在同一撤销中完成，不凭列表顺序挑替代项。`editor/creation-intents.mjs` 将原创作面板的颜色、厚度、清除上色、色卡、基本对象动作翻译为这些命令，使用显示视图的 epoch/revision 验证，既不接收可写旧 Project，也不重跑旧工程导入。验证入口是 `test-v4-resource-commands.mjs`、`test-v4-creation-intents.mjs` 与 `test-v4-workspace-view.mjs`；未覆盖的角色、构造编辑与原工作区接线仍待完成。
 
 ## 背景与要交付的改变
 
