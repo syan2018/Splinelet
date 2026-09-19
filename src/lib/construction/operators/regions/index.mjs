@@ -243,12 +243,99 @@ export const pathOperator = {
   inputPorts: { input: { domain: 'curves', min: 1, max: 1 } },
   outputPorts: { regions: { domain: 'regions' } },
   validateParams: (params) =>
-    ['even-odd', 'non-zero'].includes(params?.rule || 'even-odd') ||
-    'Path rule 无效',
+    (['even-odd', 'non-zero'].includes(params?.rule || 'even-odd') &&
+      (params?.closure === undefined || params.closure === 'straight') &&
+      (params?.closure !== 'straight' ||
+        (params.rule || 'even-odd') === 'even-odd') &&
+      (params?.repair === undefined || typeof params.repair === 'boolean')) ||
+    'Path rule、closure 或 repair 无效',
   evaluate: ({ document, ownerNodeId, operator, inputs }) => {
     const source = input(inputs);
     if (source.status !== 'ready' && source.status !== 'empty')
       return { regions: { ...source, domain: 'regions' } };
+    if (operator.params.closure === 'straight') {
+      try {
+        if ((operator.params.rule || 'even-odd') !== 'even-odd')
+          throw Error('直线封口当前需要 even-odd 边界规则');
+        const curves = source.value.curves;
+        if (!curves.length)
+          return {
+            regions: stageRegions(
+              regionSet(ownerNodeId, []),
+              ownerNodeId,
+              clone(source.diagnostics || []),
+              source.dependencies,
+            ),
+          };
+        if (curves.length !== 1 || source.value.junctions?.length)
+          throw Error('直线封口需要一条连续路径，不接受多路径或额外连接');
+        const curve = curves[0];
+        if (!curve.edges.length) throw Error('直线封口路径没有边');
+        const tolerance = document.geometrySettings.joinToleranceMM ?? 0.001;
+        const ring = [];
+        for (const [index, edge] of curve.edges.entries()) {
+          const previous = curve.edges[index - 1];
+          if (
+            previous &&
+            (previous.endKey !== edge.startKey ||
+              gap(previous.cubic[3], edge.cubic[0]) > tolerance)
+          )
+            throw Error('直线封口不能修补路径内部的断缝');
+          ring.push(
+            ...sampleCubic(
+              edge.cubic,
+              document.geometrySettings.curveToleranceMM,
+            ).slice(index ? 1 : 0),
+          );
+        }
+        const from = ring.at(-1).slice(),
+          to = ring[0].slice();
+        if (gap(from, to) > 0) ring.push(to.slice());
+        const warnings = [];
+        const geometry = validateArea(
+          readGeometry({ type: 'Polygon', coordinates: [ring] }),
+          operator.params.repair === true,
+          warnings,
+        );
+        const tokens = curveTokens(curve);
+        return {
+          regions: stageRegions(
+            regionSet(
+              ownerNodeId,
+              [
+                output(
+                  ownerNodeId,
+                  operator.id,
+                  text(['path', 'straight', curve.key]),
+                  tokens,
+                  geometry,
+                ),
+              ],
+              [
+                {
+                  operatorId: operator.id,
+                  kind: 'path',
+                  closure: 'straight',
+                  boundaryConnections: [{ kind: 'explicit-line', from, to }],
+                },
+              ],
+            ),
+            ownerNodeId,
+            [
+              ...clone(source.diagnostics || []),
+              ...warnings.map((message) => ({
+                severity: 'warning',
+                code: 'repaired-self-intersection',
+                message,
+              })),
+            ],
+            source.dependencies,
+          ),
+        };
+      } catch (error) {
+        return { regions: blocked('path-closure-blocked', error.message) };
+      }
+    }
     return {
       regions: fillCurves(source.value, {
         ownerNodeId,

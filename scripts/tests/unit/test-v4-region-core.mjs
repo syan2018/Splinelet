@@ -4,6 +4,7 @@ import {
   betweenOperator,
   legacyRecipeCapabilities,
   offsetOperator,
+  pathOperator,
   partitionOperator,
   regionArrayOperator,
   regionReferenceOperator,
@@ -400,6 +401,89 @@ assert.deepEqual(
   connectedInset.value.regions[0].ref,
 );
 assert.equal(legacyRecipeCapabilities.partition.status, 'supported');
+const openBoundary = (points) => ({
+  ...structuredClone(curves),
+  value: {
+    ...structuredClone(curves.value),
+    curves: [
+      {
+        key: 'open-boundary',
+        edges: points.slice(1).map((end, index) => ({
+          key: `side-${index}`,
+          startKey: `point-${index}`,
+          endKey: `point-${index + 1}`,
+          cubic: [points[index], points[index], end, end],
+          source: { sketchId: 'source', id: `side-${index}` },
+          instances: [],
+        })),
+      },
+    ],
+  },
+});
+const closureInput = openBoundary([
+  [0, 0],
+  [10, 0],
+  [10, 10],
+]);
+const untouchedClosureInput = structuredClone(closureInput);
+const closeBoundary = (input, repair = false) =>
+  invoke(
+    pathOperator,
+    { id: 'close-boundary', params: { closure: 'straight', repair } },
+    { input: [input] },
+  );
+const closedBoundary = closeBoundary(closureInput);
+assert.equal(closedBoundary.status, 'ready');
+assert.equal(
+  readGeometry(closedBoundary.value.regions[0].geometry).getArea(),
+  50,
+);
+assert.deepEqual(
+  closureInput,
+  untouchedClosureInput,
+  'closing never creates writable marker geometry',
+);
+const movedBoundary = closeBoundary(
+  openBoundary([
+    [0, 0],
+    [10, 0],
+    [10, 20],
+  ]),
+);
+assert.equal(
+  readGeometry(movedBoundary.value.regions[0].geometry).getArea(),
+  100,
+);
+assert.deepEqual(
+  movedBoundary.value.regions[0].ref,
+  closedBoundary.value.regions[0].ref,
+);
+assert.deepEqual(movedBoundary.value.provenance[0].boundaryConnections, [
+  { kind: 'explicit-line', from: [10, 20], to: [0, 0] },
+]);
+assert.equal(
+  invoke(pathOperator, { id: 'strict', params: {} }, { input: [closureInput] })
+    .status,
+  'blocked',
+  'ordinary Fill remains strict',
+);
+const internalGap = structuredClone(closureInput);
+internalGap.value.curves[0].edges[1].startKey = 'different-vertex';
+assert.equal(closeBoundary(internalGap).status, 'blocked');
+const bowtie = openBoundary([
+  [0, 0],
+  [10, 10],
+  [0, 10],
+  [10, 0],
+]);
+assert.equal(closeBoundary(bowtie).status, 'blocked');
+assert.equal(
+  closeBoundary(bowtie, true).value.regions[0].geometry.type,
+  'MultiPolygon',
+);
+const tooMany = structuredClone(closureInput);
+tooMany.value.curves.push(structuredClone(tooMany.value.curves[0]));
+assert.equal(closeBoundary(tooMany).status, 'blocked');
 console.log(
   'PASS: V4 region core preserves selected scope, references, explicit operations and migration capability limits.',
 );
