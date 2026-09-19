@@ -308,3 +308,9 @@ outputs/v4-qa/check-all-path-replacement-2026-09-20.log 记录 pnpm check:all �
 original-spline-batch-final-2026-09-20.log 为 PASS：原界面真实 spline_apply 混合创建、准确控制柄回读、撤销/快捷键重做及规范副本保存回读通过，Sandrone/原样式及其他原编辑旅程继续通过。首轮测试错误调用不存在的 redo API，改为原重做快捷键后重跑成功。
 
 check-all-spline-batch-2026-09-20.log 记录 pnpm check:all 退出 0，涵盖 114 项单元测试、类型、lint、格式、Rust 与双端构建。最后补充仅元数据分支及关系驱动改名测试后，相关单元、类型、全库 lint/格式与双端生产构建重新通过（build-spline-batch-final-2026-09-20.log）。默认入口、工程宽度及其余高级建模接线仍未签收。
+
+## 2026-09-20 承托外形派生步骤
+
+原承托按部件先合并区域再移除内部孔洞，不能逐分区独立去孔。新增 region-outline 规范算子，输入排序稳定，保留断开外形、源数据及单一结果身份，提供复制和坐标重定位钩子。单元检查单环孔洞、多个分区共同围孔、断开区域、输入不变、顺序不变、空/阻塞传播，并经注册的构造图验证源顶点改变后面积重新计算且结果引用不变。承托预备命令、厚度/叠放/打印层与原按钮确认仍未接完。
+
+outputs/v4-qa/check-all-region-outline-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 115 项单元测试、类型、lint、格式、Rust 检查和 Web/桌面前端生产构建。

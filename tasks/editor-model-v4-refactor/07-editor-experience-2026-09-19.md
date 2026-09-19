@@ -355,3 +355,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 精确源替换命令：replace-path-geometry 经 authoring/API 动作表及捕获 path-intent 接入。世界 cubic 换算到 owner 局部坐标；相同有向拓扑保留 Vertex/Edge 身份，开闭或节点数变化分配新内部身份，但 Path/owner/Program 不变。被替换的细粒度消费者保留为可修复引用，返回 removedRefs；共享几何、受关系驱动源及失效拓扑拒绝覆盖。单元覆盖 pose、反向 Edge、开闭/单点、模式、过期 intent、批量中途失败与一次撤销。原 spline_apply 批量适配仍待接线，尚未签收该用户旅程。
 
 2026-09-20 原 spline_apply 批量接线：source-runtime.commandSplines 捕获只读源视图，以共用提案解析器编译一次规范事务。已有路径经 replace-path-geometry 和元数据命令，新路径按 boundary/guide/hole 进入对应构造；draw-guide 保持区域输出并隔离隐式 Fill 成员，draw-hole 返回实际创建的源 PathRef。结果路径 ID 来自本次执行，包含无变化提交；原根 API 保留参数及返回形状。单元覆盖角色、矩阵、一次撤销、过期/跨所属/锁定中途失败；原浏览器验收另见 QA。
+
+2026-09-20 承托管线补齐中：原 creation_base 使用所选部件区域合并后的外环（包括去掉由多个分区共同围成的孔洞），再进行 union/offset；不能按单个区域去孔替代。新增 region-outline 规范算子，显式输入 RegionSet，保留断开外形，稳定排序输入并保留单一派生输出身份，支持复制/坐标重定位和重新求值。原承托按钮的预备命令、厚度/叠放/打印层与确认接线仍待完成。

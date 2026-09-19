@@ -257,6 +257,64 @@ export const regionReferenceOperator = {
   copy: (operator) => clone(operator),
 };
 
+/** Combine before removing holes: partitions can jointly enclose a hole. */
+export const regionOutlineOperator = {
+  type: 'region-outline',
+  inputPorts: { input: { domain: 'regions', min: 1, max: 1 } },
+  outputPorts: { regions: { domain: 'regions' } },
+  validateParams: (params) =>
+    Object.keys(params || {}).length === 0 || 'region-outline 不接受 params',
+  rebase: (operator) => clone(operator),
+  copy: (operator) => clone(operator),
+  evaluate: ({ ownerNodeId, operator, inputs }) => {
+    const source = input(inputs);
+    if (!['ready', 'empty'].includes(source.status)) return { regions: source };
+    try {
+      const members = [...source.value.regions].sort((a, b) =>
+        compare(outputIdentity(a.ref), outputIdentity(b.ref)),
+      );
+      const combined = members.reduce(
+        (area, region) =>
+          area
+            ? area.union(readGeometry(region.geometry))
+            : readGeometry(region.geometry),
+        null,
+      );
+      const outlines = combined
+        ? polygonParts(combined).map((part) =>
+            part.getFactory().createPolygon(part.getExteriorRing()),
+          )
+        : [];
+      const outline = outlines.reduce(
+        (area, part) => (area ? area.union(part) : part),
+        null,
+      );
+      const regions =
+        outline && !outline.isEmpty()
+          ? [
+              output(
+                ownerNodeId,
+                operator.id,
+                'outline',
+                lineage(members),
+                outline,
+              ),
+            ]
+          : [];
+      return {
+        regions: stageRegions(
+          regionSet(ownerNodeId, regions),
+          ownerNodeId,
+          clone(source.diagnostics || []),
+          source.dependencies,
+        ),
+      };
+    } catch (error) {
+      return { regions: blocked('region-outline-blocked', error.message) };
+    }
+  },
+};
+
 export const pathOperator = {
   type: 'path',
   inputPorts: { input: { domain: 'curves', min: 1, max: 1 } },
@@ -923,6 +981,7 @@ export const legacyRecipeCapabilities = Object.freeze({
 export const regionOperatorSpecifications = [
   regionCollectOperator,
   regionReferenceOperator,
+  regionOutlineOperator,
   pathOperator,
   strokeOperator,
   betweenOperator,
