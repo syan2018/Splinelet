@@ -118,6 +118,63 @@ assert.deepEqual(
 );
 
 const pathRef = current.source.identities.byId[shown.identity.pathId];
+shown = current.source.paths[0];
+dispatch(
+  createSourceIntent(
+    {
+      kind: 'move-handle',
+      pathId: shown.id,
+      identityId: shown.identity.handleIds[0][1],
+      pixelPoint: { x: shown.anchors[1].x - 16, y: shown.anchors[1].y + 8 },
+    },
+    current,
+  ),
+);
+current = view();
+dispatch(
+  createSourceIntent(
+    {
+      kind: 'set-handle-mode',
+      pathId: shown.id,
+      identityId: shown.identity.anchorIds[1],
+      mode: 'smooth',
+    },
+    current,
+  ),
+);
+current = view();
+shown = current.source.paths[0];
+assert.equal(shown.nodeModes[1], 'smooth');
+for (const [curveIndex, pointIndex, oppositeCurve, oppositePoint] of [
+  [1, 1, 0, 2],
+  [0, 2, 1, 1],
+]) {
+  current = view();
+  shown = current.source.paths[0];
+  const anchor = shown.anchors[1],
+    previousOpposite = shown.curves[oppositeCurve][oppositePoint];
+  const length = Math.hypot(
+    previousOpposite.x - anchor.x,
+    previousOpposite.y - anchor.y,
+  );
+  const pixelPoint = { x: anchor.x + 19, y: anchor.y + 31 };
+  dispatch(
+    createSourceIntent(
+      {
+        kind: 'move-handle',
+        pathId: shown.id,
+        identityId: shown.identity.handleIds[curveIndex][pointIndex - 1],
+        pixelPoint,
+      },
+      current,
+    ),
+  );
+  const after = view().source.paths[0];
+  const opposite = after.curves[oppositeCurve][oppositePoint];
+  close(Math.hypot(opposite.x - anchor.x, opposite.y - anchor.y), length);
+  close((opposite.x - anchor.x) * 31 - (opposite.y - anchor.y) * 19, 0);
+  assert.ok((opposite.x - anchor.x) * 19 + (opposite.y - anchor.y) * 31 < 0);
+}
 dispatch(
   createSourceCommand({
     kind: 'reverse-path',

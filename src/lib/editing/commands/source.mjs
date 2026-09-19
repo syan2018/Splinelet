@@ -7,6 +7,8 @@ import { validateDocument } from '../../document/schema.mjs';
 export const SOURCE_ACTIONS = Object.freeze([
   'set-vertex',
   'set-handle',
+  'move-path-handle',
+  'set-path-handle-mode',
   'split-edge',
   'remove-edge',
   'reverse-path',

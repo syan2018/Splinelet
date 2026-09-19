@@ -11,7 +11,11 @@ import { resolveRelation } from '../geometry/relations.mjs';
 export function createSourceIntent(request, displayed) {
   const action = structuredClone(request);
   const view = structuredClone(displayed);
-  if (!['move-anchor', 'move-handle', 'split-span'].includes(action?.kind))
+  if (
+    !['move-anchor', 'move-handle', 'split-span', 'set-handle-mode'].includes(
+      action?.kind,
+    )
+  )
     throw Error('源编辑动作尚未适配');
   if (
     typeof view?.epoch !== 'string' ||
@@ -25,6 +29,7 @@ export function createSourceIntent(request, displayed) {
     'move-anchor': 'vertex',
     'move-handle': 'edge-end',
     'split-span': 'edge',
+    'set-handle-mode': 'vertex',
   }[action.kind];
   if (!target || target.kind !== kind) throw Error('源选区身份已失效');
   return (document, context) => {
@@ -32,6 +37,29 @@ export function createSourceIntent(request, displayed) {
       throw Error('源视图已失效，请重新选择');
     const sketch = document.sketches[target.sketchId];
     if (!sketch) throw Error('线条来源不存在');
+    const selectedPath = () => {
+      const paths = view.source.paths.filter(
+        (path) =>
+          (!action.pathId || path.id === action.pathId) &&
+          (action.kind === 'set-handle-mode'
+            ? path.identity.anchorIds
+            : path.identity.handleIds.flat()
+          ).includes(action.identityId),
+      );
+      if (paths.length !== 1) throw Error('请明确选择控制柄所属路径');
+      const ref = view.source.identities.byId[paths[0].identity.pathId];
+      if (ref?.sketchId !== sketch.id || !sketch.paths[ref.id])
+        throw Error('路径来源已失效');
+      return ref.id;
+    };
+    if (action.kind === 'set-handle-mode')
+      return createSourceCommand({
+        kind: 'set-path-handle-mode',
+        sketchId: sketch.id,
+        pathId: selectedPath(),
+        vertexId: target.id,
+        mode: action.mode,
+      })(document, context);
     if (action.kind === 'split-span') {
       const path = view.source.paths.find((item) => item.id === action.pathId);
       const index = path?.identity.edgeIds.indexOf(action.identityId) ?? -1;
@@ -78,8 +106,9 @@ export function createSourceIntent(request, displayed) {
     }
     if (!anchor) throw Error('控制柄端点不存在');
     return createSourceCommand({
-      kind: 'set-handle',
+      kind: 'move-path-handle',
       sketchId: sketch.id,
+      pathId: selectedPath(),
       edgeId: edge.id,
       end: target.end,
       vector: [local[0] - anchor[0], local[1] - anchor[1]],

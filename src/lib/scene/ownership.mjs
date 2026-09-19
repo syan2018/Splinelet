@@ -183,6 +183,16 @@ export function copyNodes(
           ...use,
           edgeId: mapped(use.edgeId),
         })),
+        ...(path.handleModes
+          ? {
+              handleModes: Object.fromEntries(
+                Object.entries(path.handleModes).map(([vertexId, mode]) => [
+                  mapped(vertexId),
+                  mode,
+                ]),
+              ),
+            }
+          : {}),
       };
     next.sketches[sketch.id] = sketch;
   }

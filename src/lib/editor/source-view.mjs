@@ -282,6 +282,12 @@ const projectPath = (document, sketch, pathValue, sourceFrame, identities) => {
   const anchorVertexIds = closed
     ? orientedVertices.slice(0, -1)
     : orientedVertices;
+  anchorVertexIds.forEach((vertexId, index) => {
+    nodeModes[index] = mergeMode(
+      nodeModes[index],
+      pathValue.handleModes?.[vertexId],
+    );
+  });
   const anchors = closed
     ? curves.map((cubic) => cubic[0])
     : [curves[0][0], ...curves.map((cubic) => cubic[3])];

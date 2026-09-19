@@ -5,6 +5,13 @@ import {
   transformVector,
 } from '../scene/transforms.mjs';
 import { reversePathUses } from './sketch.mjs';
+import {
+  cleanPathHandleModes,
+  movePathHandle,
+  pathHandleMode,
+  setPathHandleMode,
+  setStoredPathHandleMode,
+} from './path-handle-modes.mjs';
 
 const finiteVec2 = (value) =>
   Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
@@ -117,6 +124,23 @@ export function editSketch(document, edit, options = {}) {
     const { edge, key } = requireFreeHandle(sketch, edit.edgeId, edit.end);
     edge[key].vector = [...edit.vector];
     result = changed(sketch.id, [edgeEndRef(sketch.id, edge.id, edit.end)]);
+  } else if (edit.kind === 'move-path-handle') {
+    const moved = movePathHandle(sketch, edit);
+    result = changed(sketch.id, [
+      edgeEndRef(sketch.id, edit.edgeId, edit.end),
+      ...(moved.opposite &&
+      pathHandleMode(moved.path, moved.vertexId) !== 'corner'
+        ? [edgeEndRef(sketch.id, moved.opposite.edgeId, moved.opposite.end)]
+        : []),
+    ]);
+  } else if (edit.kind === 'set-path-handle-mode') {
+    const aligned = setPathHandleMode(sketch, edit);
+    result = changed(sketch.id, [
+      ref('path', sketch.id, aligned.path.id),
+      ...aligned.changedHandles.map((item) =>
+        edgeEndRef(sketch.id, item.edgeId, item.end),
+      ),
+    ]);
   } else if (edit.kind === 'transform') {
     const matrix = assertTransform(edit.matrix);
     const selected = new Set(edit.vertexIds || Object.keys(sketch.vertices));
@@ -157,6 +181,7 @@ export function editSketch(document, edit, options = {}) {
       position: { kind: 'free', value: split.point },
     };
     const oldEnd = edge.endVertexId;
+    const oldStart = edge.startVertexId;
     edge.endVertexId = vertexId;
     edge.startHandle = {
       kind: 'free',
@@ -196,8 +221,13 @@ export function editSketch(document, edit, options = {}) {
           );
       }
       path.edges = uses;
-      if (uses.some((use) => use.edgeId === secondEdgeId))
+      if (uses.some((use) => use.edgeId === secondEdgeId)) {
+        setStoredPathHandleMode(path, vertexId, 'smooth');
+        for (const adjacentVertexId of [oldStart, oldEnd])
+          if (pathHandleMode(path, adjacentVertexId) === 'symmetric')
+            setStoredPathHandleMode(path, adjacentVertexId, 'smooth');
         changedPaths.push(ref('path', sketch.id, path.id));
+      }
     }
     result = changed(sketch.id, [
       ref('vertex', sketch.id, vertexId),
@@ -213,11 +243,20 @@ export function editSketch(document, edit, options = {}) {
   } else if (edit.kind === 'remove-edge') {
     const edge = sketch.edges[edit.edgeId];
     if (!edge) throw Error('Edge 不存在');
+    const changedPaths = [];
     if (edit.updatePaths)
-      for (const path of Object.values(sketch.paths))
+      for (const path of Object.values(sketch.paths)) {
+        const previousLength = path.edges.length;
         path.edges = path.edges.filter((use) => use.edgeId !== edge.id);
+        if (path.edges.length !== previousLength) {
+          cleanPathHandleModes(sketch, path);
+          changedPaths.push(ref('path', sketch.id, path.id));
+        }
+      }
     delete sketch.edges[edge.id];
-    result = changed(sketch.id, [], [ref('edge', sketch.id, edge.id)]);
+    result = changed(sketch.id, changedPaths, [
+      ref('edge', sketch.id, edge.id),
+    ]);
   } else if (edit.kind === 'add-vertex') {
     const vertexId = edit.vertexId || newId(factory, ids, '新 Vertex');
     if (sketch.vertices[vertexId] || !finiteVec2(edit.value))

@@ -337,7 +337,9 @@ const validateSketch = (key, sketch, seen) => {
     table(sketch.paths, 'Sketch.paths'),
   )) {
     recordId(pathId, path, 'Path', seen);
-    exactKeys(path, ['id', 'name', 'edges', 'visible'], 'Path');
+    exactKeys(path, ['id', 'name', 'edges', 'visible'], 'Path', [
+      'handleModes',
+    ]);
     text(path.name, 'Path.name');
     if (!Array.isArray(path.edges)) fail('Path.edges 无效');
     for (const use of path.edges) {
@@ -346,6 +348,14 @@ const validateSketch = (key, sketch, seen) => {
       bool(use.reversed, 'Path.edges[].reversed');
     }
     bool(path.visible, 'Path.visible');
+    if (path.handleModes !== undefined) {
+      const modes = table(path.handleModes, 'Path.handleModes');
+      for (const [vertexId, mode] of Object.entries(modes)) {
+        id(vertexId, 'Path.handleModes VertexId');
+        if (!['corner', 'smooth', 'symmetric'].includes(mode))
+          fail('Path.handleModes 模式无效');
+      }
+    }
   }
 };
 const validateDatum = (key, datum, seen) => {
@@ -1111,7 +1121,7 @@ export function inspectDocumentReferences(document) {
             'Handle relationId 不存在',
           );
     }
-    for (const path of Object.values(sketch.paths))
+    for (const path of Object.values(sketch.paths)) {
       for (const use of path.edges)
         if (!sketch.edges[use.edgeId])
           softReference(
@@ -1120,6 +1130,30 @@ export function inspectDocumentReferences(document) {
             { kind: 'path', sketchId: sketch.id, id: path.id },
             'Path edgeId 不存在',
           );
+      const pathVertexIds = new Set(
+        path.edges.flatMap((use) => {
+          const edge = sketch.edges[use.edgeId];
+          return edge ? [edge.startVertexId, edge.endVertexId] : [];
+        }),
+      );
+      for (const vertexId of Object.keys(path.handleModes || {})) {
+        const pathRef = { kind: 'path', sketchId: sketch.id, id: path.id };
+        if (!sketch.vertices[vertexId])
+          softReference(
+            diagnostics,
+            'unresolved-reference',
+            pathRef,
+            `Path handleModes Vertex 不存在：${vertexId}`,
+          );
+        else if (!pathVertexIds.has(vertexId))
+          softReference(
+            diagnostics,
+            'invalid-reference',
+            pathRef,
+            `Path handleModes Vertex 不属于路径：${vertexId}`,
+          );
+      }
+    }
   }
   for (const datum of Object.values(document.datums))
     if (datum.ownerNodeId !== null && !document.nodes[datum.ownerNodeId])
