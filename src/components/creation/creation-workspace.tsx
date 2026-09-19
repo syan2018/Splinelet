@@ -220,6 +220,11 @@ type CreationApi = {
   focus: (id: string) => void;
   select_paths: (ids: string[]) => void;
   select_cells: (keys: string[]) => void;
+  prepare_move: (target?: {
+    pathId?: string;
+    objectId?: string;
+    toggle?: boolean;
+  }) => { pathIds: string[]; label: string };
   new_path: (path: { id: string }) => CreationDocument | undefined;
   show_output: (partId?: string) => void;
   show_project: () => void;
@@ -254,6 +259,10 @@ type Props = {
   onSelectPaths: (ids: string[]) => void;
   onSelectionKind: (kind: 'object' | 'path' | 'cell') => void;
   onCanvasPointerDown: (e: React.PointerEvent) => void;
+  onMoveObject: (
+    e: React.PointerEvent,
+    target: { pathId?: string; objectId?: string },
+  ) => void;
   onFramePaths: (ids: string[], options?: { force?: boolean }) => void;
   sourceInspector: ReactNode;
   displaySettings: ReactNode;
@@ -398,13 +407,14 @@ export default function CreationWorkspace(p: Props) {
       if (
         next.ids.length &&
         next.kind !== 'path' &&
-        !['select', 'paint', 'height'].includes(ref.current.tool)
+        !['select', 'paint', 'height', 'move'].includes(ref.current.tool)
       )
         p.onTool('select');
     },
   });
   const {
     selection,
+    commit: commitSelection,
     objects,
     cellKeys,
     scope,
@@ -413,6 +423,10 @@ export default function CreationWorkspace(p: Props) {
     expandedCells,
     setExpandedCells,
   } = selectionState;
+  useEffect(() => {
+    if (p.tool === 'move' && selection.kind !== 'object')
+      commitSelection({ kind: 'object', ids: objects });
+  }, [p.tool, selection.kind, objects, commitSelection]);
   const canEditModifiers = selection.kind !== 'path' && objects.length === 1;
   const tab = ['object', 'lines', 'modifiers'].includes(requestedPage)
     ? !selection.ids.length
@@ -945,6 +959,38 @@ export default function CreationWorkspace(p: Props) {
       },
       focus: (id: string) => selectObject(id, {}, true),
       select_paths: selectionState.selectPaths,
+      prepare_move: (target) => {
+        const hit =
+          target?.objectId ||
+          (target?.pathId
+            ? doc.objects.find((o) => o.pathIds.includes(target.pathId!))?.id
+            : undefined);
+        const ids = hit
+          ? target?.toggle
+            ? objects.includes(hit)
+              ? objects.filter((id) => id !== hit)
+              : [...objects, hit]
+            : objects.includes(hit)
+              ? objects
+              : [hit]
+          : target
+            ? []
+            : objects;
+        const selected = doc.objects.filter(
+          (o) => ids.includes(o.id) && o.visible,
+        );
+        selectionState.commit({
+          kind: 'object',
+          ids: selected.map((o) => o.id),
+        });
+        return {
+          pathIds: [...new Set(selected.flatMap((o) => o.pathIds))],
+          label:
+            selected.length === 1
+              ? selected[0].name
+              : `${selected.length} 个部件`,
+        };
+      },
       select_cells: (keys: string[]) => {
         if (keys.some((k) => !sceneRef.current?.cells.some((c) => c.key === k)))
           throw Error('选区已变化');
@@ -1151,19 +1197,21 @@ export default function CreationWorkspace(p: Props) {
                   style={{
                     pointerEvents:
                       !basePreview &&
-                      ['select', 'paint', 'height'].includes(p.tool)
+                      ['select', 'paint', 'height', 'move'].includes(p.tool)
                         ? 'all'
                         : 'none',
                   }}
                   onPointerDown={(e) => {
                     // This SVG layer is a React portal. Its events do not bubble
                     // through Home's stage handlers even though the DOM is inside it.
-                    if (e.button === 1 || space.current) {
+                    if (e.button === 1 || e.button === 2 || space.current) {
                       p.onCanvasPointerDown(e);
                       return;
                     }
                     if (e.button !== 0 || space.current) return;
-                    if (p.tool === 'select') {
+                    if (p.tool === 'move') {
+                      p.onMoveObject(e, { objectId: o.id });
+                    } else if (p.tool === 'select') {
                       e.preventDefault();
                       e.stopPropagation();
                       selectionState.choose('cell', c.key, {
@@ -1183,6 +1231,7 @@ export default function CreationWorkspace(p: Props) {
                       e.stopPropagation();
                     }
                   }}
+                  onContextMenu={(e) => e.preventDefault()}
                   onPointerEnter={() => {
                     if (paintDrag.current) {
                       paintDrag.current.keys.add(c.key);
@@ -1871,6 +1920,7 @@ export default function CreationWorkspace(p: Props) {
                         paint: '上色 · 使用当前画笔色',
                         height: '高低 · 调整选中区域',
                         pan: '平移 · 只移动视图',
+                        move: '移动对象 · 整体移动选中部件',
                       }[p.tool] || p.tool
                     : selection.ids.length
                       ? selection.kind === 'path'
@@ -2031,7 +2081,9 @@ export default function CreationWorkspace(p: Props) {
                           ? '点击区域上色；拖过多个区域完成一笔。画笔色在画布底部选择。'
                           : p.tool === 'height'
                             ? '选择区域后使用高度柄，或在选区属性中输入厚度。'
-                            : '拖动画布移动视图；空格或中键可临时平移。'}
+                            : p.tool === 'move'
+                              ? '拖动选中部件的面或线，整体移动其所有源线；Shift 限制方向。右键、空格或中键拖动只平移视图。'
+                              : '右键、空格或中键拖动画布移动视图。'}
                     </p>
                   </div>
                 ))}

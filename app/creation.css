@@ -356,6 +356,10 @@
 .creation-stage.tool-select .creation-cell:hover {
   cursor: pointer;
 }
+.creation-stage.tool-move .creation-cell:hover,
+.creation-stage.tool-move .source-path-layer {
+  cursor: move;
+}
 .creation-object-row.contains-selection {
   box-shadow: inset 2px 0 #abc68c;
   background: #c6ed9608;

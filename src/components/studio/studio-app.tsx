@@ -11,7 +11,7 @@ import {
 import {
   PenTool,
   MousePointer2,
-  Hand,
+  Move,
   Download,
   Spline,
   Plus,
@@ -81,6 +81,7 @@ import type {
 import {
   pickSelection,
   movePaths,
+  translatePaths,
   translateNodes,
   deleteNodes,
   inBox,
@@ -230,6 +231,13 @@ type DragBase = {
 type DragGesture = DragBase &
   (
     | { kind: 'pan'; view: { x: number; y: number; s: number } }
+    | {
+        kind: 'objects';
+        ids: string[];
+        label: string;
+        base: Project;
+        origin: Point;
+      }
     | {
         kind: 'box';
         origin: Point;
@@ -455,7 +463,7 @@ export default function StudioApp() {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
-    if (['trace', 'edit'].includes(next)) setCreationView('flat');
+    if (['trace', 'edit', 'move'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
     if (next !== 'trace') finish();
     setTool(next);
@@ -465,6 +473,9 @@ export default function StudioApp() {
       creationApi.current?.select_paths(ar.current ? [ar.current] : []);
     }
     if (next === 'select') {
+      setSelection(null);
+    }
+    if (next === 'move') {
       setSelection(null);
     }
     if (['trace', 'edit'].includes(next)) creationApi.current?.show_tool();
@@ -480,7 +491,9 @@ export default function StudioApp() {
               ? '点击上色 · 平面中按住扫过多个区域 · 一笔一次撤销'
               : next === 'height'
                 ? '选择局部或整个部件 · 拖动高度柄或输入毫米数值'
-                : '拖动画布平移',
+                : next === 'move'
+                  ? '移动对象 · 拖动部件整体移动 · 右键拖动只平移视图'
+                  : '右键、空格或中键拖动平移视图',
     );
   };
   const clearSelection = () => {
@@ -1521,9 +1534,25 @@ export default function StudioApp() {
     setSnapFeedback(null);
     setStatus('已取消拖动，恢复原位置');
   };
+  const handleCanvasContextMenu = useEffectEvent((event: MouseEvent) => {
+    event.preventDefault();
+    // Capture targets the stage, including drags begun on portal-rendered faces.
+    // Some browsers dispatch contextmenu before the right pointer is released.
+    if (drag.current && drag.current.button !== 2) cancelGesture();
+  });
+  useEffect(() => {
+    if (!stageElement) return;
+    const contextMenu = (event: MouseEvent) => handleCanvasContextMenu(event);
+    stageElement.addEventListener('contextmenu', contextMenu);
+    return () => stageElement.removeEventListener('contextmenu', contextMenu);
+  }, [stageElement]);
   const selectCanvasPath = (e: React.PointerEvent, id: string) => {
     if (drag.current) return;
-    if (space.current || e.button === 1 || tool === 'pan') return;
+    if (space.current || e.button !== 0 || tool === 'pan') return;
+    if (tool === 'move') {
+      startObjectDrag(e, { pathId: id });
+      return;
+    }
     if (
       !['select', 'edit'].includes(tool) ||
       e.button !== 0 ||
@@ -1552,17 +1581,49 @@ export default function StudioApp() {
     creationApi.current?.select_paths(ids);
     setStatus('已选择线条 · 按 A 编辑节点 · 选择工具不会移动形状');
   };
+  const startObjectDrag = (
+    e: React.PointerEvent,
+    target: { pathId?: string; objectId?: string },
+  ) => {
+    if (drag.current || busyRef.current || tool !== 'move' || e.button !== 0)
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    stage.current?.focus({ preventScroll: true });
+    const toggle = e.shiftKey || e.ctrlKey || e.metaKey;
+    const selected = creationApi.current?.prepare_move({ ...target, toggle });
+    if (!selected?.pathIds.length) {
+      setStatus('此选区没有可移动的源线 · 请选中有源线的部件');
+      return;
+    }
+    if (toggle) return;
+    drag.current = {
+      kind: 'objects',
+      ids: selected.pathIds,
+      label: selected.label,
+      pointerId: e.pointerId,
+      button: e.button,
+      x: e.clientX,
+      y: e.clientY,
+      origin: coordinate(e),
+      base: pr.current,
+      moved: false,
+    };
+    setGesturing(true);
+    stage.current?.setPointerCapture(e.pointerId);
+    setStatus('移动 ' + selected.label + ' · Shift 限制方向 · Esc 取消');
+  };
   const pointerDown = (e: React.PointerEvent) => {
     if (drag.current) return;
     if (
-      e.button === 2 ||
-      (e.target as HTMLElement).closest?.('button,input,select')
+      (e.target as HTMLElement).closest?.('button,input,select') &&
+      (e.button === 0 || !(e.target as HTMLElement).closest('.drawing-canvas'))
     )
       return;
     updateModifiers(e);
     stage.current?.focus({ preventScroll: true });
     const p = coordinate(e);
-    if (tool === 'pan' || space.current || e.button === 1) {
+    if (tool === 'pan' || space.current || e.button === 1 || e.button === 2) {
       e.preventDefault();
       drag.current = {
         kind: 'pan',
@@ -1571,11 +1632,16 @@ export default function StudioApp() {
         x: e.clientX,
         y: e.clientY,
         view: vr.current,
+        moved: false,
       };
       stage.current?.setPointerCapture(e.pointerId);
       return;
     }
     if (busyRef.current || e.button !== 0 || mergeSource) return;
+    if (tool === 'move') {
+      setStatus('拖动部件的面或源线移动对象 · 空白处右键拖动平移视图');
+      return;
+    }
     if (['paint', 'height'].includes(tool)) {
       creationApi.current?.clear();
       return;
@@ -1608,7 +1674,8 @@ export default function StudioApp() {
     if (drag.current) {
       if (drag.current.pointerId !== e.pointerId) return;
       // A missed release must never turn later hovering into an edit.
-      const buttonMask = drag.current.button === 1 ? 4 : 1;
+      const buttonMask =
+        drag.current.button === 2 ? 2 : drag.current.button === 1 ? 4 : 1;
       if (!(e.buttons & buttonMask)) {
         cancelGesture();
         return;
@@ -1621,6 +1688,10 @@ export default function StudioApp() {
     if (drag.current) {
       const g = drag.current;
       if (g.kind === 'pan') {
+        if (!g.moved) {
+          if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < 4) return;
+          g.moved = true;
+        }
         setView({
           ...g.view,
           x: g.view.x + e.clientX - g.x,
@@ -1645,7 +1716,9 @@ export default function StudioApp() {
       const q: Project = {
         ...g.base,
         paths: g.base.paths.map((path: TracePath) =>
-          path.id === g.path ? cloneTraceValue(path) : path,
+          (g.kind === 'objects' ? g.ids.includes(path.id) : path.id === g.path)
+            ? cloneTraceValue(path)
+            : path,
         ),
       };
       let dx = p.x - g.origin.x,
@@ -1653,6 +1726,21 @@ export default function StudioApp() {
       if (e.shiftKey) {
         if (Math.abs(dx) > Math.abs(dy)) dy = 0;
         else dx = 0;
+      }
+      if (g.kind === 'objects') {
+        translatePaths(q, g.ids, dx, dy);
+        pr.current = q;
+        setProject(q);
+        setStatus(
+          '移动 ' +
+            g.label +
+            ' · X ' +
+            dx.toFixed(1) +
+            ' / Y ' +
+            dy.toFixed(1) +
+            ' px · Esc 取消',
+        );
+        return;
       }
       const snapped =
         g.kind === 'nodes' &&
@@ -1794,6 +1882,13 @@ export default function StudioApp() {
     setMarquee(null);
     setGesturing(false);
     setSnapFeedback(null);
+    if (g.kind === 'pan') {
+      if (g.button === 2 && !g.moved) {
+        if (tool === 'trace') finish();
+        else if (mergeSource) setMergeSource(null);
+      }
+      return;
+    }
     if (!g.moved && g.collapseNode !== undefined) {
       const path = pr.current.paths.find((p) => p.id === g.path);
       if (path) setSelection(nodeSelection(path, g.collapseNode));
@@ -1867,7 +1962,11 @@ export default function StudioApp() {
         setHistoryTick((t) => t + 1);
       }
       setStatus(
-        (g.kind === 'nodes' ? '节点' : '控制柄') + '已移动 · Ctrl+Z 撤销',
+        (g.kind === 'objects'
+          ? g.label
+          : g.kind === 'nodes'
+            ? '节点'
+            : '控制柄') + '已移动 · Ctrl+Z 撤销',
       );
     }
   };
@@ -1877,7 +1976,7 @@ export default function StudioApp() {
     point: number,
   ) => {
     if (drag.current) return;
-    if (space.current || e.button === 1 || tool === 'pan') return;
+    if (space.current || e.button !== 0 || tool === 'pan') return;
     e.stopPropagation();
     if (tool !== 'edit' || busyRef.current || e.button !== 0 || mergeSource)
       return;
@@ -2082,7 +2181,7 @@ export default function StudioApp() {
       } else if (e.key.toLowerCase() === 'p') chooseTool('trace');
       else if (e.key.toLowerCase() === 'v') chooseTool('select');
       else if (e.key.toLowerCase() === 'a') chooseTool('edit');
-      else if (e.key.toLowerCase() === 'h') chooseTool('pan');
+      else if (e.key.toLowerCase() === 'h') chooseTool('move');
       else if (e.key.toLowerCase() === 'e' && tool === 'edit') {
         const path = pr.current.paths.find((p) => p.id === ar.current);
         const index =
@@ -3569,7 +3668,7 @@ export default function StudioApp() {
               [PenTool, 'trace', '描线', 'P'],
               [PaintBucket, 'paint', '上色', ''],
               [ArrowUpFromLine, 'height', '高低', ''],
-              [Hand, 'pan', '平移', 'H'],
+              [Move, 'move', '移动对象', 'H'],
             ] as Array<[typeof MousePointer2, string, string, string]>
           ).map(([Icon, value, label, key]) => (
             <button
@@ -3625,11 +3724,13 @@ export default function StudioApp() {
                   ? '智能描线'
                   : tool === 'edit'
                     ? '节点与控制柄'
-                    : tool === 'pan'
-                      ? '空格 / 中键拖动画布 · 滚轮缩放'
-                      : tool === 'select'
-                        ? '选择 · 不移动形状'
-                        : '平移画布'}
+                    : tool === 'move'
+                      ? '移动对象 · 右键拖动平移视图'
+                      : tool === 'pan'
+                        ? '空格 / 中键拖动画布 · 滚轮缩放'
+                        : tool === 'select'
+                          ? '选择 · 不移动形状'
+                          : '平移画布'}
             </span>
             <span>
               {project.imageName} · {project.width} × {project.height}
@@ -3644,12 +3745,6 @@ export default function StudioApp() {
                 setPreview([]);
                 previewToken.current++;
               }
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              if (drag.current) cancelGesture();
-              else if (tool === 'trace') finish();
-              else if (mergeSource) setMergeSource(null);
             }}
             width="100%"
             height="100%"
@@ -3734,7 +3829,7 @@ export default function StudioApp() {
                       stroke="transparent"
                       strokeWidth={(tool === 'select' ? 3 : 14) / view.s}
                       style={{
-                        pointerEvents: ['edit', 'select'].includes(tool)
+                        pointerEvents: ['edit', 'select', 'move'].includes(tool)
                           ? 'stroke'
                           : 'none',
                       }}
@@ -4195,6 +4290,7 @@ export default function StudioApp() {
             onSelectionKind={setCreationSelectionKind}
             onFramePaths={framePaths}
             onCanvasPointerDown={pointerDown}
+            onMoveObject={startObjectDrag}
             sourceInspector={sourceInspector}
             onSourceExport={() => {
               setDialog('export');
@@ -4281,7 +4377,7 @@ export default function StudioApp() {
           coords.y < project.height
             ? ` · X ${Math.round(coords.x)} Y ${Math.round(coords.y)}`
             : ''}{' '}
-          · 滚轮缩放 · 空格平移
+          · 滚轮缩放 · 右键/空格平移
         </span>
       </footer>
       <Dialog
@@ -4502,7 +4598,8 @@ export default function StudioApp() {
               </p>
               <p>
                 <b>视图与保存</b>
-                　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
+                　H
+                移动整个部件；滚轮缩放；右键、空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
                 才保存工程文件，Ctrl+Shift+S 另存为。导出面板提供分色 SVG、3MF
                 和 Blender 实体与源线；精确贝塞尔 SVG 在“工程 → 导出 → 源曲线
                 SVG”导出。
