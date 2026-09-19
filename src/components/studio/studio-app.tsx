@@ -160,6 +160,8 @@ import {
 } from '@/lib/source-editor/node-actions.mjs';
 import { useStudioProject, type StudioHost } from '@/hooks/use-studio-project';
 import { useSourceDrag } from '@/hooks/use-source-drag';
+import { openProject } from '@/lib/persistence/open-project.mjs';
+import { encodeDocument } from '@/lib/document/codec.mjs';
 
 type ModelApi = {
   state: (input?: unknown) => unknown;
@@ -692,7 +694,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         } else if (!target) {
           const pickerWindow = window as FilePickerWindow;
           if (!pickerWindow.showSaveFilePicker) {
-            const { encodeDocument } = await import('@/lib/document/codec.mjs');
             download(
               encodeDocument(before.storage.document, {
                 assets: before.storage.assets,
@@ -860,6 +861,46 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     name: string,
     binding: ProjectBinding | null,
   ) => {
+    if (host) {
+      if (
+        busyRef.current ||
+        fileBusyRef.current ||
+        host.getSnapshot().editorState.previewId
+      )
+        throw Error('请先完成当前编辑或保存，再打开工程');
+      const opened = openProject({
+        bytes,
+        target:
+          binding?.kind === 'desktop'
+            ? { kind: 'desktop', path: binding.path }
+            : binding?.kind === 'web'
+              ? { kind: 'web', handle: binding.handle }
+              : null,
+      });
+      const next = host.open(opened, {
+        fileName: name,
+        newReliefDepthMM: host.getSnapshot().presentation.newReliefDepthMM,
+        ...(Object.keys(opened.document.references).length === 0
+          ? { frame: host.getSnapshot().presentation.frame }
+          : {}),
+      });
+      pr.current = next.project as Project;
+      finish();
+      setProposed(null);
+      setPendingRefit(null);
+      setActiveNow(null);
+      creationApi.current?.clear();
+      setSelection(null);
+      fitView();
+      setStatus(
+        opened.kind === 'legacy'
+          ? '旧工程已导入 · 保存时将创建 V4 工程副本'
+          : binding
+            ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
+            : '已打开工程副本 · Ctrl+S 选择保存位置',
+      );
+      return;
+    }
     const parsed = decodeProject(bytes) as Project;
     apiRef.current?.load_project({ project: parsed });
     if (binding?.kind === 'desktop') bindDesktopFile(binding.path);
@@ -3073,6 +3114,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       },
     };
   });
+  const loadDesktopProject = useEffectEvent(loadProjectFile);
   useEffect(() => {
     if (!isDesktopRuntime()) return;
     let alive = true;
@@ -3082,7 +3124,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       if (!path || !alive) return;
       try {
         const legacy = !path.toLowerCase().endsWith('.spl');
-        await loadProjectFile(
+        await loadDesktopProject(
           await desktopReadFile(path),
           projectNameFromPath(path),
           legacy
@@ -3732,12 +3774,13 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           onApi={() => setDialog('api')}
           onExample={() =>
             report(
-              fetch('/sandrone-example.spl')
-                .then(async (r) => {
-                  if (!r.ok) throw Error('示例读取失败');
-                  return decodeProject(new Uint8Array(await r.arrayBuffer()));
-                })
-                .then((p) => apiRef.current?.load_project({ project: p })),
+              fetch('/sandrone-example.spl').then(async (r) => {
+                if (!r.ok) throw Error('示例读取失败');
+                const bytes = new Uint8Array(await r.arrayBuffer());
+                if (host)
+                  return loadProjectFile(bytes, 'sandrone-example.spl', null);
+                apiRef.current?.load_project({ project: decodeProject(bytes) });
+              }),
             )
           }
         />

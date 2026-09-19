@@ -7,11 +7,10 @@ import { createStudioHost } from '../../../src/lib/editor/studio-host.mjs';
 import { createStudioFileWriter } from '../../../src/lib/platform/studio-file-writer.mjs';
 import { sameDocument } from '../../../src/lib/editing/history.mjs';
 
-const opened = openProject({
-  bytes: new Uint8Array(
-    await (await fetch('/sandrone-example.spl')).arrayBuffer(),
-  ),
-});
+const originalBytes = new Uint8Array(
+  await (await fetch('/sandrone-example.spl')).arrayBuffer(),
+);
+const opened = openProject({ bytes: originalBytes });
 const baseline = structuredClone(opened.document);
 let draft = null;
 const host = createStudioHost({
@@ -35,10 +34,29 @@ const handle = await directory.getFileHandle('sandrone-original-studio.spl', {
   create: true,
 });
 await host.save({ kind: 'web', handle });
+const pickerFiles = { saved: handle };
+for (const [key, bytes] of Object.entries({
+  legacy: originalBytes,
+  invalid: new Uint8Array([1, 2, 3]),
+})) {
+  const file = await directory.getFileHandle(`${key}.spl`, { create: true });
+  const writer = await file.createWritable();
+  await writer.write(bytes);
+  await writer.close();
+  pickerFiles[key] = file;
+}
+let pickerChoice = 'saved';
+window.originalStudioChooseFile = (name) => {
+  pickerChoice = name;
+};
+window.showOpenFilePicker = async () => [pickerFiles[pickerChoice]];
 // Read-only instrumentation: all edits below must originate in original UI.
 window.originalStudioEvidence = () => {
   const { editorState, project, storage } = host.getSnapshot();
   return {
+    epoch: editorState.epoch,
+    canUndo: editorState.canUndo,
+    targetKind: storage.target?.kind ?? null,
     revision: editorState.revision,
     previewId: editorState.previewId,
     paths: project.paths.length,

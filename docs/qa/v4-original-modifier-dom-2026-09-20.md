@@ -140,3 +140,13 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 这是原根接线的可运行阶段，不是默认切换：新建、打开、参考图修改、描绘、部分源树操作、ModelWorkspace 和完整 Agent API 写入仍须适配；原生文件旅程尚未签收。
 
 无 host 的原默认入口另行通过 Web 和 desktop-frontend 的 `endpoint-snapping` 真实浏览器回归；证据分别为 `outputs/v4-qa/original-host-legacy-web-2026-09-20/manifest.json` 与 `outputs/v4-qa/original-host-legacy-desktop-2026-09-20/manifest.json`。
+
+## 原文件打开与示例菜单
+
+原 `loadProjectFile` 的 V4 分支识别文件后直接调用 `host.open`，不经旧 `load_project` Project 事务。成功打开后清理选区、绘制/重拟合候选，清空会话历史并换参考图；无参考图的文档沿用当前显示坐标框架。解析或资源验证失败时不清理当前文档。保存/手势进行中拒绝替换。桌面原生打开事件通过 Effect Event 调用同一最新入口，浏览器选择器及文件 input 也共用此入口。
+
+扩展的完整原根浏览器测试通过原菜单读取实际 OPFS 文件：从有未保存位姿编辑的工程重开已保存 V4，恢复基线并保留 web 绑定，撤销历史清空；再开损坏字节，完整证据快照保持不变；打开旧版 Sandrone 得到同等 76 路径/11 部件，但 dirty 为 true、target 为 null。原“载入示例工程”菜单也通过，同样不绑定静态示例文件。页面及控制台无错误。证据仍在 `output/playwright/v4-original-studio/result.json`，新增 `reopened` / `legacyOpened` 字段。
+
+`pnpm check:all` 退出 0，101 项单测、类型/lint/格式、Rust 检查和双端构建通过：`outputs/v4-qa/check-all-original-file-open-2026-09-20.log`。之后补充示例菜单浏览器断言并通过定向 lint/格式与完整浏览器执行。文件 codec 已被打开入口静态依赖，最终将无效动态导入统一为静态导入并复查类型/lint和双端构建，日志 `outputs/v4-qa/build-original-file-open-final-2026-09-20.log`。
+
+此次系统文件选择器以返回隔离 OPFS 句柄的端口代替；真实读取、格式识别、会话替换和菜单行为来自产品代码，不构成操作系统原生对话框/磁盘或默认入口切换签收。

@@ -309,3 +309,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 部件位姿手势：runtime.beginObjectGesture 接 nodeIds，通过 move-nodes 写场景 pose；共用 runtime-gesture 维护源/对象预览的同一会话边界。原 prepare_move 开始返回 nodeIds，V4 手势 hook 具备对象入口。旋转父组、父子同时选中、派生镜像跟随、原始定义不变和 Sandrone 原 SVG 实际鼠标检查通过。默认根仍待注入 StudioHost/runtime，当前只有原组件 fixture 接线，不能签收默认对象移动旅程。
 
 2026-09-20 原根可注入会话：原 `StudioApp` 接受可选 `StudioHost`，通过订阅读取唯一会话的只读展示投影；原组件布局保留。V4 分支接入源节点操作、节点/柄拖动及吸附、按 nodeIds 的部件移动、撤销/重做、保存及自动草稿。旧 Project 事务在该分支明确拒绝，不能回写显示投影。默认无 host 入口继续原行为。完整原根浏览器验收脚本为 `test-v4-original-studio.cjs`；新建/打开、参考图修改、描绘、源树部分操作、建模和完整 API 写入仍未接线，不构成默认切换或全部旅程签收。
+
+2026-09-20 文件打开接线：V4 分支的原浏览器选择器、文件 input、桌面选择器及原生打开事件共用 `loadProjectFile` → `openProject` → `host.open`，保持格式识别、参考资源生命周期、历史清空和文件绑定在统一会话内；旧工程不绑定原文件。“载入示例工程”不再经过旧可写 Project API。真实原界面测试覆盖 V4 重开、旧版导入、损坏文件保留当前工程和示例菜单。原生对话框与实际磁盘打开仍待原生验收；新建、参考图编辑、描绘、建模和完整 API 写入仍未完成。

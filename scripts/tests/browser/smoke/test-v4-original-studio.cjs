@@ -59,6 +59,7 @@ async function main() {
       viewport: { width: 1440, height: 1000 },
     });
     page = await context.newPage();
+    page.setDefaultTimeout(120000);
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text());
@@ -138,6 +139,61 @@ async function main() {
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
     );
+    const openFile = async (name) => {
+      await page.evaluate(
+        (name) => window.originalStudioChooseFile(name),
+        name,
+      );
+      await page.getByRole('button', { name: 'Splinelet 主菜单' }).click();
+      await page
+        .getByRole('menuitem', { name: '打开工程…', exact: true })
+        .click();
+    };
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    const savedState = await evidence();
+    assert.equal(savedState.canUndo, true);
+    assert.equal(savedState.baselineRestored, false);
+    await openFile('saved');
+    await page.waitForFunction(
+      (epoch) => window.originalStudioEvidence().epoch !== epoch,
+      savedState.epoch,
+    );
+    const reopened = await evidence();
+    assert.equal(reopened.baselineRestored, true);
+    assert.equal(reopened.canUndo, false);
+    assert.equal(reopened.dirty, false);
+    assert.equal(reopened.targetKind, 'web');
+    await openFile('invalid');
+    await page
+      .locator('footer')
+      .getByText(/打开工程失败/)
+      .waitFor();
+    assert.deepEqual(await evidence(), reopened);
+    await openFile('legacy');
+    await page.waitForFunction(
+      (epoch) => window.originalStudioEvidence().epoch !== epoch,
+      reopened.epoch,
+    );
+    const legacyOpened = await evidence();
+    assert.equal(legacyOpened.paths, 76);
+    assert.equal(legacyOpened.objects, 11);
+    assert.equal(legacyOpened.canUndo, false);
+    assert.equal(legacyOpened.dirty, true);
+    assert.equal(legacyOpened.targetKind, null);
+    await page.getByRole('button', { name: 'Splinelet 主菜单' }).click();
+    await page
+      .getByRole('menuitem', { name: '载入示例工程', exact: true })
+      .click();
+    await page.waitForFunction(
+      (epoch) => window.originalStudioEvidence().epoch !== epoch,
+      legacyOpened.epoch,
+    );
+    assert.equal((await evidence()).baselineRestored, true);
+    assert.equal((await evidence()).targetKind, null);
+    assert.match(
+      await page.locator('.project-name').innerText(),
+      /sandrone-example/,
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({
@@ -150,9 +206,11 @@ async function main() {
         {
           passed: true,
           scope:
-            'Full original StudioApp with injected V4 host; actual Sandrone, original layout, source node edit, object pose drag, undo, bound OPFS save. Not default-entry acceptance.',
+            'Full original StudioApp with injected V4 host; actual Sandrone, original layout, node/object edits, undo, OPFS save/reopen, invalid file rejection, legacy import and example menu. Not default-entry acceptance.',
           sourceEdit: edited,
           objectMove: moved,
+          reopened,
+          legacyOpened,
           evidence: await evidence(),
           errors,
           consoleErrors,
@@ -162,7 +220,7 @@ async function main() {
       ),
     );
     console.log(
-      'PASS full original Studio with V4 host: Sandrone, styles, point edit, undo, save',
+      'PASS full original Studio with V4 host: Sandrone, styles, edits, undo, save, V4/legacy/example open and invalid-file preservation',
     );
   } catch (error) {
     if (page) {
