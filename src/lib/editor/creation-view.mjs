@@ -3,6 +3,7 @@ import { transformPoint, worldMatrix } from '../scene/transforms.mjs';
 import { outputIdentity, resolveAppearance } from '../relief/appearance.mjs';
 import { isExcluded } from '../manufacturing/parts.mjs';
 import { sourcePathId } from './source-view.mjs';
+import { orderedSourcePaths } from '../geometry/source-order.mjs';
 
 const clone = (value) => structuredClone(value);
 const absent = (domain) => ({
@@ -84,11 +85,6 @@ const indexMembers = (stage, label, diagnostics) => {
   }
   return result;
 };
-
-const sketchesForOwner = (document, ownerNodeId) =>
-  Object.values(document.sketches)
-    .filter((sketch) => sketch.ownerNodeId === ownerNodeId)
-    .sort((left, right) => left.id.localeCompare(right.id));
 
 const shapesInSceneOrder = (document, parentId = null) =>
   childrenOf(document, parentId).flatMap((node) =>
@@ -331,20 +327,20 @@ export function projectCreationView(document, snapshot) {
     }
   }
 
+  const orderedPaths = orderedSourcePaths(document);
   const objects = shapes.map((node) => {
-    const sketches = sketchesForOwner(document, node.id);
-    const pathIds = sketches.flatMap((sketch) =>
-      Object.keys(sketch.paths)
-        .sort()
-        .map((pathId) => sourcePathId(sketch.id, pathId)),
+    const ownedPaths = orderedPaths.filter(
+      ({ sketch }) => sketch.ownerNodeId === node.id,
     );
-    for (const sketch of sketches)
-      for (const pathId of Object.keys(sketch.paths))
-        identities.paths[sourcePathId(sketch.id, pathId)] = {
-          kind: 'path',
-          sketchId: sketch.id,
-          id: pathId,
-        };
+    const pathIds = ownedPaths.map(({ sketch, path }) =>
+      sourcePathId(sketch.id, path.id),
+    );
+    for (const { sketch, path } of ownedPaths)
+      identities.paths[sourcePathId(sketch.id, path.id)] = {
+        kind: 'path',
+        sketchId: sketch.id,
+        id: path.id,
+      };
     const program = document.programs[node.programId];
     for (const operator of Object.values(program?.operators || {}))
       identities.operators[operator.id] = {

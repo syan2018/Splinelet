@@ -16,6 +16,7 @@ import {
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 import { createPathIntent } from '../../../src/lib/editor/path-intents.mjs';
+import { projectCreationView } from '../../../src/lib/editor/creation-view.mjs';
 
 const legacy = v1Project();
 legacy.groups = [
@@ -98,6 +99,17 @@ assert.deepEqual(
   reopened.nodes,
   'source sorting must not reorder owners',
 );
+for (const object of projectCreationView(editor.state.document, {}).creation
+  .objects) {
+  const source = projectSourceView(editor.state.document, frame);
+  assert.deepEqual(
+    object.pathIds,
+    source.paths
+      .filter((path) => path.ownerNodeId === object.id)
+      .map((path) => path.id),
+    'creation tree uses the same source order',
+  );
+}
 assert.throws(
   () => editor.dispatch(reorder, { expectedRevision: editor.state.revision }),
   /失效/,
