@@ -29,7 +29,7 @@ import {
   ArrowUpFromLine,
   Box,
 } from 'lucide-react';
-import { Outliner } from '@/components/source-editor/outliner';
+import NumberEdit from '@/components/shared/creation-number';
 import { modelTools } from '@/lib/model-api';
 import ModelWorkspace from '@/components/modeling/model-workspace';
 import CreationWorkspace from '@/components/creation/creation-workspace';
@@ -272,14 +272,13 @@ export default function StudioApp() {
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<ModelApi>(null);
   const creationApi = useRef<CreationApi>(null);
-  const [unified, setUnified] = useState(true);
+
   const [creationView, setCreationView] = useState('flat');
   const [creationSelectionKind, setCreationSelectionKind] = useState<
     'object' | 'path' | 'cell'
   >('object');
-  const highlightSourceSelection = !unified || creationSelectionKind !== 'cell';
-  const creationViewRef = useRef('flat'),
-    unifiedRef = useRef(true);
+  const highlightSourceSelection = creationSelectionKind !== 'cell';
+  const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
   const [project, setProject] = useState<Project>(initialTraceProject),
     pr = useRef(project);
@@ -333,13 +332,12 @@ export default function StudioApp() {
   }, []);
   useEffect(() => {
     creationViewRef.current = creationView;
-    unifiedRef.current = unified;
     ar.current = active;
     drawingRef.current = drawing;
     sr.current = settings;
     cr.current = candidates;
     vr.current = view;
-  }, [active, candidates, creationView, drawing, settings, unified, view]);
+  }, [active, candidates, creationView, drawing, settings, view]);
   const stage = useRef<HTMLDivElement>(null),
     worker = useRef<Worker | null>(null),
     scale = useRef(1),
@@ -399,14 +397,14 @@ export default function StudioApp() {
     segments: number;
     snapshot: Project;
   } | null>(null);
-  const [propertyTab, setPropertyTab] = useState('paths');
+  const propertyTab =
+    tool === 'edit' ? 'node' : tool === 'trace' ? 'trace' : 'paths';
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const inspectorResizeDrag = useRef<{ x: number; width: number } | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]),
     pathsRef = useRef<string[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<number[]>([]),
     nodesRef = useRef<number[]>([]);
-  const rangeAnchor = useRef<string | null>(null);
   const [marquee, setMarquee] = useState<{
     x: number;
     y: number;
@@ -440,28 +438,23 @@ export default function StudioApp() {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
-    if (unified && ['trace', 'edit'].includes(next)) setCreationView('flat');
+    if (['trace', 'edit'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
     if (next !== 'trace') finish();
     setTool(next);
     if (next === 'edit') {
       if (pathsRef.current.length > 1)
         selectPathsNow(ar.current ? [ar.current] : []);
-      if (unified)
-        creationApi.current?.select_paths(ar.current ? [ar.current] : []);
-      setPropertyTab('node');
+      creationApi.current?.select_paths(ar.current ? [ar.current] : []);
     }
     if (next === 'select') {
       setSelection(null);
-      setPropertyTab('paths');
     }
-    if (next === 'trace') setPropertyTab('trace');
+    if (['trace', 'edit'].includes(next)) creationApi.current?.show_tool();
     stage.current?.focus({ preventScroll: true });
     setStatus(
       next === 'select'
-        ? unified
-          ? '选择 · 点击面或线 · 空白框选线条 · 按 A 编辑节点'
-          : '选择路径 · 按 A 编辑节点 · Ctrl / Shift 多选'
+        ? '选择 · 点击面或线 · 空白框选线条 · 按 A 编辑节点'
         : next === 'edit'
           ? '编辑节点 · Shift 多选 · 空白拖动框选'
           : next === 'trace'
@@ -474,41 +467,16 @@ export default function StudioApp() {
     );
   };
   const clearSelection = () => {
-    if (unified) creationApi.current?.clear();
-    rangeAnchor.current = null;
+    creationApi.current?.clear();
     finish();
     setSelection(null);
     selectPathsNow([]);
     setStatus('已取消选择');
   };
-  const choosePath = (
-    id: string,
-    e: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean },
-    order: string[],
-  ) => {
-    if (busyRef.current || drag.current) return;
-    finish();
-    setSelection(null);
-    setTool('select');
-    setPropertyTab('paths');
-    const ids = pickSelection(pathsRef.current, id, order, {
-      toggle: !!(e.ctrlKey || e.metaKey),
-      range: !!e.shiftKey,
-      anchor: rangeAnchor.current,
-    });
-    selectPathsNow(ids, id);
-    if (!e.shiftKey) rangeAnchor.current = id;
-    setStatus(
-      ids.length
-        ? '已选 ' + ids.length + ' 条路径 · 按 A 编辑节点或编组'
-        : '已取消选择',
-    );
-  };
   const chooseGroup = (ids: string[], add: boolean) => {
     if (busyRef.current || drag.current) return;
     finish();
     setTool('select');
-    setPropertyTab('paths');
     setSelection(null);
     selectPathsNow(
       add
@@ -872,10 +840,7 @@ export default function StudioApp() {
     if (!stage.current) return;
     const r = stage.current.getBoundingClientRect(),
       p = pr.current,
-      s = Math.min(
-        (r.width - 80) / p.width,
-        (r.height - (unified ? 180 : 110)) / p.height,
-      );
+      s = Math.min((r.width - 80) / p.width, (r.height - 180) / p.height);
     setView({
       s: Math.max(0.05, s),
       x: (r.width - p.width * s) / 2,
@@ -892,19 +857,12 @@ export default function StudioApp() {
     const r = el.getBoundingClientRect();
     // Creation's top bar and bottom palette cover these edges of the SVG.
     // Frame inside the usable window so the selected outline remains readable.
-    const inset = unified
-      ? {
-          x: 16,
-          y: 86,
-          width: Math.max(1, r.width - 32),
-          height: Math.max(1, r.height - 202),
-        }
-      : {
-          x: 16,
-          y: 42,
-          width: Math.max(1, r.width - 32),
-          height: Math.max(1, r.height - 106),
-        };
+    const inset = {
+      x: 16,
+      y: 86,
+      width: Math.max(1, r.width - 32),
+      height: Math.max(1, r.height - 202),
+    };
     const next = framePathsView(
       pr.current.paths.filter((path) => ids.includes(path.id) && path.visible),
       inset,
@@ -1177,7 +1135,6 @@ export default function StudioApp() {
     setTraceEnd('end');
     setActiveNow(null);
     setTool('trace');
-    setPropertyTab('trace');
     setSelection(null);
     setStatus('点击新的轮廓起点');
   };
@@ -1190,7 +1147,7 @@ export default function StudioApp() {
     finish();
     setSelection(null);
     selectPathsNow([pathId], pathId);
-    if (unified) creationApi.current?.select_paths([pathId]);
+    creationApi.current?.select_paths([pathId]);
     setTraceEnd(end);
     chooseTool('trace');
     setDrawing(true);
@@ -1305,7 +1262,7 @@ export default function StudioApp() {
           fitError: 0,
           fitting: 'single',
         };
-        const creation = unified ? creationApi.current?.new_path(path) : null;
+        const creation = creationApi.current?.new_path(path);
         transact((p) => {
           p.paths.push(path);
           if (creation) {
@@ -1372,7 +1329,6 @@ export default function StudioApp() {
     setActiveNow(pathId);
     setTool('edit');
     setSelection(selected);
-    setPropertyTab('node');
     setStatus('已选中节点 ' + (nodeIndex + 1) + ' · Delete 删除 · 拖动调整');
     return { pathId, nodeIndex, position: pathNodes(path)[nodeIndex] };
   };
@@ -1563,22 +1519,19 @@ export default function StudioApp() {
     if (tool === 'edit') {
       setActiveNow(id);
       setSelection(null);
-      setPropertyTab('node');
-      if (unified) creationApi.current?.select_paths([id]);
+      creationApi.current?.select_paths([id]);
       return;
     }
     setSelection(null);
     const modified = e.shiftKey || e.ctrlKey || e.metaKey;
-    const existing =
-      unified && creationSelectionKind !== 'path' ? [] : pathsRef.current;
+    const existing = creationSelectionKind !== 'path' ? [] : pathsRef.current;
     const ids = (
       modified ? pickSelection(existing, id, [], { toggle: true }) : [id]
     ).filter(
       (id: string) => pr.current.paths.find((p) => p.id === id)?.visible,
     );
     selectPathsNow(ids, id);
-    if (unified) creationApi.current?.select_paths(ids);
-    setPropertyTab('paths');
+    creationApi.current?.select_paths(ids);
     setStatus('已选择线条 · 按 A 编辑节点 · 选择工具不会移动形状');
   };
   const pointerDown = (e: React.PointerEvent) => {
@@ -1605,7 +1558,7 @@ export default function StudioApp() {
       return;
     }
     if (busyRef.current || e.button !== 0 || mergeSource) return;
-    if (unified && ['paint', 'height'].includes(tool)) {
+    if (['paint', 'height'].includes(tool)) {
       creationApi.current?.clear();
       return;
     }
@@ -1620,7 +1573,7 @@ export default function StudioApp() {
         y: e.clientY,
         moved: false,
         add: e.shiftKey || e.ctrlKey || e.metaKey,
-        oldPaths: (unified && creationSelectionKind !== 'path'
+        oldPaths: (creationSelectionKind !== 'path'
           ? []
           : pathsRef.current
         ).filter((id) => pr.current.paths.find((p) => p.id === id)?.visible),
@@ -1633,7 +1586,7 @@ export default function StudioApp() {
       report(addAnchor(p, connectionSettings(sr.current, e)));
   };
   const pointerMove = (e: React.PointerEvent) => {
-    if (unified && creationView === '3d') return;
+    if (creationView === '3d') return;
     if (drag.current) {
       if (drag.current.pointerId !== e.pointerId) return;
       // A missed release must never turn later hovering into an edit.
@@ -1829,7 +1782,7 @@ export default function StudioApp() {
               .map((p) => p.id)
           : [];
         selectPathsNow(g.add ? [...g.oldPaths, ...hits] : hits);
-        if (unified && !g.add && !hits.length) creationApi.current?.clear();
+        if (!g.add && !hits.length) creationApi.current?.clear();
         setSelection(null);
         setStatus(
           hits.length ? '框选 ' + hits.length + ' 条路径' : '已取消路径选择',
@@ -1922,7 +1875,6 @@ export default function StudioApp() {
       moved: false,
       ...(index !== null && ids.length > 1 ? { collapseNode: index } : {}),
     };
-    setPropertyTab('node');
     setGesturing(true);
     stage.current?.setPointerCapture(e.pointerId);
   };
@@ -1977,7 +1929,7 @@ export default function StudioApp() {
     const el = stage.current;
     if (!el) return;
     const wheel = (e: WheelEvent) => {
-      if (unifiedRef.current && creationViewRef.current === '3d') return;
+      if (creationViewRef.current === '3d') return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       zoom(Math.exp(-e.deltaY * 0.0015), {
@@ -2003,7 +1955,7 @@ export default function StudioApp() {
         (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z';
       if (
         (e.target as HTMLElement).closest(
-          'input,textarea,[role="slider"],[contenteditable="true"],[role="dialog"]',
+          'input,textarea,[role="slider"],[contenteditable="true"],[role="dialog"]:not(.workspace-dialog-wide)',
         ) ||
         ((e.target as HTMLElement).closest('select') && !historyShortcut) ||
         dialog ||
@@ -2399,22 +2351,6 @@ export default function StudioApp() {
     groupId?: string;
     beforeId?: string;
   }) => movePathBatch([a.pathId], a.groupId || '', a.beforeId);
-  const renameItem = (kind: 'path' | 'group', id: string, name: string) => {
-    if (busyRef.current || drag.current) return;
-    const item =
-      kind === 'path'
-        ? pr.current.paths.find((p) => p.id === id)
-        : pr.current.groups?.find((g) => g.id === id);
-    if (!item || !name.trim() || item.name === name.trim()) return;
-    transact((p) => {
-      const item =
-        kind === 'path'
-          ? p.paths.find((p) => p.id === id)
-          : p.groups?.find((g) => g.id === id);
-      if (item) item.name = name.trim();
-    });
-    setStatus('名称已更新 · Ctrl+Z 撤销');
-  };
   const manageGroup = (a: AgentGroupArgs) => {
     if (busyRef.current) throw Error('请等待当前拟合完成');
     const action = a.action,
@@ -2630,7 +2566,10 @@ export default function StudioApp() {
           throw Error('mode 必须为 trace、faces 或 relief');
         finish();
         setWorkspace(a.mode);
-        if (a.mode !== 'trace') setUnified(false);
+        if (a.mode !== 'trace')
+          modelApi.current?.show_settings({
+            tab: a.mode === 'relief' ? 'output' : 'create',
+          });
         return { workspace: a.mode };
       },
       ...Object.fromEntries(
@@ -2667,7 +2606,7 @@ export default function StudioApp() {
       creation_view: (a: AgentCreationViewArgs) => {
         if (!['flat', '3d'].includes(a.view))
           throw Error('view 必须为 flat 或 3d');
-        setUnified(true);
+
         setWorkspace('trace');
         setCreationView(a.view);
       },
@@ -3163,7 +3102,91 @@ export default function StudioApp() {
     dialog === 'export' ? inspectGeometry(project.paths) : [];
   const current = project.paths.find((p) => p.id === active),
     count = project.paths.reduce((s, p) => s + p.curves.length, 0);
-  const legacyInspector = (
+  const projectSettings = (
+    <>
+      {' '}
+      <div aria-label="工程设置">
+        <section>
+          <h3>当前工程</h3>
+          <p>
+            {project.imageName} · {project.width} × {project.height}
+          </p>
+          <p>{saved}</p>
+        </section>
+        <section>
+          <h3>工程尺寸</h3>
+          <span>作品宽度（mm）</span>
+          <NumberEdit
+            label="作品宽度"
+            value={project.widthMM}
+            min={0.1}
+            max={10000}
+            onCommit={(widthMM) =>
+              transact((p) => {
+                p.widthMM = widthMM;
+              })
+            }
+          />
+          <p>按整张底图宽度设置物理比例，影响整个作品。</p>
+        </section>
+        <section>
+          <h3>底图与预览</h3>
+          <label>
+            底图不透明度 <span>{opacity}%</span>
+          </label>
+          <Slider
+            aria-label="底图不透明度"
+            min={0}
+            max={100}
+            value={[opacity]}
+            onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
+          />
+          <label className="switch-label">
+            仅看曲线{' '}
+            <Switch
+              aria-label="仅看曲线"
+              checked={vectorsOnly}
+              onCheckedChange={setVectorsOnly}
+            />
+          </label>
+          <label className="switch-label">
+            闭合区域填充{' '}
+            <Switch
+              aria-label="闭合区域填充"
+              checked={fill}
+              onCheckedChange={setFill}
+            />
+          </label>
+        </section>
+        <section className="workflow">
+          <b>从轮廓到浮雕成品</b>
+          <p>
+            描闭合轮廓 → 填色与调高低 → 检查实体 → 导出 3MF。
+            二维描线不会自动恢复立体角色。
+          </p>
+          <button
+            className="example-button"
+            disabled={busy}
+            onClick={() =>
+              report(
+                fetch('/sandrone-example.spl')
+                  .then(async (r) => {
+                    if (!r.ok) throw Error('示例读取失败');
+                    return decodeProject(new Uint8Array(await r.arrayBuffer()));
+                  })
+                  .then((p) => apiRef.current?.load_project({ project: p })),
+              )
+            }
+          >
+            <FolderOpen size={15} />
+            载入桑多涅完整示例
+          </button>
+          <p>76 条路径 · 含建模与切片参数 · 可撤销载入</p>
+        </section>
+      </div>{' '}
+    </>
+  );
+  const sourceInspector = (
     <aside
       className="inspector"
       style={
@@ -3172,47 +3195,8 @@ export default function StudioApp() {
         } as React.CSSProperties
       }
     >
-      <Outliner
-        project={project}
-        selected={selectedPaths}
-        active={active}
-        busy={busy || gesturing}
-        onSelect={choosePath}
-        onGroupSelect={chooseGroup}
-        onClear={clearSelection}
-        onNew={begin}
-        onGroup={groupSelection}
-        onRename={renameItem}
-        onMove={(...args) => {
-          try {
-            movePathBatch(...args);
-          } catch (error: unknown) {
-            setStatus(errorMessage(error));
-          }
-        }}
-        onVisibility={setVisible}
-        onDissolve={(id) => manageGroup({ action: 'delete', id })}
-        onDelete={deletePaths}
-        onEdit={() => chooseTool('edit')}
-      />
       <div className="properties-area">
-        <Tabs
-          value={propertyTab}
-          onValueChange={(v) => setPropertyTab(v as string)}
-          className="property-tabs"
-        >
-          <TabsList aria-label="属性页签">
-            <TabsTrigger value="scene">工程</TabsTrigger>
-            <TabsTrigger value="trace">描线</TabsTrigger>
-            <TabsTrigger value="paths">路径</TabsTrigger>
-            <TabsTrigger value="node">节点</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div
-          role="tabpanel"
-          aria-label="节点属性"
-          hidden={propertyTab !== 'node'}
-        >
+        <div aria-label="节点属性" hidden={propertyTab !== 'node'}>
           <section>
             <h3>
               {selectedNodes.length
@@ -3288,11 +3272,7 @@ export default function StudioApp() {
             )}
           </section>
         </div>
-        <div
-          role="tabpanel"
-          aria-label="描线参数"
-          hidden={propertyTab !== 'trace'}
-        >
+        <div aria-label="描线参数" hidden={propertyTab !== 'trace'}>
           <SplineTraceControls
             path={selectedPaths.length === 1 ? current : undefined}
             drawing={drawing}
@@ -3373,20 +3353,10 @@ export default function StudioApp() {
             </section>
           </details>
         </div>
-        <div
-          role="tabpanel"
-          aria-label="路径与分组"
-          hidden={propertyTab !== 'paths'}
-        >
+        <div aria-label="路径与分组" hidden={propertyTab !== 'paths'}>
           <SplinePathInspector
-            path={
-              !unified || creationSelectionKind === 'path' ? current : undefined
-            }
-            count={
-              !unified || creationSelectionKind === 'path'
-                ? selectedPaths.length
-                : 0
-            }
+            path={creationSelectionKind === 'path' ? current : undefined}
+            count={creationSelectionKind === 'path' ? selectedPaths.length : 0}
             disabled={busy || gesturing}
             canRefit={ready && !!current && current.anchors.length >= 2}
             onEdit={() => chooseTool('edit')}
@@ -3397,82 +3367,13 @@ export default function StudioApp() {
             onRefit={() => requestRefit()}
           />
         </div>
-        <div
-          role="tabpanel"
-          aria-label="工程设置"
-          hidden={propertyTab !== 'scene'}
-        >
-          <section>
-            <h3>当前工程</h3>
-            <p>
-              {project.imageName} · {project.width} × {project.height}
-            </p>
-            <p>{saved}</p>
-          </section>
-          <section>
-            <h3>底图与预览</h3>
-            <label>
-              底图不透明度 <span>{opacity}%</span>
-            </label>
-            <Slider
-              aria-label="底图不透明度"
-              min={0}
-              max={100}
-              value={[opacity]}
-              onValueChange={(v) => setOpacity(Array.isArray(v) ? v[0] : v)}
-            />
-            <label className="switch-label">
-              仅看曲线{' '}
-              <Switch
-                aria-label="仅看曲线"
-                checked={vectorsOnly}
-                onCheckedChange={setVectorsOnly}
-              />
-            </label>
-            <label className="switch-label">
-              闭合区域填充{' '}
-              <Switch
-                aria-label="闭合区域填充"
-                checked={fill}
-                onCheckedChange={setFill}
-              />
-            </label>
-          </section>
-          <section className="workflow">
-            <b>为建模准备干净的曲线</b>
-            <p>
-              闭合外轮廓 → 设置毫米尺寸 → 导入 Blender →
-              检查后挤出。二维描线不会自动恢复立体角色。
-            </p>
-            <button
-              className="example-button"
-              disabled={busy}
-              onClick={() =>
-                report(
-                  fetch('/sandrone-example.spl')
-                    .then(async (r) => {
-                      if (!r.ok) throw Error('示例读取失败');
-                      return decodeProject(
-                        new Uint8Array(await r.arrayBuffer()),
-                      );
-                    })
-                    .then((p) => apiRef.current?.load_project({ project: p })),
-                )
-              }
-            >
-              <FolderOpen size={15} />
-              载入桑多涅完整示例
-            </button>
-            <p>76 条路径 · 含建模与切片参数 · 可撤销载入</p>
-          </section>
-        </div>
       </div>
     </aside>
   );
   return (
     <main
       role="application"
-      className={'studio ' + (unified ? 'creation-studio' : '')}
+      className="studio creation-studio"
       onDragOverCapture={(e) => e.preventDefault()}
       onDropCapture={(e) => {
         e.preventDefault();
@@ -3519,7 +3420,7 @@ export default function StudioApp() {
             <Upload size={16} />
             导入底图
           </button>
-          <details className="compact-menu">
+          <details className="creation-mode-menu">
             <summary>更多</summary>
             <div>
               <button
@@ -3551,49 +3452,16 @@ export default function StudioApp() {
               </button>
             </div>
           </details>
+          <button onClick={() => creationApi.current?.show_project()}>
+            工程设置
+          </button>
           <button
             className="primary"
-            onClick={() =>
-              workspace === 'trace'
-                ? unified
-                  ? creationApi.current?.show_output()
-                  : setDialog('export')
-                : modelApi.current?.show_output()
-            }
+            onClick={() => creationApi.current?.show_output()}
           >
             <Download size={16} />
-            导出
+            制作与导出
           </button>
-          <details className="creation-mode-menu">
-            <summary>更多</summary>
-            <div>
-              <button
-                onClick={() => {
-                  finish();
-                  setUnified(false);
-                  setWorkspace('trace');
-                }}
-              >
-                源线工作台
-              </button>
-              <button
-                onClick={() => {
-                  finish();
-                  setWorkspace('faces');
-                }}
-              >
-                构面
-              </button>
-              <button
-                onClick={() => {
-                  finish();
-                  setWorkspace('relief');
-                }}
-              >
-                浮雕
-              </button>
-            </div>
-          </details>
         </div>
         <DesktopWindowControls />
         <input
@@ -3628,25 +3496,25 @@ export default function StudioApp() {
       </header>
       <nav
         className="workspace-switch creation-workspace-switch"
-        aria-label="工作空间"
+        aria-label="视图"
       >
         <button
-          aria-pressed={workspace === 'trace' && creationView === 'flat'}
+          aria-pressed={creationView === 'flat'}
           onClick={() => {
             finish();
             setWorkspace('trace');
-            setUnified(true);
+
             setCreationView('flat');
           }}
         >
           平面创作
         </button>
         <button
-          aria-pressed={workspace === 'trace' && creationView === '3d'}
+          aria-pressed={creationView === '3d'}
           onClick={() => {
             finish();
             setWorkspace('trace');
-            setUnified(true);
+
             setCreationView('3d');
             chooseTool('select');
           }}
@@ -3655,39 +3523,20 @@ export default function StudioApp() {
           立体预览
         </button>
         <span>
-          {workspace !== 'trace'
-            ? '高级构造记录 · 保留来源与依赖'
-            : creationView === '3d'
-              ? '同一个部件 · 直接选择区域调整颜色和高低'
-              : '描边界 · 填颜色 · 调高低'}
+          {creationView === '3d'
+            ? '立体预览 · 旋转查看，选择区域'
+            : '平面创作 · 描轮廓，填颜色，调高低'}
         </span>
-        {workspace !== 'trace' && (
-          <button
-            onClick={() => {
-              setWorkspace('trace');
-              setUnified(true);
-            }}
-          >
-            返回创作
-          </button>
-        )}
       </nav>
-      <div
-        className="workspace"
-        style={{ display: workspace === 'trace' ? 'flex' : 'none' }}
-      >
+      <div className="workspace">
         <nav className="toolrail" aria-label="绘图工具">
           {(
             [
               [MousePointer2, 'select', '选择', 'V'],
               [Spline, 'edit', '节点', 'A'],
               [PenTool, 'trace', '描线', 'P'],
-              ...(unified
-                ? [
-                    [PaintBucket, 'paint', '上色', ''],
-                    [ArrowUpFromLine, 'height', '高低', ''],
-                  ]
-                : []),
+              [PaintBucket, 'paint', '上色', ''],
+              [ArrowUpFromLine, 'height', '高低', ''],
               [Hand, 'pan', '平移', 'H'],
             ] as Array<[typeof MousePointer2, string, string, string]>
           ).map(([Icon, value, label, key]) => (
@@ -3767,7 +3616,7 @@ export default function StudioApp() {
           role="application"
           ref={setStage}
           aria-label="编辑画布"
-          className={`stage tool-${tool} ${unified ? 'creation-stage' : ''} ${creationView === '3d' && unified ? 'creation-is-3d' : ''}`}
+          className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
           onPointerMove={pointerMove}
           onPointerUp={pointerUp}
           onPointerCancel={(e) => {
@@ -3838,11 +3687,10 @@ export default function StudioApp() {
                 .filter(
                   (p) =>
                     p.visible &&
-                    (!unified ||
-                      !project.creation?.objects.some(
-                        (o: { pathIds: string[]; visible: boolean }) =>
-                          o.pathIds.includes(p.id) && !o.visible,
-                      )),
+                    !project.creation?.objects.some(
+                      (o: { pathIds: string[]; visible: boolean }) =>
+                        o.pathIds.includes(p.id) && !o.visible,
+                    ),
                 )
                 .map((path) => (
                   <g
@@ -3894,9 +3742,7 @@ export default function StudioApp() {
                       d={d(path.curves) + (path.closed ? ' Z' : '')}
                       fill="none"
                       stroke="transparent"
-                      strokeWidth={
-                        (unified && tool === 'select' ? 3 : 14) / view.s
-                      }
+                      strokeWidth={(tool === 'select' ? 3 : 14) / view.s}
                       style={{
                         pointerEvents: ['edit', 'select'].includes(tool)
                           ? 'stroke'
@@ -4038,7 +3884,7 @@ export default function StudioApp() {
                   ) : tool === 'trace' ||
                     (tool === 'select' &&
                       selectedPaths.length === 1 &&
-                      (!unified || creationSelectionKind === 'path')) ? (
+                      creationSelectionKind === 'path') ? (
                     <>
                       {tool === 'trace' &&
                         current.anchors
@@ -4335,7 +4181,7 @@ export default function StudioApp() {
         <>
           <CreationWorkspace
             project={project}
-            enabled={unified && workspace === 'trace'}
+            enabled={true}
             viewMode={creationView}
             tool={tool}
             onTool={chooseTool}
@@ -4354,17 +4200,23 @@ export default function StudioApp() {
             onSelectionKind={setCreationSelectionKind}
             onFramePaths={framePaths}
             onCanvasPointerDown={pointerDown}
-            sourceInspector={legacyInspector}
+            sourceInspector={sourceInspector}
+            onSourceExport={() => {
+              setDialog('export');
+            }}
+            projectSettings={projectSettings}
             onAdvanced={(mode) => {
               finish();
               setWorkspace(mode);
+              modelApi.current?.show_settings({
+                tab: mode === 'relief' ? 'output' : 'create',
+              });
             }}
             onNewPath={begin}
             busy={busy || gesturing}
             opacity={opacity}
             onOpacity={setOpacity}
           />
-          {!unified && legacyInspector}
         </>
       </div>
       <ModelWorkspace
@@ -4386,6 +4238,10 @@ export default function StudioApp() {
           modelApi.current = api;
         }}
         onMode={setWorkspace}
+        onOutput={(partId) => {
+          setWorkspace('trace');
+          creationApi.current?.show_output(partId);
+        }}
         onUndo={undo}
         onRedo={redo}
         status={setStatus}
@@ -4455,7 +4311,7 @@ export default function StudioApp() {
         <DialogContent className="studio-dialog">
           <DialogTitle>
             {dialog === 'export'
-              ? '导出到下一步'
+              ? '源曲线导出'
               : dialog === 'api'
                 ? 'Agent API · 视觉与几何协作'
                 : '描线操作指南'}
@@ -4469,24 +4325,12 @@ export default function StudioApp() {
           </DialogDescription>
           {dialog === 'export' ? (
             <>
+              <p className="export-note">
+                当前工程宽度：{project.widthMM} mm。物理比例在“工程设置”中修改。
+              </p>
               <div className="dimension-fields">
                 <label>
-                  整张底图宽度
-                  <input
-                    type="number"
-                    aria-label="底图毫米宽度"
-                    min="1"
-                    max="10000"
-                    value={project.widthMM}
-                    onChange={(e) => {
-                      const v = +e.target.value;
-                      if (v > 0 && v <= 10000) transact((p) => (p.widthMM = v));
-                    }}
-                  />
-                  <span>mm</span>
-                </label>
-                <label>
-                  Blender 挤出总厚度
+                  源曲线脚本挤出厚度
                   <input
                     type="number"
                     aria-label="挤出厚度"
@@ -4517,10 +4361,10 @@ export default function StudioApp() {
               </div>
               <div className="export-option">
                 <div>
-                  <b>Blender 导入脚本</b>
+                  <b>Blender 源曲线脚本</b>
                   <p>
-                    保留控制柄；闭合路径填充并挤出。打开 Scripting 工作区运行
-                    .py。
+                    只处理源曲线；闭合路径按上方厚度挤出。成品实体请从输出属性导出。打开
+                    Scripting 工作区运行 .py。
                   </p>
                 </div>
                 <button
@@ -4652,7 +4496,8 @@ export default function StudioApp() {
                 <b>视图与保存</b>
                 　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
                 才保存工程文件，Ctrl+Shift+S 另存为。制作标签导出分色 SVG、 打印
-                STL 和 Blender 实体与源线；精确贝塞尔 SVG 在源线工作台导出。
+                STL 和 Blender 实体与源线；精确贝塞尔 SVG 在“制作与导出 → 源曲线
+                SVG”导出。
               </p>
             </div>
           )}

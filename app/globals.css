@@ -1692,27 +1692,6 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
 .model-part-heading button {
   padding: 5px;
 }
-.model-tabs {
-  display: flex;
-  padding: 8px 8px 0;
-  gap: 4px;
-  border-bottom: 1px solid #414c55;
-  flex-shrink: 0;
-}
-.model-tabs button {
-  flex: 1;
-  padding: 8px 6px;
-  font-size: 13px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 4px 4px 0 0;
-  background: transparent;
-}
-.model-tabs button[aria-selected='true'] {
-  color: #d6f7a8;
-  border-bottom-color: #b8ef62;
-  background: #2b353d;
-}
 .model-properties {
   padding: 16px;
   overflow: auto;
@@ -1936,11 +1915,6 @@ button[data-slot='switch'][data-checked] [data-slot='switch-thumb'] {
     padding: 8px;
     min-height: 0;
     border-right: 1px solid #414c55;
-  }
-  .model-tabs {
-    grid-column: 2;
-    grid-row: 1;
-    padding-top: 0;
   }
   .model-properties {
     grid-column: 2;

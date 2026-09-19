@@ -41,7 +41,9 @@ module.exports = async (page, fixture) => {
     );
     await page.locator('.creation-updating').waitFor({ state: 'hidden' });
   };
-  await page.locator('input[accept=".json"]').setInputFiles(fixture);
+  await page
+    .locator('input[accept=".spl,.bezier.json,.json"]')
+    .setInputFiles(fixture);
   await wait(false);
   const before = await project(),
     initial = await scene();
@@ -50,7 +52,9 @@ module.exports = async (page, fixture) => {
     .locator('.creation-object-row .creation-name')
     .getByText('头饰', { exact: true })
     .click();
-  await page.getByRole('tab', { name: '线条', exact: true }).click();
+  await page
+    .getByRole('button', { name: '当前部件构造与修改器', exact: true })
+    .click();
   const details = page
     .locator('details')
     .filter({ has: page.getByText('构面封口 · 5 个带状面', { exact: true }) });

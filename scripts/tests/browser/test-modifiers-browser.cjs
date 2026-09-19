@@ -28,8 +28,12 @@ module.exports = async (page, fixture) => {
       () => !document.querySelector('.creation-modifiers')?.disabled,
     );
   };
-  await page.locator('input[accept=".json"]').setInputFiles([]);
-  await page.locator('input[accept=".json"]').setInputFiles(fixture);
+  await page
+    .locator('input[accept=".spl,.bezier.json,.json"]')
+    .setInputFiles([]);
+  await page
+    .locator('input[accept=".spl,.bezier.json,.json"]')
+    .setInputFiles(fixture);
   await page.waitForFunction(async () => {
     try {
       const s = await window.traceStudio.call('creation_inspect');
@@ -48,7 +52,9 @@ module.exports = async (page, fixture) => {
     .locator('.creation-object-row .creation-name')
     .getByText('头饰', { exact: true })
     .click();
-  await page.getByRole('tab', { name: '修改器', exact: true }).click();
+  await page
+    .getByRole('button', { name: '当前部件构造与修改器', exact: true })
+    .click();
   await wait();
   const s = await call('creation_inspect');
   const o = s.creation.objects.find((o) => o.name === '头饰'),
@@ -188,7 +194,9 @@ module.exports = async (page, fixture) => {
     .locator('.creation-object-row .creation-name')
     .getByText('头饰', { exact: true })
     .click();
-  await page.getByRole('tab', { name: '修改器', exact: true }).click();
+  await page
+    .getByRole('button', { name: '当前部件构造与修改器', exact: true })
+    .click();
   await wait();
   check(
     (await face('body-8')).holes === 0 &&

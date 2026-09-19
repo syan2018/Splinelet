@@ -66,7 +66,7 @@ module.exports = async (page) => {
     const state = await window.traceStudio.call('state');
     return state.ready && !state.busy;
   });
-  await page.waitForTimeout(300);
+  await page.locator('.creation-updating').waitFor({ state: 'hidden' });
   await page.evaluate(async () => {
     window.testSaveHandle = await (
       await navigator.storage.getDirectory()

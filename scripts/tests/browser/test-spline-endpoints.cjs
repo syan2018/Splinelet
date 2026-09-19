@@ -86,7 +86,7 @@ module.exports = async (page) => {
   await page.getByRole('button', { name: '平面创作', exact: true }).click();
   await call('select_path', { id: base.id });
   await settle();
-  await page.getByRole('tab', { name: '路径', exact: true }).click();
+  await page.getByRole('button', { name: '当前选区属性', exact: true }).click();
   const before = await call('get_project');
   const current = async () =>
     (await call('get_project')).paths.find((p) => p.id === base.id);

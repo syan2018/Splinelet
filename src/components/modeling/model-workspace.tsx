@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -33,9 +33,9 @@ import {
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
-import SlicerTemplate from '../shared/slicer-template';
 import ReliefView from './relief-view';
 import NumberEdit from '../shared/creation-number';
+import WorkspaceDialog from '../shared/workspace-dialog';
 import {
   printCount,
   printMM,
@@ -183,6 +183,7 @@ type Props = {
   onEditSource: (id: string) => void;
   onApi: (api: ModelApi) => void;
   onMode: (mode: string) => void;
+  onOutput: (partId: string) => void;
   onUndo: () => void;
   onRedo: () => void;
   status: (s: string) => void;
@@ -301,7 +302,11 @@ export default function ModelWorkspace(p: Props) {
     [opacity, setOpacity] = useState(35),
     [showSources, setShowSources] = useState(true),
     [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null),
-    [tab, setTab] = useState('create');
+    [requestedTab, setTab] = useState('create');
+  const tab =
+    requestedTab === 'object' && !featureId && !selected.length
+      ? 'create'
+      : requestedTab;
   const [treeScope, setTreeScope] = useState('regions'),
     [treeSearch, setTreeSearch] = useState(''),
     rangeAnchor = useRef('');
@@ -888,8 +893,9 @@ export default function ModelWorkspace(p: Props) {
   }
   useEffect(() => {
     const api = {
+      show_settings: (a: { tab: string }) => setTab(a.tab),
       show_output: () => {
-        setTab('output');
+        p.onOutput(partId);
         return { ok: true };
       },
       state: () => ({
@@ -984,7 +990,7 @@ export default function ModelWorkspace(p: Props) {
     const key = (e: KeyboardEvent) => {
       if (
         (e.target as HTMLElement).closest(
-          'input,textarea,select,[contenteditable],[role="dialog"]',
+          'input,textarea,select,[contenteditable],[role="dialog"]:not(.workspace-dialog-wide)',
         ) ||
         deleteRequest
       )
@@ -996,6 +1002,11 @@ export default function ModelWorkspace(p: Props) {
         }
         return;
       }
+      if (
+        e.code === 'Space' &&
+        (e.target as HTMLElement).closest('button,summary')
+      )
+        return;
       if (e.code === 'Space') {
         e.preventDefault();
         setSpace(true);
@@ -1074,1119 +1085,1220 @@ export default function ModelWorkspace(p: Props) {
     </select>
   );
   return (
-    <div className="model-workspace" data-workspace={p.mode}>
-      <div className="model-center">
-        <div className="model-toolbar">
-          <b>{p.mode === 'faces' ? '构面' : '浮雕'}</b>
-          <button aria-label="撤销模型操作" onClick={p.onUndo}>
-            <Undo2 size={16} />
-          </button>
-          <button aria-label="重做模型操作" onClick={p.onRedo}>
-            <Redo2 size={16} />
-          </button>
+    <WorkspaceDialog
+      open={p.mode !== 'trace'}
+      onClose={() => p.onMode('trace')}
+      wide
+      title="高级构造编辑器"
+      description="编辑工程中的面来源、体块和零件；改动参与同一工程的撤销与保存。"
+    >
+      <nav className="advanced-editor-navigation" aria-label="高级构造分类">
+        <button
+          aria-pressed={p.mode === 'faces'}
+          onClick={() => {
+            setTab('create');
+            p.onMode('faces');
+          }}
+        >
+          面来源
+        </button>
+        <button
+          aria-pressed={p.mode === 'relief'}
+          onClick={() => {
+            setTab('output');
+            p.onMode('relief');
+          }}
+        >
+          体块与零件
+        </button>
+        <button onClick={() => p.onMode('trace')}>完成，返回创作</button>
+      </nav>
+      <div className="model-workspace" data-workspace={p.mode}>
+        <div className="model-center">
+          <div className="model-toolbar">
+            <b>{p.mode === 'faces' ? '构面' : '浮雕'}</b>
+            <button aria-label="撤销模型操作" onClick={p.onUndo}>
+              <Undo2 size={16} />
+            </button>
+            <button aria-label="重做模型操作" onClick={p.onRedo}>
+              <Redo2 size={16} />
+            </button>
+            {p.mode === 'faces' ? (
+              <>
+                <button onClick={fit}>适应画布</button>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showSources}
+                    onChange={(e) => setShowSources(e.target.checked)}
+                  />
+                  源线
+                </label>
+                <label>
+                  底图
+                  <input
+                    aria-label="构面底图透明度"
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={opacity}
+                    onChange={(e) => setOpacity(+e.target.value)}
+                  />
+                </label>
+              </>
+            ) : (
+              <span>合并后的实际实体</span>
+            )}
+            <span className="model-compute">
+              {working ? '正在计算预览…' : calculating ? '正在更新…' : ''}
+            </span>
+          </div>
           {p.mode === 'faces' ? (
-            <>
-              <button onClick={fit}>适应画布</button>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={showSources}
-                  onChange={(e) => setShowSources(e.target.checked)}
-                />
-                源线
-              </label>
-              <label>
-                底图
-                <input
-                  aria-label="构面底图透明度"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={opacity}
-                  onChange={(e) => setOpacity(+e.target.value)}
-                />
-              </label>
-            </>
-          ) : (
-            <span>合并后的实际实体</span>
-          )}
-          <span className="model-compute">
-            {working ? '正在计算预览…' : calculating ? '正在更新…' : ''}
-          </span>
-        </div>
-        {p.mode === 'faces' ? (
-          <div
-            className="model-canvas"
-            ref={canvas}
-            onPointerUp={(e) => {
-              gesture.current = null;
-              if (e.target instanceof SVGSVGElement) {
-                setSelected([]);
-                setFeatureId('');
-              }
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-            onPointerDown={(e) => {
-              if (e.button === 1 || e.button === 2 || space) {
-                e.preventDefault();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                gesture.current = {
-                  x: e.clientX,
-                  y: e.clientY,
-                  base: viewRef.current,
-                };
-              }
-            }}
-            onPointerMove={(e) => {
-              const g = gesture.current;
-              if (g)
-                setView({
-                  ...g.base,
-                  x: g.base.x + e.clientX - g.x,
-                  y: g.base.y + e.clientY - g.y,
-                });
-            }}
-            onPointerCancel={() => {
-              if (gesture.current) setView(gesture.current.base);
-              gesture.current = null;
-            }}
-          >
-            <svg width="100%" height="100%">
-              <g transform={`translate(${view.x} ${view.y}) scale(${view.s})`}>
-                <image
-                  href={p.project.image}
-                  width={p.project.width}
-                  height={p.project.height}
-                  opacity={opacity / 100}
-                  style={{ pointerEvents: 'none' }}
-                />
-                {regions
-                  .filter(
-                    (r) =>
-                      !r.error &&
-                      model.regions.find((x) => x.id === r.id)?.visible !==
-                        false,
-                  )
-                  .map((r) => (
-                    <path
-                      key={r.id}
-                      data-region-id={r.id}
-                      d={regionSVGPath(r.geometry, p.project)}
-                      fill={r.color}
-                      fillOpacity={selected.includes(r.id) ? 0.45 : 0.15}
-                      stroke={selected.includes(r.id) ? '#d4ff7e' : r.color}
-                      strokeWidth={(selected.includes(r.id) ? 2.5 : 1) / view.s}
-                      fillRule="evenodd"
-                      onClick={(e) => {
-                        if (space) return;
-                        e.stopPropagation();
-                        selectRegion(
-                          r.id,
-                          e.shiftKey || e.ctrlKey || e.metaKey,
-                        );
-                      }}
-                    />
-                  ))}
-                {showSources &&
-                  p.project.paths
-                    .filter((x) => x.visible)
-                    .map((path) => (
+            <div
+              className="model-canvas"
+              ref={canvas}
+              onPointerUp={(e) => {
+                gesture.current = null;
+                if (e.target instanceof SVGSVGElement) {
+                  setSelected([]);
+                  setFeatureId('');
+                }
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                if (e.button === 1 || e.button === 2 || space) {
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  gesture.current = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    base: viewRef.current,
+                  };
+                }
+              }}
+              onPointerMove={(e) => {
+                const g = gesture.current;
+                if (g)
+                  setView({
+                    ...g.base,
+                    x: g.base.x + e.clientX - g.x,
+                    y: g.base.y + e.clientY - g.y,
+                  });
+              }}
+              onPointerCancel={() => {
+                if (gesture.current) setView(gesture.current.base);
+                gesture.current = null;
+              }}
+            >
+              <svg width="100%" height="100%">
+                <g
+                  transform={`translate(${view.x} ${view.y}) scale(${view.s})`}
+                >
+                  <image
+                    href={p.project.image}
+                    width={p.project.width}
+                    height={p.project.height}
+                    opacity={opacity / 100}
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  {regions
+                    .filter(
+                      (r) =>
+                        !r.error &&
+                        model.regions.find((x) => x.id === r.id)?.visible !==
+                          false,
+                    )
+                    .map((r) => (
                       <path
-                        key={path.id}
-                        data-model-source={path.id}
-                        d={d(path.curves) + (path.closed ? ' Z' : '')}
-                        fill="none"
-                        stroke={
-                          sourceIds.includes(path.id) ? '#7cdeff' : '#ddd'
-                        }
-                        strokeOpacity={sourceIds.includes(path.id) ? 1 : 0.45}
-                        strokeWidth={
-                          (sourceIds.includes(path.id) ? 3 : 1) / view.s
-                        }
-                        style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                        onClick={(e) => {
-                          if (space) return;
-                          e.stopPropagation();
-                          toggleSource(path.id);
-                          setTab('create');
-                        }}
-                        onDoubleClick={() => p.onEditSource(path.id)}
-                      />
-                    ))}
-                {preview?.candidates.map((r, i: number) => {
-                  const point = mmToImage(r.seed);
-                  return (
-                    <g key={i}>
-                      <path
-                        data-candidate-index={i}
+                        key={r.id}
+                        data-region-id={r.id}
                         d={regionSVGPath(r.geometry, p.project)}
-                        fill={palette[i % palette.length]}
-                        fillOpacity={chosen.includes(i) ? 0.78 : 0.3}
-                        stroke={chosen.includes(i) ? '#fff' : '#d7e5e9'}
-                        strokeWidth={1.5 / view.s}
+                        fill={r.color}
+                        fillOpacity={selected.includes(r.id) ? 0.45 : 0.15}
+                        stroke={selected.includes(r.id) ? '#d4ff7e' : r.color}
+                        strokeWidth={
+                          (selected.includes(r.id) ? 2.5 : 1) / view.s
+                        }
                         fillRule="evenodd"
                         onClick={(e) => {
                           if (space) return;
                           e.stopPropagation();
-                          setChosen((ids) =>
-                            ids.includes(i)
-                              ? ids.filter((x) => x !== i)
-                              : [...ids, i],
+                          selectRegion(
+                            r.id,
+                            e.shiftKey || e.ctrlKey || e.metaKey,
                           );
                         }}
                       />
-                      <text
-                        x={point.x}
-                        y={point.y}
-                        fontSize={14 / view.s}
-                        fill="#10202b"
-                        stroke="#fff"
-                        strokeWidth={3 / view.s}
-                        paintOrder="stroke"
-                        textAnchor="middle"
-                        pointerEvents="none"
-                      >
-                        {i + 1}
-                      </text>
-                    </g>
-                  );
-                })}
-                {preview?.connections.map((c, i: number) => {
-                  const a = mmToImage(c.from),
-                    b = mmToImage(c.to);
-                  return (
-                    <g key={i} pointerEvents="none">
-                      <line
-                        x1={a.x}
-                        y1={a.y}
-                        x2={b.x}
-                        y2={b.y}
-                        stroke="#ffb25c"
-                        strokeWidth={3 / view.s}
-                      />
-                      <circle
-                        cx={b.x}
-                        cy={b.y}
-                        r={4 / view.s}
-                        fill="none"
-                        stroke="#ffb25c"
-                        strokeWidth={1.5 / view.s}
-                      />
-                    </g>
-                  );
-                })}
-              </g>
-            </svg>
-            <div className="model-view-hint">
-              {preview
-                ? '点击编号区域选择 · Enter 提交 · Esc 取消'
-                : '点击面选择 · Shift 多选 · 点击源线选作工具 · 空格 / 中键平移'}
-            </div>
-          </div>
-        ) : (
-          <ReliefView result={result} />
-        )}
-        {error && (
-          <div className="model-error" role="alert">
-            {error}
-          </div>
-        )}
-        <div className="model-status">
-          {p.mode === 'faces'
-            ? `${regions.length} 个面 · 派生区域精度 ${model.toleranceMM} mm · 源贝塞尔独立保留`
-            : result
-              ? `${result.report.sizeMM.map((v: number) => v.toFixed(2)).join(' × ')} mm · ${result.report.components} 个连通实体 · ${result.report.triangles.toLocaleString()} 个三角面`
-              : '选择面 → 添加体块 → 设置高低'}
-        </div>
-      </div>
-      <button
-        type="button"
-        className="model-resizer"
-        aria-label="调整建模侧栏宽度"
-        tabIndex={0}
-        onDoubleClick={() => setSidebarWidth(360)}
-        onKeyDown={(e) => {
-          if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
-            e.preventDefault();
-            setSidebarWidth((w) =>
-              Math.min(
-                600,
-                Math.max(280, w + (e.key === 'ArrowLeft' ? 20 : -20)),
-              ),
-            );
-          }
-        }}
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          resizeDrag.current = { x: e.clientX, width: sidebarWidth };
-        }}
-        onPointerMove={(e) => {
-          if (resizeDrag.current)
-            setSidebarWidth(
-              Math.min(
-                600,
-                Math.max(
-                  280,
-                  resizeDrag.current.width + resizeDrag.current.x - e.clientX,
-                ),
-              ),
-            );
-        }}
-        onPointerUp={() => (resizeDrag.current = null)}
-      />
-      <aside className="model-sidebar" style={{ width: sidebarWidth }}>
-        <div className="model-tree">
-          <div className="model-section-title">
-            <b>面与体块</b>
-            <span>{selected.length ? `已选 ${selected.length} 个面` : ''}</span>
-            <button
-              title="取消建模选择"
-              onClick={() => {
-                setSelected([]);
-                setFeatureId('');
-              }}
-            >
-              取消选择
-            </button>
-          </div>
-          {!model.regions.length && (
-            <p className="model-help">选择已有路径，预览并建立第一个面。</p>
-          )}
-          <div className="model-outliner-controls">
-            <button
-              aria-pressed={treeScope === 'regions'}
-              onClick={() => setTreeScope('regions')}
-            >
-              面 · {model.regions.length}
-            </button>
-            <button
-              aria-pressed={treeScope === 'features'}
-              onClick={() => setTreeScope('features')}
-            >
-              体块 · {model.features.filter((f) => f.partId === partId).length}
-            </button>
-            <input
-              aria-label="搜索建模对象"
-              placeholder="搜索对象"
-              value={treeSearch}
-              onChange={(e) => setTreeSearch(e.target.value)}
-            />
-          </div>
-          {treeScope === 'regions' && (
-            <fieldset className="model-tree-scroll" aria-label="区域列表">
-              {model.regions
-                .filter((r) => r.name.includes(treeSearch))
-                .map((r) => (
-                  <div
-                    key={r.id}
-                    className={
-                      'model-tree-row ' +
-                      (selected.includes(r.id) && !featureId ? 'selected' : '')
-                    }
-                    data-region-row={r.id}
-                    onPointerUp={(e) =>
-                      selectRegion(r.id, e.ctrlKey || e.metaKey, e.shiftKey)
-                    }
-                  >
-                    <i style={{ background: r.color }} />
-                    <Rename
-                      value={r.name}
-                      onChange={(name) =>
-                        mutate(
-                          (m) =>
-                            (m.regions.find((x) => x.id === r.id)!.name = name),
-                        )
-                      }
-                    />
-                    {regions.find((x) => x.id === r.id)?.error && (
-                      <span
-                        className="model-invalid"
-                        title={regions.find((x) => x.id === r.id)?.error}
-                      >
-                        !
-                      </span>
-                    )}
-                    <button
-                      aria-label={`${r.name}显示`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        mutate((m) => {
-                          const o = m.regions.find((x) => x.id === r.id);
-                          if (o) o.visible = o.visible === false;
-                        });
-                      }}
-                      onPointerUp={(e) => e.stopPropagation()}
-                    >
-                      {r.visible === false ? (
-                        <EyeOff size={14} />
-                      ) : (
-                        <Eye size={14} />
-                      )}
-                    </button>
-                  </div>
-                ))}
-            </fieldset>
-          )}
-          {treeScope === 'features' && (
-            <>
-              <div className="model-part-heading">
-                <select
-                  aria-label="当前零件"
-                  value={partId}
-                  onChange={(e) => {
-                    setPartId(e.target.value);
-                    setFeatureId('');
-                  }}
-                >
-                  {model.parts.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  aria-label="新建零件"
-                  onClick={() => {
-                    const id = crypto.randomUUID();
-                    mutate((m) =>
-                      m.parts.push({
-                        id,
-                        name: '零件 ' + (m.parts.length + 1),
-                      }),
+                    ))}
+                  {showSources &&
+                    p.project.paths
+                      .filter((x) => x.visible)
+                      .map((path) => (
+                        <path
+                          key={path.id}
+                          data-model-source={path.id}
+                          d={d(path.curves) + (path.closed ? ' Z' : '')}
+                          fill="none"
+                          stroke={
+                            sourceIds.includes(path.id) ? '#7cdeff' : '#ddd'
+                          }
+                          strokeOpacity={sourceIds.includes(path.id) ? 1 : 0.45}
+                          strokeWidth={
+                            (sourceIds.includes(path.id) ? 3 : 1) / view.s
+                          }
+                          style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                          onClick={(e) => {
+                            if (space) return;
+                            e.stopPropagation();
+                            toggleSource(path.id);
+                            setTab('create');
+                          }}
+                          onDoubleClick={() => p.onEditSource(path.id)}
+                        />
+                      ))}
+                  {preview?.candidates.map((r, i: number) => {
+                    const point = mmToImage(r.seed);
+                    return (
+                      <g key={i}>
+                        <path
+                          data-candidate-index={i}
+                          d={regionSVGPath(r.geometry, p.project)}
+                          fill={palette[i % palette.length]}
+                          fillOpacity={chosen.includes(i) ? 0.78 : 0.3}
+                          stroke={chosen.includes(i) ? '#fff' : '#d7e5e9'}
+                          strokeWidth={1.5 / view.s}
+                          fillRule="evenodd"
+                          onClick={(e) => {
+                            if (space) return;
+                            e.stopPropagation();
+                            setChosen((ids) =>
+                              ids.includes(i)
+                                ? ids.filter((x) => x !== i)
+                                : [...ids, i],
+                            );
+                          }}
+                        />
+                        <text
+                          x={point.x}
+                          y={point.y}
+                          fontSize={14 / view.s}
+                          fill="#10202b"
+                          stroke="#fff"
+                          strokeWidth={3 / view.s}
+                          paintOrder="stroke"
+                          textAnchor="middle"
+                          pointerEvents="none"
+                        >
+                          {i + 1}
+                        </text>
+                      </g>
                     );
-                    setPartId(id);
-                  }}
-                >
-                  <Plus size={15} />
-                </button>
+                  })}
+                  {preview?.connections.map((c, i: number) => {
+                    const a = mmToImage(c.from),
+                      b = mmToImage(c.to);
+                    return (
+                      <g key={i} pointerEvents="none">
+                        <line
+                          x1={a.x}
+                          y1={a.y}
+                          x2={b.x}
+                          y2={b.y}
+                          stroke="#ffb25c"
+                          strokeWidth={3 / view.s}
+                        />
+                        <circle
+                          cx={b.x}
+                          cy={b.y}
+                          r={4 / view.s}
+                          fill="none"
+                          stroke="#ffb25c"
+                          strokeWidth={1.5 / view.s}
+                        />
+                      </g>
+                    );
+                  })}
+                </g>
+              </svg>
+              <div className="model-view-hint">
+                {preview
+                  ? '点击编号区域选择 · Enter 提交 · Esc 取消'
+                  : '点击面选择 · Shift 多选 · 点击源线选作工具 · 空格 / 中键平移'}
               </div>
-              <div className="model-feature-scroll">
-                {model.features
-                  .filter(
-                    (f) => f.partId === partId && f.name.includes(treeSearch),
-                  )
-                  .map((f) => (
+            </div>
+          ) : (
+            <ReliefView result={result} />
+          )}
+          {error && (
+            <div className="model-error" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="model-status">
+            {p.mode === 'faces'
+              ? `${regions.length} 个面 · 派生区域精度 ${model.toleranceMM} mm · 源贝塞尔独立保留`
+              : result
+                ? `${result.report.sizeMM.map((v: number) => v.toFixed(2)).join(' × ')} mm · ${result.report.components} 个连通实体 · ${result.report.triangles.toLocaleString()} 个三角面`
+                : '选择面 → 添加体块 → 设置高低'}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="model-resizer"
+          aria-label="调整建模侧栏宽度"
+          tabIndex={0}
+          onDoubleClick={() => setSidebarWidth(360)}
+          onKeyDown={(e) => {
+            if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+              e.preventDefault();
+              setSidebarWidth((w) =>
+                Math.min(
+                  600,
+                  Math.max(280, w + (e.key === 'ArrowLeft' ? 20 : -20)),
+                ),
+              );
+            }
+          }}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            resizeDrag.current = { x: e.clientX, width: sidebarWidth };
+          }}
+          onPointerMove={(e) => {
+            if (resizeDrag.current)
+              setSidebarWidth(
+                Math.min(
+                  600,
+                  Math.max(
+                    280,
+                    resizeDrag.current.width + resizeDrag.current.x - e.clientX,
+                  ),
+                ),
+              );
+          }}
+          onPointerUp={() => (resizeDrag.current = null)}
+        />
+        <aside className="model-sidebar" style={{ width: sidebarWidth }}>
+          <div className="model-tree">
+            <div className="model-section-title">
+              <b>面与体块</b>
+              <span>
+                {selected.length ? `已选 ${selected.length} 个面` : ''}
+              </span>
+              <button
+                title="取消建模选择"
+                onClick={() => {
+                  setSelected([]);
+                  setFeatureId('');
+                }}
+              >
+                取消选择
+              </button>
+            </div>
+            {!model.regions.length && (
+              <p className="model-help">选择已有路径，预览并建立第一个面。</p>
+            )}
+            <div className="model-outliner-controls">
+              <button
+                aria-pressed={treeScope === 'regions'}
+                onClick={() => setTreeScope('regions')}
+              >
+                面 · {model.regions.length}
+              </button>
+              <button
+                aria-pressed={treeScope === 'features'}
+                onClick={() => setTreeScope('features')}
+              >
+                体块 ·{' '}
+                {model.features.filter((f) => f.partId === partId).length}
+              </button>
+              <input
+                aria-label="搜索建模对象"
+                placeholder="搜索对象"
+                value={treeSearch}
+                onChange={(e) => setTreeSearch(e.target.value)}
+              />
+            </div>
+            {treeScope === 'regions' && (
+              <fieldset className="model-tree-scroll" aria-label="区域列表">
+                {model.regions
+                  .filter((r) => r.name.includes(treeSearch))
+                  .map((r) => (
                     <div
-                      key={f.id}
+                      key={r.id}
                       className={
                         'model-tree-row ' +
-                        (featureId === f.id ? 'selected' : '')
+                        (selected.includes(r.id) && !featureId
+                          ? 'selected'
+                          : '')
                       }
-                      data-feature-row={f.id}
-                      onPointerUp={() => {
-                        setFeatureId(f.id);
-                        setSelected([f.regionId]);
-                        setTab('object');
-                      }}
+                      data-region-row={r.id}
+                      onPointerUp={(e) =>
+                        selectRegion(r.id, e.ctrlKey || e.metaKey, e.shiftKey)
+                      }
                     >
-                      <input
-                        aria-label={`启用${f.name}`}
-                        type="checkbox"
-                        checked={f.enabled}
-                        onChange={(e) =>
-                          updateFeature(f.id, { enabled: e.target.checked })
-                        }
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span className="model-kind">
-                        {f.mode === 'add' ? '+' : f.mode === 'cut' ? '−' : '穿'}
-                      </span>
+                      <i style={{ background: r.color }} />
                       <Rename
-                        value={f.name}
-                        onChange={(name) => updateFeature(f.id, { name })}
+                        value={r.name}
+                        onChange={(name) =>
+                          mutate(
+                            (m) =>
+                              (m.regions.find((x) => x.id === r.id)!.name =
+                                name),
+                          )
+                        }
                       />
-                      <small>
-                        {f.mode === 'through'
-                          ? '贯穿'
-                          : Number(f.heightMM.toFixed(3)) + ' mm'}
-                      </small>
+                      {regions.find((x) => x.id === r.id)?.error && (
+                        <span
+                          className="model-invalid"
+                          title={regions.find((x) => x.id === r.id)?.error}
+                        >
+                          !
+                        </span>
+                      )}
+                      <button
+                        aria-label={`${r.name}显示`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          mutate((m) => {
+                            const o = m.regions.find((x) => x.id === r.id);
+                            if (o) o.visible = o.visible === false;
+                          });
+                        }}
+                        onPointerUp={(e) => e.stopPropagation()}
+                      >
+                        {r.visible === false ? (
+                          <EyeOff size={14} />
+                        ) : (
+                          <Eye size={14} />
+                        )}
+                      </button>
                     </div>
                   ))}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="model-tabs" role="tablist" aria-label="建模属性">
-          {[
-            ['create', '构面'],
-            ['object', '对象'],
-            ['output', '制造 / 导出'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={tab === id}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="model-properties" ref={propertiesPanel}>
-          {tab === 'create' && (
-            <>
-              {replaceId && (
-                <div className="model-notice">
-                  正在重新绑定「{selectedSpec?.name}」，只选择一个候选面。
-                  <button onClick={cancel}>取消重绑</button>
-                </div>
-              )}
-              <div onChangeCapture={() => cancelPreviewOnly()}>
-                <label className="model-field">
-                  构面操作
+              </fieldset>
+            )}
+            {treeScope === 'features' && (
+              <>
+                <div className="model-part-heading">
                   <select
-                    aria-label="构面操作"
-                    value={operation}
+                    aria-label="当前零件"
+                    value={partId}
                     onChange={(e) => {
-                      setOperation(e.target.value as RegionKind);
-                      cancelPreviewOnly();
-                      setTarget(selected[0] || '');
-                      setOperand(selected[1] || '');
+                      setPartId(e.target.value);
+                      setFeatureId('');
                     }}
                   >
-                    {Object.entries(labels).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {String(v)}
+                    {model.parts.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.name}
                       </option>
                     ))}
                   </select>
-                </label>
-                {['split', 'union', 'difference', 'intersection'].includes(
-                  operation,
-                ) && (
-                  <label className="model-field">
-                    {operation === 'split' ? '待切分的面' : '目标面 A'}
-                    {selectList(target, setTarget)}
-                  </label>
-                )}
-                {['union', 'difference', 'intersection'].includes(
-                  operation,
-                ) && (
-                  <>
-                    <label className="model-field">
-                      工具面 B{selectList(operand, setOperand, target)}
-                    </label>
+                  <button
+                    aria-label="新建零件"
+                    onClick={() => {
+                      const id = crypto.randomUUID();
+                      mutate((m) =>
+                        m.parts.push({
+                          id,
+                          name: '零件 ' + (m.parts.length + 1),
+                        }),
+                      );
+                      setPartId(id);
+                    }}
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
+                <div className="model-feature-scroll">
+                  {model.features
+                    .filter(
+                      (f) => f.partId === partId && f.name.includes(treeSearch),
+                    )
+                    .map((f) => (
+                      <div
+                        key={f.id}
+                        className={
+                          'model-tree-row ' +
+                          (featureId === f.id ? 'selected' : '')
+                        }
+                        data-feature-row={f.id}
+                        onPointerUp={() => {
+                          setFeatureId(f.id);
+                          setSelected([f.regionId]);
+                          setTab('object');
+                        }}
+                      >
+                        <input
+                          aria-label={`启用${f.name}`}
+                          type="checkbox"
+                          checked={f.enabled}
+                          onChange={(e) =>
+                            updateFeature(f.id, { enabled: e.target.checked })
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span className="model-kind">
+                          {f.mode === 'add'
+                            ? '+'
+                            : f.mode === 'cut'
+                              ? '−'
+                              : '穿'}
+                        </span>
+                        <Rename
+                          value={f.name}
+                          onChange={(name) => updateFeature(f.id, { name })}
+                        />
+                        <small>
+                          {f.mode === 'through'
+                            ? '贯穿'
+                            : Number(f.heightMM.toFixed(3)) + ' mm'}
+                        </small>
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
+          <div className="property-editor">
+            <nav className="property-navigation" aria-label="高级属性分类">
+              {[
+                ['create', '工具', '构面'],
+                ['output', '工程', '制造'],
+                ...(featureId || selected.length
+                  ? [['object', '选区', '属性']]
+                  : []),
+              ].map(([id, group, label], index) => (
+                <Fragment key={id}>
+                  {index > 0 && <hr className="property-navigation-divider" />}
+                  <fieldset className="property-navigation-group">
+                    <legend>{group}</legend>
                     <button
-                      onClick={() => {
-                        cancelPreviewOnly();
-                        setTarget(operand);
-                        setOperand(target);
-                      }}
+                      aria-label={'高级' + label}
+                      aria-pressed={tab === id}
+                      onClick={() => setTab(id)}
                     >
-                      <ArrowLeftRight size={14} />
-                      交换 A / B
+                      {label}
                     </button>
-                    {operation === 'difference' && (
+                  </fieldset>
+                </Fragment>
+              ))}
+            </nav>
+            <div className="property-content">
+              <div className="property-context">
+                <b>
+                  {tab === 'create'
+                    ? '构面工具'
+                    : tab === 'output'
+                      ? '零件与制造设置'
+                      : '所选构造记录'}
+                </b>
+                <span>
+                  {tab === 'create'
+                    ? '来源路径与组合规则'
+                    : tab === 'output'
+                      ? '当前零件及工程几何参数'
+                      : featureId
+                        ? '单个体块'
+                        : selected.length + ' 个面'}
+                </span>
+              </div>
+              <div
+                className="model-properties"
+                ref={propertiesPanel}
+                key={tab + featureId + JSON.stringify(selected)}
+              >
+                {tab === 'create' && (
+                  <>
+                    {replaceId && (
+                      <div className="model-notice">
+                        正在重新绑定「{selectedSpec?.name}」，只选择一个候选面。
+                        <button onClick={cancel}>取消重绑</button>
+                      </div>
+                    )}
+                    <div onChangeCapture={() => cancelPreviewOnly()}>
+                      <label className="model-field">
+                        构面操作
+                        <select
+                          aria-label="构面操作"
+                          value={operation}
+                          onChange={(e) => {
+                            setOperation(e.target.value as RegionKind);
+                            cancelPreviewOnly();
+                            setTarget(selected[0] || '');
+                            setOperand(selected[1] || '');
+                          }}
+                        >
+                          {Object.entries(labels).map(([k, v]) => (
+                            <option key={k} value={k}>
+                              {String(v)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {[
+                        'split',
+                        'union',
+                        'difference',
+                        'intersection',
+                      ].includes(operation) && (
+                        <label className="model-field">
+                          {operation === 'split' ? '待切分的面' : '目标面 A'}
+                          {selectList(target, setTarget)}
+                        </label>
+                      )}
+                      {['union', 'difference', 'intersection'].includes(
+                        operation,
+                      ) && (
+                        <>
+                          <label className="model-field">
+                            工具面 B{selectList(operand, setOperand, target)}
+                          </label>
+                          <button
+                            onClick={() => {
+                              cancelPreviewOnly();
+                              setTarget(operand);
+                              setOperand(target);
+                            }}
+                          >
+                            <ArrowLeftRight size={14} />
+                            交换 A / B
+                          </button>
+                          {operation === 'difference' && (
+                            <p className="model-help">
+                              保留 A，扣去与 B 重叠的面积。源面仍可编辑。
+                            </p>
+                          )}
+                        </>
+                      )}
+                      {['path', 'split', 'between', 'stroke'].includes(
+                        operation,
+                      ) && (
+                        <div className="model-source-picker">
+                          <div className="model-section-title">
+                            <b>
+                              {operation === 'split' ? '切分路径' : '来源路径'}
+                            </b>
+                            <span>{sourceIds.length} 条</span>
+                            <button
+                              onClick={() => {
+                                cancelPreviewOnly();
+                                setSourceIds([]);
+                              }}
+                            >
+                              清空
+                            </button>
+                          </div>
+                          <input
+                            aria-label="搜索来源路径"
+                            placeholder="搜索名称或分组"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                          <div>
+                            {p.project.paths
+                              .filter((path) => {
+                                const group =
+                                  p.project.groups?.find(
+                                    (g) => g.id === path.groupId,
+                                  )?.name || '';
+                                return (path.name + ' ' + group).includes(
+                                  search,
+                                );
+                              })
+                              .map((path) => (
+                                <label key={path.id} title="双击名称编辑源样条">
+                                  <input
+                                    type="checkbox"
+                                    checked={sourceIds.includes(path.id)}
+                                    onChange={() => {
+                                      if (
+                                        ['path', 'stroke'].includes(operation)
+                                      )
+                                        setSourceIds([path.id]);
+                                      else toggleSource(path.id);
+                                    }}
+                                  />
+                                  <span
+                                    onDoubleClick={() =>
+                                      p.onEditSource(path.id)
+                                    }
+                                  >
+                                    {path.name}
+                                  </span>
+                                  <small>{path.closed ? '闭合' : '开放'}</small>
+                                </label>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                      {operation === 'split' && (
+                        <label className="model-field">
+                          端点接边距离（mm）
+                          <input
+                            aria-label="接边距离"
+                            type="number"
+                            min={0}
+                            max={5}
+                            step={0.05}
+                            value={joinMM}
+                            onChange={(e) => setJoinMM(+e.target.value)}
+                          />
+                          <small>
+                            仅预览中橙色连接会用于构面，不移动源节点。
+                          </small>
+                        </label>
+                      )}
+                      {operation === 'path' && (
+                        <label className="model-check">
+                          <input
+                            type="checkbox"
+                            checked={close}
+                            onChange={(e) => setClose(e.target.checked)}
+                          />
+                          补齐开放路径首尾（预览连接）
+                        </label>
+                      )}
+                      {operation === 'stroke' && (
+                        <label className="model-field">
+                          线宽（mm）
+                          <input
+                            type="number"
+                            min={0.01}
+                            max={100}
+                            step={0.1}
+                            value={widthMM}
+                            onChange={(e) => setWidthMM(+e.target.value)}
+                          />
+                        </label>
+                      )}
+                      {operation !== 'split' && (
+                        <label className="model-check">
+                          <input
+                            type="checkbox"
+                            checked={repair}
+                            onChange={(e) => setRepair(e.target.checked)}
+                          />
+                          预览修复自交（仅派生区域）
+                        </label>
+                      )}
+                    </div>
+                    <button
+                      className="primary model-full"
+                      disabled={working || calculating}
+                      onClick={() => action(() => makePreview())}
+                    >
+                      预览区域
+                    </button>
+                    {preview && (
+                      <div className="model-preview-panel" ref={previewPanel}>
+                        <b>{preview.candidates.length} 个候选区域</b>
+                        <div className="model-inline">
+                          <button
+                            onClick={() =>
+                              setChosen(
+                                preview.candidates.map((_, i: number) => i),
+                              )
+                            }
+                          >
+                            全选
+                          </button>
+                          <button onClick={() => setChosen([])}>清空</button>
+                        </div>
+                        {preview.candidates.map((r, i: number) => (
+                          <label key={i} className="model-candidate">
+                            <input
+                              type="checkbox"
+                              checked={chosen.includes(i)}
+                              onChange={() =>
+                                setChosen((ids) =>
+                                  ids.includes(i)
+                                    ? ids.filter((x) => x !== i)
+                                    : [...ids, i],
+                                )
+                              }
+                            />
+                            <i
+                              style={{
+                                background: palette[i % palette.length],
+                              }}
+                            />
+                            {i + 1}
+                            <span>
+                              {r.areaMM2.toFixed(2)} mm² · {r.holes} 孔
+                            </span>
+                          </label>
+                        ))}
+                        {preview.connections.length > 0 && (
+                          <details>
+                            <summary>
+                              {preview.connections.length} 处连接，最大{' '}
+                              {Math.max(
+                                ...preview.connections.map((c) => c.gapMM),
+                              ).toFixed(3)}{' '}
+                              mm
+                            </summary>
+                            {preview.connections.map((c, i: number) => (
+                              <p key={i}>
+                                {p.project.paths.find((x) => x.id === c.pathId)
+                                  ?.name || '轮廓首尾'}
+                                ：{c.gapMM.toFixed(3)} mm
+                              </p>
+                            ))}
+                          </details>
+                        )}
+                        {preview.warnings.map((s: string, i: number) => (
+                          <p className="model-notice" key={i}>
+                            {s}
+                          </p>
+                        ))}
+                        <div className="model-inline">
+                          <button
+                            className="primary"
+                            disabled={!chosen.length || working}
+                            onClick={() => action(() => commitPreview())}
+                          >
+                            {replaceId ? '重新绑定面' : '建立所选面'} ·{' '}
+                            {chosen.length}
+                          </button>
+                          <button onClick={cancel}>取消</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {tab === 'object' && (
+                  <>
+                    {feature ? (
+                      <>
+                        <div className="model-section-title">
+                          <b>体块属性</b>
+                          <button
+                            aria-label="删除当前体块"
+                            onClick={() =>
+                              requestDelete('feature', [featureId])
+                            }
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                        <label className="model-field">
+                          用途
+                          <select
+                            aria-label="体块用途"
+                            value={feature.mode}
+                            onChange={(e) =>
+                              updateFeature(feature.id, {
+                                mode: e.target.value as ModelFeature['mode'],
+                                zMM:
+                                  e.target.value === 'cut' && !feature.attachId
+                                    ? feature.zMM + feature.heightMM
+                                    : feature.zMM,
+                              })
+                            }
+                          >
+                            <option value="add">凸起 · 增加体积</option>
+                            <option value="cut">凹槽 · 切削指定深度</option>
+                            <option value="through">贯穿 · 切穿这个零件</option>
+                          </select>
+                        </label>
+                        <label className="model-field">
+                          来源面
+                          {selectList(feature.regionId, (regionId) =>
+                            updateFeature(feature.id, { regionId }),
+                          )}
+                        </label>
+                        <label className="model-field">
+                          所属零件
+                          <select
+                            value={feature.partId}
+                            onChange={(e) => {
+                              updateFeature(feature.id, {
+                                partId: e.target.value,
+                                attachId: '',
+                              });
+                              setPartId(e.target.value);
+                            }}
+                          >
+                            {model.parts.map((x) => (
+                              <option key={x.id} value={x.id}>
+                                {x.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {feature.mode !== 'through' && (
+                          <>
+                            {p.project.creation?.printStack ? (
+                              <p className="model-hint">
+                                起始位置由部件所属的堆叠层统一计算。调整所属层请返回创作界面。
+                              </p>
+                            ) : (
+                              <>
+                                <label className="model-field">
+                                  高度基准
+                                  <select
+                                    aria-label="高度基准"
+                                    value={feature.attachId || ''}
+                                    onChange={(e) =>
+                                      updateFeature(feature.id, {
+                                        attachId: e.target.value,
+                                      })
+                                    }
+                                  >
+                                    <option value="">绝对高度 · Z=0</option>
+                                    {model.features
+                                      .filter(
+                                        (x) =>
+                                          x.mode === 'add' &&
+                                          x.id !== feature.id &&
+                                          x.partId === partId &&
+                                          !featureDependants(model, [
+                                            feature.id,
+                                          ]).includes(x.id),
+                                      )
+                                      .map((x) => (
+                                        <option key={x.id} value={x.id}>
+                                          {x.name} · 顶面
+                                        </option>
+                                      ))}
+                                  </select>
+                                </label>
+                                <label className="model-field">
+                                  {feature.attachId
+                                    ? '相对顶面偏移'
+                                    : feature.mode === 'cut'
+                                      ? '切削起点 Z'
+                                      : '底面 Z'}
+                                  （mm）
+                                  <input
+                                    key={feature.id + 'z' + feature.zMM}
+                                    aria-label="体块起始高度"
+                                    type="number"
+                                    step={0.1}
+                                    defaultValue={feature.zMM}
+                                    onBlur={(e) =>
+                                      action(() =>
+                                        updateFeature(feature.id, {
+                                          zMM: +e.target.value,
+                                        }),
+                                      )
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter')
+                                        e.currentTarget.blur();
+                                    }}
+                                  />
+                                </label>
+                              </>
+                            )}
+                            <label className="model-field">
+                              {feature.mode === 'cut' ? '切削深度' : '厚度'}（
+                              {p.project.creation?.printStack ? '打印层' : 'mm'}
+                              ）
+                              {p.project.creation?.printStack ? (
+                                <NumberEdit
+                                  label="体块厚度打印层数"
+                                  min={1}
+                                  max={Math.floor(
+                                    1000 /
+                                      p.project.creation.printStack
+                                        .layerHeightMM,
+                                  )}
+                                  step={1}
+                                  value={
+                                    feature.heightLayers ??
+                                    printCount(
+                                      feature.heightMM,
+                                      p.project.creation.printStack
+                                        .layerHeightMM,
+                                    )
+                                  }
+                                  onCommit={(heightLayers) =>
+                                    action(() =>
+                                      updateFeature(feature.id, {
+                                        heightLayers,
+                                      }),
+                                    )
+                                  }
+                                />
+                              ) : (
+                                <input
+                                  key={feature.id + 'h' + feature.heightMM}
+                                  aria-label="体块厚度"
+                                  type="number"
+                                  min={0.01}
+                                  max={1000}
+                                  step={0.1}
+                                  defaultValue={feature.heightMM}
+                                  onBlur={(e) =>
+                                    action(() =>
+                                      updateFeature(feature.id, {
+                                        heightMM: +e.target.value,
+                                      }),
+                                    )
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter')
+                                      e.currentTarget.blur();
+                                  }}
+                                />
+                              )}
+                            </label>
+                          </>
+                        )}
+                        <button
+                          onClick={() => {
+                            setFeatureId('');
+                            setSelected([feature.regionId]);
+                            p.onMode('faces');
+                          }}
+                        >
+                          查看来源面
+                        </button>
+                        <p className="model-help">
+                          同一零件的凸起先合并，再执行凹槽与贯穿切削。停用体块会停止其几何作用。
+                        </p>
+                      </>
+                    ) : selected.length ? (
+                      <>
+                        <div className="model-section-title">
+                          <b>
+                            {selected.length === 1
+                              ? selectedSpec?.name
+                              : `已选 ${selected.length} 个面`}
+                          </b>
+                          <button
+                            aria-label="删除所选面"
+                            onClick={() => requestDelete('region', selected)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                        {selectedRegion?.error ? (
+                          <p className="model-notice">{selectedRegion.error}</p>
+                        ) : (
+                          selectedRegion && (
+                            <p>
+                              {selectedRegion.areaMM2.toFixed(2)} mm² ·{' '}
+                              {selectedRegion.components} 块 ·{' '}
+                              {selectedRegion.holes} 孔
+                            </p>
+                          )
+                        )}
+                        <button
+                          className="primary model-full"
+                          disabled={
+                            calculating ||
+                            selected.some(
+                              (id) => regions.find((r) => r.id === id)?.error,
+                            ) ||
+                            regionRevision.current !== p.project
+                          }
+                          onClick={() => action(() => addFeatures())}
+                        >
+                          添加为凸起体块
+                        </button>
+                        {selected.length === 1 && selectedSpec && (
+                          <>
+                            <p className="model-help">
+                              来源：{labels[selectedSpec.kind]}
+                            </p>
+                            <button onClick={reselect}>
+                              重新指定来源 / 选区
+                            </button>
+                            {[
+                              ...new Set(
+                                [
+                                  selectedSpec?.pathId,
+                                  ...(selectedSpec?.pathIds || []),
+                                ].filter((id): id is string => !!id),
+                              ),
+                            ].map((id: string) => (
+                              <button
+                                className="model-source-link"
+                                key={id}
+                                onClick={() => p.onEditSource(id)}
+                              >
+                                编辑源样条：
+                                {p.project.paths.find((x) => x.id === id)
+                                  ?.name || '来源已删除'}
+                              </button>
+                            ))}
+                            <label className="model-field">
+                              区域标记色
+                              <input
+                                type="color"
+                                value={selectedSpec?.color || '#b8ef62'}
+                                onChange={(e) =>
+                                  mutate(
+                                    (m) =>
+                                      (m.regions.find(
+                                        (r) => r.id === selectedSpec.id,
+                                      )!.color = e.target.value),
+                                  )
+                                }
+                              />
+                            </label>
+                          </>
+                        )}
+                      </>
+                    ) : (
                       <p className="model-help">
-                        保留 A，扣去与 B 重叠的面积。源面仍可编辑。
+                        点击画布或对象树中的面、体块查看属性。Shift
+                        可多选面并批量建立体块。
                       </p>
                     )}
                   </>
                 )}
-                {['path', 'split', 'between', 'stroke'].includes(operation) && (
-                  <div className="model-source-picker">
+                {tab === 'output' && (
+                  <>
                     <div className="model-section-title">
-                      <b>{operation === 'split' ? '切分路径' : '来源路径'}</b>
-                      <span>{sourceIds.length} 条</span>
-                      <button
-                        onClick={() => {
-                          cancelPreviewOnly();
-                          setSourceIds([]);
-                        }}
-                      >
-                        清空
-                      </button>
-                    </div>
-                    <input
-                      aria-label="搜索来源路径"
-                      placeholder="搜索名称或分组"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                    <div>
-                      {p.project.paths
-                        .filter((path) => {
-                          const group =
-                            p.project.groups?.find((g) => g.id === path.groupId)
-                              ?.name || '';
-                          return (path.name + ' ' + group).includes(search);
-                        })
-                        .map((path) => (
-                          <label key={path.id} title="双击名称编辑源样条">
-                            <input
-                              type="checkbox"
-                              checked={sourceIds.includes(path.id)}
-                              onChange={() => {
-                                if (['path', 'stroke'].includes(operation))
-                                  setSourceIds([path.id]);
-                                else toggleSource(path.id);
-                              }}
-                            />
-                            <span onDoubleClick={() => p.onEditSource(path.id)}>
-                              {path.name}
-                            </span>
-                            <small>{path.closed ? '闭合' : '开放'}</small>
-                          </label>
-                        ))}
-                    </div>
-                  </div>
-                )}
-                {operation === 'split' && (
-                  <label className="model-field">
-                    端点接边距离（mm）
-                    <input
-                      aria-label="接边距离"
-                      type="number"
-                      min={0}
-                      max={5}
-                      step={0.05}
-                      value={joinMM}
-                      onChange={(e) => setJoinMM(+e.target.value)}
-                    />
-                    <small>仅预览中橙色连接会用于构面，不移动源节点。</small>
-                  </label>
-                )}
-                {operation === 'path' && (
-                  <label className="model-check">
-                    <input
-                      type="checkbox"
-                      checked={close}
-                      onChange={(e) => setClose(e.target.checked)}
-                    />
-                    补齐开放路径首尾（预览连接）
-                  </label>
-                )}
-                {operation === 'stroke' && (
-                  <label className="model-field">
-                    线宽（mm）
-                    <input
-                      type="number"
-                      min={0.01}
-                      max={100}
-                      step={0.1}
-                      value={widthMM}
-                      onChange={(e) => setWidthMM(+e.target.value)}
-                    />
-                  </label>
-                )}
-                {operation !== 'split' && (
-                  <label className="model-check">
-                    <input
-                      type="checkbox"
-                      checked={repair}
-                      onChange={(e) => setRepair(e.target.checked)}
-                    />
-                    预览修复自交（仅派生区域）
-                  </label>
-                )}
-              </div>
-              <button
-                className="primary model-full"
-                disabled={working || calculating}
-                onClick={() => action(() => makePreview())}
-              >
-                预览区域
-              </button>
-              {preview && (
-                <div className="model-preview-panel" ref={previewPanel}>
-                  <b>{preview.candidates.length} 个候选区域</b>
-                  <div className="model-inline">
-                    <button
-                      onClick={() =>
-                        setChosen(preview.candidates.map((_, i: number) => i))
-                      }
-                    >
-                      全选
-                    </button>
-                    <button onClick={() => setChosen([])}>清空</button>
-                  </div>
-                  {preview.candidates.map((r, i: number) => (
-                    <label key={i} className="model-candidate">
-                      <input
-                        type="checkbox"
-                        checked={chosen.includes(i)}
-                        onChange={() =>
-                          setChosen((ids) =>
-                            ids.includes(i)
-                              ? ids.filter((x) => x !== i)
-                              : [...ids, i],
+                      <b>当前零件</b>
+                      <Rename
+                        value={
+                          model.parts.find((x) => x.id === partId)?.name ||
+                          '零件'
+                        }
+                        onChange={(name) =>
+                          mutate(
+                            (m) =>
+                              (m.parts.find((x) => x.id === partId)!.name =
+                                name),
                           )
                         }
                       />
-                      <i style={{ background: palette[i % palette.length] }} />
-                      {i + 1}
-                      <span>
-                        {r.areaMM2.toFixed(2)} mm² · {r.holes} 孔
-                      </span>
+                    </div>
+                    <label className="model-field">
+                      底图宽度（mm）<span>{p.project.widthMM} mm</span>
+                      <small>
+                        成品外轮廓尺寸以下方三维计算结果为准；可在主界面的“工程设置”中修改比例。
+                      </small>
                     </label>
-                  ))}
-                  {preview.connections.length > 0 && (
-                    <details>
-                      <summary>
-                        {preview.connections.length} 处连接，最大{' '}
-                        {Math.max(
-                          ...preview.connections.map((c) => c.gapMM),
-                        ).toFixed(3)}{' '}
-                        mm
-                      </summary>
-                      {preview.connections.map((c, i: number) => (
-                        <p key={i}>
-                          {p.project.paths.find((x) => x.id === c.pathId)
-                            ?.name || '轮廓首尾'}
-                          ：{c.gapMM.toFixed(3)} mm
-                        </p>
-                      ))}
-                    </details>
-                  )}
-                  {preview.warnings.map((s: string, i: number) => (
-                    <p className="model-notice" key={i}>
-                      {s}
+                    <h3 className="model-section-title">
+                      工程几何设置 · 所有零件
+                    </h3>
+                    <label className="model-field">
+                      网格逼近精度（mm）
+                      <input
+                        type="number"
+                        min={0.001}
+                        max={0.2}
+                        step={0.005}
+                        key={model.toleranceMM}
+                        defaultValue={model.toleranceMM}
+                        onBlur={(e) =>
+                          action(() =>
+                            mutate((m) => (m.toleranceMM = +e.target.value)),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="model-check">
+                      <input
+                        type="checkbox"
+                        checked={!!model.manufacturingMM}
+                        onChange={(e) =>
+                          mutate(
+                            (m) =>
+                              (m.manufacturingMM = e.target.checked ? 0.02 : 0),
+                          )
+                        }
+                      />
+                      制造清理 · 0.02 mm
+                    </label>
+                    <p className="model-help">
+                      填合极小缝隙和零宽接触，只改变派生实体。启用后请检查细节。未检测打印机最小壁厚。
                     </p>
-                  ))}
-                  <div className="model-inline">
-                    <button
-                      className="primary"
-                      disabled={!chosen.length || working}
-                      onClick={() => action(() => commitPreview())}
-                    >
-                      {replaceId ? '重新绑定面' : '建立所选面'} ·{' '}
-                      {chosen.length}
-                    </button>
-                    <button onClick={cancel}>取消</button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          {tab === 'object' && (
-            <>
-              {feature ? (
-                <>
-                  <div className="model-section-title">
-                    <b>体块属性</b>
-                    <button
-                      aria-label="删除当前体块"
-                      onClick={() => requestDelete('feature', [featureId])}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                  <label className="model-field">
-                    用途
-                    <select
-                      aria-label="体块用途"
-                      value={feature.mode}
-                      onChange={(e) =>
-                        updateFeature(feature.id, {
-                          mode: e.target.value as ModelFeature['mode'],
-                          zMM:
-                            e.target.value === 'cut' && !feature.attachId
-                              ? feature.zMM + feature.heightMM
-                              : feature.zMM,
-                        })
-                      }
-                    >
-                      <option value="add">凸起 · 增加体积</option>
-                      <option value="cut">凹槽 · 切削指定深度</option>
-                      <option value="through">贯穿 · 切穿这个零件</option>
-                    </select>
-                  </label>
-                  <label className="model-field">
-                    来源面
-                    {selectList(feature.regionId, (regionId) =>
-                      updateFeature(feature.id, { regionId }),
+                    {p.mode !== 'relief' && (
+                      <button onClick={() => p.onMode('relief')}>
+                        查看三维并校验
+                      </button>
                     )}
-                  </label>
-                  <label className="model-field">
-                    所属零件
-                    <select
-                      value={feature.partId}
-                      onChange={(e) => {
-                        updateFeature(feature.id, {
-                          partId: e.target.value,
-                          attachId: '',
-                        });
-                        setPartId(e.target.value);
-                      }}
-                    >
-                      {model.parts.map((x) => (
-                        <option key={x.id} value={x.id}>
-                          {x.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {feature.mode !== 'through' && (
-                    <>
-                      {p.project.creation?.printStack ? (
-                        <p className="model-hint">
-                          起始位置由部件所属的堆叠层统一计算。调整所属层请返回创作界面。
+                    {result && resultRevision.current === p.project && (
+                      <div className="model-validation">
+                        <b>
+                          {result.report.valid && result.report.components === 1
+                            ? '闭合实体检查通过'
+                            : '需要处理几何问题'}
+                        </b>
+                        <p>
+                          {result.report.sizeMM
+                            .map((x: number) => x.toFixed(2))
+                            .join(' × ')}{' '}
+                          mm
                         </p>
-                      ) : (
-                        <>
-                          <label className="model-field">
-                            高度基准
-                            <select
-                              aria-label="高度基准"
-                              value={feature.attachId || ''}
-                              onChange={(e) =>
-                                updateFeature(feature.id, {
-                                  attachId: e.target.value,
-                                })
-                              }
-                            >
-                              <option value="">绝对高度 · Z=0</option>
-                              {model.features
-                                .filter(
-                                  (x) =>
-                                    x.mode === 'add' &&
-                                    x.id !== feature.id &&
-                                    x.partId === partId &&
-                                    !featureDependants(model, [
-                                      feature.id,
-                                    ]).includes(x.id),
-                                )
-                                .map((x) => (
-                                  <option key={x.id} value={x.id}>
-                                    {x.name} · 顶面
-                                  </option>
-                                ))}
-                            </select>
-                          </label>
-                          <label className="model-field">
-                            {feature.attachId
-                              ? '相对顶面偏移'
-                              : feature.mode === 'cut'
-                                ? '切削起点 Z'
-                                : '底面 Z'}
-                            （mm）
-                            <input
-                              key={feature.id + 'z' + feature.zMM}
-                              aria-label="体块起始高度"
-                              type="number"
-                              step={0.1}
-                              defaultValue={feature.zMM}
-                              onBlur={(e) =>
-                                action(() =>
-                                  updateFeature(feature.id, {
-                                    zMM: +e.target.value,
-                                  }),
-                                )
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') e.currentTarget.blur();
-                              }}
-                            />
-                          </label>
-                        </>
-                      )}
-                      <label className="model-field">
-                        {feature.mode === 'cut' ? '切削深度' : '厚度'}（
-                        {p.project.creation?.printStack ? '打印层' : 'mm'}）
-                        {p.project.creation?.printStack ? (
-                          <NumberEdit
-                            label="体块厚度打印层数"
-                            min={1}
-                            max={Math.floor(
-                              1000 /
-                                p.project.creation.printStack.layerHeightMM,
-                            )}
-                            step={1}
-                            value={
-                              feature.heightLayers ??
-                              printCount(
-                                feature.heightMM,
-                                p.project.creation.printStack.layerHeightMM,
-                              )
-                            }
-                            onCommit={(heightLayers) =>
-                              action(() =>
-                                updateFeature(feature.id, { heightLayers }),
-                              )
-                            }
-                          />
-                        ) : (
-                          <input
-                            key={feature.id + 'h' + feature.heightMM}
-                            aria-label="体块厚度"
-                            type="number"
-                            min={0.01}
-                            max={1000}
-                            step={0.1}
-                            defaultValue={feature.heightMM}
-                            onBlur={(e) =>
-                              action(() =>
-                                updateFeature(feature.id, {
-                                  heightMM: +e.target.value,
-                                }),
-                              )
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') e.currentTarget.blur();
-                            }}
-                          />
-                        )}
-                      </label>
-                    </>
-                  )}
-                  <button
-                    onClick={() => {
-                      setFeatureId('');
-                      setSelected([feature.regionId]);
-                      p.onMode('faces');
-                    }}
-                  >
-                    查看来源面
-                  </button>
-                  <p className="model-help">
-                    同一零件的凸起先合并，再执行凹槽与贯穿切削。停用体块会停止其几何作用。
-                  </p>
-                </>
-              ) : selected.length ? (
-                <>
-                  <div className="model-section-title">
-                    <b>
-                      {selected.length === 1
-                        ? selectedSpec?.name
-                        : `已选 ${selected.length} 个面`}
-                    </b>
-                    <button
-                      aria-label="删除所选面"
-                      onClick={() => requestDelete('region', selected)}
-                    >
-                      <Trash2 size={15} />
+                        <p>
+                          {result.report.components} 个连通实体 · 非流形边{' '}
+                          {result.report.invalidEdges} · 退化面{' '}
+                          {result.report.zeroArea}
+                        </p>
+                        <p>
+                          体积 {(result.report.volumeMM3 / 1000).toFixed(2)} cm³
+                        </p>
+                        {result.warnings.map((s: string, i: number) => (
+                          <p className="model-notice" key={i}>
+                            {s}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={() => p.onOutput(partId)}>
+                      检查与导出当前零件…
                     </button>
-                  </div>
-                  {selectedRegion?.error ? (
-                    <p className="model-notice">{selectedRegion.error}</p>
-                  ) : (
-                    selectedRegion && (
-                      <p>
-                        {selectedRegion.areaMM2.toFixed(2)} mm² ·{' '}
-                        {selectedRegion.components} 块 · {selectedRegion.holes}{' '}
-                        孔
-                      </p>
-                    )
-                  )}
-                  <button
-                    className="primary model-full"
-                    disabled={
-                      calculating ||
-                      selected.some(
-                        (id) => regions.find((r) => r.id === id)?.error,
-                      ) ||
-                      regionRevision.current !== p.project
-                    }
-                    onClick={() => action(() => addFeatures())}
-                  >
-                    添加为凸起体块
-                  </button>
-                  {selected.length === 1 && selectedSpec && (
-                    <>
-                      <p className="model-help">
-                        来源：{labels[selectedSpec.kind]}
-                      </p>
-                      <button onClick={reselect}>重新指定来源 / 选区</button>
-                      {[
-                        ...new Set(
-                          [
-                            selectedSpec?.pathId,
-                            ...(selectedSpec?.pathIds || []),
-                          ].filter((id): id is string => !!id),
-                        ),
-                      ].map((id: string) => (
-                        <button
-                          className="model-source-link"
-                          key={id}
-                          onClick={() => p.onEditSource(id)}
-                        >
-                          编辑源样条：
-                          {p.project.paths.find((x) => x.id === id)?.name ||
-                            '来源已删除'}
-                        </button>
-                      ))}
-                      <label className="model-field">
-                        区域标记色
-                        <input
-                          type="color"
-                          value={selectedSpec?.color || '#b8ef62'}
-                          onChange={(e) =>
-                            mutate(
-                              (m) =>
-                                (m.regions.find(
-                                  (r) => r.id === selectedSpec.id,
-                                )!.color = e.target.value),
-                            )
-                          }
-                        />
-                      </label>
-                    </>
-                  )}
-                </>
-              ) : (
-                <p className="model-help">
-                  点击画布或对象树中的面、体块查看属性。Shift
-                  可多选面并批量建立体块。
-                </p>
-              )}
-            </>
-          )}
-          {tab === 'output' && (
-            <>
-              <div className="model-section-title">
-                <b>当前零件</b>
-                <Rename
-                  value={
-                    model.parts.find((x) => x.id === partId)?.name || '零件'
-                  }
-                  onChange={(name) =>
-                    mutate(
-                      (m) =>
-                        (m.parts.find((x) => x.id === partId)!.name = name),
-                    )
-                  }
-                />
-              </div>
-              <label className="model-field">
-                底图宽度（mm）<span>{p.project.widthMM} mm</span>
-                <small>
-                  成品外轮廓尺寸以下方三维计算结果为准；可在描线的工程属性中修改比例。
-                </small>
-              </label>
-              <label className="model-field">
-                网格逼近精度（mm）
-                <input
-                  type="number"
-                  min={0.001}
-                  max={0.2}
-                  step={0.005}
-                  key={model.toleranceMM}
-                  defaultValue={model.toleranceMM}
-                  onBlur={(e) =>
-                    action(() =>
-                      mutate((m) => (m.toleranceMM = +e.target.value)),
-                    )
-                  }
-                />
-              </label>
-              <label className="model-check">
-                <input
-                  type="checkbox"
-                  checked={!!model.manufacturingMM}
-                  onChange={(e) =>
-                    mutate(
-                      (m) => (m.manufacturingMM = e.target.checked ? 0.02 : 0),
-                    )
-                  }
-                />
-                制造清理 · 0.02 mm
-              </label>
-              <p className="model-help">
-                填合极小缝隙和零宽接触，只改变派生实体。启用后请检查细节。未检测打印机最小壁厚。
-              </p>
-              {p.mode !== 'relief' && (
-                <button onClick={() => p.onMode('relief')}>
-                  查看三维并校验
-                </button>
-              )}
-              {result && resultRevision.current === p.project && (
-                <div className="model-validation">
-                  <b>
-                    {result.report.valid && result.report.components === 1
-                      ? '闭合实体检查通过'
-                      : '需要处理几何问题'}
-                  </b>
-                  <p>
-                    {result.report.sizeMM
-                      .map((x: number) => x.toFixed(2))
-                      .join(' × ')}{' '}
-                    mm
-                  </p>
-                  <p>
-                    {result.report.components} 个连通实体 · 非流形边{' '}
-                    {result.report.invalidEdges} · 退化面{' '}
-                    {result.report.zeroArea}
-                  </p>
-                  <p>体积 {(result.report.volumeMM3 / 1000).toFixed(2)} cm³</p>
-                  {result.warnings.map((s: string, i: number) => (
-                    <p className="model-notice" key={i}>
-                      {s}
+                    <p className="model-help">
+                      前往统一的制作与导出属性，继续使用当前零件。切片模板也在那里管理。
                     </p>
-                  ))}
-                </div>
-              )}
-              <div className="model-export-buttons">
-                <button
-                  disabled={
-                    working ||
-                    calculating ||
-                    !result?.report.valid ||
-                    resultRevision.current !== p.project
-                  }
-                  onClick={() => action(() => exportModel('3mf'))}
-                >
-                  <Download size={15} />
-                  导出 3MF
-                </button>
-                <button
-                  disabled={working || calculating || !model.features.length}
-                  onClick={() => action(() => exportModel('blender'))}
-                >
-                  Blender 实体 + 源曲线
-                </button>
-                <button
-                  disabled={working || calculating || !model.regions.length}
-                  onClick={() => action(() => exportModel('svg'))}
-                >
-                  导出{selected.length ? '所选' : '全部'}面 SVG
-                </button>
+                    <details>
+                      <summary>构造面数据</summary>
+                      <p className="model-help">
+                        仅导出高级编辑器中
+                        {selected.length
+                          ? '选中的 ' + selected.length + ' 个面'
+                          : '全部面'}
+                        的派生轮廓，不包含后续修改器和体块。
+                      </p>
+                      <button
+                        disabled={
+                          working || calculating || !model.regions.length
+                        }
+                        onClick={() => action(() => exportModel('svg'))}
+                      >
+                        <Download size={15} />
+                        导出{selected.length ? '所选' : '全部'}构造面 SVG
+                      </button>
+                    </details>
+                  </>
+                )}
               </div>
-              <p className="model-help">
-                通用 3MF
-                保留分色部件、尺寸和位置，不绑定打印机。打印机、耗材与切片参数在切片软件中选择；部分软件需重新指定部件颜色。
-              </p>
-              <SlicerTemplate
-                onExport={() => action(() => exportModel('3mf-bambu'))}
-                value={p.project.model?.slicerTemplate}
-                onChange={(slicerTemplate) =>
-                  p.onModel({ ...model, slicerTemplate })
-                }
-                disabled={working}
-              />
-              <p className="model-help">
-                3MF 保留当前零件的分色实体与毫米尺寸，耗材槽在切片软件中指定；面
-                SVG 是按上述精度计算的派生轮廓。源贝塞尔 SVG
-                在描线工作空间的顶部导出中。
-              </p>
-            </>
-          )}
-        </div>
-      </aside>
-      <Dialog
-        open={!!deleteRequest}
-        onOpenChange={(open) => {
-          if (!open) setDeleteRequest(null);
-        }}
-      >
-        <DialogContent>
-          <DialogTitle>删除关联对象？</DialogTitle>
-          <DialogDescription>
-            这会同时删除 {deleteRequest?.rs.length} 个面与{' '}
-            {deleteRequest?.fs.length}{' '}
-            个依赖体块。源样条保留，整次删除可以一步撤销。
-          </DialogDescription>
-          <div className="model-inline">
-            <button onClick={() => setDeleteRequest(null)}>取消</button>
-            <button
-              onClick={() =>
-                deleteRequest && erase(deleteRequest.rs, deleteRequest.fs)
-              }
-            >
-              删除这些对象
-            </button>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+        </aside>
+        <Dialog
+          open={!!deleteRequest}
+          onOpenChange={(open) => {
+            if (!open) setDeleteRequest(null);
+          }}
+        >
+          <DialogContent>
+            <DialogTitle>删除关联对象？</DialogTitle>
+            <DialogDescription>
+              这会同时删除 {deleteRequest?.rs.length} 个面与{' '}
+              {deleteRequest?.fs.length}{' '}
+              个依赖体块。源样条保留，整次删除可以一步撤销。
+            </DialogDescription>
+            <div className="model-inline">
+              <button onClick={() => setDeleteRequest(null)}>取消</button>
+              <button
+                onClick={() =>
+                  deleteRequest && erase(deleteRequest.rs, deleteRequest.fs)
+                }
+              >
+                删除这些对象
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </WorkspaceDialog>
   );
 }

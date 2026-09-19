@@ -33,6 +33,7 @@ import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
 import SlicerTemplate from '../shared/slicer-template';
 import CreationView from './creation-view';
+import PropertyNavigation, { globalPropertyPages } from './property-navigation';
 import CreationConnections from './creation-connections';
 import CreationModifiers from './creation-modifiers';
 import ConstructionPipeline from './construction-pipeline';
@@ -219,7 +220,9 @@ type CreationApi = {
   select_paths: (ids: string[]) => void;
   select_cells: (keys: string[]) => void;
   new_path: (path: { id: string }) => CreationDocument | undefined;
-  show_output: () => void;
+  show_output: (partId?: string) => void;
+  show_project: () => void;
+  show_tool: () => void;
   export: (format: string, save?: boolean) => Promise<unknown>;
   clear: () => void;
 };
@@ -252,6 +255,8 @@ type Props = {
   onCanvasPointerDown: (e: React.PointerEvent) => void;
   onFramePaths: (ids: string[], options?: { force?: boolean }) => void;
   sourceInspector: ReactNode;
+  projectSettings: ReactNode;
+  onSourceExport: () => void;
   onAdvanced: (mode: string) => void;
   onNewPath: () => void;
   busy: boolean;
@@ -333,14 +338,23 @@ export default function CreationWorkspace(p: Props) {
     worker = useRef<Worker | null>(null),
     requests = useRef(new Map<number, WorkerRequest>());
   const [boot, setBoot] = useState(false),
-    [calculating, setCalculating] = useState(false),
+    [engineCalculating, setCalculating] = useState(false),
+    [evaluatedProject, setEvaluatedProject] = useState<Project | null>(null),
     [checkingRole, setCheckingRole] = useState(false),
     [roleIssue, setRoleIssue] = useState<SceneError | null>(null),
     [roleResult, setRoleResult] = useState<PendingRoleResult | null>(null),
     [error, setError] = useState('');
-  const [tab, setTab] = useState('object'),
+  const calculating = engineCalculating || evaluatedProject !== p.project;
+  const evaluationFailed = !calculating && !scene;
+  const [outputPart, setOutputPartId] = useState('');
+  const outputParts = p.project.model?.parts.length
+    ? p.project.model.parts
+    : [{ id: 'main', name: '作品' }];
+  const outputPartId = outputParts.some((part) => part.id === outputPart)
+    ? outputPart
+    : outputParts[0].id;
+  const [requestedPage, setTab] = useState('tool'),
     [brush, setBrush] = useState('cream'),
-    [editingSwatch, setEditingSwatch] = useState(false),
     [search, setSearch] = useState(''),
     [dragTarget, setDragTarget] = useState('');
   const [draftHeight, setDraftHeight] = useState<number | null>(null),
@@ -351,7 +365,10 @@ export default function CreationWorkspace(p: Props) {
     [connectionHighlight, setConnectionHighlight] = useState<
       ConnectionHighlight[]
     >([]),
-    [report, setReport] = useState<ModelResult | null>(null),
+    [report, setReport] = useState<{
+      partId: string;
+      result: ModelResult;
+    } | null>(null),
     [exporting, setExporting] = useState(false),
     [showLines, setShowLines] = useState(true),
     [displayMode, setDisplayMode] = useState('reference');
@@ -366,7 +383,10 @@ export default function CreationWorkspace(p: Props) {
     selectedPaths: p.selectedPaths,
     onSelectPaths: p.onSelectPaths,
     root,
-    onTab: setTab,
+    onTab: (next) =>
+      setTab((previous) =>
+        globalPropertyPages.includes(previous) ? previous : next,
+      ),
     onChoose: (next) => {
       heightDrag.current = null;
       setDraftHeight(null);
@@ -388,6 +408,16 @@ export default function CreationWorkspace(p: Props) {
     expandedCells,
     setExpandedCells,
   } = selectionState;
+  const canEditModifiers = selection.kind !== 'path' && objects.length === 1;
+  const tab = ['object', 'lines', 'modifiers'].includes(requestedPage)
+    ? !selection.ids.length
+      ? 'tool'
+      : requestedPage === 'modifiers' && canEditModifiers
+        ? 'modifiers'
+        : selection.kind === 'path'
+          ? 'lines'
+          : 'object'
+    : requestedPage;
   useEffect(
     () => ref.current.onSelectionKind(selection.kind),
     [selection.kind],
@@ -516,12 +546,14 @@ export default function CreationWorkspace(p: Props) {
             return;
           }
           setScene(result);
+          setEvaluatedProject(snapshot);
           sceneRef.current = result;
           revision.current = snapshot;
           setError('');
         })
         .catch((error: unknown) => {
           if (!cancelled) {
+            setEvaluatedProject(snapshot);
             setScene(null);
             sceneRef.current = null;
             revision.current = null;
@@ -551,7 +583,11 @@ export default function CreationWorkspace(p: Props) {
         action.startsWith('print_')) &&
       revision.current !== ref.current.project
     )
-      throw Error('正在更新区域，请稍候再操作');
+      throw Error(
+        sceneRef.current
+          ? '正在更新区域，请稍候再操作'
+          : '区域计算失败或尚未就绪，请修复来源后重试',
+      );
     const next = creationCommand(
       ref.current.project,
       action,
@@ -604,7 +640,6 @@ export default function CreationWorkspace(p: Props) {
   function clear() {
     selectionState.clear();
     clearConnectionPreview();
-    setEditingSwatch(false);
   }
   const targets = () => creationEditTargets(selection);
   const printHeight = doc.printStack?.layerHeightMM;
@@ -815,7 +850,7 @@ export default function CreationWorkspace(p: Props) {
         const result = await call(
           '3mf',
           {
-            partId: snapshot.model?.parts[0]?.id || 'main',
+            partId: outputPartId,
             slicerTemplate:
               format === '3mf-bambu' ? snapshot.model?.slicerTemplate : null,
           },
@@ -823,17 +858,13 @@ export default function CreationWorkspace(p: Props) {
         );
         if (ref.current.project !== snapshot)
           throw Error('作品已修改，请重新导出');
-        setReport(result);
+        setReport({ partId: outputPartId, result });
         return deliver3MF(result, save);
       }
-      const r = await call(
-        'solid',
-        { partId: snapshot.model?.parts[0]?.id || 'main' },
-        snapshot,
-      );
+      const r = await call('solid', { partId: outputPartId }, snapshot);
       if (ref.current.project !== snapshot)
         throw Error('作品已修改，请重新检查后导出');
-      setReport(r);
+      setReport({ partId: outputPartId, result: r });
       if (format === 'check') return r;
       if (!r.report.valid || r.report.components !== 1)
         throw Error('成品尚不是一个有效相连的实体，请检查底板或分离区域');
@@ -911,7 +942,12 @@ export default function CreationWorkspace(p: Props) {
           return c;
         }
       },
-      show_output: () => setTab('make'),
+      show_output: (partId) => {
+        if (partId) setOutputPartId(partId);
+        setTab('make');
+      },
+      show_project: () => setTab('project'),
+      show_tool: () => setTab('tool'),
       export: exportWork,
       clear,
     });
@@ -1355,12 +1391,10 @@ export default function CreationWorkspace(p: Props) {
                     style={{ '--swatch': s.color } as React.CSSProperties}
                     onClick={() => {
                       setBrush(s.id);
-                      setEditingSwatch(false);
                     }}
                     onDoubleClick={() => {
                       setBrush(s.id);
-                      setEditingSwatch(true);
-                      setTab('object');
+                      setTab('palette');
                     }}
                   >
                     <i />
@@ -1378,7 +1412,7 @@ export default function CreationWorkspace(p: Props) {
                       name: '新颜色',
                     });
                     setBrush(next.creation.swatches.at(-1)!.id);
-                    setEditingSwatch(true);
+                    setTab('palette');
                   })
                 }
               >
@@ -1403,7 +1437,7 @@ export default function CreationWorkspace(p: Props) {
                         kind: 'object',
                         ids: [basePreview.objectId],
                       });
-                      setTab('make');
+                      setTab('object');
                       setBasePreview(null);
                       notify('已生成承托部件 · Ctrl+Z 撤销');
                     })
@@ -1714,7 +1748,7 @@ export default function CreationWorkspace(p: Props) {
                               selectionState.selectPaths([path.id]);
                               p.onFramePaths([path.id]);
                               p.onTool('edit');
-                              setTab('lines');
+                              setTab('tool');
                             }}
                           >
                             <Pencil size={13} />
@@ -1773,794 +1807,949 @@ export default function CreationWorkspace(p: Props) {
             </div>
           )}
         </div>
-        <div className="creation-tabs" role="tablist" aria-label="创作属性">
-          {[
-            ['object', '颜色与高低'],
-            ['lines', '线条'],
-            ['modifiers', '修改器'],
-            ['make', '制作'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={tab === id}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="creation-properties" role="tabpanel">
-          {tab === 'modifiers' && (
-            <CreationModifiers
-              key={current?.id || 'none'}
-              object={current}
-              project={p.project}
-              scene={scene || undefined}
-              busy={calculating}
-              cellKeys={selection.kind === 'cell' ? selection.ids : []}
-              onLocate={(ids) => {
-                selectionState.selectPaths(ids);
-                p.onView('flat');
-                p.onTool('edit');
-                p.onFramePaths(ids, { force: true });
-              }}
-              onCommand={(action: string, args: Record<string, unknown>) =>
-                safely(() => run(action, args))
-              }
-            />
-          )}
-          {error && (
-            <div role="alert" className="creation-error">
-              {error}
-              <button aria-label="关闭错误提示" onClick={() => setError('')}>
-                <X size={14} />
-              </button>
+        <div className="property-editor">
+          <PropertyNavigation
+            page={tab}
+            onPage={setTab}
+            pathsSelected={selection.kind === 'path'}
+            hasSelection={selection.ids.length > 0}
+            canEditModifiers={canEditModifiers}
+          />
+          <div className="property-content">
+            <div className="property-context" aria-live="polite">
+              <b>
+                {tab === 'project'
+                  ? '工程设置'
+                  : tab === 'palette'
+                    ? '项目色卡'
+                    : tab === 'print'
+                      ? '打印方案'
+                      : tab === 'make'
+                        ? '制作与导出'
+                        : tab === 'tool'
+                          ? '当前工具'
+                          : tab === 'modifiers'
+                            ? '构造与修改器'
+                            : '选区属性'}
+              </b>
+              <span>
+                {globalPropertyPages.includes(tab)
+                  ? '整个工程 · 不随选区改变'
+                  : tab === 'tool'
+                    ? {
+                        trace: '描线 · 拟合与吸附',
+                        edit: '节点 · 编辑当前线条',
+                        select: '选择 · 不改变形状',
+                        paint: '上色 · 使用当前画笔色',
+                        height: '高低 · 调整选中区域',
+                        pan: '平移 · 只移动视图',
+                      }[p.tool] || p.tool
+                    : selection.ids.length
+                      ? selection.kind === 'path'
+                        ? selection.ids.length + ' 条线条'
+                        : selection.kind === 'cell'
+                          ? selection.ids.length + ' 个区域'
+                          : selection.ids.length + ' 个部件'
+                      : '未选择对象'}
+              </span>
             </div>
-          )}
-          {[
-            ...(scene?.errors || []).filter((e) =>
-              objects.includes(e.objectId),
-            ),
-            ...(roleIssue && objects.includes(roleIssue.objectId)
-              ? [{ ...roleIssue, pending: true }]
-              : []),
-          ].map((e, i: number) => {
-            const owner = doc.objects.find((o) => o.id === e.objectId);
-            if (e.kind === 'pipeline' && !e.modifierId && owner)
-              return (
-                <ConstructionPipeline
-                  key={i}
-                  object={owner}
-                  scene={scene || undefined}
-                  busy={calculating || p.busy}
-                  onCommand={(action, args) => safely(() => run(action, args))}
-                  onLocate={(ids) => {
-                    selectionState.selectPaths(ids);
-                    p.onView('flat');
-                    p.onTool('edit');
-                    p.onFramePaths(ids, { force: true });
-                  }}
-                />
-              );
-            if (e.kind === 'modifier' || e.modifierId) {
-              const inline = scene?.modifierStatus?.some(
-                (status) => status.objectId === e.objectId && status.error,
-              );
-              if (tab === 'modifiers' && inline) return null;
-              return (
-                <div key={i} role="alert" className="creation-error">
-                  <strong>{owner?.name || '当前部件'} · 产出链已暂停</strong>
-                  <p>{e.message}</p>
-                  {tab !== 'modifiers' && (
-                    <button onClick={() => setTab('modifiers')}>
-                      查看修改器
-                    </button>
-                  )}
-                </div>
-              );
-            }
-            const candidates =
-              e.pathIds ||
-              owner?.pathIds.filter((id: string) =>
-                ['divider', 'hole'].includes(owner.roles[id]),
-              ) ||
-              [];
-            const selected =
-              selection.kind === 'path'
-                ? selection.ids.filter((id) => candidates.includes(id))
-                : [];
-            const ids = selected.length ? selected : candidates.slice(-1);
-            return (
-              <CreationIssue
-                key={i}
-                name={owner?.name || '当前部件'}
-                message={e.message}
-                pending={e.pending}
-                pathNames={ids.map(
-                  (id: string) =>
-                    p.project.paths.find((path) => path.id === id)?.name ||
-                    '分区线',
-                )}
-                busy={calculating || checkingRole || p.busy}
-                onLocate={() => {
-                  selectionState.selectPaths(ids);
-                  p.onView('flat');
-                  p.onTool('edit');
-                  p.onFramePaths(ids, { force: true });
-                }}
-                onDisable={
-                  !e.pending && ids.length && owner
-                    ? () =>
-                        safely(() =>
-                          applyRoles({
-                            objectId: owner.id,
-                            pathIds: ids,
-                            role: 'guide',
-                          }),
-                        )
-                    : undefined
-                }
-                onRetry={
-                  !e.pending
-                    ? () =>
-                        safely(async () => {
-                          const snapshot = ref.current.project;
-                          const result = await call('creation', {}, snapshot);
-                          if (ref.current.project !== snapshot) return;
-                          setScene(result);
-                          sceneRef.current = result;
-                          revision.current = snapshot;
-                        })
-                    : undefined
-                }
-              />
-            );
-          })}
-          {tab === 'object' && (
-            <>
-              {current ? (
+            <div
+              className="creation-properties"
+              key={
+                globalPropertyPages.includes(tab)
+                  ? tab
+                  : tab + JSON.stringify(selection)
+              }
+            >
+              {tab === 'project' && (
+                <div className="project-settings">{p.projectSettings}</div>
+              )}
+              {tab === 'project' && (
                 <>
-                  <CreationSelectionDetails
-                    selection={selection}
-                    objects={objects}
-                    project={p.project}
-                    scene={scene}
-                    onSelect={(next) => selectionState.commit(next)}
-                    onEnable={() => safely(() => applyHeight(displayedHeight))}
-                    onEdit={() => {
-                      const ids =
-                        selection.kind === 'cell'
-                          ? pathsForRegions(p.project, scene, cellKeys)
-                          : current.pathIds;
-                      selectionState.selectPaths(ids);
-                      p.onTool('edit');
-                      setTab('lines');
-                    }}
-                  />
-                  {scope === 'object' && (
-                    <div className="creation-draw-actions">
-                      <button
-                        onClick={() => {
-                          nextRole.current = 'boundary';
-                          p.onView('flat');
-                          p.onNewPath();
-                          setTab('lines');
-                        }}
-                      >
-                        画轮廓
-                      </button>
-                      <button
-                        onClick={() =>
-                          safely(() => {
-                            nextRole.current = 'divider';
-                            p.onView('flat');
-                            p.onNewPath();
-                            setTab('lines');
-                          })
-                        }
-                      >
-                        画分区线
-                      </button>
-                      <button
-                        onClick={() =>
-                          safely(() => {
-                            nextRole.current = 'hole';
-                            p.onView('flat');
-                            p.onNewPath();
-                            setTab('lines');
-                          })
-                        }
-                      >
-                        画挖洞轮廓
-                      </button>
-                    </div>
-                  )}
-                  {sourceOnly && (
-                    <p className="creation-source-note">
-                      仅有线条 · 尚未构面。开放样条不会单独产生色块；
-                      可以继续闭合轮廓，或移入已有部件作分区、参考。
+                  <details className="creation-advanced">
+                    <summary>工程高级构造</summary>
+                    <p>
+                      此编辑器管理整个工程的面来源、体块和零件，具有独立的记录选择。
                     </p>
-                  )}
-                  {objects.length > 1 && (
-                    <button
-                      onClick={() =>
-                        safely(() =>
-                          run('combine_objects', { objectIds: objects }),
-                        )
-                      }
-                    >
-                      整理为一个部件
+                    <button onClick={() => p.onAdvanced('faces')}>
+                      打开高级构造编辑器
                     </button>
-                  )}
-                  {scope !== 'source' && (
-                    <>
-                      {scope === 'object' ? (
-                        <PrintPlacement
-                          doc={doc}
-                          scene={scene}
-                          objectIds={objects}
-                          disabled={calculating || p.busy}
-                          onCommand={(a, args) => safely(() => run(a, args))}
-                          onManage={() => setTab('make')}
-                        />
-                      ) : (
-                        printHeight && (
-                          <p className="creation-muted">
-                            {
-                              doc.printStack!.layers.find(
-                                (l) => l.id === current?.printLayerId,
-                              )?.name
-                            }{' '}
-                            · 从 {cell?.bottomMM ?? 0} mm 开始，跟随下层抬升
-                          </p>
-                        )
-                      )}
-                      <CreationColor
-                        key={JSON.stringify(selection)}
-                        label={
-                          sourceOnly
-                            ? '默认颜色'
-                            : scope === 'local'
-                              ? `区域颜色 · ${cellKeys.length} 区`
-                              : '部件颜色'
-                        }
-                        colors={
-                          sourceOnly
-                            ? [
-                                doc.swatches.find(
-                                  (s) => s.id === current.swatchId,
-                                )?.color || swatch.color,
-                              ]
-                            : (scene?.cells || [])
-                                .filter((c) =>
-                                  scope === 'local'
-                                    ? cellKeys.includes(c.key)
-                                    : objects.includes(c.objectId),
-                                )
-                                .map((c) => c.color)
-                        }
-                        swatches={doc.swatches}
-                        disabled={calculating || p.busy || !!failedSelection}
-                        onPaint={(args) =>
-                          safely(() => run('paint', { ...targets(), ...args }))
-                        }
-                      />
-                      <div className="creation-property-block">
-                        <label>
-                          {scope === 'object' ? '部件统一厚度' : '区域厚度'}{' '}
-                          <span>{printHeight ? '打印层' : 'mm'}</span>
-                        </label>
-                        <div className="creation-height-input">
-                          <NumberEdit
-                            key={JSON.stringify(selection)}
-                            label={printHeight ? '厚度打印层数' : '凸起厚度'}
-                            disabled={calculating || failedSelection}
-                            value={displayedHeight}
-                            min={heightMinimum}
-                            max={heightMaximum}
-                            step={printHeight ? 1 : 0.1}
-                            onCommit={(n) => safely(() => applyHeight(n))}
-                          />
-                          <button
-                            aria-pressed={p.tool === 'height'}
-                            disabled={calculating || failedSelection}
-                            onClick={() => p.onTool('height')}
-                          >
-                            <ArrowUpFromLine size={17} />
-                            拖动调高
-                          </button>
-                        </div>
-                        <input
-                          aria-label="调整凸起厚度"
-                          disabled={calculating || failedSelection}
-                          type="range"
-                          min={printHeight ? 1 : 0.1}
-                          max={Math.max(printHeight ? 30 : 6, displayedHeight)}
-                          step={printHeight ? 1 : 0.1}
-                          value={displayedHeight}
-                          onPointerDown={() => {
-                            heightDrag.current = { slider: true };
-                          }}
-                          onChange={(e) => setDraftHeight(+e.target.value)}
-                          onPointerUp={() => {
-                            heightDrag.current = null;
-                            const value = draftHeight;
-                            setDraftHeight(null);
-                            if (value !== null)
-                              safely(() => applyHeight(value));
-                          }}
-                          onPointerCancel={cancel}
-                          onKeyUp={(e) => {
-                            if (e.key === 'Escape') {
-                              cancel();
-                              return;
-                            }
-                            if (draftHeight !== null) {
-                              const n = draftHeight;
-                              setDraftHeight(null);
-                              safely(() => applyHeight(n));
-                            }
-                          }}
-                        />
-                        {printHeight && (
-                          <small>
-                            {displayedHeight} × {printHeight} mm ={' '}
-                            {printMM(displayedHeight, printHeight)} mm
-                          </small>
-                        )}
-                      </div>
-                    </>
-                  )}
-                  {scope === 'object' && (
-                    <details className="creation-position">
-                      <summary>
-                        {printHeight ? '成品选项' : '部件位置与叠放'}
-                      </summary>
-                      {!printHeight && (
-                        <>
-                          <div>
-                            起始高度 mm
-                            <NumberEdit
-                              label="对象起始高度"
-                              value={current.zMM}
-                              onCommit={(n) =>
-                                safely(() =>
-                                  run('object', {
-                                    id: current.id,
-                                    changes: { zMM: n },
-                                  }),
-                                )
-                              }
-                            />
-                          </div>
-                          <label>
-                            放到对象上
-                            <select
-                              aria-label="放到对象上"
-                              value={current.attachId || ''}
-                              onChange={(e) =>
-                                safely(() =>
-                                  run('object', {
-                                    id: current.id,
-                                    changes: { attachId: e.target.value },
-                                  }),
-                                )
-                              }
-                            >
-                              <option value="">平台 · Z = 0</option>
-                              {doc.objects
-                                .filter((o) => o.id !== current.id)
-                                .map((o) => (
-                                  <option key={o.id} value={o.id}>
-                                    {o.name}
-                                  </option>
-                                ))}
-                            </select>
-                          </label>
-                          <small>
-                            列表拖动只调整顺序；这里才会改变物理高度。
-                          </small>
-                        </>
-                      )}
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={current.printable}
-                          onChange={(e) =>
+                  </details>
+                </>
+              )}
+              {tab === 'palette' && (
+                <>
+                  <p className="creation-muted">
+                    修改项目色会更新所有引用它的区域。仅给选区换色，请使用选区属性。
+                  </p>
+                  <div className="property-swatches">
+                    {doc.swatches.map((color) => (
+                      <button
+                        key={color.id}
+                        aria-pressed={swatch.id === color.id}
+                        onClick={() => setBrush(color.id)}
+                      >
+                        <i style={{ background: color.color }} />
+                        {color.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="creation-project-color">
+                    <div className="creation-property-title">
+                      <b>编辑色卡 · {swatch.name}</b>
+                    </div>
+                    {
+                      <div>
+                        <p>引用这枚色卡的区域会一起改变。</p>
+                        <Name
+                          value={swatch.name}
+                          label="重命名项目色"
+                          onRename={(name) =>
                             safely(() =>
-                              run('object', {
-                                id: current.id,
-                                changes: { printable: e.target.checked },
+                              run('swatch', {
+                                id: swatch.id,
+                                name,
+                                color: swatch.color,
                               }),
                             )
                           }
                         />
-                        参与成品导出
-                      </label>
-                    </details>
-                  )}
+                        <input
+                          type="color"
+                          aria-label="项目色色值"
+                          defaultValue={swatch.color}
+                          key={swatch.id + swatch.color}
+                          onBlur={(e) => {
+                            if (e.target.value !== swatch.color)
+                              safely(() =>
+                                run('swatch', {
+                                  id: swatch.id,
+                                  color: e.target.value,
+                                }),
+                              );
+                          }}
+                        />
+                        <button
+                          onClick={() =>
+                            safely(async () => {
+                              const eyedropper = window as EyeDropperWindow;
+                              if (!eyedropper.EyeDropper)
+                                throw Error(
+                                  '此浏览器不支持屏幕取色，请使用色值输入',
+                                );
+                              try {
+                                const value =
+                                  await new eyedropper.EyeDropper().open();
+                                run('swatch', {
+                                  id: swatch.id,
+                                  color: value.sRGBHex,
+                                });
+                              } catch (error: unknown) {
+                                if (
+                                  !(
+                                    error instanceof DOMException &&
+                                    error.name === 'AbortError'
+                                  )
+                                )
+                                  throw error;
+                              }
+                            })
+                          }
+                        >
+                          <Pipette size={15} />
+                          取色
+                        </button>
+                        <CreationSwatchDelete
+                          key={swatch.id}
+                          creation={doc}
+                          swatch={swatch}
+                          disabled={p.busy || calculating}
+                          onDelete={(replacementId) => {
+                            const next = run('delete_swatch', {
+                              id: swatch.id,
+                              replacementId,
+                            });
+                            setBrush(
+                              replacementId || next.creation.swatches[0].id,
+                            );
+                            notify('项目色已删除 · Ctrl+Z 撤销');
+                          }}
+                        />
+                      </div>
+                    }
+                  </div>
                 </>
-              ) : (
-                <div className="creation-empty">
-                  <Layers size={24} />
-                  <b>描轮廓，填颜色，调高低</b>
-                  <p>
-                    点击面选区域，点击线选样条。右侧同步定位；空白处或 Esc
-                    取消选择。
-                  </p>
-                  <button onClick={() => p.onTool('paint')}>
-                    <PaintBucket size={16} />
-                    给闭合轮廓上色
+              )}
+              {tab === 'print' && (
+                <PrintStack
+                  doc={doc}
+                  scene={scene}
+                  objectIds={[]}
+                  disabled={calculating || evaluationFailed || p.busy}
+                  onCommand={(action, args) => safely(() => run(action, args))}
+                />
+              )}
+              {tab === 'tool' &&
+                (['trace', 'edit'].includes(p.tool) ? (
+                  <div className="creation-source-settings">
+                    {p.sourceInspector}
+                  </div>
+                ) : (
+                  <div className="creation-empty">
+                    <p>
+                      {p.tool === 'select'
+                        ? '点击面或线选择，空白拖动框选线条。按 A 进入节点编辑。'
+                        : p.tool === 'paint'
+                          ? '点击区域上色；拖过多个区域完成一笔。画笔色在画布底部选择。'
+                          : p.tool === 'height'
+                            ? '选择区域后使用高度柄，或在选区属性中输入厚度。'
+                            : '拖动画布移动视图；空格或中键可临时平移。'}
+                    </p>
+                  </div>
+                ))}
+              {['object', 'lines'].includes(tab) && current && (
+                <CreationSelectionDetails
+                  selection={selection}
+                  objects={objects}
+                  project={p.project}
+                  scene={scene}
+                  onSelect={(next) => selectionState.commit(next)}
+                  onEnable={() => safely(() => applyHeight(displayedHeight))}
+                  onEdit={() => {
+                    const ids =
+                      selection.kind === 'cell'
+                        ? pathsForRegions(p.project, scene, cellKeys)
+                        : current.pathIds;
+                    selectionState.selectPaths(ids);
+                    p.onTool('edit');
+                    setTab('tool');
+                  }}
+                />
+              )}
+              {tab === 'modifiers' &&
+                selection.kind !== 'path' &&
+                objects.length === 1 && (
+                  <CreationModifiers
+                    key={current?.id || 'none'}
+                    object={current}
+                    project={p.project}
+                    scene={scene || undefined}
+                    busy={calculating || evaluationFailed}
+                    cellKeys={selection.kind === 'cell' ? selection.ids : []}
+                    onLocate={(ids) => {
+                      selectionState.selectPaths(ids);
+                      p.onView('flat');
+                      p.onTool('edit');
+                      p.onFramePaths(ids, { force: true });
+                    }}
+                    onCommand={(
+                      action: string,
+                      args: Record<string, unknown>,
+                    ) => safely(() => run(action, args))}
+                  />
+                )}
+              {error && (
+                <div role="alert" className="creation-error">
+                  {error}
+                  <button
+                    aria-label="关闭错误提示"
+                    onClick={() => setError('')}
+                  >
+                    <X size={14} />
                   </button>
                 </div>
               )}
-              <div className="creation-project-color">
-                <button
-                  aria-expanded={editingSwatch}
-                  onClick={() => setEditingSwatch(!editingSwatch)}
-                >
-                  <i style={{ background: swatch.color }} />
-                  修改项目色 · {swatch.name}
-                  <ChevronRight size={14} />
-                </button>
-                {editingSwatch && (
-                  <div>
-                    <p>引用这枚色卡的区域会一起改变。</p>
-                    <Name
-                      value={swatch.name}
-                      label="重命名项目色"
-                      onRename={(name) =>
-                        safely(() =>
-                          run('swatch', {
-                            id: swatch.id,
-                            name,
-                            color: swatch.color,
-                          }),
-                        )
+              {[
+                ...(scene?.errors || []).filter((e) =>
+                  objects.includes(e.objectId),
+                ),
+                ...(roleIssue && objects.includes(roleIssue.objectId)
+                  ? [{ ...roleIssue, pending: true }]
+                  : []),
+              ]
+                .filter(() => !globalPropertyPages.includes(tab))
+                .map((e, i: number) => {
+                  const owner = doc.objects.find((o) => o.id === e.objectId);
+                  if (e.kind === 'pipeline' && !e.modifierId && owner)
+                    return (
+                      <ConstructionPipeline
+                        key={i}
+                        object={owner}
+                        scene={scene || undefined}
+                        busy={calculating || p.busy}
+                        onCommand={(action, args) =>
+                          safely(() => run(action, args))
+                        }
+                        onLocate={(ids) => {
+                          selectionState.selectPaths(ids);
+                          p.onView('flat');
+                          p.onTool('edit');
+                          p.onFramePaths(ids, { force: true });
+                        }}
+                      />
+                    );
+                  if (e.kind === 'modifier' || e.modifierId) {
+                    const inline = scene?.modifierStatus?.some(
+                      (status) =>
+                        status.objectId === e.objectId && status.error,
+                    );
+                    if (tab === 'modifiers' && inline) return null;
+                    return (
+                      <div key={i} role="alert" className="creation-error">
+                        <strong>
+                          {owner?.name || '当前部件'} · 产出链已暂停
+                        </strong>
+                        <p>{e.message}</p>
+                        {tab !== 'modifiers' && (
+                          <button onClick={() => setTab('modifiers')}>
+                            查看修改器
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+                  const candidates =
+                    e.pathIds ||
+                    owner?.pathIds.filter((id: string) =>
+                      ['divider', 'hole'].includes(owner.roles[id]),
+                    ) ||
+                    [];
+                  const selected =
+                    selection.kind === 'path'
+                      ? selection.ids.filter((id) => candidates.includes(id))
+                      : [];
+                  const ids = selected.length ? selected : candidates.slice(-1);
+                  return (
+                    <CreationIssue
+                      key={i}
+                      name={owner?.name || '当前部件'}
+                      message={e.message}
+                      pending={e.pending}
+                      pathNames={ids.map(
+                        (id: string) =>
+                          p.project.paths.find((path) => path.id === id)
+                            ?.name || '分区线',
+                      )}
+                      busy={calculating || checkingRole || p.busy}
+                      onLocate={() => {
+                        selectionState.selectPaths(ids);
+                        p.onView('flat');
+                        p.onTool('edit');
+                        p.onFramePaths(ids, { force: true });
+                      }}
+                      onDisable={
+                        !e.pending && ids.length && owner
+                          ? () =>
+                              safely(() =>
+                                applyRoles({
+                                  objectId: owner.id,
+                                  pathIds: ids,
+                                  role: 'guide',
+                                }),
+                              )
+                          : undefined
+                      }
+                      onRetry={
+                        !e.pending
+                          ? () =>
+                              safely(async () => {
+                                const snapshot = ref.current.project;
+                                const result = await call(
+                                  'creation',
+                                  {},
+                                  snapshot,
+                                );
+                                if (ref.current.project !== snapshot) return;
+                                setScene(result);
+                                setEvaluatedProject(snapshot);
+                                sceneRef.current = result;
+                                revision.current = snapshot;
+                              })
+                          : undefined
                       }
                     />
-                    <input
-                      type="color"
-                      aria-label="项目色色值"
-                      defaultValue={swatch.color}
-                      key={swatch.id + swatch.color}
-                      onBlur={(e) => {
-                        if (e.target.value !== swatch.color)
-                          safely(() =>
-                            run('swatch', {
-                              id: swatch.id,
-                              color: e.target.value,
-                            }),
-                          );
-                      }}
-                    />
-                    <button
-                      onClick={() =>
-                        safely(async () => {
-                          const eyedropper = window as EyeDropperWindow;
-                          if (!eyedropper.EyeDropper)
-                            throw Error(
-                              '此浏览器不支持屏幕取色，请使用色值输入',
-                            );
-                          try {
-                            const value =
-                              await new eyedropper.EyeDropper().open();
-                            run('swatch', {
-                              id: swatch.id,
-                              color: value.sRGBHex,
-                            });
-                          } catch (error: unknown) {
-                            if (
-                              !(
-                                error instanceof DOMException &&
-                                error.name === 'AbortError'
-                              )
+                  );
+                })}
+              {tab === 'object' && (
+                <>
+                  {current ? (
+                    <>
+                      {scope === 'object' && (
+                        <div className="creation-draw-actions">
+                          <button
+                            onClick={() => {
+                              nextRole.current = 'boundary';
+                              p.onView('flat');
+                              p.onNewPath();
+                              setTab('tool');
+                            }}
+                          >
+                            画轮廓
+                          </button>
+                          <button
+                            onClick={() =>
+                              safely(() => {
+                                nextRole.current = 'divider';
+                                p.onView('flat');
+                                p.onNewPath();
+                                setTab('tool');
+                              })
+                            }
+                          >
+                            画分区线
+                          </button>
+                          <button
+                            onClick={() =>
+                              safely(() => {
+                                nextRole.current = 'hole';
+                                p.onView('flat');
+                                p.onNewPath();
+                                setTab('tool');
+                              })
+                            }
+                          >
+                            画挖洞轮廓
+                          </button>
+                        </div>
+                      )}
+                      {scope === 'object' && objects.length > 1 && (
+                        <p className="creation-muted">
+                          颜色、厚度和所属层应用到全部选中部件。位置、依附和成品开关请单选部件后设置。
+                        </p>
+                      )}
+                      {sourceOnly && (
+                        <p className="creation-source-note">
+                          仅有线条 · 尚未构面。开放样条不会单独产生色块；
+                          可以继续闭合轮廓，或移入已有部件作分区、参考。
+                        </p>
+                      )}
+                      {selection.kind === 'object' && objects.length > 1 && (
+                        <button
+                          onClick={() =>
+                            safely(() =>
+                              run('combine_objects', { objectIds: objects }),
                             )
-                              throw error;
                           }
+                        >
+                          整理为一个部件
+                        </button>
+                      )}
+                      {scope !== 'source' && (
+                        <>
+                          {scope === 'object' ? (
+                            <PrintPlacement
+                              doc={doc}
+                              scene={scene}
+                              objectIds={objects}
+                              disabled={
+                                calculating || evaluationFailed || p.busy
+                              }
+                              onCommand={(a, args) =>
+                                safely(() => run(a, args))
+                              }
+                              onManage={() => setTab('print')}
+                            />
+                          ) : (
+                            printHeight && (
+                              <p className="creation-muted">
+                                {
+                                  doc.printStack!.layers.find(
+                                    (l) => l.id === current?.printLayerId,
+                                  )?.name
+                                }{' '}
+                                · 从 {cell?.bottomMM ?? 0} mm 开始，跟随下层抬升
+                              </p>
+                            )
+                          )}
+                          <CreationColor
+                            key={JSON.stringify(selection)}
+                            label={
+                              sourceOnly
+                                ? '默认颜色'
+                                : scope === 'local'
+                                  ? `区域颜色 · ${cellKeys.length} 区`
+                                  : '部件颜色'
+                            }
+                            colors={
+                              sourceOnly
+                                ? [
+                                    doc.swatches.find(
+                                      (s) => s.id === current.swatchId,
+                                    )?.color || swatch.color,
+                                  ]
+                                : (scene?.cells || [])
+                                    .filter((c) =>
+                                      scope === 'local'
+                                        ? cellKeys.includes(c.key)
+                                        : objects.includes(c.objectId),
+                                    )
+                                    .map((c) => c.color)
+                            }
+                            swatches={doc.swatches}
+                            disabled={
+                              calculating || p.busy || !!failedSelection
+                            }
+                            onPaint={(args) =>
+                              safely(() =>
+                                run('paint', { ...targets(), ...args }),
+                              )
+                            }
+                          />
+                          <div className="creation-property-block">
+                            <label>
+                              {scope === 'object' ? '部件统一厚度' : '区域厚度'}{' '}
+                              <span>{printHeight ? '打印层' : 'mm'}</span>
+                            </label>
+                            <div className="creation-height-input">
+                              <NumberEdit
+                                key={JSON.stringify(selection)}
+                                label={
+                                  printHeight ? '厚度打印层数' : '凸起厚度'
+                                }
+                                disabled={calculating || failedSelection}
+                                value={displayedHeight}
+                                min={heightMinimum}
+                                max={heightMaximum}
+                                step={printHeight ? 1 : 0.1}
+                                onCommit={(n) => safely(() => applyHeight(n))}
+                              />
+                              <button
+                                aria-pressed={p.tool === 'height'}
+                                disabled={calculating || failedSelection}
+                                onClick={() => p.onTool('height')}
+                              >
+                                <ArrowUpFromLine size={17} />
+                                拖动调高
+                              </button>
+                            </div>
+                            <input
+                              aria-label="调整凸起厚度"
+                              disabled={calculating || failedSelection}
+                              type="range"
+                              min={printHeight ? 1 : 0.1}
+                              max={Math.max(
+                                printHeight ? 30 : 6,
+                                displayedHeight,
+                              )}
+                              step={printHeight ? 1 : 0.1}
+                              value={displayedHeight}
+                              onPointerDown={() => {
+                                heightDrag.current = { slider: true };
+                              }}
+                              onChange={(e) => setDraftHeight(+e.target.value)}
+                              onPointerUp={() => {
+                                heightDrag.current = null;
+                                const value = draftHeight;
+                                setDraftHeight(null);
+                                if (value !== null)
+                                  safely(() => applyHeight(value));
+                              }}
+                              onPointerCancel={cancel}
+                              onKeyUp={(e) => {
+                                if (e.key === 'Escape') {
+                                  cancel();
+                                  return;
+                                }
+                                if (draftHeight !== null) {
+                                  const n = draftHeight;
+                                  setDraftHeight(null);
+                                  safely(() => applyHeight(n));
+                                }
+                              }}
+                            />
+                            {printHeight && (
+                              <small>
+                                {displayedHeight} × {printHeight} mm ={' '}
+                                {printMM(displayedHeight, printHeight)} mm
+                              </small>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      {scope === 'object' && (
+                        <details className="creation-base">
+                          <summary>生成承托部件 · 可选</summary>
+                          <p className="creation-muted">
+                            已有完整底层轮廓时无需添加。此工具只根据所选部件的外形生成新的承托部件，可在普通修改器中继续编辑。
+                          </p>
+                          <div>
+                            外扩边距 mm
+                            <NumberEdit
+                              label="底板外扩边距"
+                              value={baseMargin}
+                              min={0}
+                              max={20}
+                              onCommit={(n) => {
+                                setBaseMargin(n);
+                                setBasePreview(null);
+                              }}
+                            />
+                          </div>
+                          <label>
+                            底板厚度 {printHeight ? '打印层' : 'mm'}
+                            <NumberEdit
+                              label="底板厚度"
+                              value={
+                                printHeight
+                                  ? printCount(baseHeight, printHeight)
+                                  : baseHeight
+                              }
+                              min={printHeight ? 1 : 0.1}
+                              max={heightMaximum}
+                              step={printHeight ? 1 : 0.1}
+                              onCommit={(n) => {
+                                setBaseHeight(
+                                  printHeight ? printMM(n, printHeight) : n,
+                                );
+                                setBasePreview(null);
+                              }}
+                            />
+                          </label>
+                          <button
+                            disabled={
+                              !objects.length || calculating || evaluationFailed
+                            }
+                            onClick={() =>
+                              safely(async () => {
+                                const snapshot = p.project;
+                                const result = await call('creation_base', {
+                                  objectIds: objects,
+                                  offsetMM: baseMargin,
+                                  ...(printHeight
+                                    ? {
+                                        heightLayers: printCount(
+                                          baseHeight,
+                                          printHeight,
+                                        ),
+                                      }
+                                    : { heightMM: baseHeight }),
+                                  swatchId: swatch.id,
+                                });
+                                if (ref.current.project !== snapshot)
+                                  throw Error('来源已变化，请重新预览');
+                                setBasePreview({
+                                  ...result,
+                                  project: {
+                                    ...result.project,
+                                    image: snapshot.image,
+                                  },
+                                  revision: snapshot,
+                                });
+                              })
+                            }
+                          >
+                            预览底板
+                          </button>
+                          <small>
+                            {printHeight
+                              ? '采用当前画笔色。底板会占据新的最底层，现有层整体抬升。'
+                              : '采用当前画笔色。确认后所选部件放到底板顶面。'}
+                          </small>
+                        </details>
+                      )}
+                      {scope === 'object' && objects.length === 1 && (
+                        <details className="creation-position">
+                          <summary>
+                            {printHeight ? '成品选项' : '部件位置与叠放'}
+                          </summary>
+                          {!printHeight && (
+                            <>
+                              <div>
+                                起始高度 mm
+                                <NumberEdit
+                                  label="对象起始高度"
+                                  value={current.zMM}
+                                  onCommit={(n) =>
+                                    safely(() =>
+                                      run('object', {
+                                        id: current.id,
+                                        changes: { zMM: n },
+                                      }),
+                                    )
+                                  }
+                                />
+                              </div>
+                              <label>
+                                放到对象上
+                                <select
+                                  aria-label="放到对象上"
+                                  value={current.attachId || ''}
+                                  onChange={(e) =>
+                                    safely(() =>
+                                      run('object', {
+                                        id: current.id,
+                                        changes: { attachId: e.target.value },
+                                      }),
+                                    )
+                                  }
+                                >
+                                  <option value="">平台 · Z = 0</option>
+                                  {doc.objects
+                                    .filter((o) => o.id !== current.id)
+                                    .map((o) => (
+                                      <option key={o.id} value={o.id}>
+                                        {o.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <small>
+                                列表拖动只调整顺序；这里才会改变物理高度。
+                              </small>
+                            </>
+                          )}
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={current.printable}
+                              onChange={(e) =>
+                                safely(() =>
+                                  run('object', {
+                                    id: current.id,
+                                    changes: { printable: e.target.checked },
+                                  }),
+                                )
+                              }
+                            />
+                            参与成品导出
+                          </label>
+                        </details>
+                      )}
+                    </>
+                  ) : (
+                    <div className="creation-empty">
+                      <Layers size={24} />
+                      <b>描轮廓，填颜色，调高低</b>
+                      <p>
+                        点击面选区域，点击线选样条。右侧同步定位；空白处或 Esc
+                        取消选择。
+                      </p>
+                      <button onClick={() => p.onTool('paint')}>
+                        <PaintBucket size={16} />
+                        给闭合轮廓上色
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              {tab === 'lines' && (
+                <>
+                  <div className="creation-property-title">
+                    <b>线条编辑</b>
+                    <button onClick={p.onNewPath}>
+                      <Plus size={14} />
+                      新线条
+                    </button>
+                  </div>
+                  <div className="creation-source-settings">
+                    {p.sourceInspector}
+                  </div>
+                  {current &&
+                    selection.kind === 'path' &&
+                    p.selectedPaths.some((id) =>
+                      current.pathIds.includes(id),
+                    ) && (
+                      <div className="creation-role">
+                        <span>选中线条的用途</span>
+                        <div>
+                          {[
+                            ['boundary', '轮廓'],
+                            ['divider', '分区'],
+                            ['hole', '挖洞'],
+                            ['guide', '参考'],
+                          ].map(([role, label]) => (
+                            <button
+                              key={role}
+                              disabled={checkingRole || calculating || p.busy}
+                              aria-pressed={p.selectedPaths
+                                .filter((id) => current.pathIds.includes(id))
+                                .every(
+                                  (id) =>
+                                    (current.roles[id] ||
+                                      (p.project.paths.find(
+                                        (path) => path.id === id,
+                                      )?.closed
+                                        ? 'boundary'
+                                        : 'guide')) === role,
+                                )}
+                              onClick={() => chooseRole(role)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <small>
+                          分区保留共享边界；挖洞使用闭合线。参考线不参与填色。
+                        </small>
+                        {checkingRole && (
+                          <output>正在检查分区，完成后应用…</output>
+                        )}
+                        {roleResult?.objectId === current.id && (
+                          <output className="creation-role-result">
+                            {roleResult.message}
+                          </output>
+                        )}
+                      </div>
+                    )}
+                </>
+              )}
+              {['lines', 'modifiers'].includes(tab) && (
+                <>
+                  {' '}
+                  {current && objects.length === 1 && (
+                    <CreationConnections
+                      key={current.id}
+                      object={current}
+                      scene={scene as never}
+                      project={p.project}
+                      preview={joinPreview as never}
+                      onCancel={clearConnectionPreview}
+                      onModifiers={() => setTab('modifiers')}
+                      onPreview={(joinMM) =>
+                        safely(async () => {
+                          const snapshot = p.project,
+                            id = current.id,
+                            token = ++connectionRequest.current;
+                          const result = await call('creation', {
+                            objectId: id,
+                            joinMM,
+                          });
+                          if (
+                            token !== connectionRequest.current ||
+                            focusedObject.current !== id
+                          )
+                            return;
+                          if (ref.current.project !== snapshot)
+                            throw Error('来源已变化，请重新预览');
+                          setJoinPreview(result);
+                          setConnectionHighlight([]);
                         })
                       }
-                    >
-                      <Pipette size={15} />
-                      取色
-                    </button>
-                    <CreationSwatchDelete
-                      key={swatch.id}
-                      creation={doc}
-                      swatch={swatch}
-                      disabled={p.busy || calculating}
-                      onDelete={(replacementId) => {
-                        const next = run('delete_swatch', {
-                          id: swatch.id,
-                          replacementId,
-                        });
-                        setBrush(replacementId || next.creation.swatches[0].id);
-                        notify('项目色已删除 · Ctrl+Z 撤销');
+                      onApply={(joinMM) =>
+                        safely(() =>
+                          run('join', { objectId: current.id, joinMM }),
+                        )
+                      }
+                      onCommand={(action, args) =>
+                        safely(() => run(action, args))
+                      }
+                      onLocate={(ids, connections = []) => {
+                        selectionState.selectPaths(ids);
+                        p.onView('flat');
+                        p.onFramePaths(ids, { force: true });
+                        setConnectionHighlight(connections);
                       }}
                     />
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {tab === 'lines' && (
-            <>
-              <div className="creation-property-title">
-                <b>线条编辑</b>
-                <button onClick={p.onNewPath}>
-                  <Plus size={14} />
-                  新线条
-                </button>
-              </div>
-              <div className="creation-source-settings">
-                {p.sourceInspector}
-              </div>
-              {current &&
-                selection.kind === 'path' &&
-                p.selectedPaths.some((id) => current.pathIds.includes(id)) && (
-                  <div className="creation-role">
-                    <span>选中线条的用途</span>
-                    <div>
-                      {[
-                        ['boundary', '轮廓'],
-                        ['divider', '分区'],
-                        ['hole', '挖洞'],
-                        ['guide', '参考'],
-                      ].map(([role, label]) => (
-                        <button
-                          key={role}
-                          disabled={checkingRole || calculating || p.busy}
-                          aria-pressed={p.selectedPaths
-                            .filter((id) => current.pathIds.includes(id))
-                            .every(
-                              (id) =>
-                                (current.roles[id] ||
-                                  (p.project.paths.find(
-                                    (path) => path.id === id,
-                                  )?.closed
-                                    ? 'boundary'
-                                    : 'guide')) === role,
-                            )}
-                          onClick={() => chooseRole(role)}
-                        >
-                          {label}
-                        </button>
+                  )}
+                </>
+              )}
+              {tab === 'make' && (
+                <>
+                  <p className="creation-muted">
+                    输出当前工程的成品。源曲线、分色平面和实体是不同的导出内容。
+                  </p>
+                  <label className="creation-output-part">
+                    实体输出范围
+                    <select
+                      aria-label="实体输出零件"
+                      disabled={exporting || calculating || evaluationFailed}
+                      value={outputPartId}
+                      onChange={(e) => setOutputPartId(e.target.value)}
+                    >
+                      {outputParts.map((part) => (
+                        <option key={part.id} value={part.id}>
+                          {part.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="creation-muted">
+                    {printHeight
+                      ? '同层轮廓仍需自行分区或布尔处理；分层只安排竖直位置。高低不齐的层叠放后，可检查上层是否有悬空。'
+                      : '已有底层轮廓可直接承托；在“位置与叠放”设置上下关系后检查实体。'}
+                  </p>
+                  <button
+                    className="creation-wide"
+                    disabled={exporting || calculating || evaluationFailed}
+                    onClick={() => safely(() => exportWork('check'))}
+                  >
+                    {exporting ? '正在检查…' : '检查可打印实体'}
+                  </button>
+                  {report && !calculating && report.partId === outputPartId && (
+                    <div className="creation-report">
+                      <b>
+                        {report.result.report.valid &&
+                        report.result.report.components === 1
+                          ? '实体检查通过'
+                          : '需要调整连接'}
+                      </b>
+                      <p>
+                        {report.result.report.components} 个连通实体 ·{' '}
+                        {report.result.report.triangles} 个三角面
+                      </p>
+                      <p>
+                        体积 {report.result.report.volumeMM3?.toFixed(1)} mm³
+                      </p>
+                      {report.result.warnings.map((w: string, i: number) => (
+                        <p key={i}>{w}</p>
                       ))}
                     </div>
-                    <small>
-                      分区保留共享边界；挖洞使用闭合线。参考线不参与填色。
-                    </small>
-                    {checkingRole && <output>正在检查分区，完成后应用…</output>}
-                    {roleResult?.objectId === current.id && (
-                      <output className="creation-role-result">
-                        {roleResult.message}
-                      </output>
-                    )}
+                  )}
+                  <div className="creation-export">
+                    <button onClick={p.onSourceExport}>
+                      源曲线 SVG · 精确贝塞尔
+                    </button>
+                    <button
+                      disabled={exporting || calculating || evaluationFailed}
+                      onClick={() => safely(() => exportWork('3mf'))}
+                    >
+                      <Download size={16} />
+                      导出 3MF
+                    </button>
+                    <button
+                      disabled={exporting || calculating || evaluationFailed}
+                      onClick={() => safely(() => exportWork('blender'))}
+                    >
+                      Blender · 实体与源线
+                    </button>
+                    <button
+                      disabled={calculating || evaluationFailed}
+                      onClick={() => safely(() => exportWork('svg'))}
+                    >
+                      分色 SVG
+                    </button>
                   </div>
-                )}
-              {current && (
-                <CreationConnections
-                  key={current.id}
-                  object={current}
-                  scene={scene as never}
-                  project={p.project}
-                  preview={joinPreview as never}
-                  onCancel={clearConnectionPreview}
-                  onModifiers={() => setTab('modifiers')}
-                  onPreview={(joinMM) =>
-                    safely(async () => {
-                      const snapshot = p.project,
-                        id = current.id,
-                        token = ++connectionRequest.current;
-                      const result = await call('creation', {
-                        objectId: id,
-                        joinMM,
-                      });
-                      if (
-                        token !== connectionRequest.current ||
-                        focusedObject.current !== id
-                      )
-                        return;
-                      if (ref.current.project !== snapshot)
-                        throw Error('来源已变化，请重新预览');
-                      setJoinPreview(result);
-                      setConnectionHighlight([]);
-                    })
-                  }
-                  onApply={(joinMM) =>
-                    safely(() => run('join', { objectId: current.id, joinMM }))
-                  }
-                  onCommand={(action, args) => safely(() => run(action, args))}
-                  onLocate={(ids, connections = []) => {
-                    selectionState.selectPaths(ids);
-                    p.onView('flat');
-                    p.onFramePaths(ids, { force: true });
-                    setConnectionHighlight(connections);
-                  }}
-                />
-              )}
-            </>
-          )}
-          {tab === 'make' && (
-            <>
-              <PrintStack
-                doc={doc}
-                scene={scene}
-                objectIds={objects}
-                disabled={calculating || p.busy}
-                onCommand={(action, args) => safely(() => run(action, args))}
-              />
-              <div className="creation-property-title">
-                <b>制作成品</b>
-                <span>毫米</span>
-              </div>
-              <div className="creation-dimension">
-                作品宽度
-                <NumberEdit
-                  label="创作作品宽度"
-                  value={p.project.widthMM}
-                  min={0.1}
-                  max={10000}
-                  onCommit={(n) => {
-                    p.onProject({ ...p.project, widthMM: n });
-                    notify('已调整作品比例');
-                  }}
-                />
-              </div>
-              <details className="creation-base">
-                <summary>生成承托部件 · 可选</summary>
-                <p className="creation-muted">
-                  已有完整底层轮廓时无需添加。此工具只根据所选部件的外形生成新的承托部件，可在普通修改器中继续编辑。
-                </p>
-                <div>
-                  外扩边距 mm
-                  <NumberEdit
-                    label="底板外扩边距"
-                    value={baseMargin}
-                    min={0}
-                    max={20}
-                    onCommit={(n) => {
-                      setBaseMargin(n);
-                      setBasePreview(null);
-                    }}
-                  />
-                </div>
-                <label>
-                  底板厚度 {printHeight ? '打印层' : 'mm'}
-                  <NumberEdit
-                    label="底板厚度"
-                    value={
-                      printHeight
-                        ? printCount(baseHeight, printHeight)
-                        : baseHeight
-                    }
-                    min={printHeight ? 1 : 0.1}
-                    max={heightMaximum}
-                    step={printHeight ? 1 : 0.1}
-                    onCommit={(n) => {
-                      setBaseHeight(printHeight ? printMM(n, printHeight) : n);
-                      setBasePreview(null);
-                    }}
-                  />
-                </label>
-                <button
-                  disabled={!objects.length || calculating}
-                  onClick={() =>
-                    safely(async () => {
-                      const snapshot = p.project;
-                      const result = await call('creation_base', {
-                        objectIds: objects,
-                        offsetMM: baseMargin,
-                        ...(printHeight
-                          ? {
-                              heightLayers: printCount(baseHeight, printHeight),
-                            }
-                          : { heightMM: baseHeight }),
-                        swatchId: swatch.id,
-                      });
-                      if (ref.current.project !== snapshot)
-                        throw Error('来源已变化，请重新预览');
-                      setBasePreview({
-                        ...result,
-                        project: { ...result.project, image: snapshot.image },
-                        revision: snapshot,
-                      });
-                    })
-                  }
-                >
-                  预览底板
-                </button>
-                <small>
-                  {printHeight
-                    ? '采用当前画笔色。底板会占据新的最底层，现有层整体抬升。'
-                    : '采用当前画笔色。确认后所选部件放到底板顶面。'}
-                </small>
-              </details>
-              <p className="creation-muted">
-                {printHeight
-                  ? '同层轮廓仍需自行分区或布尔处理；分层只安排竖直位置。高低不齐的层叠放后，可检查上层是否有悬空。'
-                  : '已有底层轮廓可直接承托；在“位置与叠放”设置上下关系后检查实体。'}
-              </p>
-              <button
-                className="creation-wide"
-                disabled={exporting || calculating}
-                onClick={() => safely(() => exportWork('check'))}
-              >
-                {exporting ? '正在检查…' : '检查可打印实体'}
-              </button>
-              {report && (
-                <div className="creation-report">
-                  <b>
-                    {report.report.valid && report.report.components === 1
-                      ? '实体检查通过'
-                      : '需要调整连接'}
-                  </b>
-                  <p>
-                    {report.report.components} 个连通实体 ·{' '}
-                    {report.report.triangles} 个三角面
+                  <p className="model-help">
+                    通用 3MF
+                    保留分色部件、尺寸和位置，不绑定打印机。打印机、耗材与切片参数在切片软件中选择；部分软件需重新指定部件颜色。
                   </p>
-                  <p>体积 {report.report.volumeMM3?.toFixed(1)} mm³</p>
-                  {report.warnings.map((w: string, i: number) => (
-                    <p key={i}>{w}</p>
-                  ))}
-                </div>
+                  <SlicerTemplate
+                    onExport={() => safely(() => exportWork('3mf-bambu'))}
+                    value={p.project.model?.slicerTemplate}
+                    disabled={exporting || calculating || evaluationFailed}
+                    onChange={(slicerTemplate) =>
+                      p.onProject({
+                        ...p.project,
+                        model: {
+                          ...(p.project.model || {
+                            version: 1,
+                            toleranceMM: 0.015,
+                            regions: [],
+                            features: [],
+                            parts: [{ id: 'main', name: '零件 1' }],
+                          }),
+                          slicerTemplate,
+                        },
+                      })
+                    }
+                  />
+                  <button onClick={() => p.onAdvanced('relief')}>
+                    零件与制造参数…
+                  </button>
+                </>
               )}
-              <div className="creation-export">
-                <button
-                  disabled={exporting}
-                  onClick={() => safely(() => exportWork('3mf'))}
-                >
-                  <Download size={16} />
-                  导出 3MF
-                </button>
-                <button
-                  disabled={exporting}
-                  onClick={() => safely(() => exportWork('blender'))}
-                >
-                  Blender · 实体与源线
-                </button>
-                <button
-                  disabled={calculating}
-                  onClick={() => safely(() => exportWork('svg'))}
-                >
-                  分色 SVG
-                </button>
-              </div>
-              <p className="model-help">
-                通用 3MF
-                保留分色部件、尺寸和位置，不绑定打印机。打印机、耗材与切片参数在切片软件中选择；部分软件需重新指定部件颜色。
-              </p>
-              <SlicerTemplate
-                onExport={() => safely(() => exportWork('3mf-bambu'))}
-                value={p.project.model?.slicerTemplate}
-                disabled={exporting}
-                onChange={(slicerTemplate) =>
-                  p.onProject({
-                    ...p.project,
-                    model: {
-                      ...(p.project.model || {
-                        version: 1,
-                        toleranceMM: 0.015,
-                        regions: [],
-                        features: [],
-                        parts: [{ id: 'main', name: '零件 1' }],
-                      }),
-                      slicerTemplate,
-                    },
-                  })
-                }
-              />
-              <details className="creation-advanced">
-                <summary>高级构造与制造参数</summary>
-                <p>已有布尔、两线围面、切削和零件定义保留在构造记录中。</p>
-                <button onClick={() => p.onAdvanced('faces')}>构造记录</button>
-                <button onClick={() => p.onAdvanced('relief')}>
-                  实体与制造参数
-                </button>
-              </details>
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </aside>
     </>

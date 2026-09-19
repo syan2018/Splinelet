@@ -6,7 +6,7 @@ const id: ToolProperty = { type: 'string' },
 export const modelTools: ToolCatalog = {
   set_workspace: {
     description:
-      'Switch between editable Bezier sources, derived 2D faces, and 3D relief. Does not modify geometry.',
+      'Open the advanced construction editor (faces: face sources; relief: features and parts), or close it and return to unified creation (trace). Does not modify geometry.',
     properties: { mode: { enum: ['trace', 'faces', 'relief'] } },
     required: ['mode'],
   },

@@ -38,7 +38,7 @@ module.exports = async (page, fixture) => {
   await page
     .getByRole('button', { name: '编辑线条 右肩内', exact: true })
     .click();
-  await page.getByRole('tab', { name: '颜色与高低', exact: true }).click();
+  await page.getByRole('button', { name: '当前选区属性', exact: true }).click();
   await choose('path', [path.id]);
   assert.equal(await page.getByLabel('凸起厚度', { exact: true }).count(), 0);
   assert.equal(
@@ -293,26 +293,10 @@ module.exports = async (page, fixture) => {
   await page.mouse.move(dragPoint.x + 18, dragPoint.y + 9, { steps: 6 });
   await page.mouse.up();
   await settle();
-  await choose('path', [path.id, other.id]);
-  const pathsMoved = await call('get_project');
-  assert.deepEqual(
-    pathsMoved.paths.filter((p) => ![path.id, other.id].includes(p.id)),
-    before.paths.filter((p) => ![path.id, other.id].includes(p.id)),
-  );
-  assert(
-    pathsMoved.paths
-      .filter((p) => [path.id, other.id].includes(p.id))
-      .every(
-        (p) =>
-          JSON.stringify(p) !==
-          JSON.stringify(before.paths.find((q) => q.id === p.id)),
-      ),
-  );
-  await page.keyboard.press('Control+z');
-  await settle();
+  await choose('path', [path.id]);
   assert.deepEqual(await call('get_project'), before);
   checks.push(
-    'a real source multi-drag keeps its two members, moves only them, and fully undoes',
+    'selection-tool dragging narrows the path selection but never moves source geometry',
   );
   await page.locator(`[data-tree-cell="${target.key}"]`).click();
   await page.getByRole('button', { name: '启用这个区域', exact: true }).click();
@@ -321,7 +305,7 @@ module.exports = async (page, fixture) => {
   const persistedScene = await verify();
   await page.waitForFunction(async () =>
     (await window.traceStudio.call('state')).storage.status.includes(
-      '已保存到此浏览器',
+      '浏览器草稿已保存',
     ),
   );
   await page.reload({ waitUntil: 'domcontentloaded' });

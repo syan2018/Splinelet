@@ -74,7 +74,7 @@ module.exports = async (page, fixture) => {
   assert.deepEqual(await call('get_project'), changed);
   await page.waitForFunction(async () =>
     (await window.traceStudio.call('state')).storage.status.includes(
-      '已保存到此浏览器',
+      '浏览器草稿已保存',
     ),
   );
   await page.reload({ waitUntil: 'domcontentloaded' });
