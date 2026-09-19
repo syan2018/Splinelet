@@ -2,12 +2,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
 import { importLegacy } from '../../../src/lib/document/import/legacy-import.mjs';
-import { evaluatePlanar } from '../../../src/lib/construction/document-evaluation.mjs';
+import {
+  defaultConstructionRegistry,
+  evaluatePlanar,
+} from '../../../src/lib/construction/document-evaluation.mjs';
+import {
+  buildDependencyGraph,
+  topologicalComponents,
+} from '../../../src/lib/construction/dependencies.mjs';
 import {
   decodeDocument,
   encodeDocument,
 } from '../../../src/lib/document/codec.mjs';
 import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.mjs';
+import { movePathHandle } from '../../../src/lib/geometry/path-handle-modes.mjs';
 import { decodeProject } from '../../../src/lib/project-format.mjs';
 import { readGeometry } from '../../../src/lib/region-engine.mjs';
 
@@ -38,6 +46,13 @@ const scaleGeometry = (geometry, factor) => {
           scaleGeometry(item, factor),
         ),
       };
+};
+const handleModeCounts = (document) => {
+  const counts = { smooth: 0, symmetric: 0 };
+  for (const sketch of Object.values(document.sketches))
+    for (const path of Object.values(sketch.paths))
+      for (const mode of Object.values(path.handleModes || {})) counts[mode]++;
+  return counts;
 };
 
 const verifyEvaluatedEquivalence = async (label, project, migrated) => {
@@ -157,8 +172,8 @@ const verifyEvaluatedEquivalence = async (label, project, migrated) => {
   };
 };
 
-// The real sample checks the legacy pixel frame against owned V4 cubics. Every
-// writable copy must retain the same centered mm/y-up source geometry.
+// The real sample checks the legacy pixel frame against each uniquely owned V4
+// path. Cross-object consumers reference that one writable source.
 const sandroneProject = decodeProject(
   fs.readFileSync('public/sandrone-example.spl'),
 );
@@ -170,7 +185,11 @@ const scale = sandroneProject.widthMM / sandroneProject.width;
 let checkedCubics = 0;
 for (const legacyPath of sandroneProject.paths) {
   const mapped = refs(sandrone.idMap[`path:${legacyPath.id}`]).filter(Boolean);
-  assert.ok(mapped.length, `missing imported path ${legacyPath.id}`);
+  assert.equal(
+    mapped.length,
+    1,
+    `source owner is not unique: ${legacyPath.id}`,
+  );
   const expected = legacyPath.curves.map((cubic) =>
     cubic.map((point) => [
       (point.x - sandroneProject.width / 2) * scale,
@@ -211,6 +230,133 @@ for (const legacyPath of sandroneProject.paths) {
     });
   }
 }
+const sandroneModeCounts = handleModeCounts(sandrone.document);
+assert.deepEqual(sandroneModeCounts, { smooth: 47, symmetric: 0 });
+assert.deepEqual(sandrone.report.preserved.pathHandleModes, sandroneModeCounts);
+
+// Stored modes preserve the old drag rule without normalizing the initial
+// cubics. On the first real smooth node, a handle edit rotates the opposite
+// handle while retaining its independent length.
+const modeLegacyPath = sandroneProject.paths.find((path) =>
+    path.nodeModes?.includes('smooth'),
+  ),
+  modeIndex = modeLegacyPath.nodeModes.indexOf('smooth'),
+  modeDocument = structuredClone(sandrone.document),
+  modePathRef = sandrone.idMap[`path:${modeLegacyPath.id}`],
+  modeSketch = modeDocument.sketches[modePathRef.sketchId],
+  modePath = modeSketch.paths[modePathRef.id],
+  modeOutgoingEdge = modeSketch.edges[modePath.edges[modeIndex].edgeId],
+  modeIncomingEdge =
+    modeSketch.edges[
+      modePath.edges[
+        (modeIndex - 1 + modePath.edges.length) % modePath.edges.length
+      ].edgeId
+    ],
+  modeVertexId = modeOutgoingEdge.startVertexId,
+  originalIncomingLength = Math.hypot(...modeIncomingEdge.endHandle.vector),
+  editedOutgoing = [
+    modeOutgoingEdge.startHandle.vector[0] + 0.03,
+    modeOutgoingEdge.startHandle.vector[1] - 0.02,
+  ];
+assert.equal(modePath.handleModes[modeVertexId], 'smooth');
+movePathHandle(modeSketch, {
+  pathId: modePath.id,
+  edgeId: modeOutgoingEdge.id,
+  end: 'start',
+  vector: editedOutgoing,
+});
+const editedIncoming = modeIncomingEdge.endHandle.vector;
+close(
+  Math.hypot(...editedIncoming),
+  originalIncomingLength,
+  1e-9,
+  'smooth opposite handle length',
+);
+close(
+  editedIncoming[0] * editedOutgoing[1] - editedIncoming[1] * editedOutgoing[0],
+  0,
+  1e-9,
+  'smooth handles remain collinear after edit',
+);
+assert.ok(
+  editedIncoming[0] * editedOutgoing[0] +
+    editedIncoming[1] * editedOutgoing[1] <
+    0,
+);
+assert.equal(
+  sandrone.report.copiedSources.length,
+  sandroneProject.paths.length,
+);
+assert.ok(
+  sandrone.report.copiedSources.every((entry) => entry.code === 'source-owned'),
+);
+const dependencyOrder = topologicalComponents(
+  buildDependencyGraph(sandrone.document, defaultConstructionRegistry),
+);
+assert.deepEqual(
+  dependencyOrder.cycles,
+  [],
+  'mutual object references to raw owned sources must remain acyclic',
+);
+
+// The outer source is consumed by ten other Shapes. Moving its single owned
+// vertex must invalidate every reference without creating another writable Path.
+const sharedOuterPathId = 'eff8e8cb-258f-4655-9773-544dd16604b2',
+  sharedDocument = structuredClone(sandrone.document),
+  sharedPathRef = sandrone.idMap[`path:${sharedOuterPathId}`],
+  sharedSketch = sharedDocument.sketches[sharedPathRef.sketchId],
+  sharedPath = sharedSketch.paths[sharedPathRef.id],
+  sharedSource = Object.values(
+    sharedDocument.programs[
+      sharedDocument.nodes[sharedSketch.ownerNodeId].programId
+    ].operators,
+  ).find(
+    (operator) =>
+      operator.type === 'source' &&
+      operator.inputs.paths.some((ref) =>
+        ref.pathIds.includes(sharedPathRef.id),
+      ),
+  ),
+  sharedReferences = Object.values(sharedDocument.programs)
+    .flatMap((program) => Object.values(program.operators))
+    .filter(
+      (operator) =>
+        operator.type === 'curve-reference' &&
+        operator.inputs.input[0].operatorId === sharedSource.id,
+    ),
+  initialSharedEvaluation = evaluatePlanar(sharedDocument),
+  initialSharedCurves = new Map(
+    sharedReferences.map((operator) => [
+      operator.id,
+      structuredClone(
+        initialSharedEvaluation.components[`operator:${operator.id}`].ports
+          .curves.value.curves,
+      ),
+    ]),
+  ),
+  sharedEdge = sharedSketch.edges[sharedPath.edges[0].edgeId],
+  sharedVertex = sharedSketch.vertices[sharedEdge.startVertexId];
+assert.ok(sharedSource);
+assert.equal(sharedReferences.length, 10);
+assert.equal(
+  Object.values(sharedDocument.sketches).filter((sketch) =>
+    Object.hasOwn(sketch.paths, sharedPathRef.id),
+  ).length,
+  1,
+);
+sharedVertex.position.value[0] += 0.025;
+sharedVertex.position.value[1] -= 0.015;
+const editedSharedEvaluation = evaluatePlanar(sharedDocument);
+for (const reference of sharedReferences) {
+  const stage =
+    editedSharedEvaluation.components[`operator:${reference.id}`].ports.curves;
+  assert.equal(stage.status, 'ready');
+  assert.notDeepEqual(
+    stage.value.curves,
+    initialSharedCurves.get(reference.id),
+    `external source reference did not follow ${reference.id}`,
+  );
+}
 const sandroneEquivalence = await verifyEvaluatedEquivalence(
   'built-in Sandrone',
   sandroneProject,
@@ -231,8 +377,8 @@ assert.equal(
   3,
 );
 // The repaired between and both downstream intersections retain one stable
-// OutputRef containing a MultiPolygon. Editing an owned source vertex must
-// recompute that published feature instead of reading a frozen contour.
+// OutputRef. Editing an owned source vertex must recompute that published
+// feature instead of reading a frozen contour.
 const dynamicSandroneDocument = structuredClone(sandrone.document),
   dynamicBandTarget = sandrone.idMap['feature-output:body-band-67'],
   dynamicBandPathId = 'b2e77804-53ea-44ac-a50f-f737a9cee455',
@@ -255,7 +401,6 @@ const dynamicSandroneDocument = structuredClone(sandrone.document),
       sameRef(item.ref, dynamicBandTarget),
     );
     assert.ok(region);
-    assert.equal(region.geometry.type, 'MultiPolygon');
     return region;
   },
   initialDynamicBand = dynamicBandRegion();
@@ -335,20 +480,18 @@ assert.equal(editedFaceEvaluation.relief.status, 'ready');
 assert.equal(editedFaceRelief.color, '#e8cfbf');
 assert.deepEqual(editedFaceRelief.thickness, { kind: 'layers', count: 8 });
 
-// Open legacy path regions close with Between's evaluated explicit line. The
-// helper marker shares the original first Vertex and has no frozen chord
-// handles, so moving that endpoint cannot turn the closure into a cubic.
+// Open legacy path regions use Path's evaluated straight closure. It remains a
+// derived boundary connection and does not add a hidden writable marker.
 const closureDocument = structuredClone(sandrone.document),
   closureIssue = sandrone.report.issues.find(
     (issue) =>
       issue.code === 'implicit-region-closure-compiled' &&
       issue.ref?.id === 'source-39',
   ),
-  closureProgram = Object.values(closureDocument.programs).find(
-    (program) => program.ownerNodeId === dynamicFaceTarget.ownerNodeId,
+  closureProgram = Object.values(closureDocument.programs).find((program) =>
+    Object.hasOwn(program.operators, closureIssue.operatorId),
   ),
   closureOperator = closureProgram.operators[closureIssue.operatorId],
-  closureSourceId = closureOperator.inputs.input[0].operatorId,
   closurePathRef = refs(sandrone.idMap[`path:${dynamicFacePathId}`]).find(
     (ref) =>
       closureDocument.sketches[ref.sketchId]?.ownerNodeId ===
@@ -363,8 +506,17 @@ const closureDocument = structuredClone(sandrone.document),
       .ports.regions,
   initialClosureStage = closureStage(),
   initialClosureGeometry = initialClosureStage.value.regions[0].geometry;
-assert.equal(closureOperator.type, 'between');
-assert.equal(closureSketch.paths[closureIssue.markerPathId].visible, false);
+assert.equal(initialClosureStage.status, 'ready');
+assert.equal(closureOperator.type, 'path');
+assert.equal(closureOperator.params.closure, 'straight');
+assert.equal('markerPathId' in closureIssue, false);
+assert.ok(
+  Object.values(closureDocument.sketches).every((sketch) =>
+    Object.values(sketch.paths).every(
+      (path) => !path.name.includes('动态直线封口标记'),
+    ),
+  ),
+);
 closureStartVertex.position.value[0] += 0.03;
 closureStartVertex.position.value[1] -= 0.02;
 const editedClosureEvaluation = evaluatePlanar(closureDocument),
@@ -372,29 +524,17 @@ const editedClosureEvaluation = evaluatePlanar(closureDocument),
     editedClosureEvaluation.components[`operator:${closureOperator.id}`].ports
       .regions,
   closureProvenance = editedClosureStage.value.provenance.find(
-    (entry) => entry.kind === 'explicit-boundary',
+    (entry) => entry.kind === 'path' && entry.operatorId === closureOperator.id,
   ),
-  markerCurve = editedClosureEvaluation.components[
-    `operator:${closureSourceId}`
-  ].ports.curves.value.curves.find(
-    (curve) => curve.pathRef?.id === closureIssue.markerPathId,
-  ),
-  markerEdge = markerCurve.edges[0],
   movedEndpoint = closureStartVertex.position.value;
 assert.equal(editedClosureStage.status, 'ready');
 assert.ok(
-  closureProvenance.connections.every(
+  closureProvenance.boundaryConnections.every(
     (connection) => connection.kind === 'explicit-line',
   ),
 );
 assert.ok(
-  markerEdge.cubic.every(
-    (point) => point[0] === movedEndpoint[0] && point[1] === movedEndpoint[1],
-  ),
-  'the closure marker must follow the moved source endpoint exactly',
-);
-assert.ok(
-  closureProvenance.connections.some(
+  closureProvenance.boundaryConnections.some(
     (connection) =>
       (connection.from[0] === movedEndpoint[0] &&
         connection.from[1] === movedEndpoint[1]) ||
@@ -768,6 +908,10 @@ if (optionalProjectPath) {
   );
   const optionalProject = decodeProject(fs.readFileSync(optionalProjectPath)),
     optionalMigration = importLegacy(optionalProject);
+  assert.deepEqual(handleModeCounts(optionalMigration.document), {
+    smooth: 48,
+    symmetric: 0,
+  });
   optionalEquivalence = await verifyEvaluatedEquivalence(
     optionalProjectPath,
     optionalProject,

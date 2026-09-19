@@ -18,7 +18,14 @@ import {
 
 for (const { version, make } of [
   { version: 1, make: v1Project },
-  { version: 2, make: v2SharedProject },
+  {
+    version: 2,
+    make: () => {
+      const project = v2SharedProject();
+      project.creation.objects[1].pathIds = [];
+      return project;
+    },
+  },
   { version: 3, make: v3ProgramProject },
 ]) {
   const input = make();
@@ -47,28 +54,20 @@ assert.equal(curveResult.value.curves[0].closed, true);
 assert.equal(Object.keys(v1.assets).length, 1);
 assert.deepEqual(Object.keys(v1.assets), Object.keys(v1.document.assets));
 
-const shared = importLegacy(v2SharedProject());
-assert.equal(Object.values(shared.document.nodes).length, 2);
-assert.equal(
-  shared.report.copiedSources.filter((entry) => entry.pathId === 'outline')
-    .length,
-  2,
-);
+let ambiguousOwner;
+try {
+  importLegacy(v2SharedProject());
+} catch (error) {
+  ambiguousOwner = error;
+}
+assert.ok(ambiguousOwner instanceof LegacyImportError);
 assert.ok(
-  shared.report.issues.some((entry) => entry.code === 'shared-source-copied'),
-);
-const sharedPathMap = shared.idMap['path:outline'];
-assert.ok(Array.isArray(sharedPathMap));
-assert.equal(sharedPathMap.length, 2);
-assert.notEqual(sharedPathMap[0].sketchId, sharedPathMap[1].sketchId);
-const [leftSketch, rightSketch] = Object.values(shared.document.sketches);
-assert.equal(
-  new Set([
-    ...Object.keys(leftSketch.vertices),
-    ...Object.keys(rightSketch.vertices),
-  ]).size,
-  Object.keys(leftSketch.vertices).length +
-    Object.keys(rightSketch.vertices).length,
+  ambiguousOwner.report.issues.some(
+    (entry) =>
+      entry.code === 'ambiguous-path-owner' &&
+      entry.ref?.id === 'outline' &&
+      entry.ownerIds.join(',') === 'left,right',
+  ),
 );
 
 const v3 = importLegacy(v3ProgramProject());
@@ -78,6 +77,13 @@ assert.deepEqual(
   Object.values(program.operators).map((entry) => entry.type),
   ['source', 'path', 'offset'],
 );
+const importedPathRegion = Object.values(program.operators).find(
+  (entry) => entry.type === 'path',
+);
+assert.deepEqual(importedPathRegion.params, {
+  rule: 'even-odd',
+  closure: 'straight',
+});
 assert.equal(Object.values(program.operators).at(-1).enabled, false);
 assert.equal(v3.document.geometrySettings.curveToleranceMM, 0.02);
 assert.equal(v3.document.manufacturing.layerHeightMM, 0.2);
@@ -146,5 +152,5 @@ assert.throws(
 );
 
 console.log(
-  'PASS: V1-V3 one-way import, cubic conversion, source copying, program/style/manufacturing mapping, and structured refusal.',
+  'PASS: V1-V3 one-way import, cubic conversion, unique source ownership, program/style/manufacturing mapping, and structured refusal.',
 );

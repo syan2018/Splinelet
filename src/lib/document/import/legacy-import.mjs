@@ -199,12 +199,36 @@ function validateLegacy(context) {
 
 function owners(context) {
   const p = context.project;
-  if (Array.isArray(p.creation?.objects))
-    return p.creation.objects.map((object, order) => ({
+  if (Array.isArray(p.creation?.objects)) {
+    const result = p.creation.objects.map((object, order) => ({
       ...object,
       pathIds: [...(object.pathIds || [])],
       legacyOrder: order,
     }));
+    const declared = new Set(result.flatMap((owner) => owner.pathIds));
+    for (const path of p.paths)
+      if (!declared.has(path.id)) {
+        const owner = {
+          id: `path-${path.id}`,
+          name: path.name || path.id,
+          pathIds: [path.id],
+          roles: {},
+          visible: path.visible !== false,
+          printable: false,
+          legacyOrder: result.length,
+        };
+        result.push(owner);
+        addIssue(
+          context.report,
+          'info',
+          'unowned-path-owner-derived',
+          '旧路径没有 creation owner；已建立独立的唯一可写源 Shape',
+          { kind: 'path', id: path.id },
+          { ownerId: owner.id },
+        );
+      }
+    return result;
+  }
   addIssue(
     context.report,
     'info',
@@ -348,7 +372,9 @@ function copyPath(context, state, path) {
   ];
   const same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-9;
   const pathId = context.id('path', `${state.owner.id}:${path.id}`),
-    uses = [];
+    uses = [],
+    nodeVertexIds = [],
+    disconnectedNodes = new Set();
   let firstId, previousId, previousPoint;
   path.curves.forEach((legacyCubic, index) => {
     const cubic = legacyCubic.map(point);
@@ -373,6 +399,9 @@ function copyPath(context, state, path) {
           { ownerId: state.owner.id, segmentIndex: index },
         );
     }
+    if (nodeVertexIds[index] && nodeVertexIds[index] !== startId)
+      disconnectedNodes.add(index);
+    nodeVertexIds[index] = startId;
     firstId ||= startId;
     const closes =
       path.closed &&
@@ -386,6 +415,7 @@ function copyPath(context, state, path) {
         id: endId,
         position: { kind: 'free', value: cubic[3] },
       };
+    nodeVertexIds[index + 1] = endId;
     const edgeId = context.id('edge', `${state.owner.id}:${path.id}:${index}`);
     state.sketch.edges[edgeId] = {
       id: edgeId,
@@ -410,11 +440,48 @@ function copyPath(context, state, path) {
     previousId = endId;
     previousPoint = cubic[3];
   });
+  const expectedNodeCount = path.closed
+    ? path.curves.length
+    : path.curves.length + 1;
+  if (
+    path.nodeModes !== undefined &&
+    (!Array.isArray(path.nodeModes) ||
+      path.nodeModes.length !== expectedNodeCount ||
+      path.nodeModes.some(
+        (mode) => !['corner', 'smooth', 'symmetric'].includes(mode),
+      ))
+  )
+    fail(
+      context,
+      'invalid-node-modes',
+      '旧路径的节点编辑模式与路径拓扑不匹配',
+      { kind: 'path', id: path.id },
+      { expectedNodeCount },
+    );
+  const handleModes = {};
+  for (const [index, mode] of (path.nodeModes || []).entries()) {
+    if (mode === 'corner') continue;
+    if (disconnectedNodes.has(index))
+      fail(
+        context,
+        'disconnected-node-mode',
+        '旧路径在不连续端点上声明了连续控制柄模式',
+        { kind: 'path', id: path.id },
+        { nodeIndex: index, mode },
+      );
+    handleModes[nodeVertexIds[index]] = mode;
+    const counts = (context.report.preserved.pathHandleModes ||= {
+      smooth: 0,
+      symmetric: 0,
+    });
+    counts[mode]++;
+  }
   state.sketch.paths[pathId] = {
     id: pathId,
     name: path.name || path.id,
     edges: uses,
     visible: path.visible !== false,
+    ...(Object.keys(handleModes).length ? { handleModes } : {}),
   };
   state.paths.set(path.id, { pathId, path });
   context.map(
@@ -440,130 +507,74 @@ function operator(context, state, kind, legacyId, fields) {
 
 function source(context, state, legacyPathId) {
   if (state.sources.has(legacyPathId)) return state.sources.get(legacyPathId);
-  let copied = state.paths.get(legacyPathId);
-  if (!copied) {
-    const legacyPath = context.paths.get(legacyPathId);
-    if (!legacyPath)
-      fail(context, 'missing-path', '旧构造引用的路径不存在', {
-        kind: 'path',
-        id: legacyPathId,
-      });
-    copyPath(context, state, legacyPath);
-    copied = state.paths.get(legacyPathId);
-    const count = (context.copies.get(legacyPathId) || 0) + 1;
-    context.copies.set(legacyPathId, count);
-    context.report.copiedSources.push({
-      code: count > 1 ? 'shared-source-copied' : 'source-copied',
-      pathId: legacyPathId,
-      ownerId: state.owner.id,
-      sketchId: state.sketch.id,
+  const owner = context.pathOwners.get(legacyPathId);
+  if (!owner)
+    fail(
+      context,
+      'unowned-source',
+      '旧构造引用的路径没有唯一可写所有者',
+      { kind: 'path', id: legacyPathId },
+      { consumerOwnerId: state.owner.id },
+    );
+  let op;
+  if (owner === state) {
+    const owned = state.paths.get(legacyPathId);
+    if (!owned)
+      fail(
+        context,
+        'owned-source-missing',
+        '旧路径所有者缺少对应的 V4 可写源',
+        { kind: 'path', id: legacyPathId },
+        { ownerId: state.owner.id },
+      );
+    op = operator(context, state, 'path-source', legacyPathId, {
+      type: 'source',
+      name: owned.path.name || '源线',
+      enabled: true,
+      inputs: {
+        paths: [
+          {
+            kind: 'sketch',
+            sketchId: state.sketch.id,
+            pathIds: [owned.pathId],
+          },
+        ],
+      },
+      params: {},
+    });
+  } else {
+    const upstream = source(context, owner, legacyPathId);
+    op = operator(context, state, 'path-reference', legacyPathId, {
+      type: 'curve-reference',
+      name: context.paths.get(legacyPathId)?.name || '外部源线',
+      enabled: true,
+      inputs: {
+        input: [
+          {
+            ...upstream,
+            space: 'world-result',
+            transform: identity(),
+          },
+        ],
+      },
+      params: {},
     });
     addIssue(
       context.report,
       'info',
-      'shared-source-copied',
-      '旧构造的共享或非归属路径已复制为该 Shape 的独立可写源',
-      { kind: 'path', id: legacyPathId },
-      { ownerId: state.owner.id, sketchId: state.sketch.id },
-    );
-    addIssue(
-      context.report,
-      'info',
       'cross-owner-source-referenced',
-      '旧跨对象来源已解析为该 Shape 内的独立源副本',
+      '旧跨对象来源已映射为指向唯一可写源的外部输入',
       { kind: 'path', id: legacyPathId },
-      { ownerId: state.owner.id, sketchId: state.sketch.id },
+      {
+        ownerId: state.owner.id,
+        sourceOwnerId: owner.owner.id,
+        operatorId: op.id,
+      },
     );
   }
-  const op = operator(context, state, 'path-source', legacyPathId, {
-    type: 'source',
-    name: copied.path.name || '源线',
-    enabled: true,
-    inputs: {
-      paths: [
-        { kind: 'sketch', sketchId: state.sketch.id, pathIds: [copied.pathId] },
-      ],
-    },
-    params: {},
-  });
   const result = port(state.shape.id, op.id, 'curves');
   state.sources.set(legacyPathId, result);
   return result;
-}
-
-function openPathRegion(context, state, old, regionId) {
-  source(context, state, old.pathId);
-  const copied = state.paths.get(old.pathId),
-    sourcePath = state.sketch.paths[copied.pathId];
-  if (copied.path.closed || !sourcePath.edges.length) return null;
-  const firstEdge = state.sketch.edges[sourcePath.edges[0].edgeId],
-    startVertexId = firstEdge.startVertexId,
-    markerEdgeId = context.id(
-      'edge',
-      `${state.owner.id}:${old.pathId}:region-close-marker:${regionId}`,
-    ),
-    markerPathId = context.id(
-      'path',
-      `${state.owner.id}:${old.pathId}:region-close-marker:${regionId}`,
-    );
-  state.sketch.edges[markerEdgeId] = {
-    id: markerEdgeId,
-    startVertexId,
-    endVertexId: startVertexId,
-    startHandle: { kind: 'free', vector: [0, 0] },
-    endHandle: { kind: 'free', vector: [0, 0] },
-  };
-  state.sketch.paths[markerPathId] = {
-    id: markerPathId,
-    name: `${copied.path.name || old.pathId} · 动态直线封口标记`,
-    edges: [{ edgeId: markerEdgeId, reversed: false }],
-    visible: false,
-  };
-  const src = operator(context, state, 'region-closure-source', regionId, {
-    type: 'source',
-    name: `${copied.path.name || old.pathId} · 动态直线封口来源`,
-    enabled: true,
-    inputs: {
-      paths: [
-        {
-          kind: 'sketch',
-          sketchId: state.sketch.id,
-          pathIds: [copied.pathId],
-        },
-        {
-          kind: 'sketch',
-          sketchId: state.sketch.id,
-          pathIds: [markerPathId],
-        },
-      ],
-    },
-    params: {},
-  });
-  const op = operator(context, state, 'region', regionId, {
-    type: 'between',
-    name: old.name || regionId,
-    enabled: true,
-    inputs: {
-      input: [inputPort(port(state.shape.id, src.id, 'curves'))],
-    },
-    params: {
-      curveKeys: [
-        `${copied.pathId}@${src.id}:0`,
-        `${markerPathId}@${src.id}:1`,
-      ],
-      boundaryJoinMM: 0,
-      repair: old.repair === true,
-    },
-  });
-  addIssue(
-    context.report,
-    'info',
-    'implicit-region-closure-compiled',
-    '旧 path region 的隐式封口已编译为随首末端点求值的显式直线连接',
-    { kind: 'region', id: regionId },
-    { pathId: old.pathId, operatorId: op.id, markerPathId },
-  );
-  return op;
 }
 
 function region(context, state, id) {
@@ -582,8 +593,22 @@ function region(context, state, id) {
   state.visiting.add(id);
   let op;
   if (old.kind === 'path' || old.kind === 'stroke') {
-    op = old.kind === 'path' ? openPathRegion(context, state, old, id) : null;
-    op ||= operator(context, state, 'region', id, {
+    const legacyPath = context.paths.get(old.pathId);
+    if (!legacyPath)
+      fail(context, 'missing-path', '旧 region 引用的路径不存在', {
+        kind: 'path',
+        id: old.pathId,
+      });
+    const openPath = old.kind === 'path' && !legacyPath.closed;
+    if (openPath && old.close !== true)
+      fail(
+        context,
+        'open-path-region-not-closed',
+        '旧开放路径 region 未启用首尾直线封口',
+        { kind: 'region', id },
+        { pathId: old.pathId },
+      );
+    op = operator(context, state, 'region', id, {
       type: old.kind,
       name: old.name || id,
       enabled: true,
@@ -591,14 +616,40 @@ function region(context, state, id) {
         input: [inputPort(source(context, state, old.pathId))],
       },
       params:
-        old.kind === 'stroke' ? { widthMM: old.widthMM } : { rule: 'even-odd' },
+        old.kind === 'stroke'
+          ? { widthMM: old.widthMM }
+          : {
+              rule: 'even-odd',
+              closure: 'straight',
+              ...(old.repair === true ? { repair: true } : {}),
+            },
     });
+    if (openPath)
+      addIssue(
+        context.report,
+        'info',
+        'implicit-region-closure-compiled',
+        '旧 path region 的隐式封口已编译为随首末端点求值的直线封口',
+        { kind: 'region', id },
+        { pathId: old.pathId, operatorId: op.id },
+      );
   } else if (old.kind === 'between') {
     if (!Array.isArray(old.pathIds) || old.pathIds.length !== 2)
       fail(context, 'invalid-between', '旧 between 缺少两条路径', {
         kind: 'region',
         id,
       });
+    const externalPathIds = old.pathIds.filter(
+      (pathId) => context.pathOwners.get(pathId) !== state,
+    );
+    if (externalPathIds.length)
+      fail(
+        context,
+        'unsupported-cross-owner-multi-curve',
+        '跨对象多曲线 region 需要显式曲线集合算子',
+        { kind: 'region', id },
+        { recipe: 'between', pathIds: externalPathIds },
+      );
     const src = operator(context, state, 'between-source', id, {
       type: 'source',
       name: `${old.name || id} · 来源`,
@@ -640,6 +691,17 @@ function region(context, state, id) {
     });
   } else if (old.kind === 'split') {
     const base = region(context, state, old.baseId);
+    const externalPathIds = (old.pathIds || []).filter(
+      (pathId) => context.pathOwners.get(pathId) !== state,
+    );
+    if (externalPathIds.length)
+      fail(
+        context,
+        'unsupported-cross-owner-multi-curve',
+        '跨对象多曲线 partition 需要显式曲线集合算子',
+        { kind: 'region', id },
+        { recipe: 'split', pathIds: externalPathIds },
+      );
     const cutter = operator(context, state, 'partition-source', id, {
       type: 'source',
       name: `${old.name || id} · 切分线`,
@@ -2551,10 +2613,9 @@ function compile(context) {
   );
   dataAsset(context, document, assets);
   context.states = new Map();
-  const paths = new Map(p.paths.map((path) => [path.id, path])),
-    copies = new Map();
+  const paths = new Map(p.paths.map((path) => [path.id, path]));
   context.paths = paths;
-  context.copies = copies;
+  context.pathOwners = new Map();
   context.features = new Map(
     (p.model?.features || []).map((feature) => [feature.id, feature]),
   );
@@ -2610,6 +2671,9 @@ function compile(context) {
       visiting: new Set(),
     };
     context.states.set(object.id, state);
+  }
+  for (const object of allOwners) {
+    const state = context.states.get(object.id);
     for (const pathId of object.pathIds || []) {
       const path = paths.get(pathId);
       if (!path)
@@ -2620,25 +2684,27 @@ function compile(context) {
           { kind: 'path', id: pathId },
           { ownerId: object.id },
         );
-      copyPath(context, state, path);
-      const count = (copies.get(pathId) || 0) + 1;
-      copies.set(pathId, count);
-      context.report.copiedSources.push({
-        code: count > 1 ? 'shared-source-copied' : 'source-copied',
-        pathId,
-        ownerId: object.id,
-        sketchId,
-      });
-      if (count > 1)
-        addIssue(
-          context.report,
-          'info',
-          'shared-source-copied',
-          '共享旧路径已为每个 Shape 复制独立可写源',
+      const previous = context.pathOwners.get(pathId);
+      if (previous)
+        fail(
+          context,
+          'ambiguous-path-owner',
+          '旧路径被多个对象声明为可写源，无法确定唯一所有者',
           { kind: 'path', id: pathId },
-          { ownerId: object.id, sketchId },
+          { ownerIds: [previous.owner.id, object.id] },
         );
+      context.pathOwners.set(pathId, state);
     }
+  }
+  for (const [pathId, state] of context.pathOwners) {
+    const path = paths.get(pathId);
+    copyPath(context, state, path);
+    context.report.copiedSources.push({
+      code: 'source-owned',
+      pathId,
+      ownerId: state.owner.id,
+      sketchId: state.sketch.id,
+    });
   }
   metadata(context, document, allOwners);
   for (const object of allOwners)
@@ -2663,14 +2729,48 @@ function compile(context) {
     );
   for (const group of p.groups || []) {
     const id = context.id('collection', group.id);
-    const grouped = new Set(
-      p.paths
-        .filter((path) => path.groupId === group.id)
-        .map((path) => path.id),
-    );
-    const members = [...context.states.values()]
-      .filter((state) => [...grouped].some((pathId) => state.paths.has(pathId)))
-      .map((state) => ({ kind: 'node', id: state.shape.id }));
+    const members = [];
+    for (const path of p.paths.filter((path) => path.groupId === group.id)) {
+      const owningStates = [...context.states.values()].filter((state) =>
+        state.owner.pathIds?.includes(path.id),
+      );
+      if (!owningStates.length)
+        fail(
+          context,
+          'group-path-owner-missing',
+          '旧分组路径没有可确定的 Shape 所有者',
+          { kind: 'path', id: path.id },
+          { groupId: group.id },
+        );
+      if (owningStates.length > 1)
+        addIssue(
+          context.report,
+          'warning',
+          'group-path-multiple-owners',
+          '旧分组路径由多个 Shape 真实拥有；分组按原对象顺序包含全部独立路径',
+          { kind: 'path', id: path.id },
+          {
+            groupId: group.id,
+            ownerIds: owningStates.map((state) => state.owner.id),
+          },
+        );
+      for (const state of owningStates) {
+        const copied = state.paths.get(path.id);
+        if (!copied)
+          fail(
+            context,
+            'group-path-copy-missing',
+            '旧分组路径所有者缺少已导入的可编辑路径',
+            { kind: 'path', id: path.id },
+            { groupId: group.id, ownerId: state.owner.id },
+          );
+        members.push({
+          kind: 'path',
+          sketchId: state.sketch.id,
+          id: copied.pathId,
+        });
+      }
+    }
     document.collections[id] = {
       id,
       name: group.name || group.id,
