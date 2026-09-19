@@ -93,3 +93,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-path-move-equivalence.mjs` 检查真实 Sandrone 头发部件移动后的 69 个求值区域与旧实现等价，并验证旧分区 fixture 的 11 组涂色在全部边界与源线同移后，按稳定输出引用保持几何、颜色和厚度。旧 fixture 的移动后空间样式匹配本身会报歧义，因此该项以移动前已验证的分区单元进行坐标平移作几何基准；不会把旧 fallback 当成正确输出。
 
 `test-v4-endpoint-snap-view.mjs` 检查 V4 当前源视图和已发布曲线实例到原端点吸附 DTO 的只读投影。`test-v4-source-runtime.mjs` 同时检查吸附视图拒绝外部/过期/预览句柄并复用不可变 frame；原组件浏览器 fixture 的 `/snap` 验证真实端点吸附、Alt 绕过、Shift 限轴、Esc 取消和一次撤销。证据包含 `snap-result.json`，不代表默认根工作区已接线。
+
+`test-v4-object-gesture.mjs` 检查部件/组选区通过 pose 进行世界位移，涵盖旋转父组、父子去重、镜像结果随动、原始定义不变、基线预览/撤销和锁定/失效保护。Sandrone 原组件浏览器 fixture 同时区分部件位姿拖动与源路径几何拖动，防止将 pathIds 位移误当作对象变换。

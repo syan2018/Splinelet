@@ -305,3 +305,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 端点吸附接线：CreationRuntime 新增已提交视图上的 `readEndpointSnapContext`；`useSourceDrag` 在单节点手势开始时捕获目标，在原屏幕距离规则下提供反馈，Alt/Shift 绕过吸附，结束清理反馈。原 SVG 真实鼠标 fixture 覆盖吸附/绕过/限轴/取消/撤销。V4 目标投影读取当前构造求值和稳定源身份，不把派生坐标写为 Path。默认根尚未注入该手势，框选、续画及完整双端旅程仍待接线。
 
 默认根后续接线必须区分对象与源编辑：`CreationWorkspace.prepare_move` 当前只返回 pathIds，旧根据此调用 translatePaths；V4 对象移动须传 nodeIds 并通过 move-nodes 更新部件 pose，不能把已验证的 beginV4PathGesture 当作对象移动验收。此整理保留原工具/布局，改正对象组织与变换权威。
+
+2026-09-20 部件位姿手势：runtime.beginObjectGesture 接 nodeIds，通过 move-nodes 写场景 pose；共用 runtime-gesture 维护源/对象预览的同一会话边界。原 prepare_move 开始返回 nodeIds，V4 手势 hook 具备对象入口。旋转父组、父子同时选中、派生镜像跟随、原始定义不变和 Sandrone 原 SVG 实际鼠标检查通过。默认根仍待注入 StudioHost/runtime，当前只有原组件 fixture 接线，不能签收默认对象移动旅程。

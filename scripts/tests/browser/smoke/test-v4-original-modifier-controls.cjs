@@ -486,27 +486,31 @@ async function main() {
       .getByRole('button', { name: '测试整线拖动', exact: true })
       .click();
     const beforePath = await referenceState();
-    const hit = await page
-      .locator(`[data-source-id="${beforePath.activePathId}"] path[aria-label]`)
-      .evaluate((path) => {
-        const canvas = path.closest('svg').getBoundingClientRect();
-        const length = path.getTotalLength();
-        for (let i = 1; i < 100; i++) {
-          const local = path.getPointAtLength((length * i) / 100);
-          const point = new DOMPoint(local.x, local.y).matrixTransform(
-            path.getScreenCTM(),
-          );
-          if (
-            point.x > canvas.left + 30 &&
-            point.x < canvas.right - 30 &&
-            point.y > canvas.top + 30 &&
-            point.y < canvas.bottom - 30 &&
-            document.elementFromPoint(point.x, point.y) === path
-          )
-            return { x: point.x, y: point.y };
-        }
-        throw Error('No unobscured original source-path hit target');
-      });
+    const sourceHit = async () =>
+      page
+        .locator(
+          `[data-source-id="${beforePath.activePathId}"] path[aria-label]`,
+        )
+        .evaluate((path) => {
+          const canvas = path.closest('svg').getBoundingClientRect();
+          const length = path.getTotalLength();
+          for (let i = 1; i < 100; i++) {
+            const local = path.getPointAtLength((length * i) / 100);
+            const point = new DOMPoint(local.x, local.y).matrixTransform(
+              path.getScreenCTM(),
+            );
+            if (
+              point.x > canvas.left + 30 &&
+              point.x < canvas.right - 30 &&
+              point.y > canvas.top + 30 &&
+              point.y < canvas.bottom - 30 &&
+              document.elementFromPoint(point.x, point.y) === path
+            )
+              return { x: point.x, y: point.y };
+          }
+          throw Error('No unobscured original source-path hit target');
+        });
+    const hit = await sourceHit();
     await page.mouse.move(hit.x, hit.y);
     await page.mouse.down();
     await page.mouse.move(hit.x + 20, hit.y + 12);
@@ -525,6 +529,44 @@ async function main() {
     );
     await page.mouse.up();
     assert.equal((await referenceState()).revision, beforePath.revision + 1);
+    await page
+      .getByRole('button', { name: '撤销测试编辑', exact: true })
+      .click();
+    assert.equal((await referenceState()).restored, true);
+    await page
+      .getByRole('button', { name: '测试部件拖动', exact: true })
+      .click();
+    const beforeObject = await referenceState();
+    const objectHit = await sourceHit();
+    await page.mouse.move(objectHit.x, objectHit.y);
+    await page.mouse.down();
+    await page.mouse.move(objectHit.x + 20, objectHit.y + 12);
+    const objectPreview = await referenceState();
+    assert.equal(objectPreview.revision, beforeObject.revision);
+    assert.ok(
+      Math.abs(
+        objectPreview.displayAnchor.x - beforeObject.displayAnchor.x - 10,
+      ) < 1e-7,
+    );
+    assert.ok(
+      Math.abs(
+        objectPreview.displayAnchor.y - beforeObject.displayAnchor.y - 6,
+      ) < 1e-7,
+    );
+    await page.mouse.up();
+    const objectCommitted = await referenceState();
+    assert.equal(objectCommitted.revision, beforeObject.revision + 1);
+    assert.equal(
+      objectCommitted.sourceUnchanged,
+      true,
+      'moving the part must preserve all raw sketches',
+    );
+    assert.equal(
+      objectCommitted.programUnchanged,
+      true,
+      'moving the part must preserve operator parameters',
+    );
+    assert.equal(objectCommitted.restored, false);
     await page
       .getByRole('button', { name: '撤销测试编辑', exact: true })
       .click();

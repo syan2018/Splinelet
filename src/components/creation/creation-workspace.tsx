@@ -217,7 +217,7 @@ type CreationApi = {
     pathId?: string;
     objectId?: string;
     toggle?: boolean;
-  }) => { pathIds: string[]; label: string };
+  }) => { pathIds: string[]; nodeIds: string[]; label: string };
   new_path: (path: { id: string }) => CreationDocument | undefined;
   show_output: (partId?: string) => void;
   show_project: () => void;
@@ -1000,6 +1000,7 @@ export default function CreationWorkspace(p: Props) {
         });
         return {
           pathIds: [...new Set(selected.flatMap((o) => o.pathIds))],
+          nodeIds: selected.map((o) => o.id),
           label:
             selected.length === 1
               ? selected[0].name

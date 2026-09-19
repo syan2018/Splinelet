@@ -116,3 +116,13 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 新增单测覆盖位姿后的镜像/阵列、共享源顶点、隐藏、独立部件源端点、显式 Join、同坐标防分叉、失效发布和不可变 DTO；原组件浏览器新增 `/snap`，通过原 SVG 节点实际鼠标验证吸附、Alt/Shift、Esc 和一次撤销。证据：`output/playwright/v4-original-modifier-controls/snap-result.json`。实际 Sandrone 源编辑/保存重开 fixture 同批回归，仍不代替默认根或原生文件验收。
 
 本批 `pnpm check:all` 退出 0，100 项单测、类型/lint/格式、Rust 检查与双端构建通过。日志：`outputs/v4-qa/check-all-original-source-snap-2026-09-20.log`。全量检查启动后补强的“其他部件真实镜像仍只提供源端点”断言另行通过该单测与定向 lint/格式检查；产品实现未再改变。
+
+## 部件位姿与源线移动分责
+
+`CreationRuntime.beginObjectGesture(project, nodeIds)` 捕获当前部件/组选区，用冻结源画布 frame 的线性部分把像素位移转换成世界毫米位移，再通过 `move-nodes` 改场景 pose。`runtime-gesture.mjs` 统一源编辑与部件移动的 epoch/revision/preview 校验、基线预览、取消和单次提交；不引入第二套历史。父组和子节点同时选中时，场景变换只应用到选区根。
+
+原 `CreationWorkspace.prepare_move` 现在同时保留 nodeIds，原默认根暂仍使用旧 pathIds 分支，不能据此声称对象移动已默认切换。`useSourceDrag.onObjectPointerDown` 复用现有指针门槛、限轴、取消和捕获处理。源线移动只改 Sketch；部件移动只改 nodes 的 pose，固定局部参数和镜像结果随场景一起移动。
+
+`test-v4-object-gesture.mjs` 验证旋转组内的世界位移、父子选区去重、镜像派生曲线随位姿移动、所有非 nodes 定义不变、连续基线预览、取消、单次撤销、锁定和替换会话失效。Sandrone 原 SVG fixture 以真实鼠标移动部件，验证显示位移、一次提交、raw sketches/programs 不变和撤销恢复；同批节点/源路径/吸附/文件重开检查仍通过。
+
+本批 `pnpm check:all` 退出 0：101 项单测、类型/lint/格式、Rust 检查及双端前端构建通过。日志：`outputs/v4-qa/check-all-object-pose-gesture-2026-09-20.log`。

@@ -7,6 +7,8 @@ import { evaluatePlanar } from '../construction/document-evaluation.mjs';
 import { projectCurvePreviews } from './curve-preview.mjs';
 import { createSourceRuntime } from './source-runtime.mjs';
 import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
+import { beginRuntimeGesture } from './runtime-gesture.mjs';
+import { effectiveNodeState } from '../scene/hierarchy.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -116,6 +118,39 @@ export function createV4CreationRuntime({
     },
     readCreationDocument(project) {
       return metadata(project).view.creation;
+    },
+    beginObjectGesture(project, nodeIds) {
+      const entry = current(project);
+      if (!Array.isArray(nodeIds) || !nodeIds.length)
+        throw Error('移动部件需要非空选区');
+      const ids = [...new Set(nodeIds)];
+      for (const id of ids) {
+        if (
+          typeof id !== 'string' ||
+          !Object.hasOwn(entry.state.document.nodes, id)
+        )
+          throw Error('移动部件不存在');
+        const state = effectiveNodeState(entry.state.document, id);
+        if (!state.visible || state.locked) throw Error('移动部件已隐藏或锁定');
+      }
+      const frame = sourceRuntime.readSourceView(project).source.frame;
+      const [a, b, c, d] = frame.pixelToWorld;
+      return beginRuntimeGesture({
+        editorSession,
+        project,
+        getEntry: metadata,
+        issueProject: issue,
+        captured: entry.state,
+        compile(delta) {
+          if (!Number.isFinite(delta?.x) || !Number.isFinite(delta?.y))
+            throw Error('拖动位移必须是有限像素坐标');
+          return createAuthoringCommand({
+            kind: 'move-nodes',
+            nodeIds: ids,
+            deltaMM: [a * delta.x + c * delta.y, b * delta.x + d * delta.y],
+          });
+        },
+      });
     },
     readEndpointSnapContext(project, pathId, nodeIndex) {
       const entry = current(project);

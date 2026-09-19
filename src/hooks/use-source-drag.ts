@@ -106,6 +106,27 @@ export function useSourceDrag({
     target.setPointerCapture(event.pointerId);
   };
   return {
+    onObjectPointerDown(event: PointerEvent, nodeIds: string[]) {
+      if (active.current || disabled || isPanning() || event.button !== 0)
+        return;
+      event.stopPropagation();
+      event.preventDefault();
+      const target = getCaptureTarget();
+      const origin = toPoint(event);
+      if (!target || !origin) return;
+      target.focus({ preventScroll: true });
+      try {
+        start(
+          event,
+          target,
+          origin,
+          runtime.beginObjectGesture(project, nodeIds),
+        );
+      } catch (error) {
+        finish(false);
+        onError(error);
+      }
+    },
     onPathPointerDown(event: PointerEvent, pathIds: string[]) {
       if (active.current || disabled || isPanning() || event.button !== 0)
         return;
