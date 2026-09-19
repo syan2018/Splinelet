@@ -22,6 +22,8 @@ node scripts/tests/unit/test-v4-legacy-equivalence.mjs F:/Projects/Splinelet/out
 
 ## 未完成项
 
+后续源操作检查点 `f209aba`：`pnpm check:all` 再次全通过，包含 72 个单元测试、类型/lint/格式、Rust format/check 与双端前端构建。本地日志为 `outputs/v4-qa/check-all-path-intents-2026-09-19.log`。新增验证覆盖共享节点批量 Preview 与单次撤销、精确头尾续画、拟合闭合和 Fill 同步撤销、迟到拟合拒绝，以及路径名称/显示的批量原子修改。仍未把这些适配全面接入原父级工作区。
+
 - 原工作区的文件、历史、源手势、构造和模型面板尚未全面接入 V4。
 - 真正含混的多 owner 声明结构化拒绝；尚无曲线集合算子时，跨 owner 多曲线 between/split 也拒绝，不复制来源兜底。两份指定工程没有这些情况。
 

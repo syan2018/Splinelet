@@ -34,6 +34,8 @@
 
 源命令与只读类型/文件会话可独立推进；父级接线由 P00 串行集成。每个切片在原组件中验收，不能以新候选组件或删掉旧操作代替。
 
+2026-09-19 增量：切片 1 的 `move-anchors`/`set-handle-modes` 已提供单事务批量适配，含共享 Vertex 去重、冲突拒绝、Preview 基准和整体失败回滚。切片 2 已有 exact cubic 头尾续画与拟合闭合；闭合和 Fill 成员更新一起撤销，尚缺首点零边路径的持久表达。切片 4 已有 `set-paths` 原子名称/显示命令；集合管理与显示顺序仍待补齐。`path-intents.mjs` 负责稳定展示 Path ID、像素拟合结果到 world mm 的转换和迟到拟合拒绝，不接受修改后的展示工程。
+
 - `src/lib/editor/workspace-view.mjs` 的 `projectWorkspaceView(editorState, evaluated, frame)` 是统一读取边界；`evaluated` 必须携带 EvaluationSession 的 epoch/revision/previewId 和 snapshot，拒绝旧工程、旧 revision 或旧 preview 的结果。frame 显式提供旧画布使用的 width/height/widthMM。
 - `source-view.mjs` 提供原源画布的精确像素 cubic 和 canonical EntityRef 反查；分段或反向不会让旧 identity 指向其他实体。局部坏路径只产生该路径诊断，不清空其他来源。
 - `source-intents.mjs` 将已捕获源视图中的稳定锚点/柄/边身份编译成命令；处理像素→世界→所属部件局部坐标、反向边的拆分参数和 revision 保护。整次拖动使用同一基准视图与 Preview，只提交一次。已有模块测试，原画布事件尚未接入；绘制、续画、删除、连接及关系自由度编辑仍待适配。
