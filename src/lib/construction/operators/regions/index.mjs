@@ -1,5 +1,6 @@
 import GeoJSONWriter from 'jsts/org/locationtech/jts/io/GeoJSONWriter.js';
 import {
+  MIN_REGION_AREA_MM2,
   polygonParts,
   readGeometry,
   robustPolygonize,
@@ -17,8 +18,10 @@ const writer = new GeoJSONWriter();
 // Disconnected pieces of one semantic result retain that result's identity.
 // RegionSet already permits MultiPolygon; only explicit partitioning creates
 // separate output identities for independently editable regions.
-const polygonalResult = (geometry) => {
-  const parts = polygonParts(geometry);
+const polygonalResult = (geometry, minimumAreaMM2 = 0) => {
+  const parts = polygonParts(geometry).filter(
+    (part) => part.getArea() >= minimumAreaMM2,
+  );
   if (!parts.length) return null;
   if (parts.length === 1) return parts[0];
   return readGeometry({
@@ -658,7 +661,12 @@ export const booleanOperator = {
           : operator.params.operation === 'intersection'
             ? null
             : source;
-        const area = geometry && polygonalResult(geometry);
+        // Boolean overlay can leave sub-grid slivers on coincident sampled
+        // boundaries. Apply the same minimum valid area as region recipes;
+        // these are not independently selectable semantic regions.
+        const area =
+          geometry &&
+          polygonalResult(geometry, operandGeometry ? MIN_REGION_AREA_MM2 : 0);
         const parents = [
           ...region.ref.lineage,
           ...lineage(operand.value.regions),

@@ -357,6 +357,44 @@ for (const operation of ['union', 'difference', 'intersection']) {
     operation === 'intersection' ? 1 : 2,
   );
 }
+// Coincident boolean boundaries must not manufacture a selectable noise cell.
+// Keep meaningful small regions above the shared recipe area threshold.
+for (const [width, expectedCount] of [
+  [1e-11, 1],
+  [1e-5, 2],
+]) {
+  const almostCover = {
+    ...source,
+    value: {
+      ...source.value,
+      regions: [
+        region('cover', {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [width, 0],
+              [10, 0],
+              [10, 10],
+              [width, 10],
+              [width, 0],
+            ],
+          ],
+        }),
+      ],
+    },
+  };
+  const cut = invoke(
+    booleanOperator,
+    {
+      id: 'precision-cut',
+      params: { scope: selectedA, operation: 'difference' },
+    },
+    { input: [source], operand: [almostCover] },
+  );
+  assert.equal(cut.status, 'ready');
+  assert.equal(cut.value.regions.length, expectedCount);
+  assert.deepEqual(cut.value.regions[0], source.value.regions[1]);
+}
 const narrowNeck = {
   ...source,
   value: {
