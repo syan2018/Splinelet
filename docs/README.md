@@ -15,6 +15,7 @@
 - [构造链与失效处理](architecture/construction-pipeline.md)
 - [打印分层](print-stack.md)
 - [3MF 打印导出](3mf-export.md)
+- [Splinelet `.spl` 工程格式](project-format.md)
 
 ## 设计评审
 

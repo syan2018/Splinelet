@@ -839,16 +839,7 @@ export default function CreationWorkspace(p: Props) {
         throw Error('成品尚不是一个有效相连的实体，请检查底板或分离区域');
       if (format === 'stl') {
         const bytes = meshSTL(r.mesh);
-        if (save) {
-          const url = URL.createObjectURL(
-              new Blob([bytes], { type: 'model/stl' }),
-            ),
-            a = document.createElement('a');
-          a.href = url;
-          a.download = '作品-浮雕.stl';
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
-        }
+        if (save) download(bytes, '作品-浮雕.stl', 'model/stl');
         return { mesh: r.mesh, report: r.report };
       }
       const mesh = JSON.stringify(r.mesh),

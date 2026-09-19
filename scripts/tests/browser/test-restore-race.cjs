@@ -5,7 +5,7 @@ module.exports = async (browser, url, project) => {
     const page = await context.newPage();
     let pending;
     const requested = new Promise((resolve) => {
-      page.route('**/character-example.bezier.json', (route) => {
+      page.route('**/sandrone-example.spl', (route) => {
         pending = route;
         resolve();
       });

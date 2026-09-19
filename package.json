@@ -9,6 +9,10 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "desktop:dev": "vite --config vite.desktop.config.ts",
+    "desktop:build": "vite build --config vite.desktop.config.ts",
+    "desktop": "tauri dev",
+    "desktop:bundle": "tauri build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "node scripts/tests/run-unit.mjs",
@@ -20,6 +24,7 @@
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
+    "@tauri-apps/api": "2.0.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "jsts": "^2.12.1",
@@ -38,6 +43,7 @@
     "@cloudflare/workers-types": "5.20260918.1",
     "@openai/sites-vite-plugin": "0.2.0",
     "@tailwindcss/postcss": "4.2.1",
+    "@tauri-apps/cli": "2.0.0",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

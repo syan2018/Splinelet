@@ -27,6 +27,9 @@
 .creation-studio .header-actions {
   gap: 7px;
 }
+.creation-studio .desktop-window-controls {
+  margin-right: -18px;
+}
 .creation-workspace-switch {
   position: relative;
   padding: 8px 18px;
@@ -56,6 +59,22 @@
   font-size: 13px;
   color: #b3bec3;
   padding: 7px 12px;
+}
+.header-actions .creation-mode-menu summary {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  border: 1px solid #3b4249;
+  border-radius: 7px;
+  background: #272d33;
+  color: #e7ecef;
+  padding: 9px 13px;
+}
+.header-actions .creation-mode-menu summary:hover {
+  background: #39424a;
+}
+.header-actions .creation-mode-menu > div {
+  top: calc(100% + 8px);
 }
 .creation-mode-menu > div {
   position: absolute;
@@ -1298,9 +1317,6 @@
   }
   .creation-workspace-switch {
     justify-content: flex-start;
-  }
-  .creation-mode-menu {
-    margin-left: auto;
   }
   .creation-view-tools span {
     display: none;

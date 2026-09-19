@@ -865,17 +865,12 @@ export default function ModelWorkspace(p: Props) {
       const r = await getSolid();
       if (format === 'stl') {
         const buffer = meshSTL(r.mesh);
-        if (save) {
-          const url = URL.createObjectURL(
-              new Blob([buffer], { type: 'model/stl' }),
-            ),
-            a = document.createElement('a');
-          a.href = url;
-          a.download =
-            (model.parts.find((x) => x.id === partId)?.name || '浮雕') + '.stl';
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
-        }
+        if (save)
+          download(
+            buffer,
+            (model.parts.find((x) => x.id === partId)?.name || '浮雕') + '.stl',
+            'model/stl',
+          );
         return { report: r.report, mesh: r.mesh };
       }
       if (format !== 'blender') throw Error('格式必须是 svg、stl 或 blender');

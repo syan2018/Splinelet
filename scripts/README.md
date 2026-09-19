@@ -17,6 +17,7 @@ pnpm build
 - `pnpm test:core`：构造链、修改器和打印分层回归。
 - `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
+- `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
 - `pnpm format:check`：只检查格式，不修改文件。
 
 交互回归使用隔离浏览器与独立开发端口。`tests/browser/test-pointer-lifecycle.cjs` 接收一个 Playwright `page`，自建工程并验证选择工具不改几何、节点多选／全选移动、拖动释放、取消、失焦和撤销；`tests/browser/test-saving-browser.cjs` 验证手动写文件与自动恢复草稿的边界。不要在日常工程标签页注入这些脚本。

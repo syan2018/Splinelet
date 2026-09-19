@@ -1,0 +1,23 @@
+[package]
+name = "splinelet"
+version = "0.1.0"
+description = "Splinelet desktop application"
+authors = ["Splinelet contributors"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "splinelet_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }

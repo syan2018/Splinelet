@@ -33,6 +33,7 @@ import { Outliner } from '@/components/source-editor/outliner';
 import { modelTools } from '@/lib/model-api';
 import ModelWorkspace from '@/components/modeling/model-workspace';
 import CreationWorkspace from '@/components/creation/creation-workspace';
+import { DesktopWindowControls } from '@/components/desktop-window-controls';
 import {
   SplinePathInspector,
   SplineNodeInspector,
@@ -102,6 +103,20 @@ import {
   validateProject,
 } from '@/lib/project';
 import {
+  decodeProject,
+  encodeProject,
+  SPL_MIME,
+} from '@/lib/project-format.mjs';
+import {
+  desktopPendingOpenPaths,
+  desktopProjectOpenPath,
+  desktopProjectSavePath,
+  desktopReadFile,
+  desktopWriteProject,
+  isDesktopRuntime,
+  listenDesktopOpenFiles,
+} from '@/lib/desktop-runtime.mjs';
+import {
   splitCubic,
   evaluate,
   dist,
@@ -148,6 +163,9 @@ type DetectCandidatesArgs = {
   region?: { x: number; y: number; width: number; height: number };
 };
 type ImageInitResponse = { candidates: CandidatePoint[] };
+type ProjectBinding =
+  | { kind: 'web'; handle: ProjectFileHandle; name: string }
+  | { kind: 'desktop'; path: string; name: string };
 type ProjectFileHandle = {
   name: string;
   queryPermission: (options: { mode: 'readwrite' }) => Promise<PermissionState>;
@@ -228,6 +246,27 @@ type GeometryReportItem = {
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 const currentTime = () => performance.now();
+const projectNameFromPath = (path: string) =>
+  path.split(/[\\/]/).filter(Boolean).at(-1) || '工程.spl';
+const dataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === 'string'
+        ? resolve(reader.result)
+        : reject(Error('图片读取结果无效'));
+    reader.onerror = () => reject(reader.error || Error('图片读取失败'));
+    reader.readAsDataURL(blob);
+  });
+const encodeProjectBytes = async (project: Project) => {
+  if (project.image.startsWith('data:')) return encodeProject(project);
+  const response = await fetch(project.image);
+  if (!response.ok) throw Error('工程参考图读取失败');
+  return encodeProject({
+    ...project,
+    image: await dataUrl(await response.blob()),
+  });
+};
 
 export default function Home() {
   const [workspace, setWorkspace] = useState('trace');
@@ -362,6 +401,7 @@ export default function Home() {
   } | null>(null);
   const [propertyTab, setPropertyTab] = useState('paths');
   const [inspectorWidth, setInspectorWidth] = useState(320);
+  const inspectorResizeDrag = useRef<{ x: number; width: number } | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]),
     pathsRef = useRef<string[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<number[]>([]),
@@ -545,12 +585,13 @@ export default function Home() {
     return () => window.removeEventListener('resize', resize);
   }, []);
   const fileHandle = useRef<ProjectFileHandle | null>(null);
+  const projectBinding = useRef<ProjectBinding | null>(null);
   const writer = useRef(new FileWriter());
   const backupQueue = useRef(Promise.resolve());
   const backupSaved = useRef<Project | null>(null);
   const backupBinding = useRef<ProjectFileHandle | null>(null);
   const fileSaved = useRef<{
-    handle: ProjectFileHandle;
+    binding: ProjectBinding;
     project: Project;
   } | null>(null);
   const [fileName, setFileName] = useState('');
@@ -559,8 +600,20 @@ export default function Home() {
   const [bindingVersion, setBindingVersion] = useState(0);
   const bindFile = (handle: ProjectFileHandle | null) => {
     fileHandle.current = handle;
+    projectBinding.current = handle
+      ? { kind: 'web', handle, name: handle.name }
+      : null;
     fileSaved.current = null;
     setFileName(handle?.name || '');
+    setBindingVersion((v) => v + 1);
+  };
+  const bindDesktopFile = (path: string | null) => {
+    fileHandle.current = null;
+    projectBinding.current = path
+      ? { kind: 'desktop', path, name: projectNameFromPath(path) }
+      : null;
+    fileSaved.current = null;
+    setFileName(path ? projectNameFromPath(path) : '');
     setBindingVersion((v) => v + 1);
   };
   const backupProject = (snapshot: Project, handle = fileHandle.current) => {
@@ -579,8 +632,9 @@ export default function Home() {
     snapshot: Project,
     handle: ProjectFileHandle,
   ) => {
-    await writer.current.write(handle, JSON.stringify(snapshot, null, 2));
-    fileSaved.current = { handle, project: snapshot };
+    await writer.current.write(handle, await encodeProjectBytes(snapshot));
+    const binding: ProjectBinding = { kind: 'web', handle, name: handle.name };
+    fileSaved.current = { binding, project: snapshot };
     if (pr.current === snapshot && fileHandle.current === handle)
       setSaved('已保存到 ' + handle.name);
   };
@@ -592,11 +646,43 @@ export default function Home() {
     fileBusyRef.current = true;
     setFileBusy(true);
     try {
-      let handle = saveAs ? null : fileHandle.current;
+      const snapshot = pr.current;
+      if (isDesktopRuntime()) {
+        let path =
+          !saveAs && projectBinding.current?.kind === 'desktop'
+            ? projectBinding.current.path
+            : null;
+        if (!path)
+          path = await desktopProjectSavePath(fileName || 'Splinelet工程.spl');
+        if (!path) {
+          setStatus('已取消选择保存位置');
+          return;
+        }
+        setSaved('正在写入工程文件…');
+        await desktopWriteProject(path, await encodeProjectBytes(snapshot));
+        if (
+          projectBinding.current?.kind !== 'desktop' ||
+          projectBinding.current.path !== path
+        )
+          bindDesktopFile(path);
+        const binding = projectBinding.current!;
+        fileSaved.current = { binding, project: snapshot };
+        await backupProject(pr.current, null);
+        setSaved(
+          pr.current === snapshot
+            ? '已保存到 ' + binding.name
+            : '有修改未保存 · Ctrl+S 保存工程',
+        );
+        setStatus('已绑定 ' + binding.name + ' · 后续修改按 Ctrl+S 保存');
+        return;
+      }
+      let handle =
+        !saveAs && projectBinding.current?.kind === 'web'
+          ? projectBinding.current.handle
+          : null;
       if (!handle) {
         const pickerWindow = window as FilePickerWindow;
         if (!pickerWindow.showSaveFilePicker) {
-          const snapshot = pr.current;
           let backupError: unknown = null;
           try {
             await backupProject(snapshot);
@@ -604,9 +690,9 @@ export default function Home() {
             backupError = error;
           }
           download(
-            JSON.stringify(snapshot, null, 2),
-            'Splinelet工程.bezier.json',
-            'application/json',
+            await encodeProjectBytes(snapshot),
+            'Splinelet工程.spl',
+            SPL_MIME,
           );
           setSaved(
             backupError
@@ -617,18 +703,20 @@ export default function Home() {
           );
           setStatus(
             backupError
-              ? '当前浏览器不支持直接写文件，已下载工程 JSON；浏览器草稿失败：' +
+              ? '当前浏览器不支持直接写文件，已下载 .spl；浏览器草稿失败：' +
                   errorMessage(backupError)
-              : '当前浏览器不支持直接写文件，已下载工程 JSON；浏览器草稿仍用于恢复',
+              : '当前浏览器不支持直接写文件，已下载 .spl；浏览器草稿仍用于恢复',
           );
           return;
         }
         handle = await pickerWindow.showSaveFilePicker({
-          suggestedName: fileName || 'Splinelet工程.bezier.json',
+          suggestedName: fileName.endsWith('.spl')
+            ? fileName
+            : 'Splinelet工程.spl',
           types: [
             {
               description: 'Splinelet工程',
-              accept: { 'application/json': ['.json'] },
+              accept: { [SPL_MIME]: ['.spl'] },
             },
           ],
         });
@@ -640,11 +728,13 @@ export default function Home() {
         )
           throw Error('未获得文件写入权限；请重新保存授权或另存为');
       }
-      const snapshot = pr.current;
       setSaved('正在写入工程文件…');
       await writeProjectFile(snapshot, handle);
       if (fileHandle.current !== handle) bindFile(handle);
-      fileSaved.current = { handle, project: snapshot };
+      fileSaved.current = {
+        binding: projectBinding.current!,
+        project: snapshot,
+      };
       let backupError: unknown = null;
       try {
         await backupProject(pr.current, handle);
@@ -677,8 +767,49 @@ export default function Home() {
       setFileBusy(false);
     }
   };
+  const loadProjectFile = async (
+    bytes: Uint8Array | string,
+    name: string,
+    binding: ProjectBinding | null,
+  ) => {
+    const parsed = decodeProject(bytes) as Project;
+    apiRef.current?.load_project({ project: parsed });
+    if (binding?.kind === 'desktop') bindDesktopFile(binding.path);
+    else if (binding?.kind === 'web') bindFile(binding.handle);
+    else if (isDesktopRuntime()) bindDesktopFile(null);
+    else bindFile(null);
+    if (binding)
+      fileSaved.current = { binding: projectBinding.current!, project: parsed };
+    await backupProject(
+      parsed,
+      binding?.kind === 'web' ? binding.handle : null,
+    );
+    setSaved(binding ? '已打开 ' + name : '已导入旧版工程');
+    setStatus(
+      binding
+        ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
+        : '旧版 JSON 已导入 · 保存时将创建 .spl 工程',
+    );
+  };
   const openProjectFile = async () => {
     if (busyRef.current || fileBusyRef.current) return;
+    if (isDesktopRuntime()) {
+      try {
+        const path = await desktopProjectOpenPath();
+        if (!path) return;
+        const legacy = !path.toLowerCase().endsWith('.spl');
+        await loadProjectFile(
+          await desktopReadFile(path),
+          projectNameFromPath(path),
+          legacy
+            ? null
+            : { kind: 'desktop', path, name: projectNameFromPath(path) },
+        );
+      } catch (error: unknown) {
+        setStatus('打开工程失败：' + errorMessage(error));
+      }
+      return;
+    }
     const pickerWindow = window as FilePickerWindow;
     if (!pickerWindow.showOpenFilePicker) {
       projectFile.current?.click();
@@ -690,19 +821,20 @@ export default function Home() {
         types: [
           {
             description: 'Splinelet工程',
-            accept: { 'application/json': ['.json'] },
+            accept: {
+              [SPL_MIME]: ['.spl'],
+              'application/json': ['.json'],
+            },
           },
         ],
       });
       const file = await handle.getFile();
-      const parsed = validateProject(JSON.parse(await file.text()));
-      apiRef.current?.load_project({ project: parsed });
-      bindFile(handle);
-      fileSaved.current = { handle, project: pr.current };
-      await backupProject(pr.current, handle);
-      setSaved('已打开 ' + handle.name);
-      setStatus(
-        '已打开原文件 · 修改后 Ctrl+S 保存到同一文件，首次写入可能需要授权',
+      await loadProjectFile(
+        new Uint8Array(await file.arrayBuffer()),
+        handle.name,
+        handle.name.toLowerCase().endsWith('.spl')
+          ? { kind: 'web', handle, name: handle.name }
+          : null,
       );
     } catch (error: unknown) {
       if (!(error instanceof DOMException && error.name === 'AbortError'))
@@ -807,8 +939,10 @@ export default function Home() {
           let v = session?.project;
           if (!v) {
             try {
-              const r = await fetch('/character-example.bezier.json');
-              if (r.ok) v = await r.json();
+              const r = await fetch('/sandrone-example.spl');
+              if (r.ok) {
+                v = decodeProject(new Uint8Array(await r.arrayBuffer()));
+              }
             } catch {}
           }
           // A late restore must never replace an import or edit made meanwhile.
@@ -821,7 +955,7 @@ export default function Home() {
               }
               setStatus('已恢复本地工程');
             } catch {
-              setStatus('本地工程不可用，已载入参考图');
+              setStatus('本地工程不可用，已载入默认示例');
             }
           }
         },
@@ -837,11 +971,12 @@ export default function Home() {
   useEffect(() => {
     if (!initialized || gesturing) return;
     const handle = fileHandle.current;
+    const binding = projectBinding.current;
     setSaved(
-      handle
-        ? fileSaved.current?.handle === handle &&
+      binding
+        ? fileSaved.current?.binding === binding &&
           fileSaved.current?.project === project
-          ? '已保存到 ' + handle.name
+          ? '已保存到 ' + binding.name
           : '有修改未保存 · 正在保存浏览器草稿…'
         : '正在保存浏览器草稿…',
     );
@@ -849,17 +984,17 @@ export default function Home() {
       backupProject(project, handle)
         .then(() => {
           if (pr.current !== project) return;
-          const currentHandle = fileHandle.current;
+          const currentBinding = projectBinding.current;
           if (
-            currentHandle &&
-            fileSaved.current?.handle === currentHandle &&
+            currentBinding &&
+            fileSaved.current?.binding === currentBinding &&
             fileSaved.current?.project === project
           )
-            setSaved('已保存到 ' + currentHandle.name);
-          else if (currentHandle)
+            setSaved('已保存到 ' + currentBinding.name);
+          else if (currentBinding)
             setSaved(
               '有修改未保存 · 浏览器草稿已保存 · Ctrl+S 保存到 ' +
-                currentHandle.name,
+                currentBinding.name,
             );
           else setSaved('浏览器草稿已保存 · 未保存工程文件');
         })
@@ -2047,15 +2182,11 @@ export default function Home() {
     });
     setStatus('正在分析新底图…');
   };
-  const exportFile = (format: 'svg' | 'blender' | 'json') => {
+  const exportFile = async (format: 'svg' | 'blender' | 'json') => {
     const p = pr.current;
     if (format === 'json') {
-      download(
-        JSON.stringify(p, null, 2),
-        'Splinelet工程.bezier.json',
-        'application/json',
-      );
-      setStatus('工程已下载，包含底图和所有曲线');
+      download(await encodeProjectBytes(p), 'Splinelet工程.spl', SPL_MIME);
+      setStatus('.spl 工程已导出，包含底图和所有编辑数据');
       return;
     }
     if (!p.paths.some((p) => p.visible && p.curves.length)) {
@@ -2659,6 +2790,38 @@ export default function Home() {
       },
     };
   });
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let alive = true;
+    let stop: (() => void) | undefined;
+    const openPaths = async (paths: string[]) => {
+      const path = paths.at(-1);
+      if (!path || !alive) return;
+      try {
+        const legacy = !path.toLowerCase().endsWith('.spl');
+        await loadProjectFile(
+          await desktopReadFile(path),
+          projectNameFromPath(path),
+          legacy
+            ? null
+            : { kind: 'desktop', path, name: projectNameFromPath(path) },
+        );
+      } catch (error: unknown) {
+        if (alive) setStatus('打开工程失败：' + errorMessage(error));
+      }
+    };
+    const start = async () => {
+      stop = await listenDesktopOpenFiles((paths) => void openPaths(paths));
+      await openPaths(await desktopPendingOpenPaths());
+    };
+    void start().catch((error: unknown) => {
+      if (alive) setStatus('桌面文件服务启动失败：' + errorMessage(error));
+    });
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, []);
   useEffect(() => {
     const traceWindow = window as TraceStudioWindow;
     traceWindow.traceStudio = {
@@ -3286,19 +3449,21 @@ export default function Home() {
               disabled={busy}
               onClick={() =>
                 report(
-                  fetch('/character-example.bezier.json')
-                    .then((r) => {
+                  fetch('/sandrone-example.spl')
+                    .then(async (r) => {
                       if (!r.ok) throw Error('示例读取失败');
-                      return r.json();
+                      return decodeProject(
+                        new Uint8Array(await r.arrayBuffer()),
+                      );
                     })
                     .then((p) => apiRef.current?.load_project({ project: p })),
                 )
               }
             >
               <FolderOpen size={15} />
-              载入角色描线示例
+              载入桑多涅完整示例
             </button>
-            <p>44 条路径 · 可编辑、可撤销载入</p>
+            <p>76 条路径 · 含建模与切片参数 · 可撤销载入</p>
           </section>
         </div>
       </div>
@@ -3315,13 +3480,19 @@ export default function Home() {
           report(importImage(e.dataTransfer.files[0]));
       }}
     >
-      <header>
-        <div className="brand">
+      <header data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}>
+        <div
+          className="brand"
+          data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
+        >
           <Spline />
           <b>Splinelet</b>
           <span>BÉZIER STUDIO</span>
         </div>
-        <span className="project-name">
+        <span
+          className="project-name"
+          data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
+        >
           <span title={fileName || '未绑定文件'}>
             {fileName || '角色轮廓研究'}
           </span>{' '}
@@ -3393,7 +3564,38 @@ export default function Home() {
             <Download size={16} />
             导出
           </button>
+          <details className="creation-mode-menu">
+            <summary>更多</summary>
+            <div>
+              <button
+                onClick={() => {
+                  finish();
+                  setUnified(false);
+                  setWorkspace('trace');
+                }}
+              >
+                源线工作台
+              </button>
+              <button
+                onClick={() => {
+                  finish();
+                  setWorkspace('faces');
+                }}
+              >
+                构面
+              </button>
+              <button
+                onClick={() => {
+                  finish();
+                  setWorkspace('relief');
+                }}
+              >
+                浮雕
+              </button>
+            </div>
+          </details>
         </div>
+        <DesktopWindowControls />
         <input
           ref={file}
           type="file"
@@ -3408,16 +3610,16 @@ export default function Home() {
         <input
           ref={projectFile}
           type="file"
-          accept=".json"
+          accept=".spl,.bezier.json,.json"
           hidden
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f)
               report(
                 f
-                  .text()
-                  .then((t) =>
-                    apiRef.current?.load_project({ project: JSON.parse(t) }),
+                  .arrayBuffer()
+                  .then((bytes) =>
+                    loadProjectFile(new Uint8Array(bytes), f.name, null),
                   ),
               );
             e.target.value = '';
@@ -3469,36 +3671,6 @@ export default function Home() {
             返回创作
           </button>
         )}
-        <details className="creation-mode-menu">
-          <summary>更多</summary>
-          <div>
-            <button
-              onClick={() => {
-                finish();
-                setUnified(false);
-                setWorkspace('trace');
-              }}
-            >
-              源线工作台
-            </button>
-            <button
-              onClick={() => {
-                finish();
-                setWorkspace('faces');
-              }}
-            >
-              构面
-            </button>
-            <button
-              onClick={() => {
-                finish();
-                setWorkspace('relief');
-              }}
-            >
-              浮雕
-            </button>
-          </div>
-        </details>
       </nav>
       <div
         className="workspace"
@@ -4130,15 +4302,35 @@ export default function Home() {
             </div>
           )}
         </div>
-        <input
-          type="range"
+        <button
+          type="button"
           className="inspector-resizer"
           aria-label="调整右侧栏宽度"
-          min={240}
-          max={600}
-          value={inspectorWidth}
-          onChange={(e) => setInspectorWidth(Number(e.target.value))}
           onDoubleClick={() => setInspectorWidth(320)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              e.preventDefault();
+              setInspectorWidth((width) =>
+                clampInspector(width + (e.key === 'ArrowLeft' ? 20 : -20)),
+              );
+            }
+          }}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            inspectorResizeDrag.current = {
+              x: e.clientX,
+              width: inspectorWidth,
+            };
+          }}
+          onPointerMove={(e) => {
+            const current = inspectorResizeDrag.current;
+            if (current)
+              setInspectorWidth(
+                clampInspector(current.width + current.x - e.clientX),
+              );
+          }}
+          onPointerUp={() => (inspectorResizeDrag.current = null)}
+          onPointerCancel={() => (inspectorResizeDrag.current = null)}
         />
         <>
           <CreationWorkspace
@@ -4317,7 +4509,7 @@ export default function Home() {
                 </div>
                 <button
                   className="primary"
-                  onClick={() => exportFile('svg')}
+                  onClick={() => report(exportFile('svg'))}
                   disabled={!count}
                 >
                   导出 SVG
@@ -4331,7 +4523,10 @@ export default function Home() {
                     .py。
                   </p>
                 </div>
-                <button onClick={() => exportFile('blender')} disabled={!count}>
+                <button
+                  onClick={() => report(exportFile('blender'))}
+                  disabled={!count}
+                >
                   导出 .py
                 </button>
               </div>
@@ -4340,7 +4535,9 @@ export default function Home() {
                   <b>可继续编辑的完整工程</b>
                   <p>底图、路径、尺寸与控制点 · JSON</p>
                 </div>
-                <button onClick={() => exportFile('json')}>下载工程副本</button>
+                <button onClick={() => report(exportFile('json'))}>
+                  导出 .spl 工程副本
+                </button>
               </div>
               <p className="export-note">
                 抽样几何检查：

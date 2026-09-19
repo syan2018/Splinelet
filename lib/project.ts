@@ -1,6 +1,7 @@
 import { validateModel } from './model-schema.mjs';
 import { validateCreation } from './creation-schema.mjs';
 import type { SurfaceModifier } from './modifier-types';
+import { saveThroughRuntime } from './desktop-runtime.mjs';
 export type Point = { x: number; y: number };
 export type Cubic = [Point, Point, Point, Point];
 export type TracePath = {
@@ -158,13 +159,17 @@ export const palette = [
   '#ff798f',
   '#ffdb72',
 ];
-export function download(text: string, name: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+export function download(
+  content: string | Uint8Array | ArrayBuffer,
+  name: string,
+  type: string,
+) {
+  void saveThroughRuntime(content, name, type).catch((error: unknown) => {
+    window.alert(
+      '保存文件失败：' +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  });
 }
 const esc = (v: string) =>
   v.replace(

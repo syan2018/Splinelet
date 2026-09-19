@@ -29,7 +29,7 @@ pnpm build
 
 - 保持 `app/page.tsx` 为根路由入口。拆分时优先抽取纯 helper、hook 或 props 边界清晰的面板，不要顺手改变全局状态、持久化、选择语义或 `window.traceStudio.call`。
 - `public/trace-worker.js` 由绝对 URL `/trace-worker.js` 加载，并相对导入 `./geometry.mjs`。移动前必须统一更新 Worker URL、相对导入、页面调用、Node 脚本与文档。
-- `/reference.png` 与 `/character-example.bezier.json` 是兼容路径。重命名时同步校验器、fetch、生成脚本和恢复测试。
+- `/reference.png` 与 `/sandrone-example.spl` 是兼容路径。重命名时同步校验器、fetch、生成脚本和恢复测试。
 - `model-worker.ts?worker` 与 `manifold.wasm?url` 使用构建器特殊加载。移动后必须执行生产构建，不能只依赖 TypeScript。
 - 浏览器测试会建立 fixture、替换工程、触发保存或下载。仅在新的隔离 browser context 和非用户端口运行，绝不操作用户正在使用或已绑定文件的页面。
 - 尊重已有未提交改动；不要重置、删除或格式化无关文件。
@@ -50,7 +50,7 @@ pnpm build
 
 ## Subagents
 
-- 对彼此独立、边界明确的探索、审阅、测试和机械迁移使用并行 subagents；主代理负责架构决策、整合与最终验证。
-- subagents 默认建议使用 `gpt-5.6-terra`，通常配合 `medium` reasoning。它适合快速代码库探索、读密集审阅、文档整理和批量路径迁移。
-- 涉及模糊的跨模块设计、复杂状态、几何或并发判断时，由主代理处理，或明确升级到更强模型和更高 reasoning effort。
+- 主代理自行判断是否使用 subagents；只有当任务可明确拆分、并行带来的收益明显高于协调成本时才使用，不将并行作为默认流程。
+- 使用 subagents 时默认使用 `gpt-5.6-terra` 和 `medium` reasoning；只在任务确实需要时调整模型或 reasoning effort。
+- 架构决策、跨模块复杂状态、几何或并发判断默认由主代理处理；必要时可将边界明确的探索、审阅、测试或机械迁移交给 subagents。
 - 每个 subagent 都要明确只读或可写范围、不得触碰的文件、预期产出和必须运行的验证，避免共享工作区中的重叠修改。
