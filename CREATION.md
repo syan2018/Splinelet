@@ -115,6 +115,6 @@ const svg = await call('creation_export', { format: 'svg' });
 
 ## 验证
 
-`node scripts/tests/unit/test-construction-pipeline.mjs` 测试区域继承、颜色与高度、构造失效、补边预览、孔洞、整体移动、缩放、底板依附及真实实体。完整的可复现单元测试使用 `npm test` 运行；不读取仓库外的私人艺术工程。
+`node scripts/tests/unit/test-construction-pipeline.mjs` 测试区域继承、颜色与高度、构造失效、补边预览、孔洞、整体移动、缩放、底板依附及真实实体。完整的可复现单元测试使用 `pnpm test` 运行；不读取仓库外的私人艺术工程。
 
 可复现的浏览器注入脚本保留在 `scripts/tests/browser/`，仅使用已提交 fixture 或自行建立最小工程，覆盖修改器、实时曲面、样条端点、颜色删除、恢复竞争等跨 UI/Worker 行为。依赖当前页面或前序脚本状态的旧验收已删除；历史人工结论见 [统一创作验收快照](docs/qa/creation-acceptance-2026-09-12.md)。

@@ -117,8 +117,8 @@ node scripts/tests/unit/test-swatch-delete.mjs
 node scripts/tests/unit/test-single-curve.mjs
 node scripts/tests/unit/test-persistence.mjs
 node scripts/tests/unit/test-model.mjs
-npx tsc --noEmit
-npm run build
+pnpm exec tsc --noEmit
+pnpm build
 ```
 
 浏览器注入脚本必须在隔离测试浏览器中运行，并自行建立工程或使用 `scripts/tests/fixtures/` 中已提交的最小 fixture。当前源编辑器保留 `test-spline-endpoints.cjs` 的端点续画/闭合覆盖，以及 `test-restore-race.cjs` 的恢复竞争覆盖。依赖当前页面、前序脚本状态或 OS 私有文件选择器的旧调试脚本已删除。

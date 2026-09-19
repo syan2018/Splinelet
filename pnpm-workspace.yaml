@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@cloudflare/vite-plugin@1.56.0'
+  - 'miniflare@5.20260918.0-alpha'
+  - 'wrangler@4.135.0'

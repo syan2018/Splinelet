@@ -21,20 +21,20 @@ _本文为桑多涅参考工程的实际界面截图。模型是手工描线、�
 
 ## 本地运行
 
-需要 **Node.js 22.13 或更高版本**，使用带鼠标的桌面浏览器。支持文件访问 API 的 Chrome / Edge 可以绑定本地工程文件。
+需要 **Node.js 22.13 或更高版本**和 **pnpm 11.26.0**，使用带鼠标的桌面浏览器。支持文件访问 API 的 Chrome / Edge 可以绑定本地工程文件。
 
 在仓库目录执行：
 
 ```sh
-npm ci
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 打开终端显示的地址，默认是 **http://localhost:3000/**。无需配置打印机或 API Key。
 
 ```sh
-npm run build  # 构建
-npm start      # 运行构建后的本地服务，地址以终端输出为准
+pnpm build  # 构建
+pnpm start  # 运行构建后的本地服务，地址以终端输出为准
 ```
 
 应用目前以中文界面为主。初次启动会载入内置描线示例；浏览器已有工程时优先恢复。截图中的完整浮雕工程并非默认启动示例。
@@ -137,9 +137,9 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 部分核心回归检查：
 
 ```sh
-npm run typecheck
-npm test
-npm run build
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。

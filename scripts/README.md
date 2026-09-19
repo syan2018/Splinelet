@@ -7,17 +7,17 @@
 在仓库根目录运行：
 
 ```sh
-npm run typecheck
-npm run lint
-npm test
-npm run format:check
-npm run build
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm format:check
+pnpm build
 ```
 
-- `npm run test:core`：构造链、修改器和打印分层回归。
-- `npm run test:export`：通用 3MF 与 Bambu 3MF 回归。
-- `npm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
-- `npm run format:check`：只检查格式，不修改文件。
+- `pnpm test:core`：构造链、修改器和打印分层回归。
+- `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
+- `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
+- `pnpm format:check`：只检查格式，不修改文件。
 
 ## 目录
 

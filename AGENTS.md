@@ -13,16 +13,16 @@
 需要 Node.js 22.13 或更高版本。先运行覆盖改动面的最小检查，交付前至少执行：
 
 ```sh
-npm run typecheck
-npm run lint
-npm test
-npm run format:check
-npm run build
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm format:check
+pnpm build
 ```
 
-- 使用 `npm run test:core` 检查构造链、修改器与打印分层。
-- 使用 `npm run test:export` 检查通用 3MF 与 Bambu 3MF。
-- `npm run format` 会直接修改文件；只读检查使用 `npm run format:check`。
+- 使用 `pnpm test:core` 检查构造链、修改器与打印分层。
+- 使用 `pnpm test:export` 检查通用 3MF 与 Bambu 3MF。
+- `pnpm format` 会直接修改文件；只读检查使用 `pnpm format:check`。
 - 全库 lint 与格式检查应保持通过。不要用放宽产品代码规则来掩盖问题；浏览器注入脚本和 `.cjs` 应使用适合其运行环境的独立规则。
 
 ## 高风险区域
@@ -43,7 +43,7 @@ npm run build
 
 ## 机械整理与迁移
 
-- 批量重命名或移动应先形成旧路径到新路径的映射，再用脚本更新全部导入、脚本、文档链接和 npm 命令。
+- 批量重命名或移动应先形成旧路径到新路径的映射，再用脚本更新全部导入、脚本、文档链接和 pnpm 命令。
 - 完成机械迁移后，用 `rg` 搜索旧路径，执行 `git diff --check`，再运行受影响的类型检查、测试和生产构建。
 - 脚本按执行环境和用途成组迁移；不要只移动单个文件。迁移时统一修复仓库根路径、fixture、输出目录和共享 helper。
 - 每次逻辑拆分保持单一行为边界。优先提取纯函数、类型、独立面板和共享 service，避免为降低行数复制状态或引入循环依赖。
