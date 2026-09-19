@@ -468,11 +468,31 @@ const validateOperator = (key, operator, seen) => {
     operator,
     ['id', 'type', 'name', 'enabled', 'inputs', 'params'],
     'Operator',
-    ['outputContract'],
+    ['outputContract', 'authoring'],
   );
   text(operator.type, 'Operator.type');
   text(operator.name, 'Operator.name');
   bool(operator.enabled, 'Operator.enabled');
+  if (operator.authoring !== undefined) {
+    exactKeys(operator.authoring, ['phase'], 'Operator.authoring');
+    if (
+      operator.authoring.phase !== 'drawing' ||
+      operator.enabled ||
+      !['partition', 'boolean'].includes(operator.type)
+    )
+      fail('Operator.authoring 仅用于禁用且未完成的分区/挖孔');
+    if (
+      operator.params?.scope?.kind !== 'selected' ||
+      !Array.isArray(operator.params.scope.refs) ||
+      !operator.params.scope.refs.length ||
+      (operator.type === 'boolean' &&
+        operator.params.operation !== 'difference')
+    )
+      fail('Operator.authoring 必须保留明确的区域目标与挖孔语义');
+    operator.params.scope.refs.forEach((ref) =>
+      validateOutputRef(ref, 'Operator.authoring.scope'),
+    );
+  }
   for (const [port, inputs] of Object.entries(
     table(operator.inputs, 'Operator.inputs'),
   )) {
@@ -530,6 +550,8 @@ const validateProgram = (key, program, seen) => {
     if (port.domain !== name) fail('Program 输出域不匹配');
     if (port.ownerNodeId !== program.ownerNodeId)
       fail('Program.outputs 必须发布自身 owner 的端口');
+    if (program.operators[port.operatorId]?.authoring)
+      fail('Program.outputs 不能发布未完成的绘制分支');
   }
 };
 const validateReliefValue = (value, label, partial = false) => {

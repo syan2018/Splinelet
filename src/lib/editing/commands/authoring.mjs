@@ -14,7 +14,12 @@ import { createSourceCommand, SOURCE_ACTIONS } from './source.mjs';
 import { evaluateProgram } from '../../construction/document-evaluation.mjs';
 import { sameOutputRef } from '../../relief/appearance.mjs';
 import { firstPaintPlan } from '../../relief/assignments.mjs';
-import { createRegionCommand } from './regions.mjs';
+import {
+  createRegionCommand,
+  prepareRegionBranch,
+  finishRegionBranch,
+} from './regions.mjs';
+import { findRegionDrawing } from '../region-drawing.mjs';
 import { createAppendBoundaryCommand } from './append-boundary.mjs';
 import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
 import { createSourceTransferCommand } from './source-transfer.mjs';
@@ -398,12 +403,74 @@ export function createAuthoringCommand(action) {
     }
     if (action.kind === 'draw-path')
       return drawPath(document, action, idFactory);
-    if (action.kind === 'start-path')
-      return drawPath(
+    if (action.kind === 'start-path') {
+      if (
+        action.role !== undefined &&
+        !['boundary', 'divider', 'hole'].includes(action.role)
+      )
+        throw Error('未知的描绘用途');
+      const regionRole = ['divider', 'hole'].includes(action.role);
+      if (
+        regionRole &&
+        (!action.targets?.length ||
+          !action.ownerNodeId ||
+          action.targets.some((ref) => ref.ownerNodeId !== action.ownerNodeId))
+      )
+        throw Error('请先选择同一部件内要修改的区域');
+      const drawn = drawPath(
         document,
-        { ...action, points: [action.point], closed: false, cubics: [] },
+        {
+          ...action,
+          ...(regionRole ? { auxiliary: true } : {}),
+          points: [action.point],
+          closed: false,
+          cubics: [],
+        },
         idFactory,
       );
+      if (regionRole) {
+        const pathRef = drawn.changedRefs[0];
+        prepareRegionBranch(
+          document,
+          {
+            kind: action.role === 'divider' ? 'partition-regions' : 'cut-hole',
+            targets: action.targets,
+            cutter: {
+              kind: 'sketch',
+              sketchId: pathRef.sketchId,
+              pathIds: [pathRef.id],
+            },
+          },
+          { idFactory },
+        );
+      }
+      return drawn;
+    }
+    if (action.kind === 'finish-path') {
+      const pathRef = {
+        kind: 'path',
+        sketchId: action.sketchId,
+        id: action.pathId,
+      };
+      const branch = findRegionDrawing(document, pathRef);
+      if (!branch) return { document, changedRefs: [] };
+      const sketch = document.sketches[pathRef.sketchId];
+      const edges = sketch.paths[pathRef.id].edges;
+      if (!edges.length) throw Error('区域绘制至少需要一段线条');
+      const first = edges[0],
+        last = edges.at(-1);
+      if (
+        branch.role === 'hole' &&
+        sketch.edges[first.edgeId][
+          first.reversed ? 'endVertexId' : 'startVertexId'
+        ] !==
+          sketch.edges[last.edgeId][
+            last.reversed ? 'startVertexId' : 'endVertexId'
+          ]
+      )
+        throw Error('挖孔区域需要闭合轮廓，请继续绘制');
+      return finishRegionBranch(document, branch, { idFactory });
+    }
     if (action.kind === 'extend-path') {
       const sketch = document.sketches[action.sketchId];
       if (!sketch) throw Error('线条来源不存在');
@@ -440,6 +507,16 @@ export function createAuthoringCommand(action) {
       const sketch = document.sketches[action.sketchId],
         path = sketch?.paths[action.pathId];
       if (!path?.edges.length) throw Error('路径不存在或为空');
+      const drawingBranch = findRegionDrawing(document, {
+        kind: 'path',
+        sketchId: sketch.id,
+        id: path.id,
+      });
+      if (drawingBranch) {
+        writable(document, sketch.ownerNodeId);
+        extendPath(document, { ...action, close: true }, { idFactory });
+        return finishRegionBranch(document, drawingBranch, { idFactory });
+      }
       const { program, source } = basicProgram(document, sketch.ownerNodeId);
       if (
         !source?.inputs.paths.some(

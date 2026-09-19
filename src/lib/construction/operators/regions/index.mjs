@@ -35,6 +35,21 @@ const polygonalResult = (geometry, minimumAreaMM2 = 0) => {
 };
 const clone = (value) => structuredClone(value);
 const text = (value) => JSON.stringify(value);
+// Contract membership is independent of JSON property order and enumeration order.
+// Keep the existing output keys themselves unchanged for saved assignment references.
+const contractMembership = (members) =>
+  text(
+    members
+      .map((member) =>
+        text([
+          member.port,
+          member.key,
+          member.lineage,
+          member.topology ?? null,
+        ]),
+      )
+      .sort(),
+  );
 const result = (status, value, diagnostics = [], dependencies = []) => ({
   domain: 'regions',
   status,
@@ -798,7 +813,8 @@ export const partitionOperator = {
       }
       if (
         operator.outputContract?.members &&
-        text(operator.outputContract.members) !== text(members)
+        contractMembership(operator.outputContract.members) !==
+          contractMembership(members)
       )
         return {
           regions: {

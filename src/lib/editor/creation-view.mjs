@@ -5,6 +5,7 @@ import { isExcluded } from '../manufacturing/parts.mjs';
 import { sourcePathId } from './source-view.mjs';
 import { orderedSourcePaths } from '../geometry/source-order.mjs';
 import { projectModifierControls } from './modifier-view.mjs';
+import { regionPathUses } from '../editing/region-drawing.mjs';
 
 const clone = (value) => structuredClone(value);
 const absent = (domain) => ({
@@ -125,6 +126,7 @@ const operatorStatus = (document, snapshot, node) => {
   return Object.values(program.operators)
     .filter(
       (operator) =>
+        operator.authoring?.phase !== 'drawing' &&
         !['source', 'fill', 'curve-collect', 'region-collect'].includes(
           operator.type,
         ),
@@ -388,7 +390,22 @@ export function projectCreationView(document, snapshot) {
               ? '请先建立可用的源线条'
               : null,
       },
-      roles: {},
+      roles: Object.fromEntries(
+        ownedPaths.flatMap(({ sketch, path }) => {
+          const roles = [
+            ...new Set(
+              regionPathUses(document, {
+                kind: 'path',
+                sketchId: sketch.id,
+                id: path.id,
+              }).map((use) => use.role),
+            ),
+          ];
+          return roles.length === 1
+            ? [[sourcePathId(sketch.id, path.id), roles[0]]]
+            : [];
+        }),
+      ),
       visible: state.visible,
       locked: state.locked,
       swatchId: document.appearances.defaults[node.id]?.swatchId ?? null,

@@ -304,6 +304,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<ModelApi>(null);
   const creationApi = useRef<CreationApi>(null);
+  const traceTarget = useRef<ReturnType<
+    NonNullable<CreationApi>['trace_target']
+  > | null>(null);
 
   const [creationView, setCreationView] = useState('flat');
   const [creationSelectionKind, setCreationSelectionKind] = useState<
@@ -1361,6 +1364,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     setStatus('已重做');
   };
   const finish = () => {
+    traceTarget.current = null;
     lastNodeTap.current = null;
     setMergeSource(null);
     setDrawing(false);
@@ -1370,12 +1374,33 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     setStatus('路径已结束 · 可编辑节点，或新建下一条路径');
   };
   const begin = () => {
+    const target = host ? creationApi.current?.trace_target() || null : null;
     finish();
+    traceTarget.current = target;
     setTraceEnd('end');
     setActiveNow(null);
     setTool('trace');
     setSelection(null);
     setStatus('点击新的轮廓起点');
+  };
+  const finishDrawing = () => {
+    if (busyRef.current) return;
+    let issue: string | null = null;
+    if (host && drawingRef.current && ar.current) {
+      try {
+        const captured = host.getSnapshot();
+        pr.current = captured.runtime
+          .commandPath(
+            { kind: 'finish-path', pathId: ar.current },
+            { project: captured.project },
+          )
+          .commit() as Project;
+      } catch (error) {
+        issue = `${errorMessage(error)} · 线条已保留，可从端点续画`;
+      }
+    }
+    finish();
+    if (issue) setStatus(issue);
   };
   const resumePath = (pathId: string, end: 'start' | 'end') => {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
@@ -1488,9 +1513,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       const captured = host?.getSnapshot();
       if (!drawingRef.current || !current || current.closed) {
         setTraceEnd('end');
-        const target = captured ? creationApi.current?.trace_target() : null;
-        if (target && target.role !== 'boundary')
-          throw Error('分区线和挖洞的描绘接线尚未完成');
+        const target = captured
+          ? traceTarget.current || creationApi.current?.trace_target()
+          : null;
         const start = await snapped(p, config);
         if (captured) {
           const beforeIds = new Set(
@@ -1501,6 +1526,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
               {
                 kind: 'start-path',
                 pixelPoint: start,
+                ...(target
+                  ? { role: target.role, targets: target.targets }
+                  : {}),
                 ...(target?.ownerNodeId
                   ? { ownerNodeId: target.ownerNodeId }
                   : {}),
@@ -1511,6 +1539,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           const path = next.paths.find((path) => !beforeIds.has(path.id));
           if (!path) throw Error('新线条未出现在源视图');
           pr.current = next;
+          traceTarget.current = null;
           setActiveNow(path.id);
           setDrawing(true);
           drawingRef.current = true;
@@ -2166,7 +2195,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     setSnapFeedback(null);
     if (g.kind === 'pan') {
       if (g.button === 2 && !g.moved) {
-        if (tool === 'trace') finish();
+        if (tool === 'trace') finishDrawing();
         else if (mergeSource) setMergeSource(null);
       }
       return;
@@ -2452,14 +2481,14 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         } else groupSelection();
       } else if (e.ctrlKey || e.metaKey || e.altKey) return;
       else if (e.key === 'Enter') {
-        if (tool === 'trace') finish();
+        if (tool === 'trace') finishDrawing();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         if (mergeSource) {
           setMergeSource(null);
           setStatus('已取消合并');
         } else if (drawingRef.current) {
-          finish();
+          finishDrawing();
         } else if (proposed) {
           setProposed(null);
         } else if (selection || nodesRef.current.length) {
@@ -3751,7 +3780,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
             end={drawingEnd}
             disabled={busy || !ready || gesturing}
             onResume={resumeSelected}
-            onFinish={finish}
+            onFinish={finishDrawing}
             onClose={(e) =>
               report(closePath(connectionSettings(sr.current, e)))
             }

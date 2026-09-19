@@ -319,3 +319,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 后续角色绘制接线依据：现有 `draw-partition` / `draw-hole` 与 `createRegionCommand` 可使用准确 OutputRef 目标及独立 raw Sketch，保留高级构造和赋值迁移；不能放宽 `basicProgram` 后暗中改写旧输出。增量绘制还需要明确捕获目标、未完成路径的持久化语义和完成时机。新增普通轮廓并入已有高级部件时，应保留旧区域输出身份，研究 source → fill → region-collect 的显式追加，而非替换既有程序。上述为后续待实施边界，尚未签收。
 
 2026-09-20 追加轮廓命令基础：`append-boundary` 接收同一部件内尚未接入构造的闭合 PathRef，以 Source → Fill → region-collect 追加独立区域，曲线用 curve-collect 保留原实例与 Join。共享 ID 分配器防止覆盖旧算子。真实 Sandrone 与金色徽章、镜像/阵列/Join fixture 验证原源、算子、区域身份、颜色/厚度/制造赋值保持以及一次撤销；结构性汇总不出现在默认修改器列表。此项只完成命令基础，增量角色绘制与原根 UI 接线仍待实现，不代表默认切换签收。
+
+2026-09-20 增量区域绘制接线：`start-path` 可接 divider/hole 与准确 targets，首点即写入 raw Path 与未发布真实分支；`finish-path` 完成分区，`close-path` 闭合并完成孔，复用原子分区/挖孔的契约和赋值迁移。原根在开始动作时捕获目标，避免清空选区后误建新部件；Enter、Esc、右键结束及描绘结束按钮进入同一完成命令，未完成或失效时保留源线供续画。普通修改器不能误启用 pending 分支，显示角色从实际输入链推导。保存/重开、复制两种分支继续完成、删除保留可诊断引用均有命令测试。原根浏览器状态以本轮 QA 记录为准；高级部件追加普通轮廓的增量 UI、目标失效后的修复、批量拟合、建模及 API 仍需后续完成。

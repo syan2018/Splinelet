@@ -54,7 +54,7 @@ const requireCurrentTargets = (document, targets) => {
     throw Error('区域已失效，请重新选择当前区域');
   const program = document.programs[node.programId];
   if (!program?.outputs.regions) throw Error('当前部件没有已发布区域');
-  return { ownerNodeId, program };
+  return { ownerNodeId, program, regions: stage };
 };
 
 const requireCutter = (document, ownerNodeId, cutter) => {
@@ -201,137 +201,181 @@ const requireReadyResult = (
   return stage;
 };
 
+/** Persist an actual, unpublished construction branch for incremental drawing. */
+export function prepareRegionBranch(document, request, { idFactory }) {
+  if (!['partition-regions', 'cut-hole'].includes(request?.kind))
+    throw Error(`不支持的区域动作：${request?.kind}`);
+  if (!Array.isArray(request.targets))
+    throw Error('区域目标必须是 OutputRef 数组');
+  if (!request.targets.length) throw Error('请先选择要修改的区域');
+
+  const targets = clone(request.targets);
+  const current = requireCurrentTargets(document, targets);
+  const cutter = requireCutter(document, current.ownerNodeId, request.cutter);
+  const allocateId = createCommandIdAllocator(document, idFactory);
+  const oldOutput = portInput(current.program.outputs.regions);
+  let cutterInput = cutter;
+
+  if (cutter.kind === 'sketch') {
+    const sourceId = allocateId();
+    current.program.operators[sourceId] = operator(
+      sourceId,
+      'source',
+      '区域切割线',
+      { paths: [cutter] },
+      {},
+    );
+    cutterInput = portInput(
+      publishedPort(current.ownerNodeId, sourceId, 'curves'),
+    );
+  }
+
+  let resultOperator;
+  if (request.kind === 'partition-regions') {
+    const partitionId = allocateId();
+    resultOperator = operator(
+      partitionId,
+      'partition',
+      '分区',
+      { input: [oldOutput], cutter: [cutterInput] },
+      { scope: selected(targets) },
+    );
+    current.program.operators[partitionId] = resultOperator;
+  } else {
+    const fillId = allocateId();
+    current.program.operators[fillId] = operator(
+      fillId,
+      'fill',
+      '孔轮廓',
+      { input: [cutterInput] },
+      { rule: 'even-odd' },
+    );
+    const booleanId = allocateId();
+    resultOperator = operator(
+      booleanId,
+      'boolean',
+      '挖孔',
+      {
+        input: [oldOutput],
+        operand: [
+          portInput(publishedPort(current.ownerNodeId, fillId, 'regions')),
+        ],
+      },
+      { operation: 'difference', scope: selected(targets) },
+    );
+    current.program.operators[booleanId] = resultOperator;
+  }
+  resultOperator.enabled = false;
+  resultOperator.authoring = { phase: 'drawing' };
+  return { ownerNodeId: current.ownerNodeId, operatorId: resultOperator.id };
+}
+
+/** Finish only the captured branch; never rebuild or silently retarget it. */
+export function finishRegionBranch(
+  document,
+  { ownerNodeId, operatorId },
+  { idFactory },
+) {
+  const program = document.programs[document.nodes[ownerNodeId]?.programId];
+  const resultOperator = program?.operators[operatorId];
+  if (
+    !resultOperator ||
+    resultOperator.authoring?.phase !== 'drawing' ||
+    resultOperator.enabled ||
+    !['partition', 'boolean'].includes(resultOperator.type) ||
+    resultOperator.params.scope?.kind !== 'selected'
+  )
+    throw Error('未完成的区域绘制不存在或已变化');
+  const targets = clone(resultOperator.params.scope.refs);
+  if (!targets?.length) throw Error('请先选择要修改的区域');
+  const current = requireCurrentTargets(document, targets);
+  const captured = resultOperator.inputs.input?.[0];
+  const published = program.outputs.regions;
+  if (
+    current.ownerNodeId !== ownerNodeId ||
+    resultOperator.inputs.input?.length !== 1 ||
+    !captured ||
+    !published ||
+    ['kind', 'ownerNodeId', 'operatorId', 'port', 'domain'].some(
+      (key) => captured[key] !== published[key],
+    ) ||
+    captured.space !== 'local-result' ||
+    captured.transform?.length !== 6 ||
+    captured.transform.some((value, index) => value !== identity()[index])
+  )
+    throw Error('绘制开始后的区域输出已变化，请重新选择目标');
+  const allocateId = createCommandIdAllocator(document, idFactory);
+  delete resultOperator.authoring;
+  resultOperator.enabled = true;
+  program.outputs.regions = publishedPort(ownerNodeId, operatorId, 'regions');
+  if (resultOperator.type === 'partition') {
+    const proposalStage = requireReadyResult(
+      document,
+      ownerNodeId,
+      '分区无法生成有效区域',
+    );
+    const proposals = proposalStage.value.provenance.filter(
+      (item) => item.kind === 'output-contract-proposal',
+    );
+    if (proposals.length !== 1 || !Array.isArray(proposals[0].members))
+      throw Error('分区没有唯一的 outputContract 候选');
+    resultOperator.outputContract = {
+      version: 1,
+      members: clone(proposals[0].members),
+    };
+  }
+
+  const finalStage = requireReadyResult(
+    document,
+    current.ownerNodeId,
+    '区域操作无法生成有效结果',
+    resultOperator.type === 'boolean',
+  );
+  const selectedIds = new Set(targets.map(outputIdentity));
+  if (
+    resultOperator.type === 'partition' &&
+    finalStage.value.regions.length <= current.regions.value.regions.length
+  )
+    throw Error('分区线尚未切开目标区域，请继续绘制');
+  const untouched = finalStage.value.regions.filter((region) =>
+    selectedIds.has(outputIdentity(region.ref)),
+  );
+  if (untouched.length) throw Error('区域操作仍发布了被替换的旧目标，拒绝提交');
+  if (finalStage.status === 'empty') {
+    // A deliberate full cut removes these contributions, not the Shape or
+    // its source. The transaction history retains every removed assignment.
+    for (const records of [
+      document.appearances.overrides,
+      document.reliefDefinitions.overrides,
+      document.manufacturing.assignments,
+    ])
+      for (const [id, assignment] of Object.entries(records))
+        if (selectedIds.has(outputIdentity(assignment.target)))
+          delete records[id];
+    document.manufacturing.excluded = document.manufacturing.excluded.filter(
+      (ref) => !selectedIds.has(outputIdentity(ref)),
+    );
+  } else
+    migrateAssignments(document, targets, finalStage.value.regions, allocateId);
+  const changedRefs = finalStage.value.regions
+    .map((region) => region.ref)
+    .filter(
+      (ref) =>
+        ref.operatorId === resultOperator.id ||
+        selectedIds.has(outputIdentity(ref)),
+    );
+  return { document, changedRefs: clone(changedRefs) };
+}
+
 /** Builds and validates a synchronous T12 region-authoring transaction. */
 export function createRegionCommand(action) {
   const request = clone(action);
-  return (document, { idFactory }) => {
+  return (document, context) => {
     if (!['partition-regions', 'cut-hole'].includes(request?.kind))
       throw Error(`不支持的区域动作：${request?.kind}`);
-    if (!Array.isArray(request.targets))
-      throw Error('区域目标必须是 OutputRef 数组');
-    if (!request.targets.length) return { document, changedRefs: [] };
-
-    const targets = clone(request.targets);
-    const current = requireCurrentTargets(document, targets);
-    const cutter = requireCutter(document, current.ownerNodeId, request.cutter);
-    const allocateId = createCommandIdAllocator(document, idFactory);
-    const oldOutput = portInput(current.program.outputs.regions);
-    let cutterInput = cutter;
-
-    if (cutter.kind === 'sketch') {
-      const sourceId = allocateId();
-      current.program.operators[sourceId] = operator(
-        sourceId,
-        'source',
-        '区域切割线',
-        { paths: [cutter] },
-        {},
-      );
-      cutterInput = portInput(
-        publishedPort(current.ownerNodeId, sourceId, 'curves'),
-      );
-    }
-
-    let resultOperator;
-    if (request.kind === 'partition-regions') {
-      const partitionId = allocateId();
-      resultOperator = operator(
-        partitionId,
-        'partition',
-        '分区',
-        { input: [oldOutput], cutter: [cutterInput] },
-        { scope: selected(targets) },
-      );
-      current.program.operators[partitionId] = resultOperator;
-      current.program.outputs.regions = publishedPort(
-        current.ownerNodeId,
-        partitionId,
-        'regions',
-      );
-      const proposalStage = requireReadyResult(
-        document,
-        current.ownerNodeId,
-        '分区无法生成有效区域',
-      );
-      const proposals = proposalStage.value.provenance.filter(
-        (item) => item.kind === 'output-contract-proposal',
-      );
-      if (proposals.length !== 1 || !Array.isArray(proposals[0].members))
-        throw Error('分区没有唯一的 outputContract 候选');
-      resultOperator.outputContract = {
-        version: 1,
-        members: clone(proposals[0].members),
-      };
-    } else {
-      const fillId = allocateId();
-      current.program.operators[fillId] = operator(
-        fillId,
-        'fill',
-        '孔轮廓',
-        { input: [cutterInput] },
-        { rule: 'even-odd' },
-      );
-      const booleanId = allocateId();
-      resultOperator = operator(
-        booleanId,
-        'boolean',
-        '挖孔',
-        {
-          input: [oldOutput],
-          operand: [
-            portInput(publishedPort(current.ownerNodeId, fillId, 'regions')),
-          ],
-        },
-        { operation: 'difference', scope: selected(targets) },
-      );
-      current.program.operators[booleanId] = resultOperator;
-      current.program.outputs.regions = publishedPort(
-        current.ownerNodeId,
-        booleanId,
-        'regions',
-      );
-    }
-
-    const finalStage = requireReadyResult(
-      document,
-      current.ownerNodeId,
-      '区域操作无法生成有效结果',
-      request.kind === 'cut-hole',
-    );
-    const selectedIds = new Set(targets.map(outputIdentity));
-    const untouched = finalStage.value.regions.filter((region) =>
-      selectedIds.has(outputIdentity(region.ref)),
-    );
-    if (untouched.length)
-      throw Error('区域操作仍发布了被替换的旧目标，拒绝提交');
-    if (finalStage.status === 'empty') {
-      // A deliberate full cut removes these contributions, not the Shape or
-      // its source. The transaction history retains every removed assignment.
-      for (const records of [
-        document.appearances.overrides,
-        document.reliefDefinitions.overrides,
-        document.manufacturing.assignments,
-      ])
-        for (const [id, assignment] of Object.entries(records))
-          if (selectedIds.has(outputIdentity(assignment.target)))
-            delete records[id];
-      document.manufacturing.excluded = document.manufacturing.excluded.filter(
-        (ref) => !selectedIds.has(outputIdentity(ref)),
-      );
-    } else
-      migrateAssignments(
-        document,
-        targets,
-        finalStage.value.regions,
-        allocateId,
-      );
-    const changedRefs = finalStage.value.regions
-      .map((region) => region.ref)
-      .filter(
-        (ref) =>
-          ref.operatorId === resultOperator.id ||
-          selectedIds.has(outputIdentity(ref)),
-      );
-    return { document, changedRefs: clone(changedRefs) };
+    if (Array.isArray(request.targets) && !request.targets.length)
+      return { document, changedRefs: [] };
+    const branch = prepareRegionBranch(document, request, context);
+    return finishRegionBranch(document, branch, context);
   };
 }

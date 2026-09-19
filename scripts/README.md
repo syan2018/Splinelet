@@ -105,3 +105,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-object-gesture.mjs` 检查部件/组选区通过 pose 进行世界位移，涵盖旋转父组、父子去重、镜像结果随动、原始定义不变、基线预览/撤销和锁定/失效保护。Sandrone 原组件浏览器 fixture 同时区分部件位姿拖动与源路径几何拖动，防止将 pathIds 位移误当作对象变换。
 
 `node scripts/tests/unit/test-v4-append-boundary.mjs` 使用内置 Sandrone 与镜像/阵列/Join fixture 验证高级部件追加独立轮廓后，原源、构造、曲线/区域身份及赋值保持，支持一次撤销，并拒绝开放线、重复消费、锁定和 ID 冲突。可追加一个只读 `.spl` 路径检查其他样例；不修改该文件。`test-v4-curve-operators.mjs` 另检查曲线汇总保留 Join 闭合并阻止重复身份。两者是命令/求值验收，不代表原根增量角色绘制完成。
+
+`test-v4-region-drawing.mjs` 验证增量分区/挖孔首点保存未发布分支，编码重开可续画，完成复用同一分支并迁移赋值，撤销恢复未完成状态，旧目标变化则拒绝提交；`test-v4-region-drawing-copy.mjs` 验证两种 pending 分支的复制重映射与续画，及删除源路径后保留诊断而不发布结果。原整根界面的对应真实鼠标验收并入 `tests/browser/smoke/test-v4-original-studio.cjs`，写入其独立浏览器 origin 的 OPFS。

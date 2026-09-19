@@ -127,6 +127,8 @@ export function compileModifierUpdate(document, request) {
     request.modifierId,
   );
   const typeFields = TYPE_FIELDS[operator.type] || new Set();
+  if (operator.authoring?.phase === 'drawing')
+    throw Error('请先完成或继续绘制这条线');
   for (const key of Object.keys(request.changes)) {
     if (UNSUPPORTED_FIELDS.has(key))
       throw Error(`modifier_update 尚不支持 ${key}`);

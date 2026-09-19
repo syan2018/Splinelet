@@ -815,6 +815,7 @@ export function createAdvancedCommand(action) {
       const program = shapeProgram(document, request.ownerNodeId);
       const current = program.operators[request.operatorId];
       if (!current) throw Error('算子不存在或不属于指定 Shape');
+      if (current.authoring) throw Error('请先完成或继续绘制这条线');
       if (
         request.enabled === undefined &&
         request.params === undefined &&

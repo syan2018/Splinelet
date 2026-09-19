@@ -12,6 +12,7 @@ export function createPathIntent(request, displayed) {
       'start-path',
       'extend-path',
       'close-path',
+      'finish-path',
       'refit-path',
       'straighten-edge',
       'delete-path-vertices',
@@ -51,6 +52,9 @@ export function createPathIntent(request, displayed) {
         ? { ownerNodeId: action.ownerNodeId }
         : {}),
       ...(action.name !== undefined ? { name: action.name } : {}),
+      ...(action.role !== undefined
+        ? { role: action.role, targets: action.targets }
+        : {}),
     };
   } else if (action.kind === 'set-paths' || action.kind === 'delete-paths') {
     if (!Array.isArray(action.pathIds)) throw Error('路径选区必须是数组');

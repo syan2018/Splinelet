@@ -180,3 +180,15 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 `node scripts/tests/unit/test-v4-append-boundary.mjs output/agent-emblem/sandrone-gold-emblem.spl` 通过内置 Sandrone、金色徽章和重复纹样 fixture；检查旧区域/曲线身份与几何、原始源、算子、外观/浮雕/制造赋值、一次撤销/重做，以及开放线、重复消费、锁定、ID 冲突拒绝。局部坐标 identity 计算允许 IEEE -0 与 +0 等价，其余定义与身份精确比较。原根角色绘制尚未接入该命令。
 
 类型、lint 和全部 103 项单测通过，日志 `outputs/v4-qa/check-all-append-boundary-2026-09-20.log`。该次全量命令随后因补充测试断言时的格式检查未通过而停止；格式修正及该测试复跑通过，接续的全库格式、Rust 格式/检查、Web/Desktop 构建均退出 0，日志 `outputs/v4-qa/check-append-boundary-remaining-2026-09-20.log`。没有将该命令基础作为新增浏览器或默认入口旅程签收。
+
+## 2026-09-20 原界面增量分区与挖孔
+
+未完成绘制以真实未发布分支和终端 `authoring:{phase:'drawing'}` 保存。分区/挖孔命令共用准备和完成两步，完成保留已有分支身份、校验捕获的端口与准确目标并迁移赋值。首点、开放孔和未切开的分区线不能完成；失败保留此前的源线。保存重开、两种分支的 owner 复制后续画、源删除保留诊断、旧目标失效拒绝、一次撤销均有单测覆盖。默认修改器不会显示或误启用 pending 分支，原源线角色由实际输入链推导。
+
+原 Studio 在选择“画分区线”或“画挖洞轮廓”时先捕获目标，再清空临时选区开始画线；否则第一次落点会因选区已清空而误建普通部件。Enter/Esc、右键结束和原描绘结束按钮使用统一完成命令。原数值控件对尚无值的字段显示“未设置”，不写入推测的默认值。活动端点提示不再用透明命中框挡住邻近落点，非活动端点的续画/闭合操作保留。
+
+`pnpm check:all` 退出 0，包含全部 105 项单测、类型/lint/格式、Rust 格式/检查与双端构建，日志 `outputs/v4-qa/check-all-region-drawing-2026-09-20.log`。端点命中修复后重新执行类型/lint/格式与双端构建，退出 0，日志 `outputs/v4-qa/check-region-endpoint-ui-2026-09-20.log`。原根浏览器的分区、撤销/重做和闭合挖孔先行通过，后续补充保存重开续画的结果见下文；默认入口切换、目标修复与全部用户旅程仍未签收。
+
+真实保存重开暴露了分区契约比较错误：原实现直接对成员对象 JSON.stringify，编码器排序字段后同一契约被误判改变。修复改为按明确字段比较成员集合，保留原区域 key；`test-v4-region-drawing.mjs` 增加已完成分区/孔的实际编码重开后求值等值断言。修复后全量检查再次退出 0，最终日志 `outputs/v4-qa/check-all-region-drawing-final-2026-09-20.log`。对两份实际 Sandrone 执行导入 → V4 编码/解码 → 平面求值的只读检查，69/70 个区域的发布状态、引用、几何、诊断和依赖集合保持一致；依赖集合比较不要求枚举顺序相同，日志 `outputs/v4-qa/sandrone-region-file-roundtrip-2026-09-20.log`。
+
+最终完整原根浏览器验收退出 0：从原工具建立闭合轮廓、画分区线并结束，撤销/重做；开始孔的第一点后用原保存/打开菜单重开，在原树选择该线、从尾续画并闭合，确认两个区域完成异步刷新且部件无“需检查”提示，再保存与规范文档精确对比。`output/playwright/v4-original-studio/result.json` 的 `pendingSaved` 为 1 条待完成分支，`cutHole` 为 0，最终 3 条源线；页面和控制台错误均为空。截图保留原布局和样式。命令日志 `outputs/v4-qa/original-region-drawing-browser-2026-09-20.log`；此次仍使用显式注入 host 的隔离 fixture，默认根与原生验收未据此签收。

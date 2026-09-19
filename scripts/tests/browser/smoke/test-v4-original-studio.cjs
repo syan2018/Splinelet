@@ -266,6 +266,77 @@ async function main() {
       await page.locator('.creation-canvas-bar').innerText(),
       /单个区域/,
     );
+    const drawPoint = async (x, y) => {
+      const previous = await evidence();
+      const currentImageBox = await page
+        .locator('.drawing-canvas image')
+        .boundingBox();
+      await page.mouse.click(
+        currentImageBox.x + currentImageBox.width * x,
+        currentImageBox.y + currentImageBox.height * y,
+      );
+      await page.waitForFunction(
+        (revision) => window.originalStudioEvidence().revision > revision,
+        previous.revision,
+      );
+    };
+    await page.locator('[data-tree-object]').first().click();
+    await page.getByRole('button', { name: '画分区线', exact: true }).click();
+    await drawPoint(0.45, 0.29);
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
+    assert.equal(await page.locator('[data-creation-cell]').count(), 1);
+    await drawPoint(0.45, 0.46);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().pendingRegionDrawings === 0,
+    );
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-creation-cell]').length === 2,
+    );
+    const divided = await evidence();
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.equal((await evidence()).pendingRegionDrawings, 0);
+    await page.locator('[data-tree-object]').first().click();
+    await page.getByRole('button', { name: '画挖洞轮廓', exact: true }).click();
+    await drawPoint(0.53, 0.34);
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    const pendingSaved = await evidence();
+    assert.equal(pendingSaved.pendingRegionDrawings, 1);
+    await openFile('current');
+    await page.waitForFunction(
+      (epoch) => window.originalStudioEvidence().epoch !== epoch,
+      pendingSaved.epoch,
+    );
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
+    await page.getByText('底图就绪', { exact: true }).waitFor();
+    await page.locator('[data-tree-object]').first().click();
+    // The original tree and endpoint action resume the saved raw path.
+    const sourceRows = page.locator('[data-tree-path]');
+    if (!(await sourceRows.count()))
+      await page.getByRole('button', { name: '展开部件', exact: true }).click();
+    await sourceRows.last().click();
+    await page.getByRole('button', { name: '从尾续画', exact: true }).click();
+    await page.getByRole('tab', { name: '手动', exact: true }).click();
+    await drawPoint(0.57, 0.34);
+    await drawPoint(0.57, 0.38);
+    await drawPoint(0.53, 0.38);
+    assert.equal((await evidence()).pendingRegionDrawings, 1);
+    await page.keyboard.press('c');
+    await page.waitForFunction(
+      () => window.originalStudioEvidence().pendingRegionDrawings === 0,
+    );
+    const cutHole = await evidence();
+    assert.equal(cutHole.pathGeometry.at(-1).closed, true);
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll('[data-creation-cell]').length === 2 &&
+        !document
+          .querySelector('[data-tree-object]')
+          ?.textContent.includes('需检查'),
+    );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
     await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
     assert.deepEqual(
@@ -292,6 +363,9 @@ async function main() {
           newImage,
           drawing,
           closed,
+          divided,
+          cutHole,
+          pendingSaved,
           evidence: await evidence(),
           errors,
           consoleErrors,

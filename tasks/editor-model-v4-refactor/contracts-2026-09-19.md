@@ -1,6 +1,6 @@
-# V4 实施合同 v1.1
+# V4 实施合同 v1.2
 
-日期：2026-09-19。状态：**v1 已冻结；v1.1 补充运行时访问器与几何交接细节**。设计依据为[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)；此处固定实现字段、服务边界与反例。变更须增加版本记录并重验消费者，不能用读取时 normalization 修补不一致。v1.1 不改变 DocumentV4 持久字段；变更及消费者验收见文末。
+建档日期：2026-09-19。状态：**v1.2 于 2026-09-20 增加未完成区域绘制的持久标记**。设计依据为[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)；此处固定实现字段、服务边界与反例。变更须增加版本记录并重验消费者，不能用读取时 normalization 修补不一致。v1.1 不改变 DocumentV4 持久字段；v1.2 变更及消费者验收见下文 C03。
 
 ## C01 · 唯一持久文档
 
@@ -64,12 +64,17 @@ OutputRef = { kind: 'output', ownerNodeId, operatorId, port, key: string,
   lineage: string[], instances: { operatorId, index: number }[] };
 Operator = { id, type: string, name, enabled: boolean,
   inputs: Record<string,InputRef[]>, params: JsonObject,
+  authoring?: { phase: 'drawing' },
   outputContract?: { version: 1, members: { port, key, lineage: string[], topology?: string }[] } };
 ```
 
 Sketch InputRef 只能引用接收 Program 所有者的 Sketch，无额外变换；跨 Shape 一律引用已发布 PortRef。Port 输入的 transform 始终存在，默认 identity；接收者局部坐标下：local-result 使用 transform×来源局部结果，world-result 使用 transform×inverse(receiverWorld)×sourceWorld×来源局部结果。算子只消费显式 inputs；源线的用途仅由任务命令确定如何接入，不在求值时扫角色重建图。outputContract 的 `(operatorId,port,key)` 唯一，成员 port 必须属于该算子的输出，不能跨端口误绑。
 
+契约成员按 port/key/lineage/topology 比较，不依赖 JSON 对象字段顺序或成员枚举顺序。文件编码的字段排序不得使同一契约失效；已有区域 key 字符串保持原值，不通过全局更换序列化规则重建身份。
+
 算子注册规格固定 `type,inputPorts,outputPorts,validateParams,dependencies,evaluate,bypass?,rebase?`；inputPorts 含域与基数。未知 type 保留原始 JSON 参数但 blocked；已知类型参数非法也诊断，不能隐式旁路。停用只能按已声明的同域 bypass 映射；曲线→区域 Fill 停用没有合法旁路，明确缺少输出。
+
+v1.2（2026-09-20）：增量分区/挖孔的 Source → Partition / Source → Fill → Boolean 分支从首点开始持久保存；终端算子可带严格的 `authoring:{phase:'drawing'}`，必须 disabled，scope 必须为非空 selected OutputRefs，Boolean 必须为 difference，Program 不得发布带标记的算子。角色和源 Path 从真实输入链推导，不保存第二份角色/目标/几何表。完成事务复用该分支，校验捕获的原输出及区域目标，删除标记、启用发布、绑定分区契约、迁移赋值；无有效切分、开放孔或失效目标拒绝提交，保留此前已保存的线条。普通修改器更新不能完成该分支。消费者覆盖 schema/type、codec 往返、命令/撤销、复制引用重映射、源删除诊断和原界面接线；见 `test-v4-region-drawing.mjs`、`test-v4-region-drawing-copy.mjs` 与原根浏览器验收。此标记只表达编写阶段，不赋予 disabled 算子旁路能力。
 
 首版注册类型：`source,curve-reference,region-reference,curve-transform,curve-mirror,curve-array,join,fill,path,stroke,between,partition,boolean,offset,region-array`。T07 拥有 source/curve-*/join，T08 拥有其余及唯一 Fill 转换。`curve-reference` 的具名输入 `input` 接收一个 curves PortRef，发布 `curves`；`region-reference` 同理接收 regions 并发布 `regions`，只应用输入框架不重建几何，因此纯引用 Shape 有可实例化的首算子。已有 region/source/object 栈由 importer 编为明确子链，不新增特殊来源分派。具体参数表在注册实现同类型校验器中唯一维护，T00 规定几何语义，注册实现不得改域或坐标含义。
 

@@ -52,6 +52,7 @@ import {
   pathsForRegions,
 } from '@/lib/creation-selection.mjs';
 import { useCreationSelection } from '@/hooks/use-creation-selection';
+import type { OutputRef } from '@/lib/document/types';
 import type {
   ModifierObject,
   ModifierScene,
@@ -94,6 +95,7 @@ type RegionGeometry = {
   coordinates: Point[][] | Point[][][];
 };
 type CreationCell = {
+  outputRef?: OutputRef;
   key: string;
   objectId: string;
   name?: string;
@@ -219,7 +221,11 @@ type CreationApi = {
     toggle?: boolean;
   }) => { pathIds: string[]; nodeIds: string[]; label: string };
   new_path: (path: { id: string }) => CreationDocument | undefined;
-  trace_target: () => { ownerNodeId?: string; role: string };
+  trace_target: () => {
+    ownerNodeId?: string;
+    role: string;
+    targets?: OutputRef[];
+  };
   show_output: (partId?: string) => void;
   show_project: () => void;
   show_tool: () => void;
@@ -1033,9 +1039,23 @@ export default function CreationWorkspace(p: Props) {
       },
       trace_target: () => {
         const ownerNodeId = objects.at(-1);
-        return ownerNodeId
-          ? { ownerNodeId, role: nextRole.current }
-          : { role: 'boundary' };
+        if (!ownerNodeId) return { role: 'boundary' };
+        if (ref.current.runtime && nextRole.current !== 'boundary') {
+          if (revision.current !== ref.current.project)
+            throw Error('区域正在更新，请稍候再落点');
+          const cells =
+            sceneRef.current?.cells.filter(
+              (cell) => cell.objectId === ownerNodeId,
+            ) || [];
+          if (!cells.length || cells.some((cell) => !cell.outputRef))
+            throw Error('当前部件没有可编辑区域');
+          return {
+            ownerNodeId,
+            role: nextRole.current,
+            targets: cells.map((cell) => cell.outputRef!),
+          };
+        }
+        return { ownerNodeId, role: nextRole.current };
       },
       show_output: (partId) => {
         if (partId) setOutputPartId(partId);

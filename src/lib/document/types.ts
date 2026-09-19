@@ -156,6 +156,7 @@ export type Operator = {
   type: string;
   name: string;
   enabled: boolean;
+  authoring?: { phase: 'drawing' };
   inputs: Record<string, InputRef[]>;
   params: JsonObject;
   outputContract?: {

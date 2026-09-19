@@ -49,7 +49,11 @@ let pickerChoice = 'saved';
 window.originalStudioChooseFile = (name) => {
   pickerChoice = name;
 };
-window.showOpenFilePicker = async () => [pickerFiles[pickerChoice]];
+window.showOpenFilePicker = async () => [
+  pickerChoice === 'current'
+    ? host.getSnapshot().storage.target.handle
+    : pickerFiles[pickerChoice],
+];
 window.showSaveFilePicker = async () =>
   directory.getFileHandle('new-image-project.spl', { create: true });
 // Read-only instrumentation: all edits below must originate in original UI.
@@ -62,6 +66,9 @@ window.originalStudioEvidence = () => {
     revision: editorState.revision,
     previewId: editorState.previewId,
     paths: project.paths.length,
+    pendingRegionDrawings: Object.values(editorState.document.programs)
+      .flatMap((program) => Object.values(program.operators))
+      .filter((operator) => operator.authoring?.phase === 'drawing').length,
     pathGeometry: project.paths.map((path) => ({
       id: path.id,
       closed: path.closed,
