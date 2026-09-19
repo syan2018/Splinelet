@@ -184,6 +184,8 @@ type TraceStudioWindow = Window &
     };
   };
 type DragBase = {
+  pointerId: number;
+  button: number;
   x: number;
   y: number;
   base?: Project;
@@ -546,7 +548,6 @@ export default function Home() {
     return () => window.removeEventListener('resize', resize);
   }, []);
   const fileHandle = useRef<ProjectFileHandle | null>(null);
-  const allowAutoWrite = useRef(false);
   const writer = useRef(new FileWriter());
   const backupQueue = useRef(Promise.resolve());
   const backupSaved = useRef<Project | null>(null);
@@ -561,7 +562,6 @@ export default function Home() {
   const [bindingVersion, setBindingVersion] = useState(0);
   const bindFile = (handle: ProjectFileHandle | null) => {
     fileHandle.current = handle;
-    allowAutoWrite.current = false;
     fileSaved.current = null;
     setFileName(handle?.name || '');
     setBindingVersion((v) => v + 1);
@@ -588,7 +588,10 @@ export default function Home() {
       setSaved('已保存到 ' + handle.name);
   };
   const saveProject = async (saveAs = false) => {
-    if (fileBusyRef.current) return;
+    if (fileBusyRef.current || drag.current) {
+      if (drag.current) setStatus('请先完成或取消拖动，再保存工程');
+      return;
+    }
     fileBusyRef.current = true;
     setFileBusy(true);
     try {
@@ -596,10 +599,30 @@ export default function Home() {
       if (!handle) {
         const pickerWindow = window as FilePickerWindow;
         if (!pickerWindow.showSaveFilePicker) {
-          await backupProject(pr.current);
-          setSaved('已保存到此浏览器 · 当前浏览器不支持直接写文件');
+          const snapshot = pr.current;
+          let backupError: unknown = null;
+          try {
+            await backupProject(snapshot);
+          } catch (error: unknown) {
+            backupError = error;
+          }
+          download(
+            JSON.stringify(snapshot, null, 2),
+            'Splinelet工程.bezier.json',
+            'application/json',
+          );
+          setSaved(
+            backupError
+              ? '已下载工程文件 · 浏览器草稿失败'
+              : pr.current === snapshot
+                ? '已下载工程文件 · 浏览器草稿已保存'
+                : '已下载工程文件 · 有新修改未保存',
+          );
           setStatus(
-            '工程已更新到同一份浏览器备份；可在导出面板下载副本，或用 Chrome / Edge 绑定文件',
+            backupError
+              ? '当前浏览器不支持直接写文件，已下载工程 JSON；浏览器草稿失败：' +
+                  errorMessage(backupError)
+              : '当前浏览器不支持直接写文件，已下载工程 JSON；浏览器草稿仍用于恢复',
           );
           return;
         }
@@ -624,16 +647,25 @@ export default function Home() {
       setSaved('正在写入工程文件…');
       await writeProjectFile(snapshot, handle);
       if (fileHandle.current !== handle) bindFile(handle);
-      allowAutoWrite.current = true;
       fileSaved.current = { handle, project: snapshot };
-      await backupProject(pr.current, handle);
+      let backupError: unknown = null;
+      try {
+        await backupProject(pr.current, handle);
+      } catch (error: unknown) {
+        backupError = error;
+      }
       setSaved(
         pr.current === snapshot
           ? '已保存到 ' + handle.name
-          : '有新修改 · 等待自动保存',
+          : '有新修改未保存 · Ctrl+S 保存工程',
       );
       setStatus(
-        '已绑定 ' + handle.name + ' · 后续修改自动写回，Ctrl+S 立即保存',
+        backupError
+          ? '已保存到 ' +
+              handle.name +
+              '，但浏览器草稿失败：' +
+              errorMessage(backupError)
+          : '已绑定 ' + handle.name + ' · 后续修改按 Ctrl+S 保存到此文件',
       );
       navigator.storage?.persist?.().catch(() => {});
     } catch (error: unknown) {
@@ -669,11 +701,12 @@ export default function Home() {
       const parsed = validateProject(JSON.parse(await file.text()));
       apiRef.current?.load_project({ project: parsed });
       bindFile(handle);
-      allowAutoWrite.current = true;
       fileSaved.current = { handle, project: pr.current };
       await backupProject(pr.current, handle);
-      setSaved('已打开 ' + handle.name + ' · 修改后自动保存');
-      setStatus('已打开原文件 · Ctrl+S 保存到同一文件，首次写入可能需要授权');
+      setSaved('已打开 ' + handle.name);
+      setStatus(
+        '已打开原文件 · 修改后 Ctrl+S 保存到同一文件，首次写入可能需要授权',
+      );
     } catch (error: unknown) {
       if (!(error instanceof DOMException && error.name === 'AbortError'))
         setStatus('打开工程失败：' + errorMessage(error));
@@ -796,7 +829,7 @@ export default function Home() {
           }
         },
       )
-      .catch(() => setSaved('自动保存不可用，请保存工程'))
+      .catch(() => setSaved('浏览器草稿不可用，请保存工程'))
       .finally(() => {
         if (alive) setInitialized(true);
       });
@@ -812,14 +845,26 @@ export default function Home() {
         ? fileSaved.current?.handle === handle &&
           fileSaved.current?.project === project
           ? '已保存到 ' + handle.name
-          : '有修改 · 等待写入 ' + handle.name
-        : '正在保存浏览器备份…',
+          : '有修改未保存 · 正在保存浏览器草稿…'
+        : '正在保存浏览器草稿…',
     );
     const backupTimer = setTimeout(() => {
       backupProject(project, handle)
         .then(() => {
-          if (pr.current === project && !fileHandle.current)
-            setSaved('已保存到此浏览器 · 可绑定工程文件');
+          if (pr.current !== project) return;
+          const currentHandle = fileHandle.current;
+          if (
+            currentHandle &&
+            fileSaved.current?.handle === currentHandle &&
+            fileSaved.current?.project === project
+          )
+            setSaved('已保存到 ' + currentHandle.name);
+          else if (currentHandle)
+            setSaved(
+              '有修改未保存 · 浏览器草稿已保存 · Ctrl+S 保存到 ' +
+                currentHandle.name,
+            );
+          else setSaved('浏览器草稿已保存 · 未保存工程文件');
         })
         .catch((error: unknown) => {
           setSaved('浏览器备份失败');
@@ -828,36 +873,8 @@ export default function Home() {
           );
         });
     }, 200);
-    const fileTimer = setTimeout(async () => {
-      if (
-        !handle ||
-        (fileSaved.current?.handle === handle &&
-          fileSaved.current?.project === project)
-      )
-        return;
-      try {
-        if (!allowAutoWrite.current) {
-          setSaved('浏览器备份已恢复 · 点击保存重新连接 ' + handle.name);
-          return;
-        }
-        if (
-          (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
-        ) {
-          if (fileHandle.current === handle)
-            setSaved('文件尚未写入 · 点击保存以授权 ' + handle.name);
-          return;
-        }
-        if (fileHandle.current !== handle || pr.current !== project) return;
-        setSaved('正在保存 ' + handle.name + '…');
-        await writeProjectFile(project, handle);
-      } catch {
-        if (fileHandle.current === handle)
-          setSaved('文件自动保存失败 · 点击保存重试');
-      }
-    }, 800);
     return () => {
       clearTimeout(backupTimer);
-      clearTimeout(fileTimer);
     };
   }, [project, initialized, bindingVersion, gesturing]);
   useEffect(() => {
@@ -876,10 +893,7 @@ export default function Home() {
       if (
         initialized &&
         (backupSaved.current !== pr.current ||
-          backupBinding.current !== fileHandle.current ||
-          (fileHandle.current &&
-            (fileSaved.current?.handle !== fileHandle.current ||
-              fileSaved.current?.project !== pr.current)))
+          backupBinding.current !== fileHandle.current)
       ) {
         flush();
         e.preventDefault();
@@ -1395,6 +1409,8 @@ export default function Home() {
     }
     if (g.kind === 'pan') setView(g.view);
     drag.current = null;
+    if (stage.current?.hasPointerCapture(g.pointerId))
+      stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
     setStatus('已取消拖动，恢复原位置');
@@ -1404,6 +1420,7 @@ export default function Home() {
     id: string,
     fromSource = true,
   ) => {
+    if (drag.current) return;
     if (space.current || e.button === 1 || tool === 'pan') return;
     if (
       !['select', 'edit'].includes(tool) ||
@@ -1448,6 +1465,8 @@ export default function Home() {
     if (modified) return;
     drag.current = {
       kind: 'paths',
+      pointerId: e.pointerId,
+      button: e.button,
       ids: ids.filter(
         (id: string) =>
           !fromSource || pr.current.paths.find((p) => p.id === id)?.visible,
@@ -1463,6 +1482,7 @@ export default function Home() {
     stage.current?.setPointerCapture(e.pointerId);
   };
   const pointerDown = (e: React.PointerEvent) => {
+    if (drag.current) return;
     if (
       e.button === 2 ||
       (e.target as HTMLElement).closest?.('button,input,select')
@@ -1475,6 +1495,8 @@ export default function Home() {
       e.preventDefault();
       drag.current = {
         kind: 'pan',
+        pointerId: e.pointerId,
+        button: e.button,
         x: e.clientX,
         y: e.clientY,
         view: vr.current,
@@ -1491,6 +1513,8 @@ export default function Home() {
       e.preventDefault();
       drag.current = {
         kind: 'box',
+        pointerId: e.pointerId,
+        button: e.button,
         origin: p,
         x: e.clientX,
         y: e.clientY,
@@ -1509,6 +1533,15 @@ export default function Home() {
   };
   const pointerMove = (e: React.PointerEvent) => {
     if (unified && creationView === '3d') return;
+    if (drag.current) {
+      if (drag.current.pointerId !== e.pointerId) return;
+      // A missed release must never turn later hovering into an edit.
+      const buttonMask = drag.current.button === 1 ? 4 : 1;
+      if (!(e.buttons & buttonMask)) {
+        cancelGesture();
+        return;
+      }
+    } else if (!(e.target as Element).closest?.('.drawing-canvas')) return;
     const p = coordinate(e);
     setCoords(p);
     lastPointer.current = p;
@@ -1655,11 +1688,12 @@ export default function Home() {
       }
     });
   }, [mergeSource, mergeTarget]);
-  const pointerUp = () => {
-    if (unified && creationView === '3d') return;
+  const pointerUp = (e: React.PointerEvent) => {
     const g = drag.current;
-    if (!g) return;
+    if (!g || g.pointerId !== e.pointerId || g.button !== e.button) return;
     drag.current = null;
+    if (stage.current?.hasPointerCapture(g.pointerId))
+      stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
     if (!g.moved && g.collapsePath) {
@@ -1749,6 +1783,7 @@ export default function Home() {
     curve: number,
     point: number,
   ) => {
+    if (drag.current) return;
     if (space.current || e.button === 1 || tool === 'pan') return;
     e.stopPropagation();
     if (tool !== 'edit' || busyRef.current || e.button !== 0 || mergeSource)
@@ -1781,6 +1816,8 @@ export default function Home() {
     } else setSelection({ curve, point });
     drag.current = {
       kind: index === null ? 'point' : 'nodes',
+      pointerId: e.pointerId,
+      button: e.button,
       path: ar.current,
       ids,
       curve,
@@ -2346,7 +2383,7 @@ export default function Home() {
     setStatus(
       action === 'delete'
         ? '已解散分组，曲线已移至未分组 · 可撤销'
-        : '分组已更新 · 自动保存 · 可撤销',
+        : '分组已更新 · 未保存工程文件 · Ctrl+S 保存 · 可撤销',
     );
     if (action === 'visibility' && !a.visible)
       selectPathsNow(
@@ -3598,6 +3635,14 @@ export default function Home() {
           ref={setStage}
           aria-label="编辑画布"
           className={`stage tool-${tool} ${unified ? 'creation-stage' : ''} ${creationView === '3d' && unified ? 'creation-is-3d' : ''}`}
+          onPointerMove={pointerMove}
+          onPointerUp={pointerUp}
+          onPointerCancel={(e) => {
+            if (drag.current?.pointerId === e.pointerId) cancelGesture();
+          }}
+          onLostPointerCapture={(e) => {
+            if (drag.current?.pointerId === e.pointerId) cancelGesture();
+          }}
         >
           <div className="stage-top">
             <span>
@@ -3622,9 +3667,6 @@ export default function Home() {
             className="drawing-canvas"
             aria-label="贝塞尔绘图画布"
             onPointerDown={pointerDown}
-            onPointerMove={pointerMove}
-            onPointerUp={pointerUp}
-            onPointerCancel={() => cancelGesture()}
             onPointerLeave={() => {
               if (!drag.current) {
                 setPreview([]);

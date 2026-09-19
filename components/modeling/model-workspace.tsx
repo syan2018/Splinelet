@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -266,7 +266,9 @@ const esc = (s: string) =>
       })[c]!,
   );
 export default function ModelWorkspace(p: Props) {
-  const model = modelFor(p.project),
+  // Legacy/source-only projects have no model. Keep their empty fallback stable
+  // so selection reconciliation cannot schedule itself after every render.
+  const model = useMemo(() => modelFor(p.project), [p.project]),
     ref = useRef(p);
   ref.current = p;
   const worker = useRef<Worker | null>(null),

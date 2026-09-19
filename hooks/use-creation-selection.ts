@@ -40,6 +40,7 @@ export function useCreationSelection(p: {
   const [expandedCells, setExpandedCells] = useState<string[]>([]);
   const [reveal, setReveal] = useState<CreationSelection | null>(null);
   const sourceSignature = useRef(signature(selectedPaths));
+  const observedSourceSignature = useRef(signature(selectedPaths));
   const ownerSignature = useRef('[]');
   const anchors = useRef<Partial<Record<CreationSelection['kind'], string>>>(
     {},
@@ -132,6 +133,11 @@ export function useCreationSelection(p: {
   );
   useEffect(() => {
     const incoming = signature(selectedPaths);
+    // A local selection updates sourceSignature before the parent projection
+    // reaches our props. A passive effect from the previous render must not
+    // mistake those unchanged, older props for a new external selection.
+    if (observedSourceSignature.current === incoming) return;
+    observedSourceSignature.current = incoming;
     if (sourceSignature.current === incoming) return;
     sourceSignature.current = incoming;
     commit({ kind: 'path', ids: selectedPaths });
