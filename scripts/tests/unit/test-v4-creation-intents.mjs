@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { createDocument } from '../../../src/lib/document/schema.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
-import { createCreationIntent } from '../../../src/lib/editor/creation-intents.mjs';
+import {
+  CREATION_INTENTS,
+  createCreationIntent,
+} from '../../../src/lib/editor/creation-intents.mjs';
 import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
 import { outputIdentity } from '../../../src/lib/relief/appearance.mjs';
 import { resolveRelief } from '../../../src/lib/relief/resolve.mjs';
@@ -46,6 +49,23 @@ const intent = (action, args, displayed = view()) =>
 const before = editor.state.document;
 const cells = view().cells;
 assert.equal(cells.length, 2);
+intent('height', { cellKeys: [cells[1].key], heightMM: 1.75 });
+const enabledByThickness = Object.values(
+  editor.state.document.reliefDefinitions.overrides,
+).find(
+  (item) => outputIdentity(item.target) === outputIdentity(cells[1].outputRef),
+);
+assert.equal(enabledByThickness.value.enabled, true);
+assert.deepEqual(enabledByThickness.value.thickness, {
+  kind: 'mm',
+  value: 1.75,
+});
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(
+  editor.state.document,
+  before,
+  'setting candidate thickness enables it in one undoable command',
+);
 intent('paint', { cellKeys: cells.map((cell) => cell.key), color: '#ff0080' });
 assert.equal(Object.keys(editor.state.document.appearances.swatches).length, 1);
 assert.equal(
@@ -91,6 +111,144 @@ assert.deepEqual(
   { kind: 'layers', count: 8 },
   'clear/repaint retains previous thickness',
 );
+
+const objectId = cells[0].objectId;
+const beforeObjectManufacturing = editor.state.document;
+intent('object', {
+  id: objectId,
+  changes: { name: '临时部件名', printable: false },
+});
+assert.equal(editor.state.document.nodes[objectId].name, '临时部件名');
+assert.deepEqual(editor.state.document.manufacturing.excluded, [
+  { kind: 'node', id: objectId },
+]);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(
+  editor.state.document,
+  beforeObjectManufacturing,
+  'node and manufacturing changes share one transaction',
+);
+
+dispatch(createAuthoringCommand({ kind: 'create-part', name: '独立零件' }));
+const assignedPartId = Object.keys(
+  editor.state.document.manufacturing.parts,
+).find((id) => id !== editor.state.document.manufacturing.defaultPartId);
+intent('object', { id: objectId, changes: { partId: assignedPartId } });
+assert.deepEqual(
+  Object.values(editor.state.document.manufacturing.assignments).map(
+    ({ target, partId }) => ({ target, partId }),
+  ),
+  [{ target: { kind: 'node', id: objectId }, partId: assignedPartId }],
+);
+
+dispatch(
+  createAuthoringCommand({
+    kind: 'mirror-curves',
+    ownerNodeId: objectId,
+    center: [0, 0],
+    angleRad: Math.PI / 2,
+  }),
+);
+const mirrorId = Object.values(
+  editor.state.document.programs[
+    editor.state.document.nodes[objectId].programId
+  ].operators,
+).find((operator) => operator.type === 'curve-mirror').id;
+intent('modifier_update', {
+  objectId,
+  modifierId: mirrorId,
+  changes: { enabled: false },
+});
+assert.equal(
+  editor.state.document.programs[
+    editor.state.document.nodes[objectId].programId
+  ].operators[mirrorId].enabled,
+  false,
+);
+
+const beforePrintLayering = editor.state;
+assert.throws(() => intent('print_layer_add', {}), /请先启用打印分层/);
+assert.deepEqual(editor.state, beforePrintLayering);
+dispatch(
+  createAuthoringCommand({ kind: 'create-print-layer', name: '堆叠层 1' }),
+);
+intent('print_layer_add', { name: '顶层' });
+let layerOrder = editor.state.document.manufacturing.layerOrder;
+assert.equal(
+  editor.state.document.manufacturing.layers[layerOrder[0]].name,
+  '堆叠层 1',
+);
+assert.equal(
+  editor.state.document.manufacturing.layers[layerOrder[1]].name,
+  '顶层',
+);
+const firstLayerId = layerOrder[0];
+const secondLayerId = layerOrder[1];
+intent('print_layer_rename', { layerId: secondLayerId, name: '表面层' });
+intent('print_layer_move', { layerId: secondLayerId, direction: -1 });
+intent('print_settings', { layerHeightMM: 0.12 });
+layerOrder = editor.state.document.manufacturing.layerOrder;
+assert.deepEqual(layerOrder, [secondLayerId, firstLayerId]);
+assert.equal(
+  editor.state.document.manufacturing.layers[secondLayerId].name,
+  '表面层',
+);
+assert.equal(editor.state.document.manufacturing.layerHeightMM, 0.12);
+intent('print_layer_remove', { layerId: firstLayerId });
+assert.deepEqual(editor.state.document.manufacturing.layerOrder, [
+  secondLayerId,
+]);
+
+const unsupported = editor.state;
+assert.throws(
+  () =>
+    intent('object', {
+      id: objectId,
+      changes: { zMM: 2 },
+    }),
+  /对应制造命令/,
+);
+assert.throws(
+  () =>
+    intent('object', {
+      id: objectId,
+      changes: { attachId: cells[1].objectId },
+    }),
+  /对应制造命令/,
+);
+assert.throws(
+  () =>
+    intent('modifier_update', {
+      objectId,
+      modifierId: mirrorId,
+      changes: { count: 5 },
+    }),
+  /无等价 V4/,
+);
+assert.throws(
+  () => intent('print_layer_remove', { layerId: secondLayerId }),
+  /至少保留/,
+);
+assert.throws(
+  () =>
+    createCreationIntent(
+      'print_assign',
+      { objectIds: [objectId], layerId: secondLayerId },
+      view(),
+    ),
+  /尚未适配/,
+);
+assert.deepEqual(editor.state, unsupported);
+for (const action of [
+  'modifier_update',
+  'print_settings',
+  'print_layer_add',
+  'print_layer_rename',
+  'print_layer_move',
+  'print_layer_remove',
+])
+  assert.ok(CREATION_INTENTS.includes(action));
+
 const stale = view();
 intent('object', { id: cells[0].objectId, changes: { name: '杯身' } });
 const unchanged = editor.state;

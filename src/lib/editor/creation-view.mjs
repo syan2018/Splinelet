@@ -159,6 +159,43 @@ const operatorStatus = (document, snapshot, node) => {
     });
 };
 
+const objectManufacturing = (document, node, diagnostics, errors) => {
+  const excluded = document.manufacturing.excluded.some(
+    (target) => target.kind === 'node' && target.id === node.id,
+  );
+  const assignments = Object.values(document.manufacturing.assignments).filter(
+    (assignment) =>
+      assignment.target.kind === 'node' && assignment.target.id === node.id,
+  );
+  if (assignments.length > 1) {
+    const message = '同一 Shape 存在多个制造 Part 赋值';
+    diagnostics.push({
+      objectId: node.id,
+      status: 'blocked',
+      severity: 'error',
+      kind: 'conflicting-assignment',
+      message,
+      ref: { kind: 'node', id: node.id },
+      source: 'manufacturing',
+    });
+    errors.push({
+      objectId: node.id,
+      message,
+      kind: 'conflicting-assignment',
+      pending: false,
+    });
+  }
+  return {
+    printable: !excluded,
+    partId:
+      assignments.length === 1
+        ? assignments[0].partId
+        : assignments.length
+          ? null
+          : document.manufacturing.defaultPartId,
+  };
+};
+
 /**
  * Project a current V4 evaluation into a read-only CreationWorkspace-shaped
  * view. This is a view DTO only: it contains no writable legacy Project and
@@ -320,6 +357,12 @@ export function projectCreationView(document, snapshot) {
     const placedCells = objectCells.filter(
       (cell) => cell.enabled && cell.heightMM !== null,
     );
+    const manufacturing = objectManufacturing(
+      document,
+      node,
+      diagnostics,
+      errors,
+    );
     return {
       id: node.id,
       name: node.name,
@@ -335,7 +378,8 @@ export function projectCreationView(document, snapshot) {
       zMM: placedCells.length
         ? Math.min(...placedCells.map((cell) => cell.bottomMM))
         : null,
-      printable: placedCells.length > 0,
+      printable: manufacturing.printable,
+      partId: manufacturing.partId,
       evaluation: clone(objectStages.get(node.id)),
     };
   });

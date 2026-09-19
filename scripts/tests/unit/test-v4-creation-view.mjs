@@ -49,7 +49,16 @@ assert.equal(view.cells[0].painted, false);
 assert.equal(view.cells[0].enabled, false);
 assert.equal(view.cells[0].heightMM, null, 'candidate has no guessed height');
 assert.equal(view.cells[0].bottomMM, null, 'candidate has no guessed Z');
-assert.equal(view.creation.objects[0].printable, false);
+assert.equal(
+  view.creation.objects[0].printable,
+  true,
+  'an unpainted candidate is printable unless its Shape is explicitly excluded',
+);
+assert.equal(
+  view.creation.objects[0].partId,
+  session.state.document.manufacturing.defaultPartId,
+  'object Part falls back to the explicit manufacturing default',
+);
 assert.equal(
   view.creation.printStack,
   undefined,
@@ -259,6 +268,11 @@ for (const status of ['blocked', 'empty']) {
   );
   assert.equal(unavailableView.tree[0].children[0].id, shapeId);
   assert.equal(unavailableView.creation.objects[0].evaluation.regions, status);
+  assert.equal(
+    unavailableView.creation.objects[0].printable,
+    true,
+    `${status} does not invent a Shape exclusion`,
+  );
   if (status === 'blocked')
     assert.ok(
       unavailableView.errors.some(
@@ -295,6 +309,59 @@ assert.equal(
   explicitlyExcludedView.cells[0].excluded,
   true,
   'excluded comes from an exact manufacturing target without placed-relief',
+);
+assert.equal(
+  explicitlyExcludedView.creation.objects[0].printable,
+  true,
+  'an output exclusion does not disable its whole Shape',
+);
+run({ kind: 'set-manufacturing-excluded', target, excluded: false });
+run({
+  kind: 'set-manufacturing-excluded',
+  target: { kind: 'node', id: shapeId },
+  excluded: true,
+});
+let shapeManufacturingView = projectCreationView(
+  session.state.document,
+  await evaluate(),
+);
+assert.equal(shapeManufacturingView.creation.objects[0].printable, false);
+assert.equal(
+  shapeManufacturingView.cells[0].excluded,
+  true,
+  'Shape exclusion also applies to each cell through manufacturing semantics',
+);
+run({
+  kind: 'set-manufacturing-excluded',
+  target: { kind: 'node', id: shapeId },
+  excluded: false,
+});
+shapeManufacturingView = projectCreationView(
+  session.state.document,
+  await evaluate(),
+);
+assert.equal(shapeManufacturingView.creation.objects[0].printable, true);
+
+run({ kind: 'create-part', name: '展示零件' });
+const explicitPartId = Object.keys(
+  session.state.document.manufacturing.parts,
+).find((id) => id !== session.state.document.manufacturing.defaultPartId);
+run({
+  kind: 'set-manufacturing-part',
+  target: { kind: 'node', id: shapeId },
+  partId: explicitPartId,
+});
+let partView = projectCreationView(session.state.document, await evaluate());
+assert.equal(partView.creation.objects[0].partId, explicitPartId);
+run({
+  kind: 'set-manufacturing-part',
+  target: { kind: 'node', id: shapeId },
+  partId: null,
+});
+partView = projectCreationView(session.state.document, await evaluate());
+assert.equal(
+  partView.creation.objects[0].partId,
+  session.state.document.manufacturing.defaultPartId,
 );
 
 run({ kind: 'create-print-layer', name: '表面层' });
