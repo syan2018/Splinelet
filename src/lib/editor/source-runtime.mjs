@@ -2,6 +2,7 @@ import { beginRuntimeGesture } from './runtime-gesture.mjs';
 import { projectSourceView } from './source-view.mjs';
 import { createSourceIntent } from './source-intents.mjs';
 import { createPathIntent } from './path-intents.mjs';
+import { createGroupIntent } from './group-intents.mjs';
 
 const freeze = (value) => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -73,6 +74,9 @@ export function createSourceRuntime({
     },
     commandPath(request, context) {
       return plan(createPathIntent, request, context);
+    },
+    commandGroup(request, context) {
+      return plan(createGroupIntent, request, context);
     },
     beginSourceGesture(project) {
       const entry = current(project);

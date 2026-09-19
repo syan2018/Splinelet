@@ -129,3 +129,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 原 node-actions 对照测试和原根浏览器覆盖 set_point：前者比较部件 pose 下普通/平滑/对称模式与旧控制柄行为，后者通过公开 API 移动两侧控制柄并回读准确坐标、一次撤销恢复文档。
 
 原节点动作对照与原根浏览器还覆盖双击精确拆分：验证原曲线/模式保持、稳定 Edge 命令、非法和过期操作拒绝，以及 Sandrone 真实双击后单步撤销恢复规范文档。
+
+新增 test-v4-group-intents.mjs 覆盖原源线编组/排序到规范集合命令的原子适配、旧移动顺序对照、重叠展示与失效拒绝；test-v4-source-organization.mjs 增加显式移入/移出及混合集合保护。原根浏览器覆盖 Ctrl+G、撤销重做、组 API 的成员/显隐/重命名/解散、排序和保存重开。

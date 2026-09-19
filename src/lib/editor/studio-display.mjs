@@ -1,3 +1,5 @@
+import { projectPathGroups } from './path-groups.mjs';
+
 const clone = (value) => structuredClone(value);
 
 const freeze = (value, seen = new Set()) => {
@@ -121,6 +123,7 @@ export function projectStudioDisplay(workspaceView, presentation) {
     revision: workspaceView.revision,
     previewId: workspaceView.previewId ?? null,
   };
+  const { groups, memberships } = projectPathGroups(source);
   const project = {
     version: 4,
     image: reference?.url ?? '',
@@ -129,7 +132,18 @@ export function projectStudioDisplay(workspaceView, presentation) {
     height: frame.height,
     widthMM: frame.widthMM,
     depthMM: session.blenderExtrusionMM,
-    paths: source.paths,
+    groups,
+    paths: source.paths.map((path) =>
+      memberships[path.id]?.length
+        ? {
+            ...path,
+            groupIds: memberships[path.id] || [],
+            ...(memberships[path.id]?.length === 1
+              ? { groupId: memberships[path.id][0] }
+              : {}),
+          }
+        : path,
+    ),
     creation: creation.creation,
   };
 

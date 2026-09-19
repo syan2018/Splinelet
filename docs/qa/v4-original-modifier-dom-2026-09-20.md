@@ -282,3 +282,9 @@ outputs/v4-qa/original-api-handle-2026-09-20.log 为 PASS：原界面中通过 s
 原 splitAt 已由 legacy transact 改用共享节点动作：保留采样落点、选中新节点和状态提示，V4 解析当前源 Edge 身份并复用 split-span；旧精确拆分算法抽入 legacy adapter。单测覆盖有 pose 的曲线、平滑/对称模式与原结果一致、一次撤销、非法 t 与过期视图拒绝。浏览器增补内置 Sandrone 原 SVG 双击增加一段、一次 revision 和撤销恢复完整规范文档的检查。验证结果以 original-split-2026-09-20.log 与 check-all-original-split-2026-09-20.log 为准。
 
 结果：原浏览器日志为 PASS；完整 pnpm check:all 退出 0，涵盖 111 项单元测试、类型、lint、格式、Rust 检查与双端生产构建。
+
+## 2026-09-20 原源路径编组与排序
+
+纯路径集合投影为原只读 groups，保留完整 pathIds/groupIds；唯一归属才给旧 groupId，混合实体集合不作路径分组。assign-path-collection 维护原显式移入的单分组行为，其他纯路径组移出选中成员、混合集合保持。原 Ctrl+G、按钮、manage_group 和 move_path(s) 经 group-intents 一次提交，排序仅写 Path.order。单元覆盖旧顺序对照、原子失败、重叠、锁定与一次撤销。原根浏览器新增编组/撤销重做、成员转移/显隐/命名/解散、排序及持久化验证；结果记录在 original-groups-2026-09-20.log 与 check-all-original-groups-2026-09-20.log。
+
+结果：原浏览器日志为 PASS；完整 pnpm check:all 退出 0，涵盖 112 项单元测试、类型、lint、格式、Rust 检查与 Web/桌面前端生产构建。默认入口切换和完整 API 验收仍未完成。

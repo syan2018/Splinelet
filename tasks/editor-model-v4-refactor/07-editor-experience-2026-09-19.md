@@ -347,3 +347,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 原入口剩余审阅：默认切换前还须接通 splitAt 双击拆分（已有 split-span 源命令）、spline_apply 原子精确样条批量写入、manage_group/move_paths（原 groupId 唯一归属与可重叠 collection 需显式适配，不可直接等同）、widthMM 的原比例语义、ModelWorkspace 全套旧 model 写入，以及承托部件预览的 commitPreparedDisplay。app/page.tsx 和 desktop/main.tsx 仍未装配 host。这些不能由现有单一路径绿色测试替代验收。
 
 2026-09-20 原双击拆分接线：splitAt 保留原采样落点和新节点选择，几何变更交给 node-actions.splitSpan。V4 按捕获的有向 Edge 身份调用 split-span（反向使用换算 t），旧分支提取原精确拆分/模式/anchors 更新。失败显示原因而不改变选区。旋转/平移部件上的普通、smooth、symmetric 模式对照及一次撤销通过；原画布双击验收结果见 QA。上一轮剩余审阅中的 splitAt 项由此补齐，其余批量样条、组织、宽度、高级建模与默认入口仍待完成。
+
+2026-09-20 原源线编组与排序接线：只读 groups/pathIds/groupIds 从纯 PathRef 集合投影，唯一成员提供旧 groupId；重叠不任意择一。新增 assign-path-collection 明确移入/移出并保留混合实体集合。group-intents 在捕获版本下把编组/成员/显隐/排序组合为一次命令；Ctrl+G、原编组按钮、manage_group、move_path(s) 已接入，组 ID 来自规范分配。重叠目标移动要求先明确归属，排序只改 Path.order。单元对照原移动顺序、锁定/失效/非法输入、混合集合、撤销与构造不变。实际原界面结果见本轮 QA。

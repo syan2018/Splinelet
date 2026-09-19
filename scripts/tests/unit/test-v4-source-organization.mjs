@@ -129,10 +129,125 @@ const sourceState = (document) => ({
 
 assert.deepEqual(SOURCE_ORGANIZATION_ACTIONS, [
   'create-path-collection',
+  'assign-path-collection',
   'rename-collection',
   'delete-collection',
   'reorder-source-paths',
 ]);
+
+const collectionFixture = () => {
+  const document = fixture();
+  document.collections.alpha = {
+    id: 'alpha',
+    name: '甲路径集合',
+    members: [pathRef('sketch-a', 'path-a1'), pathRef('sketch-a', 'path-a2')],
+    origin: 'user',
+    order: 3,
+  };
+  document.collections.beta = {
+    id: 'beta',
+    name: '乙路径集合',
+    members: [pathRef('sketch-b', 'path-b1'), pathRef('sketch-a', 'path-a1')],
+    origin: 'user',
+    order: 4,
+  };
+  document.collections.gamma = {
+    id: 'gamma',
+    name: '目标路径集合',
+    members: [pathRef('sketch-a', 'path-a2'), pathRef('sketch-a', 'path-a1')],
+    origin: 'user',
+    order: 5,
+  };
+  return document;
+};
+
+const assignmentDocument = collectionFixture();
+const assignmentBefore = structuredClone(assignmentDocument);
+const assignmentSource = sourceState(assignmentDocument);
+const assignmentEditor = editorFor(assignmentDocument);
+dispatch(assignmentEditor, {
+  kind: 'assign-path-collection',
+  collectionId: 'gamma',
+  pathRefs: [pathRef('sketch-a', 'path-a1'), pathRef('sketch-b', 'path-b1')],
+});
+assert.deepEqual(assignmentEditor.state.document.collections.alpha.members, [
+  pathRef('sketch-a', 'path-a2'),
+]);
+assert.deepEqual(assignmentEditor.state.document.collections.beta.members, []);
+assert.deepEqual(assignmentEditor.state.document.collections.gamma.members, [
+  pathRef('sketch-a', 'path-a2'),
+  pathRef('sketch-a', 'path-a1'),
+  pathRef('sketch-b', 'path-b1'),
+]);
+assert.deepEqual(
+  assignmentEditor.state.document.collections.mixed,
+  assignmentBefore.collections.mixed,
+  'mixed collections keep overlapping Path members',
+);
+assert.deepEqual(
+  sourceState(assignmentEditor.state.document),
+  assignmentSource,
+);
+assert.deepEqual(
+  assignmentEditor.state.document.collections.gamma.order,
+  assignmentBefore.collections.gamma.order,
+);
+assignmentEditor.undo({ expectedRevision: assignmentEditor.state.revision });
+assert.deepEqual(assignmentEditor.state.document, assignmentBefore);
+assignmentEditor.redo({ expectedRevision: assignmentEditor.state.revision });
+
+dispatch(assignmentEditor, {
+  kind: 'assign-path-collection',
+  collectionId: null,
+  pathRefs: [pathRef('sketch-a', 'path-a2'), pathRef('sketch-b', 'path-b1')],
+});
+assert.deepEqual(assignmentEditor.state.document.collections.alpha.members, []);
+assert.deepEqual(assignmentEditor.state.document.collections.beta.members, []);
+assert.deepEqual(assignmentEditor.state.document.collections.gamma.members, [
+  pathRef('sketch-a', 'path-a1'),
+]);
+assert.deepEqual(
+  assignmentEditor.state.document.collections.mixed,
+  assignmentBefore.collections.mixed,
+);
+
+for (const action of [
+  {
+    kind: 'assign-path-collection',
+    collectionId: 'mixed',
+    pathRefs: [pathRef('sketch-a', 'path-a1')],
+  },
+  {
+    kind: 'assign-path-collection',
+    collectionId: 'alpha',
+    pathRefs: [pathRef('sketch-a', 'path-a1'), pathRef('sketch-a', 'path-a1')],
+  },
+  {
+    kind: 'assign-path-collection',
+    collectionId: 'alpha',
+    pathRefs: [pathRef('sketch-a', 'missing')],
+  },
+]) {
+  const editor = editorFor(collectionFixture());
+  const before = editor.state.document;
+  assert.throws(() => dispatch(editor, action), /只包含 Path|不能重复|不存在/);
+  assert.deepEqual(editor.state.document, before);
+}
+
+const lockedAssignment = collectionFixture();
+lockedAssignment.nodes['shape-b'].locked = true;
+const lockedAssignmentEditor = editorFor(lockedAssignment);
+const lockedAssignmentBefore = lockedAssignmentEditor.state.document;
+assert.throws(
+  () =>
+    dispatch(lockedAssignmentEditor, {
+      kind: 'assign-path-collection',
+      collectionId: null,
+      pathRefs: [pathRef('sketch-b', 'path-b1')],
+    }),
+  /锁定/,
+);
+assert.deepEqual(lockedAssignmentEditor.state.document, lockedAssignmentBefore);
 
 const createDocumentFixture = fixture();
 const createBefore = structuredClone(createDocumentFixture);

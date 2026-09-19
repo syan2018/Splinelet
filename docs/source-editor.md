@@ -126,6 +126,8 @@ V4 会话中，源曲线导出窗口的“挤出厚度”是 Blender 脚本的�
 
 V4 的 `set_point` 保留原图像素坐标与控制柄 1/2 参数，通过当前源视图解析稳定身份，复用鼠标拖柄的命令；平滑/对称模式会按原规则联动另一侧控制柄。一次调用对应一次撤销，过期视图或受约束的非法改写不会退回旧工程写入。
 
+V4 原源线列表的编组快捷键、`manage_group` 与 `move_paths` 使用纯路径集合。移入分组会从其他纯路径分组移出，混合实体集合不受影响；显隐显式修改当前路径成员，解散不删除路径。`get_project` 中的 groups 带 pathIds，路径的 groupIds 保留高级重叠成员，只有唯一归属时才给出 groupId。以重叠归属路径为移动目标时，需要先明确归属。编组与排序均保持单步撤销，不改变部件所有权或构造链。
+
 ## 精确样条 API 4.1
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。

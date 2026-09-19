@@ -3,6 +3,7 @@ import { effectiveNodeState } from '../../scene/hierarchy.mjs';
 
 export const SOURCE_ORGANIZATION_ACTIONS = Object.freeze([
   'create-path-collection',
+  'assign-path-collection',
   'rename-collection',
   'delete-collection',
   'reorder-source-paths',
@@ -12,6 +13,7 @@ const record = (value) =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const ACTION_FIELDS = Object.freeze({
   'create-path-collection': ['kind', 'name', 'pathRefs'],
+  'assign-path-collection': ['kind', 'collectionId', 'pathRefs'],
   'rename-collection': ['kind', 'collectionId', 'name'],
   'delete-collection': ['kind', 'collectionId'],
   'reorder-source-paths': ['kind', 'pathRefs'],
@@ -149,6 +151,43 @@ const assertCollectionMembersWritable = (document, collection) => {
       throw Error('Collection 含已锁定部件的成员，不能删除');
 };
 
+const pathOnlyCollection = (collection) =>
+  collection.members.every((member) => member.kind === 'path');
+
+const assignPathCollection = (document, collectionId, refs) => {
+  if (collectionId !== null && typeof collectionId !== 'string')
+    throw Error('collectionId 必须是 string 或 null');
+  const target =
+    collectionId === null ? null : requireCollection(document, collectionId);
+  if (target && !pathOnlyCollection(target))
+    throw Error('目标 Collection 必须只包含 Path');
+
+  const selected = new Set(refs.map(pathKey));
+  const pathCollections = Object.values(document.collections).filter(
+    pathOnlyCollection,
+  );
+  const changedCollectionIds = [];
+  for (const collection of pathCollections) {
+    if (collection === target) continue;
+    const members = collection.members.filter(
+      (member) => !selected.has(pathKey(member)),
+    );
+    if (members.length !== collection.members.length) {
+      collection.members = members;
+      changedCollectionIds.push(collection.id);
+    }
+  }
+  if (target) {
+    const current = new Set(target.members.map(pathKey));
+    const missing = refs.filter((ref) => !current.has(pathKey(ref)));
+    if (missing.length) {
+      target.members.push(...missing);
+      changedCollectionIds.push(target.id);
+    }
+  }
+  return changedCollectionIds;
+};
+
 /** Edits source-list organization without moving or rewriting source geometry. */
 export function createSourceOrganizationCommand(request) {
   const action = structuredClone(request);
@@ -169,6 +208,17 @@ export function createSourceOrganizationCommand(request) {
         order,
       };
       changedRefs = [collectionRef(id), ...refs];
+    } else if (action?.kind === 'assign-path-collection') {
+      const refs = uniquePathRefs(document, action.pathRefs);
+      const changedCollectionIds = assignPathCollection(
+        document,
+        action.collectionId,
+        refs,
+      );
+      changedRefs = [
+        ...refs,
+        ...changedCollectionIds.map((id) => collectionRef(id)),
+      ];
     } else if (action?.kind === 'rename-collection') {
       const collection = requireCollection(document, action.collectionId);
       collection.name = name(action.name);

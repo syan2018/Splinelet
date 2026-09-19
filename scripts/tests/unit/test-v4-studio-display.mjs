@@ -93,7 +93,11 @@ assert.equal(display.project.height, 600);
 assert.equal(display.project.widthMM, 100);
 assert.equal(display.project.depthMM, 2.4);
 assert.equal(Object.hasOwn(display.project, 'model'), false);
-assert.equal(Object.hasOwn(display.project, 'groups'), false);
+assert.deepEqual(
+  display.project.groups,
+  [],
+  'source groups are an explicit readonly collection projection',
+);
 assert.deepEqual(display.project.paths, workspace.source.paths);
 assert.deepEqual(display.project.creation, workspace.creation.creation);
 assert.deepEqual(display.reference.pixelToWorld, pixelToWorld);

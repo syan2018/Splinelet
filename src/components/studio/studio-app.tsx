@@ -573,19 +573,40 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       selectPathsNow(pathsRef.current.filter((id) => !ids.includes(id)));
     setStatus(visible ? '已显示路径 · 可撤销' : '已隐藏路径 · 可撤销');
   };
+  const commitGroup = (request: Record<string, unknown>) => {
+    if (!host) throw Error('分组命令需要 V4 会话');
+    const captured = host.getSnapshot();
+    const next = captured.runtime
+      .commandGroup(request, { project: captured.project })
+      .commit() as Project;
+    pr.current = next;
+    return next;
+  };
   const groupSelection = () => {
     if (busyRef.current || drag.current) return;
     const ids = pathsRef.current,
       id = crypto.randomUUID();
-    transact((p) => {
-      (p.groups ||= []).push({
-        id,
-        name: '分组 ' + ((p.groups?.length || 0) + 1),
+    if (host) {
+      try {
+        commitGroup({
+          kind: 'create-group',
+          name: '分组 ' + ((pr.current.groups?.length || 0) + 1),
+          pathIds: ids,
+        });
+      } catch (error) {
+        setStatus(errorMessage(error));
+        return;
+      }
+    } else
+      transact((p) => {
+        (p.groups ||= []).push({
+          id,
+          name: '分组 ' + ((p.groups?.length || 0) + 1),
+        });
+        p.paths
+          .filter((p) => ids.includes(p.id))
+          .forEach((p) => (p.groupId = id));
       });
-      p.paths
-        .filter((p) => ids.includes(p.id))
-        .forEach((p) => (p.groupId = id));
-    });
     setStatus(
       ids.length
         ? '已将 ' + ids.length + ' 条路径编组 · Ctrl+Z 撤销'
@@ -2878,6 +2899,21 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     after = false,
   ) {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
+    if (host) {
+      commitGroup({
+        kind: 'move-group-paths',
+        pathIds: ids,
+        groupId,
+        targetId,
+        after,
+      });
+      setStatus('已移动 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
+      return {
+        moved: !targetId || !ids.includes(targetId),
+        pathIds: ids,
+        groupId,
+      };
+    }
     const next = cloneTraceValue(pr.current);
     const moved = movePaths(next, ids, groupId, targetId, after);
     if (
@@ -2929,30 +2965,51 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       throw Error('请选择存在的路径');
     if (action === 'visibility' && typeof a.visible !== 'boolean')
       throw Error('visible 必须为布尔值');
-    const id = action === 'create' ? crypto.randomUUID() : a.id;
-    transact((p) => {
-      p.groups = p.groups || [];
-      if (action === 'create') p.groups.push({ id: id!, name: name.trim() });
-      if (action === 'rename')
-        p.groups.find((g) => g.id === id)!.name = name.trim();
-      if (action === 'assign')
-        p.paths
-          .filter((p) => pathIds.includes(p.id))
-          .forEach((p) => {
-            if (id) p.groupId = id;
-            else delete p.groupId;
-          });
-      if (action === 'visibility')
-        p.paths
-          .filter((p) => p.groupId === id)
-          .forEach((p) => (p.visible = visible));
-      if (action === 'delete') {
-        p.groups = p.groups.filter((g) => g.id !== id);
-        p.paths
-          .filter((p) => p.groupId === id)
-          .forEach((p) => delete p.groupId);
-      }
-    });
+    let id = action === 'create' ? crypto.randomUUID() : a.id;
+    if (host) {
+      const next = commitGroup({
+        kind: (
+          {
+            create: 'create-group',
+            rename: 'rename-group',
+            assign: 'assign-group',
+            visibility: 'group-visibility',
+            delete: 'delete-group',
+          } as Record<string, string>
+        )[action],
+        groupId: a.id,
+        name,
+        pathIds: action === 'assign' ? pathIds : [],
+        visible,
+      });
+      if (action === 'create')
+        id = next.groups?.find(
+          (item) => !groups.some((old) => old.id === item.id),
+        )?.id;
+    } else
+      transact((p) => {
+        p.groups = p.groups || [];
+        if (action === 'create') p.groups.push({ id: id!, name: name.trim() });
+        if (action === 'rename')
+          p.groups.find((g) => g.id === id)!.name = name.trim();
+        if (action === 'assign')
+          p.paths
+            .filter((p) => pathIds.includes(p.id))
+            .forEach((p) => {
+              if (id) p.groupId = id;
+              else delete p.groupId;
+            });
+        if (action === 'visibility')
+          p.paths
+            .filter((p) => p.groupId === id)
+            .forEach((p) => (p.visible = visible));
+        if (action === 'delete') {
+          p.groups = p.groups.filter((g) => g.id !== id);
+          p.paths
+            .filter((p) => p.groupId === id)
+            .forEach((p) => delete p.groupId);
+        }
+      });
     setStatus(
       action === 'delete'
         ? '已解散分组，曲线已移至未分组 · 可撤销'

@@ -726,6 +726,105 @@ async function main() {
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
     );
+    const beforeGroups = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    const groupPaths = (await evidence()).pathGeometry.map((path) => path.id);
+    await page.evaluate(
+      (pathIds) => window.traceStudio.call('select_paths', { pathIds }),
+      groupPaths,
+    );
+    await page.keyboard.press('Control+g');
+    const groupedProject = await page.evaluate(() =>
+      window.traceStudio.call('get_project'),
+    );
+    assert.equal(groupedProject.groups.length, 1);
+    const sourceGroup = groupedProject.groups[0].id;
+    assert.ok(
+      groupedProject.paths.every((path) => path.groupId === sourceGroup),
+    );
+    const groupedDocument = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.deepEqual(groupedDocument.sketches, beforeGroups.sketches);
+    assert.deepEqual(groupedDocument.programs, beforeGroups.programs);
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeGroups,
+    );
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    const secondGroup = await page.evaluate(() =>
+      window.traceStudio.call('manage_group', {
+        action: 'create',
+        name: 'API 分组',
+      }),
+    );
+    await page.evaluate(
+      ({ id, pathId }) =>
+        window.traceStudio.call('manage_group', {
+          action: 'assign',
+          id,
+          pathIds: [pathId],
+        }),
+      { id: secondGroup.id, pathId: groupPaths[0] },
+    );
+    await page.evaluate(
+      (id) =>
+        window.traceStudio.call('manage_group', {
+          action: 'rename',
+          id,
+          name: '重命名分组',
+        }),
+      secondGroup.id,
+    );
+    await page.evaluate(
+      (id) =>
+        window.traceStudio.call('manage_group', {
+          action: 'visibility',
+          id,
+          visible: false,
+        }),
+      secondGroup.id,
+    );
+    assert.equal(
+      (
+        await page.evaluate(() => window.traceStudio.call('get_project'))
+      ).paths.find((path) => path.id === groupPaths[0]).visible,
+      false,
+    );
+    await page.evaluate(
+      (id) =>
+        window.traceStudio.call('manage_group', {
+          action: 'visibility',
+          id,
+          visible: true,
+        }),
+      secondGroup.id,
+    );
+    await page.evaluate(
+      ({ pathId, targetId }) =>
+        window.traceStudio.call('move_paths', {
+          pathIds: [pathId],
+          targetId,
+          after: true,
+        }),
+      { pathId: groupPaths[0], targetId: groupPaths[1] },
+    );
+    const reordered = await page.evaluate(() =>
+      window.traceStudio.call('get_project'),
+    );
+    assert.deepEqual(
+      reordered.paths.map((path) => path.id),
+      [groupPaths[1], groupPaths[0]],
+    );
+    assert.ok(reordered.paths.every((path) => path.groupId === sourceGroup));
+    await page.evaluate(
+      (id) => window.traceStudio.call('manage_group', { action: 'delete', id }),
+      secondGroup.id,
+    );
+    await page.getByRole('button', { name: '保存工程', exact: true }).click();
+    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
     const beforeApiLoad = await evidence();
     const beforeApiDocument = await page.evaluate(() =>
       window.originalStudioDocument(),
