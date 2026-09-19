@@ -5,7 +5,11 @@ import {
   robustPolygonize,
 } from '../../../region-engine.mjs';
 import { contourSignatures } from '../../../surface-lineage.mjs';
-import { makeOutputRef, resolveRegionScope } from '../../provenance.mjs';
+import {
+  makeOutputRef,
+  resolveRegionScope,
+  outputIdentity,
+} from '../../provenance.mjs';
 import { fillCurves, sampleCubic } from './fill.mjs';
 
 const writer = new GeoJSONWriter();
@@ -57,13 +61,20 @@ const stageRegions = (
   ownerNodeId,
   diagnostics = [],
   dependencies = [],
-) =>
-  result(
+) => {
+  const identities = value.regions.map((region) => outputIdentity(region.ref));
+  if (new Set(identities).size !== identities.length)
+    return blocked(
+      'ambiguous-output',
+      '分裂结果没有唯一的来源身份；请使用显式分区建立输出契约',
+    );
+  return result(
     value.regions.length ? 'ready' : 'empty',
     value,
     diagnostics,
     dependencies,
   );
+};
 const selected = (stage, scope) => {
   if (stage.status !== 'ready' && stage.status !== 'empty') return { stage };
   try {
@@ -461,7 +472,7 @@ export const offsetOperator = scopedRegionOperator('offset', (region, args) => {
     output(
       args.ownerNodeId,
       args.operator.id,
-      text(['offset', region.ref.key, distanceMM]),
+      text(['offset', region.ref.key]),
       region.ref.lineage,
       part,
       region.ref.instances,
@@ -488,7 +499,7 @@ export const regionArrayOperator = scopedRegionOperator(
         'regions',
         text(['region-array', region.ref.key, index]),
         region.ref.lineage,
-        [{ operatorId: args.operator.id, index }],
+        [...region.ref.instances, { operatorId: args.operator.id, index }],
       ),
       geometry: transformGeo(region.geometry, rotate(center, angle * index)),
     }));
@@ -675,6 +686,50 @@ export const partitionOperator = {
   },
 };
 
+/** Collect independent outputs without unioning their geometry or ownership. */
+export const regionCollectOperator = {
+  type: 'region-collect',
+  inputPorts: { input: { domain: 'regions', min: 0 } },
+  outputPorts: { regions: { domain: 'regions' } },
+  validateParams: (params) =>
+    Object.keys(params).length === 0 || 'region-collect 不接受几何参数',
+  rebase: (operator) => clone(operator),
+  copy: (operator) => clone(operator),
+  evaluate: ({ ownerNodeId, inputs }) => {
+    const stages = inputs.input || [];
+    const invalid = stages.find(
+      (stage) => !['ready', 'empty'].includes(stage.status),
+    );
+    if (invalid)
+      return {
+        regions: result(
+          'blocked',
+          undefined,
+          clone(invalid.diagnostics || []),
+          clone(invalid.dependencies || []),
+        ),
+      };
+    const regions = stages.flatMap((stage) => stage.value?.regions || []);
+    if (regions.some((region) => region.ref.ownerNodeId !== ownerNodeId))
+      return {
+        regions: blocked('foreign-owner', '请通过区域引用把来源映射到当前部件'),
+      };
+    const identities = regions.map((region) => outputIdentity(region.ref));
+    if (new Set(identities).size !== identities.length)
+      return {
+        regions: blocked('duplicate-output', '集合输入重复发布了同一区域'),
+      };
+    return {
+      regions: stageRegions(
+        regionSet(ownerNodeId, clone(regions)),
+        ownerNodeId,
+        stages.flatMap((stage) => clone(stage.diagnostics || [])),
+        stages.flatMap((stage) => stage.dependencies || []),
+      ),
+    };
+  },
+};
+
 export const legacyRecipeCapabilities = Object.freeze({
   path: { operator: 'path', status: 'supported' },
   stroke: { operator: 'stroke', status: 'supported' },
@@ -693,6 +748,7 @@ export const legacyRecipeCapabilities = Object.freeze({
   radial_array: { operator: 'region-array', status: 'supported' },
 });
 export const regionOperatorSpecifications = [
+  regionCollectOperator,
   regionReferenceOperator,
   pathOperator,
   strokeOperator,

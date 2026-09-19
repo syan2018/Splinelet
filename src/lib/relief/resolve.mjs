@@ -144,10 +144,10 @@ export function resolveRelief(document, regionResults) {
       dependencies,
     );
   }
+
   const invalid = invalidAssignments(document, regions);
   if (invalid.length)
     return blocked([...diagnostics, ...invalid], dependencies);
-
   const reliefs = [];
   for (const region of regions) {
     if (!validOutputRef(region.ref) || !region.geometry)
@@ -231,7 +231,16 @@ export const resolveReliefOutput = (document, regionResults, target) => {
     sameOutputRef(relief.ref, target),
   );
   return matches.length === 1
-    ? result
+    ? {
+        ...result,
+        value: {
+          ...result.value,
+          reliefs: matches,
+          provenance: result.value.provenance.filter((item) =>
+            sameOutputRef(item.ref, target),
+          ),
+        },
+      }
     : blocked(
         [diagnostic('unresolved-reference', 'Relief 输出未唯一解析', target)],
         result.dependencies,

@@ -10,11 +10,14 @@ import {
   worldMatrix,
 } from '../../scene/transforms.mjs';
 import { ungroupNodes } from '../../scene/operations.mjs';
-import { editSketch } from '../../geometry/sketch-edit.mjs';
+import { createSourceCommand, SOURCE_ACTIONS } from './source.mjs';
 import { evaluateProgram } from '../../construction/document-evaluation.mjs';
 import { sameOutputRef } from '../../relief/appearance.mjs';
 import { firstPaintPlan } from '../../relief/assignments.mjs';
 import { createRegionCommand } from './regions.mjs';
+import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
+import { createSourceTransferCommand } from './source-transfer.mjs';
+import { createResourceCommand, RESOURCE_ACTIONS } from './resources.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -257,6 +260,70 @@ export function createAuthoringCommand(action) {
   const request = structuredClone(action);
   return (document, { idFactory }) => {
     const action = request;
+    if (action.kind === 'transfer-source')
+      return createSourceTransferCommand(action)(document, { idFactory });
+    if (RESOURCE_ACTIONS.includes(action.kind))
+      return createResourceCommand(action)(document, { idFactory });
+    if (action.kind === 'set-print-settings') {
+      if (action.layerHeightMM !== undefined) {
+        if (!Number.isFinite(action.layerHeightMM) || action.layerHeightMM <= 0)
+          throw Error('打印层高必须是正数');
+        document.manufacturing.layerHeightMM = action.layerHeightMM;
+      }
+      if (action.layerOrder !== undefined) {
+        const ids = Object.keys(document.manufacturing.layers);
+        if (
+          !Array.isArray(action.layerOrder) ||
+          action.layerOrder.length !== ids.length ||
+          new Set(action.layerOrder).size !== ids.length ||
+          action.layerOrder.some((id) => !ids.includes(id))
+        )
+          throw Error('层顺序必须完整且不重复');
+        document.manufacturing.layerOrder = [...action.layerOrder];
+      }
+      return { document, changedRefs: [] };
+    }
+    if (action.kind === 'clear-region-paint') {
+      currentTarget(document, action.target);
+      for (const [id, item] of Object.entries(document.appearances.overrides))
+        if (sameOutputRef(item.target, action.target))
+          delete document.appearances.overrides[id];
+      assign(
+        document.reliefDefinitions.overrides,
+        action.target,
+        { enabled: false },
+        idFactory,
+      );
+      return { document, changedRefs: [action.target] };
+    }
+    if (action.kind === 'set-relief') {
+      currentTarget(document, action.target);
+      assign(
+        document.reliefDefinitions.overrides,
+        action.target,
+        action.value,
+        idFactory,
+      );
+      return { document, changedRefs: [action.target] };
+    }
+    if (Object.values(ADVANCED_ACTIONS).includes(action.kind))
+      return createAdvancedCommand(action)(document, { idFactory });
+    if (SOURCE_ACTIONS.includes(action.kind))
+      return createSourceCommand(action)(document, { idFactory });
+    if (action.kind === 'set-node') {
+      const node = document.nodes[action.nodeId];
+      if (!node) throw Error('部件不存在');
+      if (
+        Object.keys(action.value || {}).some(
+          (key) => !['name', 'visible', 'locked'].includes(key),
+        )
+      )
+        throw Error('只能修改名称、显示与锁定');
+      if (Object.hasOwn(action.value || {}, 'name'))
+        writable(document, node.id);
+      Object.assign(node, action.value);
+      return { document, changedRefs: [nodeRef(node.id)] };
+    }
     if (['partition-regions', 'cut-hole'].includes(action.kind))
       return createRegionCommand(action)(document, { idFactory });
     if (['draw-partition', 'draw-hole'].includes(action.kind)) {
@@ -314,12 +381,6 @@ export function createAuthoringCommand(action) {
         ]),
         changedRefs: action.nodeIds.map(nodeRef),
       };
-    }
-    if (['set-vertex', 'set-handle'].includes(action.kind)) {
-      const sketch = document.sketches[action.sketchId];
-      if (!sketch) throw Error('线条来源不存在');
-      writable(document, sketch.ownerNodeId);
-      return editSketch(document, action, { idFactory });
     }
     if (action.kind === 'close-path') {
       const sketch = document.sketches[action.sketchId],

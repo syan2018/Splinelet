@@ -276,7 +276,10 @@ export function applySketchTransfer(document, plan) {
     !same(current.externalReferences, plan.externalReferences)
   )
     throw Error('Sketch transfer plan 已过期或被篡改；请重新生成影响计划');
-  if (current.externalReferences.length)
+  const unsupportedReferences = current.externalReferences.filter(
+    (impact) => impact.kind !== 'collection',
+  );
+  if (unsupportedReferences.length)
     throw Error('源转移需要先处理 externalReferences 的引用影响');
   const next = structuredClone(document);
   const source = next.sketches[current.sourceSketchId];
@@ -297,22 +300,27 @@ export function applySketchTransfer(document, plan) {
   }
   for (const edgeId of current.closure.edgeIds) {
     const edge = source.edges[edgeId];
-    if (
-      !edge ||
-      edge.startHandle.kind !== 'free' ||
-      edge.endHandle.kind !== 'free'
-    )
-      throw Error('转移关系 Handle 需要 T05 的显式重表达');
+    if (!edge) throw Error(`转移闭包中的 Edge 不存在：${edgeId}`);
+    const moveHandle = (handle) => {
+      if (handle.kind === 'free')
+        return {
+          kind: 'free',
+          vector: transformVector(matrix, handle.vector),
+        };
+      const relation = next.relations[handle.relationId];
+      if (
+        relation?.kind !== 'handle-continuity' ||
+        !current.closure.relationIds.includes(relation.id)
+      )
+        throw Error(
+          `转移关系 Handle 不能安全重表达：relation:${handle.relationId}`,
+        );
+      return { ...handle };
+    };
     target.edges[edgeId] = {
       ...edge,
-      startHandle: {
-        kind: 'free',
-        vector: transformVector(matrix, edge.startHandle.vector),
-      },
-      endHandle: {
-        kind: 'free',
-        vector: transformVector(matrix, edge.endHandle.vector),
-      },
+      startHandle: moveHandle(edge.startHandle),
+      endHandle: moveHandle(edge.endHandle),
     };
     delete source.edges[edgeId];
   }

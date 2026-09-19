@@ -92,6 +92,11 @@ export function evaluatePlanar(
     resolveScalar: ({ value }) => resolveScalar(document, value),
     resolveDatum: (id) => resolveDatum(document, id),
     resolveRelation: (args) => resolveRelation({ ...args, document }),
+    ...Object.fromEntries(
+      ['resolveSketch', 'resolveScalar', 'resolveDatum', 'resolveRelation']
+        .filter((name) => typeof options[name] === 'function')
+        .map((name) => [name, options[name]]),
+    ),
   });
 }
 

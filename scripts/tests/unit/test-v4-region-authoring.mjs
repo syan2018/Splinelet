@@ -330,3 +330,33 @@ assert.equal(
 console.log(
   'PASS: V4 region commands partition/cut exact targets, bind identities, migrate assignments atomically, and undo once.',
 );
+
+// Full subtraction is a legal empty Shape, with transactional contribution removal.
+const emptySession = createEditorSession(configuredDocument(), { idFactory });
+author(emptySession, {
+  kind: 'draw-path',
+  points: square(0, 0, 10),
+  closed: true,
+});
+const emptyOwner = Object.keys(emptySession.state.document.nodes)[0];
+const emptyTarget = regionStage(emptySession.state.document, emptyOwner).value
+  .regions[0].ref;
+paintAndThicken(emptySession, emptyTarget);
+const beforeEmpty = emptySession.state.document;
+author(emptySession, {
+  kind: 'draw-hole',
+  targets: [emptyTarget],
+  points: square(-1, -1, 12),
+  closed: true,
+});
+assert.equal(
+  evaluateProgram(emptySession.state.document, emptyOwner).regions.status,
+  'empty',
+);
+assert.ok(emptySession.state.document.nodes[emptyOwner]);
+assert.equal(
+  Object.keys(emptySession.state.document.appearances.overrides).length,
+  0,
+);
+emptySession.undo({ expectedRevision: emptySession.state.revision });
+assert.deepEqual(emptySession.state.document, beforeEmpty);

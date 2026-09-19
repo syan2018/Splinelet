@@ -206,9 +206,14 @@ const migrateAssignments = (document, targets, regions, allocateId) => {
   );
 };
 
-const requireReadyResult = (document, ownerNodeId, message) => {
+const requireReadyResult = (
+  document,
+  ownerNodeId,
+  message,
+  allowEmpty = false,
+) => {
   const stage = evaluateProgram(document, ownerNodeId).regions;
-  if (stage.status !== 'ready') {
+  if (stage.status !== 'ready' && !(allowEmpty && stage.status === 'empty')) {
     const detail = stage.diagnostics?.map((item) => item.message).join('；');
     throw Error(`${message}${detail ? `：${detail}` : ''}`);
   }
@@ -310,6 +315,7 @@ export function createRegionCommand(action) {
       document,
       current.ownerNodeId,
       '区域操作无法生成有效结果',
+      request.kind === 'cut-hole',
     );
     const selectedIds = new Set(targets.map(outputIdentity));
     const untouched = finalStage.value.regions.filter((region) =>
@@ -317,7 +323,27 @@ export function createRegionCommand(action) {
     );
     if (untouched.length)
       throw Error('区域操作仍发布了被替换的旧目标，拒绝提交');
-    migrateAssignments(document, targets, finalStage.value.regions, allocateId);
+    if (finalStage.status === 'empty') {
+      // A deliberate full cut removes these contributions, not the Shape or
+      // its source. The transaction history retains every removed assignment.
+      for (const records of [
+        document.appearances.overrides,
+        document.reliefDefinitions.overrides,
+        document.manufacturing.assignments,
+      ])
+        for (const [id, assignment] of Object.entries(records))
+          if (selectedIds.has(outputIdentity(assignment.target)))
+            delete records[id];
+      document.manufacturing.excluded = document.manufacturing.excluded.filter(
+        (ref) => !selectedIds.has(outputIdentity(ref)),
+      );
+    } else
+      migrateAssignments(
+        document,
+        targets,
+        finalStage.value.regions,
+        allocateId,
+      );
     const changedRefs = finalStage.value.regions
       .map((region) => region.ref)
       .filter(

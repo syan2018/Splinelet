@@ -1,9 +1,20 @@
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
+import { SOURCE_ACTIONS } from '../editing/commands/source.mjs';
+import { ADVANCED_ACTIONS } from '../editing/commands/advanced.mjs';
+import { RESOURCE_ACTIONS } from '../editing/commands/resources.mjs';
 import { exportSnapshot } from '../export/snapshot.mjs';
 
 export const V4_AGENT_API_VERSION = '5.0';
 
 const AUTHORING_ACTIONS = Object.freeze([
+  ...SOURCE_ACTIONS,
+  ...Object.values(ADVANCED_ACTIONS),
+  ...RESOURCE_ACTIONS,
+  'set-node',
+  'transfer-source',
+  'set-print-settings',
+  'set-relief',
+  'clear-region-paint',
   'partition-regions',
   'cut-hole',
   'draw-partition',
@@ -107,6 +118,7 @@ const publicEditorState = (state) => ({
   epoch: state.epoch,
   revision: state.revision,
   previewId: state.previewId,
+  preview: state.preview ? clone(state.preview) : null,
   canUndo: state.canUndo,
   canRedo: state.canRedo,
   lastChange: state.lastChange ? clone(state.lastChange) : null,
@@ -211,6 +223,10 @@ export function createV4AgentAPI(options = {}) {
     'document.get',
     'legacy.read',
     'authoring.run',
+    'preview.begin',
+    'preview.update',
+    'preview.commit',
+    'preview.cancel',
     'undo',
     'redo',
     ...(typeof options.getSelection === 'function' ? ['selection.get'] : []),
@@ -226,7 +242,7 @@ export function createV4AgentAPI(options = {}) {
     evaluationDomains: advertisedEvaluation,
     exports: exportCapabilities,
     selectionRead: typeof options.getSelection === 'function',
-    previewWrites: false,
+    previewWrites: true,
     preparedWrites: false,
     legacy: {
       readProjection: true,
@@ -266,7 +282,24 @@ export function createV4AgentAPI(options = {}) {
       assertIdentity(editor.state, args);
       return legacyProjection(editor.state);
     }
-    if (action === 'authoring.run') {
+    if (action === 'preview.begin') {
+      assertObject(args);
+      return publicEditorState(
+        editor.beginPreview({ expectedRevision: assertExpectedRevision(args) }),
+      );
+    }
+    if (action === 'preview.commit' || action === 'preview.cancel') {
+      assertObject(args);
+      const method =
+        action === 'preview.commit' ? 'commitPreview' : 'cancelPreview';
+      return publicEditorState(
+        editor[method]({
+          expectedRevision: assertExpectedRevision(args),
+          previewId: args.previewId,
+        }),
+      );
+    }
+    if (action === 'authoring.run' || action === 'preview.update') {
       assertObject(args);
       const expectedRevision = assertExpectedRevision(args);
       const request = assertObject(args.action, 'action');
@@ -276,6 +309,13 @@ export function createV4AgentAPI(options = {}) {
           `未实现的 authoring action：${request.kind}`,
         );
       assertNoLegacyIndexes(request);
+      if (action === 'preview.update')
+        return publicEditorState(
+          editor.updatePreview(createAuthoringCommand(request), {
+            expectedRevision,
+            previewId: args.previewId,
+          }),
+        );
       return publicEditorState(
         editor.dispatch(createAuthoringCommand(request), { expectedRevision }),
       );
@@ -300,6 +340,7 @@ export function createV4AgentAPI(options = {}) {
         });
       evaluation.update(editor.state);
       await evaluation.request({ domains });
+      assertIdentity(editor.state, args);
       const identity = {
         epoch: editor.state.epoch,
         revision: editor.state.revision,
