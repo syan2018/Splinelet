@@ -124,6 +124,8 @@ V4 会话中，源曲线导出窗口的“挤出厚度”是 Blender 脚本的�
 
 `load_project` 接受 `{project: 旧版工程对象}` 或 `{base64: 完整工程容器}`，二者只能提供一个，可附带显示用 `filename`。V4 会话复用文件打开管线：旧对象正式迁移，V4 容器校验文档与资源；成功后重置历史和选区，保持无文件绑定，旧工程导入标为待保存。可以将 V4 `export({format:'json'})` 返回的 `base64` 传回此入口；不要传只读展示对象或缺少资源的裸 V4 JSON。失败保留当前工程；绘制计算、保存或拖动期间拒绝替换。
 
+V4 的 `set_point` 保留原图像素坐标与控制柄 1/2 参数，通过当前源视图解析稳定身份，复用鼠标拖柄的命令；平滑/对称模式会按原规则联动另一侧控制柄。一次调用对应一次撤销，过期视图或受约束的非法改写不会退回旧工程写入。
+
 ## 精确样条 API 4.1
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。

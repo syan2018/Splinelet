@@ -544,6 +544,46 @@ async function main() {
     const beforeRefit = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
+    for (const point of [1, 2]) {
+      const beforeApiHandle = await evidence();
+      const movedApiHandle = await page.evaluate(async (pointIndex) => {
+        const { splines } = await window.traceStudio.call('spline_inspect', {});
+        const spline = splines[0];
+        const original =
+          pointIndex === 1
+            ? spline.nodes[0].handleRight
+            : spline.nodes[1].handleLeft;
+        const position = { x: original.x + 6, y: original.y + 4 };
+        await window.traceStudio.call('set_point', {
+          pathId: spline.id,
+          curve: 0,
+          point: pointIndex,
+          position,
+        });
+        const inspected = await window.traceStudio.call('spline_inspect', {
+          pathIds: [spline.id],
+        });
+        return {
+          position,
+          actual:
+            pointIndex === 1
+              ? inspected.splines[0].nodes[0].handleRight
+              : inspected.splines[0].nodes[1].handleLeft,
+        };
+      }, point);
+      assert.ok(
+        Math.abs(movedApiHandle.position.x - movedApiHandle.actual.x) < 1e-8,
+      );
+      assert.ok(
+        Math.abs(movedApiHandle.position.y - movedApiHandle.actual.y) < 1e-8,
+      );
+      assert.equal((await evidence()).revision, beforeApiHandle.revision + 1);
+      await page.getByRole('button', { name: '撤销', exact: true }).click();
+      assert.deepEqual(
+        await page.evaluate(() => window.originalStudioDocument()),
+        beforeRefit,
+      );
+    }
     const requestRefit = async () => {
       await page.getByRole('button', { name: '选择 (V)', exact: true }).click();
       await page.locator('[data-tree-path]').first().click();

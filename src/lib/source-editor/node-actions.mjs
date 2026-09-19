@@ -1,5 +1,9 @@
 import { straightCubic } from './connect.mjs';
-import { nodeModes, setContinuity } from './continuity.mjs';
+import {
+  nodeModes,
+  setContinuity,
+  moveHandle as moveLegacyHandle,
+} from './continuity.mjs';
 import { deleteNodes } from './selection.mjs';
 
 const HANDLE_MODES = new Set(['corner', 'smooth', 'symmetric']);
@@ -31,6 +35,18 @@ const requireMode = (mode) => {
   if (!HANDLE_MODES.has(mode)) throw Error('无效节点模式');
 };
 
+const requireHandle = (path, curveIndex, pointIndex, position) => {
+  if (
+    !Number.isInteger(curveIndex) ||
+    curveIndex < 0 ||
+    !path.curves[curveIndex] ||
+    ![1, 2].includes(pointIndex)
+  )
+    throw Error('set_point 支持现有曲线的控制柄 1 或 2');
+  if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y))
+    throw Error('控制柄坐标必须为有限像素坐标');
+};
+
 const validateModes = (path, indices, mode) => {
   requireMode(mode);
   // setContinuity owns the compatibility rules for endpoints and closed seams.
@@ -45,6 +61,22 @@ export function createLegacyNodeActions({ getProject, transact }) {
   if (typeof getProject !== 'function' || typeof transact !== 'function')
     throw Error('节点操作需要工程读取和事务接口');
   return Object.freeze({
+    moveHandle(pathId, curveIndex, pointIndex, position) {
+      requireHandle(
+        requirePath(getProject(), pathId),
+        curveIndex,
+        pointIndex,
+        position,
+      );
+      transact((project) =>
+        moveLegacyHandle(
+          requirePath(project, pathId),
+          curveIndex,
+          pointIndex,
+          position,
+        ),
+      );
+    },
     setModes(pathId, indices, mode) {
       const path = requirePath(getProject(), pathId);
       const selected = nodeIndices(path, indices);
@@ -142,6 +174,23 @@ export function createV4NodeActions({ runtime, project, onCommit }) {
     return nextProject;
   };
   return Object.freeze({
+    moveHandle(pathId, curveIndex, pointIndex, position) {
+      const { path } = capturedPath(runtime, project, pathId);
+      requireHandle(path, curveIndex, pointIndex, position);
+      const identityId = path.identity.handleIds[curveIndex]?.[pointIndex - 1];
+      if (typeof identityId !== 'string') throw Error('控制柄身份已失效');
+      commit(
+        runtime.commandSource(
+          {
+            kind: 'move-handle',
+            pathId,
+            identityId,
+            pixelPoint: position,
+          },
+          { project },
+        ),
+      );
+    },
     setModes(pathId, indices, mode) {
       requireMode(mode);
       const { path } = capturedPath(runtime, project, pathId);

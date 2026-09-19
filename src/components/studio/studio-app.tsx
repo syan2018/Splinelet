@@ -3293,14 +3293,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         )
           throw Error('set_point 支持现有曲线的控制柄 1 或 2');
         const point = validPoint(a.position);
-        transact((p) => {
-          moveHandle(
-            p.paths.find((q) => q.id === a.pathId)!,
-            a.curve,
-            a.point,
-            point,
-          );
-        });
+        nodeActions().moveHandle(a.pathId, a.curve, a.point, point);
         return { updated: true };
       },
       export: (a: AgentExportArgs) => {

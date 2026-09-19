@@ -341,3 +341,7 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 源曲线导出偏好归属修正：原挤出厚度只用于 Blender 源曲线脚本，V4 会话字段由 newReliefDepthMM 明确更名为 blenderExtrusionMM，相关宿主、投影及 fixture 统一更新，不涉及规范文档字段。原输入通过 setBlenderExtrusion 刷新只读展示，不重建编辑会话、不加入历史、不改变 dirty 或区域浮雕；预览期间拒绝。原浏览器输入 7.5 后核对 Blender 脚本数据，且工程证据和 API/下载容器不变。此项不代表工程宽度、完整 API 或默认入口签收。
 
 2026-09-20 API 工程打开接线：load_project 支持旧 project 或完整容器 base64 的互斥输入，共用 loadProjectFile 与 openProject 的规范迁移/校验和替换后清理；V4 裸 JSON 不作为资源完整工程接受。成功重置历史、解绑并清理候选/拟合/选区，旧导入 dirty；失败在 host.open 之前保留当前工程。返回捕获的那次打开结果，避免连续调用的迟到响应读取下一份工程。旧文件与示例调用现在等待异步 API 结果并接收错误。完整精确样条 API、工程宽度和默认入口仍待完成。
+
+2026-09-20 set_point 接线：原 API 改走共享 node-actions.moveHandle；V4 从捕获源视图的有向 handleIds 解析稳定 edge-end，提交既有 move-handle 源命令，复用鼠标的画布/pose 换算、模式联动与关系保护。旧分支仍调用原 moveHandle。单元对照旋转/平移部件上的普通、smooth、symmetric 控制柄和单步撤销，检查非法索引/位置及过期控制器无部分写入。原浏览器检查两侧柄 API 写后准确回读和一次撤销恢复完整文档。完整 spline_apply、组织 API、工程宽度及默认入口仍待推进。
+
+2026-09-20 原入口剩余审阅：默认切换前还须接通 splitAt 双击拆分（已有 split-span 源命令）、spline_apply 原子精确样条批量写入、manage_group/move_paths（原 groupId 唯一归属与可重叠 collection 需显式适配，不可直接等同）、widthMM 的原比例语义、ModelWorkspace 全套旧 model 写入，以及承托部件预览的 commitPreparedDisplay。app/page.tsx 和 desktop/main.tsx 仍未装配 host。这些不能由现有单一路径绿色测试替代验收。

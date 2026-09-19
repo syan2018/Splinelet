@@ -123,6 +123,10 @@ for (const [label, run] of [
   ['setModes', (actions, path) => actions.setModes(path.id, [1], 'symmetric')],
   ['straighten', (actions, path) => actions.straighten(path.id, 0)],
   ['deleteNodes', (actions, path) => actions.deleteNodes(path.id, [1], 1.5)],
+  [
+    'moveHandle',
+    (actions, path) => actions.moveHandle(path.id, 0, 2, { x: 450, y: 275 }),
+  ],
 ]) {
   const current = fixture();
   const before = current.editor.state.document;
@@ -150,10 +154,34 @@ const staleActions = stale.actions();
 staleActions.setModes(stalePath.id, [1], 'smooth');
 assert.throws(() => staleActions.straighten(stalePath.id, 0), /过期|失效/);
 assert.equal(stale.commits(), 1, 'a stale controller cannot commit again');
+assert.throws(
+  () => staleActions.moveHandle(stalePath.id, 0, 1, { x: 10, y: 20 }),
+  /过期|失效/,
+);
+
+for (const mode of ['smooth', 'symmetric']) {
+  const current = fixture();
+  const path = current.path();
+  current.legacy.setModes(path.id, [1], mode);
+  current.actions().setModes(path.id, [1], mode);
+  current.legacy.moveHandle(path.id, 0, 2, { x: 452, y: 281 });
+  current.actions().moveHandle(path.id, 0, 2, { x: 452, y: 281 });
+  assertSamePath(
+    current.path(),
+    current.legacyPath(),
+    `${mode} opposite handle follows original semantics`,
+  );
+}
 
 const atomic = fixture();
 const atomicPath = atomic.path();
 const atomicBefore = atomic.editor.state.document;
+for (const args of [
+  [-1, 1, { x: 0, y: 0 }],
+  [0, 3, { x: 0, y: 0 }],
+  [0, 1, { x: NaN, y: 0 }],
+])
+  assert.throws(() => atomic.actions().moveHandle(atomicPath.id, ...args));
 atomic.legacyPath().fitError = 0.9;
 atomic.legacy.setModes(atomicPath.id, [1], 'smooth');
 assert.equal(

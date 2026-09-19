@@ -268,3 +268,11 @@ outputs/v4-qa/original-export-preference-2026-09-20.log 为 PASS：原导出对�
 API 的旧 project 对象和完整容器 base64 现在共用原文件打开流程；输入互斥、文件资源经规范解码校验，旧工程通过正式迁移。无效输入保持当前工程；成功后清空历史和选区、解绑目标，旧导入标为 dirty。异步 API 返回对应打开快照的路径数，原旧文件与示例调用也等待 API 错误，不留未处理 Promise。
 
 outputs/v4-qa/original-api-load-final-2026-09-20.log 为 PASS：V4 导出回读与文档完全一致，无效容器保持当前状态，V4/旧 Sandrone 导入后均可继续绘制和撤销；同一批次打开不同路径数的工程，各自返回正确路径数，最终当前工程为后一个。outputs/v4-qa/check-all-api-load-2026-09-20.log 记录 pnpm check:all 退出 0（111 个单元测试、类型、lint、格式、Rust 与双端生产构建）。完整 API、工程宽度和默认入口仍未签收。
+
+## 2026-09-20 set_point 控制柄 API
+
+原 set_point 的 legacy transact 已替换为 node-actions.moveHandle 适配器：V4 从捕获源视图解析有向控制柄身份，复用鼠标源命令与坐标变换；旧模式仍调用原 moveHandle。节点动作单测对照有旋转/平移 pose 的普通、smooth、symmetric 控制柄，检查另一侧联动、单次撤销、过期控制器和无效输入无写入。
+
+outputs/v4-qa/original-api-handle-2026-09-20.log 为 PASS：原界面中通过 set_point 分别移动两侧柄，用 spline_inspect 回读精确像素位置，各自只增一次 revision，撤销恢复完整文档；其余原界面 Sandrone、文件、实体及导入流程继续通过。完整 API 与默认入口仍未签收。
+
+验证收口：check-all-api-handle-2026-09-20.log 中类型、lint 与 111 项单元测试通过，格式步骤因同时更新本验收文档而失败。完成文档格式化后，单独重跑 format:check、desktop:format:check、desktop:check 均退出 0；build-api-handle-2026-09-20.log 记录双端生产构建退出 0。
