@@ -1,5 +1,6 @@
 'use client';
 import type { ModifierCommand } from '@/lib/modifier-types';
+import { objectPipeline } from '@/lib/modifier-stages.mjs';
 type Output = { key: string; signature: string };
 type Graph = { outputs: Output[] };
 type PipelineObject = {
@@ -7,6 +8,7 @@ type PipelineObject = {
   name: string;
   pathIds?: string[];
   surfaceGraph?: Graph;
+  modifiers?: { id: string; name: string; type: string; enabled: boolean }[];
 };
 type PipelineScene = {
   errors?: { objectId: string; message: string; pathIds?: string[] }[];
@@ -28,7 +30,6 @@ export default function ConstructionPipeline({
   busy?: boolean;
 }) {
   const failure = scene?.errors?.find((e) => e.objectId === object.id);
-  const graph = scene?.surfaceGraphs?.[object.id] || object.surfaceGraph;
   const proposal = scene?.surfaceGraphCandidates?.[object.id];
   const old = object.surfaceGraph?.outputs || [];
   const lost = proposal
@@ -44,11 +45,13 @@ export default function ConstructionPipeline({
       aria-label={object.name + ' 构造链'}
     >
       <div className="construction-stages">
-        <span>源轮廓</span>
-        <span>→ 分区轮廓 {graph?.outputs.length || ''}</span>
-        <span>→ 面片</span>
-        <span>→ 颜色 / 厚度</span>
-        <span>→ 分层定位 / 导出</span>
+        {objectPipeline(object).map((stage, i) => (
+          <span key={stage.id}>
+            {i ? '→ ' : ''}
+            {stage.name}
+            {stage.enabled ? '' : '（停用）'}
+          </span>
+        ))}
       </div>
       {failure ? (
         <>

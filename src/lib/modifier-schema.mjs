@@ -1,6 +1,14 @@
 // Declarative surface programs: references and parameters only, never meshes
 // or cached polygons. Imported face programs are nested below an object stack.
-export const modifierKinds = ['boolean', 'split', 'offset'];
+export const modifierKinds = [
+  'boolean',
+  'split',
+  'offset',
+  'radial_array',
+  'curve_mirror',
+  'curve_array',
+  'fill',
+];
 const booleanKinds = ['difference', 'union', 'intersection'];
 export function migrateModifiers(project, object) {
   if (object.modifiers !== undefined) return;
@@ -131,7 +139,13 @@ export function validateModifiers(object, swatches) {
       if (m.type === 'boolean' && !booleanKinds.includes(m.operation))
         throw Error('布尔运算类型无效');
       if (
-        m.type !== 'offset' &&
+        ![
+          'offset',
+          'radial_array',
+          'curve_mirror',
+          'curve_array',
+          'fill',
+        ].includes(m.type) &&
         (!m.input ||
           !name(m.input.id) ||
           !['path', 'region', 'object'].includes(m.input.kind))
@@ -148,6 +162,41 @@ export function validateModifiers(object, swatches) {
         );
       if (m.type === 'split' && m.input.kind !== 'path')
         throw Error('分区需要一条开放样条');
+      if (
+        ['radial_array', 'curve_array'].includes(m.type) &&
+        (!Number.isInteger(m.count) ||
+          m.count < 1 ||
+          m.count > 64 ||
+          !Number.isFinite(m.angleDeg) ||
+          Math.abs(m.angleDeg) > 360 ||
+          !m.centerMM ||
+          !Number.isFinite(m.centerMM.x) ||
+          !Number.isFinite(m.centerMM.y) ||
+          Math.abs(m.centerMM.x) > 10000 ||
+          Math.abs(m.centerMM.y) > 10000)
+      )
+        throw Error('旋转阵列需要 1–64 个副本、-360–360° 步进角和有效毫米中心');
+      if (
+        m.type === 'curve_mirror' &&
+        (!Number.isFinite(m.angleDeg) ||
+          Math.abs(m.angleDeg) > 360 ||
+          !m.centerMM ||
+          !Number.isFinite(m.centerMM.x) ||
+          !Number.isFinite(m.centerMM.y) ||
+          Math.abs(m.centerMM.x) > 10000 ||
+          Math.abs(m.centerMM.y) > 10000)
+      )
+        throw Error('镜像需要有效的轴角度和毫米中心');
+      if (
+        ['curve_mirror', 'curve_array', 'fill'].includes(m.type) &&
+        m.targets.kind !== 'all'
+      )
+        throw Error('曲线构造步骤作用于整个源曲线集合');
+      if (
+        m.type === 'fill' &&
+        (!Number.isFinite(m.joinMM) || m.joinMM < 0 || m.joinMM > 1)
+      )
+        throw Error('闭合构面接合距离须为 0–1 mm');
       if (
         m.type === 'offset' &&
         (!Number.isFinite(m.distanceMM) || Math.abs(m.distanceMM) > 20)

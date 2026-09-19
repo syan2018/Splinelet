@@ -71,6 +71,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const allowed = [
+      'spline_inspect',
+      'spline_apply',
       'creation_inspect',
       'creation_focus',
       'creation_select',

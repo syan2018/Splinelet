@@ -201,6 +201,7 @@ export function ModifierNumber({
   step = 0.1,
   min = -20,
   max = 20,
+  unit = 'mm',
 }: {
   value?: number;
   onChange: (value: number) => void;
@@ -208,6 +209,7 @@ export function ModifierNumber({
   step?: number;
   min?: number;
   max?: number;
+  unit?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const cancelled = useRef(false);
@@ -245,7 +247,7 @@ export function ModifierNumber({
             }
           }}
         />
-        <span>mm</span>
+        <span>{unit}</span>
       </div>
     </label>
   );

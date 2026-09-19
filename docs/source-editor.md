@@ -26,6 +26,16 @@
 - Delete / Backspace 仅在节点工具删除已选节点；选择工具不会通过快捷键删除源线。整条路径的删除使用明确的路径操作入口。
 - Ctrl+Z 撤销，Ctrl+Shift+Z 重做。滚轮围绕鼠标缩放；空格拖动或中键平移。
 
+## 端点吸附与对称接缝
+
+节点工具 A 默认开启「端点吸附」和「保持已有对称接缝」，可在节点属性中分别切换。单独拖动开放路径的头尾节点时，可吸附到可见路径的自由端点，以及所属部件经曲线镜像、旋转阵列得到的自由端点与对称接缝。已经接合的端点不会作为目标，避免额外接入形成分叉。
+
+选中端点后，淡色虚线显示由当前修改器计算出的对称接缝；拖近后显示青色辅助线、落点和吸附提示。吸附在 10 个屏幕像素内进入，离开 16 像素后释放，缩放不会改变屏幕上的操作距离。原本位于对称接缝上的端点默认沿接缝滑动，因此调形时仍与自己的镜像或相邻阵列副本接合。已有断口可以拖近辅助线重新接合，不需要手工输入完全相等的坐标。
+
+按住 Alt 暂时解除吸附和接缝保持；按住 Shift 使用原有水平／垂直约束并暂停吸附。控制柄、内部节点和多选节点仍使用原来的移动方式。吸附同时平移端点与相邻控制柄，不添加闭合段、不合并源路径，也不改变尖角／平滑类型；一次拖动只产生一次撤销记录，Esc 取消整次拖动。
+
+接缝保持根据每次拖动开始时的曲线与修改器推导，不是另存一套永久约束。修改器参数改变后辅助线随之重算；不合规的分叉或其他拓扑错误仍通过派生样条预览与构面诊断显示。`state.nodeSnapping` 返回 `{enabled, keepSeams, target}`，用于读取当前交互状态；精确样条 API 仍直接应用传入坐标，不隐式吸附。
+
 ## 路径树
 
 - 单击名称选择，Ctrl 增减，Shift 按当前可见列表连续选择；上下方向键移动选择。
@@ -105,6 +115,44 @@ await window.traceStudio.call('export', { format: 'svg' });
 ```
 
 `create_path` 接受候选编号或点坐标，返回 fitError / needsAnchor。`manage_group` 支持 create / rename / assign / visibility / delete。`move_path` 保留单条移动兼容入口；`select_path` 现在进入路径选择模式，节点编辑使用 `select_node`。`delete_node`、`merge_paths`、`straighten_span`、`get_project`、`inspect_geometry`、`undo`、`set_view`、`load_project` 保持可用。`refit_path` 仅打开确认框，不能绕过用户确认。拖动期间拒绝 API 修改工程。
+
+## 精确样条 API 4.1
+
+`spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。
+
+```js
+const call = (action, args = {}) => window.traceStudio.call(action, args);
+const { pathIds } = await call('spline_apply', {
+  objectId,
+  units: 'model',
+  splines: [
+    {
+      name: '半边轮廓',
+      closed: false,
+      role: 'guide',
+      nodes: [
+        { co: { x: 0, y: 20 }, handleRight: { x: 5, y: 15 } },
+        { co: { x: 4, y: 5 }, handleLeft: { x: 8, y: 10 } },
+      ],
+    },
+  ],
+});
+const { splines } = await call('spline_inspect', { pathIds, units: 'model' });
+// 修改读回的节点后可带原 id 提交；也可省略 nodes，只变换现有曲线。
+await call('spline_apply', {
+  units: 'model',
+  splines: [{ id: pathIds[0], matrix: [1, 0, 0, 1, 2, 0] }],
+});
+await call('creation_inspect');
+```
+
+- `units:'image'` 默认使用原图像素、左上原点、Y 向下；`model` 使用毫米、图像中心原点、Y 向上。控制点可以伸出底图。inspect 不携带图片数据。
+- 节点 `co` 必填；`handleLeft` / `handleRight` 是绝对坐标，省略时收在锚点。使用自由控制柄，不自动改变形状。闭合接缝只提供一次；移动锚点可同时平移它的两个柄。
+- 没有 `id` 是新建；有 `id` 必须已存在，并保留来源引用和归属。传 `nodes` 替换几何；复制可读出节点后去掉 id 提交。`objectId` 指定新线所属部件；不允许顺便转移已有路径。
+- `matrix:[a,b,c,d,e,f]` 在所选单位下计算 `x'=a*x+c*y+e, y'=b*x+d*y+f`，再转存储坐标；支持平移、缩放、旋转、镜像，拒绝退化矩阵。
+- 新路径 `role` 为 boundary/hole/guide；边界与洞须闭合，洞须指定部件。显式曲线流水线使用 guide 源线，避免先隐式构面。修改已有用途/归属继续使用创作命令。
+- 每批 1–200 条，每条最多 1000 个节点；开放至少 2 个、闭合至少 3 个。返回 `{pathIds}` 与输入顺序一致。整批验证后一次提交，任意错误均不产生部分修改；`undo` 撤销整批。
+- 两个入口通过浏览器、WebMCP `bezier_spline_*` 和本机 HTTP 共同暴露；WebMCP 也提供 `bezier_undo`。后续步骤见[曲线与面流水线](modifiers.md#曲线到面的流水线)。
 
 ## 验证
 

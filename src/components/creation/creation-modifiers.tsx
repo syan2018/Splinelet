@@ -14,6 +14,7 @@ import {
   ModifierName,
 } from './modifier-controls';
 import { targetForCell } from '@/lib/modifier-schema.mjs';
+import { modifierStages } from '@/lib/modifier-stages.mjs';
 import ConstructionPipeline from './construction-pipeline';
 import type {
   SurfaceModifier,
@@ -26,12 +27,18 @@ import type {
 } from '@/lib/modifier-types';
 
 const operationNames: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(modifierStages)
+      .filter(([type]) => type !== 'boolean')
+      .map(([type, stage]) => [type, stage.name]),
+  ),
   difference: '挖洞',
   intersection: '相交',
   union: '合并',
-  split: '分区',
-  offset: '轮廓偏移',
 };
+
+const curveModifierTypes = new Set(['curve_mirror', 'curve_array', 'fill']);
+const radialTypes = new Set(['radial_array', 'curve_array']);
 
 function ModifierStack({
   stack,
@@ -183,7 +190,7 @@ function ModifierStack({
                 </div>
               </details>
             </div>
-            {!sourceFeatureId && (
+            {!sourceFeatureId && !curveModifierTypes.has(m.type) && (
               <SurfaceTargets
                 value={m.targets}
                 options={unique}
@@ -196,10 +203,21 @@ function ModifierStack({
                 className="modifier-summary"
                 onClick={() => setExpanded([...expanded, m.id])}
               >
-                {operationNames[m.operation || m.type]}
+                {radialTypes.has(m.type)
+                  ? `${operationNames[m.type]}：${m.count ?? 4} 份 · 每 ${m.angleDeg ?? 90}° · 中心 (${m.centerMM?.x ?? 0}, ${m.centerMM?.y ?? 0}) mm`
+                  : m.type === 'curve_mirror'
+                    ? `曲线镜像：轴 ${m.angleDeg ?? 90}° · 中心 (${m.centerMM?.x ?? 0}, ${m.centerMM?.y ?? 0}) mm`
+                    : m.type === 'fill'
+                      ? `闭合构面：接合 ${m.joinMM ?? 0.001} mm`
+                      : operationNames[m.operation || m.type]}
                 {m.type === 'offset'
                   ? ` ${m.distanceMM} mm`
-                  : `：${inputName || '来源缺失'}`}
+                  : ![
+                      'radial_array',
+                      'curve_mirror',
+                      'curve_array',
+                      'fill',
+                    ].includes(m.type) && `：${inputName || '来源缺失'}`}
               </button>
             )}
             {open && (
@@ -220,7 +238,9 @@ function ModifierStack({
                     </select>
                   </label>
                 )}
-                {m.type !== 'offset' && (
+                {!['offset', 'radial_array', ...curveModifierTypes].includes(
+                  m.type,
+                ) && (
                   <ModifierInput
                     value={m.input}
                     project={project}
@@ -257,6 +277,102 @@ function ModifierStack({
                     value={m.distanceMM}
                     onChange={(distanceMM: number) => update({ distanceMM })}
                   />
+                )}
+                {radialTypes.has(m.type) && (
+                  <>
+                    <ModifierNumber
+                      label="阵列数量"
+                      value={m.count ?? 4}
+                      min={1}
+                      max={64}
+                      step={1}
+                      unit="份"
+                      onChange={(count: number) => update({ count })}
+                    />
+                    <ModifierNumber
+                      label="每份旋转角度"
+                      value={m.angleDeg ?? 90}
+                      min={-360}
+                      max={360}
+                      step={1}
+                      unit="°"
+                      onChange={(angleDeg: number) => update({ angleDeg })}
+                    />
+                    <ModifierNumber
+                      label="阵列中心 X"
+                      min={-10000}
+                      max={10000}
+                      value={m.centerMM?.x ?? 0}
+                      onChange={(x: number) =>
+                        update({ centerMM: { x, y: m.centerMM?.y ?? 0 } })
+                      }
+                    />
+                    <ModifierNumber
+                      label="阵列中心 Y"
+                      min={-10000}
+                      max={10000}
+                      value={m.centerMM?.y ?? 0}
+                      onChange={(y: number) =>
+                        update({ centerMM: { x: m.centerMM?.x ?? 0, y } })
+                      }
+                    />
+                    <p className="modifier-hint">
+                      {m.type === 'radial_array'
+                        ? '原面保留；每个面按此角度绕中心复制并合并。'
+                        : '源线保持可编辑，复制线由此派生。'}
+                      中心坐标以模型毫米为单位，画布中心为 (0, 0)，Y 轴向上。
+                    </p>
+                  </>
+                )}
+                {m.type === 'curve_mirror' && (
+                  <>
+                    <ModifierNumber
+                      label="镜像轴角度"
+                      value={m.angleDeg ?? 90}
+                      min={-360}
+                      max={360}
+                      step={1}
+                      unit="°"
+                      onChange={(angleDeg: number) => update({ angleDeg })}
+                    />
+                    <ModifierNumber
+                      label="镜像中心 X"
+                      min={-10000}
+                      max={10000}
+                      value={m.centerMM?.x ?? 0}
+                      onChange={(x: number) =>
+                        update({ centerMM: { x, y: m.centerMM?.y ?? 0 } })
+                      }
+                    />
+                    <ModifierNumber
+                      label="镜像中心 Y"
+                      min={-10000}
+                      max={10000}
+                      value={m.centerMM?.y ?? 0}
+                      onChange={(y: number) =>
+                        update({ centerMM: { x: m.centerMM?.x ?? 0, y } })
+                      }
+                    />
+                    <p className="modifier-hint">
+                      镜像轴从模型 +X 轴逆时针计角；中心以毫米计，画布中心为 (0,
+                      0)，Y 轴向上。
+                    </p>
+                  </>
+                )}
+                {m.type === 'fill' && (
+                  <>
+                    <ModifierNumber
+                      label="端点接合范围"
+                      value={m.joinMM ?? 0.001}
+                      min={0}
+                      max={1}
+                      step={0.001}
+                      onChange={(joinMM: number) => update({ joinMM })}
+                    />
+                    <p className="modifier-hint">
+                      将前面派生出的曲线闭合为面；源线与镜像、阵列副本仍可继续编辑。
+                    </p>
+                  </>
                 )}
                 {m.type === 'split' && (
                   <>
@@ -323,7 +439,12 @@ export default function CreationModifiers({
   const [adding, setAdding] = useState(false),
     [kind, setKind] = useState('difference'),
     [input, setInput] = useState<ModifierInputRef | null>(null),
-    [distance, setDistance] = useState(0.5);
+    [distance, setDistance] = useState(0.5),
+    [count, setCount] = useState(4),
+    [angleDeg, setAngleDeg] = useState(90),
+    [centerX, setCenterX] = useState(0),
+    [centerY, setCenterY] = useState(0),
+    [joinMM, setJoinMM] = useState(0.001);
   if (!object)
     return (
       <div className="creation-empty">
@@ -336,15 +457,29 @@ export default function CreationModifiers({
     : kind;
   const sourceEntries = Object.entries(object.sources || {});
   const add = () => {
-    onCommand('modifier_add', {
+    const args: Record<string, unknown> = {
       objectId: object.id,
       type,
       operation: kind,
-      input,
-      distanceMM: distance,
       name: operationNames[kind],
       cellKeys,
-    });
+    };
+    if (curveModifierTypes.has(type)) {
+      delete args.cellKeys;
+      args.targets = { kind: 'all' };
+    }
+    if (type === 'offset') args.distanceMM = distance;
+    else if (radialTypes.has(type)) {
+      args.count = count;
+      args.angleDeg = angleDeg;
+      args.centerMM = { x: centerX, y: centerY };
+    } else if (type === 'curve_mirror') {
+      args.angleDeg = angleDeg;
+      args.centerMM = { x: centerX, y: centerY };
+    } else if (type === 'fill') {
+      args.joinMM = joinMM;
+    } else if (input) args.input = input;
+    onCommand('modifier_add', args);
     setAdding(false);
   };
   return (
@@ -360,6 +495,9 @@ export default function CreationModifiers({
       </div>
       <p className="modifier-hint">
         从上到下计算。源线条保留，随时停用或撤销。
+      </p>
+      <p className="modifier-hint">
+        曲线操作保留源线，闭合构面之后才能执行面操作。步骤顺序不匹配或轮廓未闭合时暂停输出，修复后恢复。
       </p>
       <ConstructionPipeline
         object={object}
@@ -408,6 +546,91 @@ export default function CreationModifiers({
               value={distance}
               onChange={setDistance}
             />
+          ) : radialTypes.has(type) ? (
+            <>
+              <ModifierNumber
+                label="阵列数量"
+                value={count}
+                min={1}
+                max={64}
+                step={1}
+                unit="份"
+                onChange={setCount}
+              />
+              <ModifierNumber
+                label="每份旋转角度"
+                value={angleDeg}
+                min={-360}
+                max={360}
+                step={1}
+                unit="°"
+                onChange={setAngleDeg}
+              />
+              <ModifierNumber
+                label="阵列中心 X"
+                min={-10000}
+                max={10000}
+                value={centerX}
+                onChange={setCenterX}
+              />
+              <ModifierNumber
+                label="阵列中心 Y"
+                min={-10000}
+                max={10000}
+                value={centerY}
+                onChange={setCenterY}
+              />
+              <p className="modifier-hint">
+                {type === 'radial_array'
+                  ? '原面保留，复制面将合并。'
+                  : '源线保持可编辑，复制线由此派生。'}
+                中心坐标以模型毫米为单位，画布中心为 (0, 0)，Y 轴向上。
+              </p>
+            </>
+          ) : type === 'curve_mirror' ? (
+            <>
+              <ModifierNumber
+                label="镜像轴角度"
+                value={angleDeg}
+                min={-360}
+                max={360}
+                step={1}
+                unit="°"
+                onChange={setAngleDeg}
+              />
+              <ModifierNumber
+                label="镜像中心 X"
+                min={-10000}
+                max={10000}
+                value={centerX}
+                onChange={setCenterX}
+              />
+              <ModifierNumber
+                label="镜像中心 Y"
+                min={-10000}
+                max={10000}
+                value={centerY}
+                onChange={setCenterY}
+              />
+              <p className="modifier-hint">
+                镜像轴从模型 +X 轴逆时针计角；中心以毫米计，画布中心为 (0, 0)，Y
+                轴向上。
+              </p>
+            </>
+          ) : type === 'fill' ? (
+            <>
+              <ModifierNumber
+                label="端点接合范围"
+                value={joinMM}
+                min={0}
+                max={1}
+                step={0.001}
+                onChange={setJoinMM}
+              />
+              <p className="modifier-hint">
+                将当前派生曲线闭合为面；不需要额外的输入操作数。
+              </p>
+            </>
           ) : (
             <ModifierInput
               value={input}
@@ -420,13 +643,22 @@ export default function CreationModifiers({
             />
           )}
           <p className="modifier-hint">
-            {cellKeys.length
-              ? `作用于当前选中的 ${cellKeys.length} 个面`
-              : '作用于整个部件'}
+            {curveModifierTypes.has(type)
+              ? '作用于整个部件的曲线构造'
+              : cellKeys.length
+                ? `作用于当前选中的 ${cellKeys.length} 个面`
+                : '作用于整个部件'}
             。添加后仍可修改范围。
           </p>
           <div className="modifier-actions">
-            <button disabled={type !== 'offset' && !input} onClick={add}>
+            <button
+              disabled={
+                !['offset', 'radial_array', ...curveModifierTypes].includes(
+                  type,
+                ) && !input
+              }
+              onClick={add}
+            >
               添加
             </button>
             <button onClick={() => setAdding(false)}>取消</button>

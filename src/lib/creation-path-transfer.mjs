@@ -1,4 +1,5 @@
 import { acceptDividerGraph, regionSources } from './creation-schema.mjs';
+import { usesCurvePipeline } from './modifier-stages.mjs';
 
 // A modifier or a paint record is not a lock on every path in a collection.
 // Only paths participating in the owner's surface construction need the
@@ -6,6 +7,7 @@ import { acceptDividerGraph, regionSources } from './creation-schema.mjs';
 // free to move, including out of an object they were just moved into.
 function independentPaths(project, object) {
   const dependencies = new Set([
+    ...(usesCurvePipeline(object) ? object.pathIds : []),
     ...object.featureIds.flatMap((id) =>
       regionSources(
         project.model,

@@ -188,6 +188,12 @@ pnpm build
 
 浏览器提供 `window.traceStudio.call(action, args)`。先用 `state`、`creation_inspect` 读取当前状态，再执行命令；涉及区域修改时使用最新 `revision`。
 
+Agent API 4.1 的 `spline_inspect` / `spline_apply` 可直接读写锚点与双控制柄，批量变换、复制或替换精确贝塞尔，一次提交对应一次撤销；详见[精确样条接口](docs/source-editor.md#精确样条-api-41)。重复纹样可通过“曲线镜像 → 曲线旋转阵列 → 闭合构面”构造，之后继续使用同一套颜色、厚度、分层和导出，见[修改器](docs/modifiers.md)。
+
+平面和立体画布支持[派生样条预览](docs/modifiers.md#派生样条预览)：切换源线、镜像和阵列阶段，拖动源节点即时查看结果，构面失败时仍显示当前曲线与未接合端点。API 可通过 `creation_inspect.curvePreviews` 读取相同阶段与诊断。
+
+节点工具支持[端点吸附与对称接缝](docs/source-editor.md#端点吸附与对称接缝)：拖近自由端点或镜像／阵列接缝即可精确对齐，已有对称接缝默认保持，沿辅助线调整形状；按 Alt 可暂时解除。
+
 ```js
 await window.traceStudio.call('creation_inspect');
 await window.traceStudio.call('creation_view', { view: '3d' });

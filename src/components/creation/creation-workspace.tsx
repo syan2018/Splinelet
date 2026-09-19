@@ -33,6 +33,7 @@ import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
 import SlicerTemplate from '../shared/slicer-template';
 import CreationView from './creation-view';
+import { useCurvePreview, CurvePreviewOverlay } from './creation-curve-preview';
 import PropertyNavigation, { globalPropertyPages } from './property-navigation';
 import CreationConnections from './creation-connections';
 import CreationModifiers from './creation-modifiers';
@@ -210,7 +211,7 @@ type WorkerRequest = {
 };
 type CreationApi = {
   state: () => unknown;
-  inspect: () => Promise<unknown>;
+  inspect: (getProject?: () => Project) => Promise<unknown>;
   command: (
     action: string,
     args: Record<string, unknown>,
@@ -330,6 +331,9 @@ export default function CreationWorkspace(p: Props) {
     [scene, setScene] = useState<CreationScene | null>(null),
     sceneRef = useRef<CreationScene | null>(null),
     revision = useRef<Project | null>(null),
+    evaluationFailure = useRef<{ project: Project; message: string } | null>(
+      null,
+    ),
     roleChecking = useRef(false),
     applyRolesRef = useRef<(args: RoleArgs) => Promise<unknown>>(async () => {
       throw Error('区域引擎尚未准备好');
@@ -550,6 +554,7 @@ export default function CreationWorkspace(p: Props) {
           setEvaluatedProject(snapshot);
           sceneRef.current = result;
           revision.current = snapshot;
+          evaluationFailure.current = null;
           setError('');
         })
         .catch((error: unknown) => {
@@ -558,6 +563,10 @@ export default function CreationWorkspace(p: Props) {
             setScene(null);
             sceneRef.current = null;
             revision.current = null;
+            evaluationFailure.current = {
+              project: snapshot,
+              message: errorMessage(error),
+            };
             setError(errorMessage(error));
           }
         })
@@ -776,6 +785,8 @@ export default function CreationWorkspace(p: Props) {
     };
   });
   const svgExport = () => {
+    const scene = sceneRef.current,
+      p = ref.current;
     if (!scene) throw Error('请等待区域更新后导出');
     const invalid = scene?.errors.find((e) =>
       scene.creation.objects.some((o) => o.id === e.objectId && o.visible),
@@ -905,12 +916,18 @@ export default function CreationWorkspace(p: Props) {
         view: p.viewMode,
         displayMode,
       }),
-      inspect: async () => {
-        const snapshot = ref.current.project;
-        const result = await call('creation', {}, snapshot);
-        if (ref.current.project !== snapshot)
-          throw Error('作品已变化，请重新读取候选区域');
-        return { ...result, revision: revisionId.current };
+      inspect: async (getProject = () => ref.current.project) => {
+        // Read the same committed evaluation used by commands and export.
+        // The root getter includes edits not yet delivered through React props.
+        const deadline = Date.now() + 30000;
+        while (revision.current !== getProject() || !sceneRef.current) {
+          const failed = evaluationFailure.current;
+          if (failed?.project === getProject()) throw Error(failed.message);
+          if (Date.now() >= deadline)
+            throw Error('区域计算尚未完成，请稍后重试 creation_inspect');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return { ...sceneRef.current, revision: revisionId.current };
       },
       command: (
         action: string,
@@ -929,7 +946,7 @@ export default function CreationWorkspace(p: Props) {
       focus: (id: string) => selectObject(id, {}, true),
       select_paths: selectionState.selectPaths,
       select_cells: (keys: string[]) => {
-        if (keys.some((k) => !scene?.cells.some((c) => c.key === k)))
+        if (keys.some((k) => !sceneRef.current?.cells.some((c) => c.key === k)))
           throw Error('选区已变化');
         selectionState.commit({ kind: 'cell', ids: keys });
       },
@@ -1072,6 +1089,7 @@ export default function CreationWorkspace(p: Props) {
           ) as unknown as Partial<CreationScene>),
         }
       : editedDraft;
+  const curvePreview = useCurvePreview(p.project, current?.id);
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.
@@ -1209,6 +1227,11 @@ export default function CreationWorkspace(p: Props) {
                   pointerEvents="none"
                 />
               ))}
+            <CurvePreviewOverlay
+              previews={curvePreview.previews}
+              project={p.project}
+              scale={p.scale}
+            />
           </g>,
           p.layer,
         )}
@@ -1218,6 +1241,7 @@ export default function CreationWorkspace(p: Props) {
             {p.viewMode === '3d' && (
               <CreationView
                 scene={draftScene as never}
+                curvePreviews={curvePreview.previews}
                 selected={
                   scope === 'object'
                     ? (draftScene?.cells || [])
@@ -1313,6 +1337,7 @@ export default function CreationWorkspace(p: Props) {
                 </details>
               )}
             </div>
+            {curvePreview.controls}
             {scope !== 'source' &&
               (objects.length > 0 || cellKeys.length > 0) &&
               p.tool === 'height' && (

@@ -28,7 +28,15 @@ export function modifierCommand(project, creation, action, args, scene) {
       id: crypto.randomUUID(),
       name:
         args.name ||
-        { boolean: '布尔', split: '分区', offset: '轮廓偏移' }[args.type],
+        {
+          boolean: '布尔',
+          split: '分区',
+          offset: '轮廓偏移',
+          radial_array: '旋转阵列',
+          curve_mirror: '曲线镜像',
+          curve_array: '曲线旋转阵列',
+          fill: '闭合构面',
+        }[args.type],
       type: args.type,
       enabled: true,
       targets: targets(),
@@ -37,7 +45,20 @@ export function modifierCommand(project, creation, action, args, scene) {
         : {}),
       ...(args.type === 'offset'
         ? { distanceMM: args.distanceMM ?? 0.5 }
-        : { input: structuredClone(args.input) }),
+        : ['radial_array', 'curve_array'].includes(args.type)
+          ? {
+              count: args.count ?? 4,
+              angleDeg: args.angleDeg ?? 90,
+              centerMM: structuredClone(args.centerMM ?? { x: 0, y: 0 }),
+            }
+          : args.type === 'curve_mirror'
+            ? {
+                angleDeg: args.angleDeg ?? 90,
+                centerMM: structuredClone(args.centerMM ?? { x: 0, y: 0 }),
+              }
+            : args.type === 'fill'
+              ? { joinMM: args.joinMM ?? 0.001 }
+              : { input: structuredClone(args.input) }),
       ...(args.type === 'split' ? { joinMM: args.joinMM ?? 0 } : {}),
     });
     return;
@@ -54,6 +75,9 @@ export function modifierCommand(project, creation, action, args, scene) {
           'targets',
           'distanceMM',
           'joinMM',
+          'count',
+          'angleDeg',
+          'centerMM',
         ].includes(key)
       )
         throw Error('修改器参数不支持修改');
@@ -61,6 +85,11 @@ export function modifierCommand(project, creation, action, args, scene) {
     }
     if (args.cellKeys || args.targets) current.targets = targets();
     if (args.cellKeys || args.targets || args.changes?.targets)
+      delete current.outputContract;
+    if (
+      current.type === 'radial_array' &&
+      ['count', 'angleDeg', 'centerMM'].some((k) => k in (args.changes || {}))
+    )
       delete current.outputContract;
   } else if (action === 'modifier_truncate') {
     if (args.confirm !== true)

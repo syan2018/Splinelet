@@ -21,6 +21,9 @@ pnpm desktop:check
 - `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
+- `test-spline-edit.mjs`：精确双柄样条、坐标往返、矩阵变换、来源保留与整批失败。
+- `test-curve-pipeline.mjs`：镜像、四向阵列、显式构面、中心留空、对称性、阶段顺序、失效隔离与恢复；`test-radial-array.mjs` 检查构面后的阵列、孔与实体。
+- `test-endpoint-snap.mjs`：组合变换接缝、精确接合、自由端点、分叉目标排除、屏幕距离与吸附滞回、非原点轴、停用修改器和源数据不变性。
 - `pnpm format:check`：只检查格式，不修改文件。
 - `pnpm check`：类型、lint、Node 单测与前端格式检查。
 - `pnpm build:all`：Web 与桌面前端构建。
@@ -32,6 +35,10 @@ pnpm desktop:check
 `tests/browser/test-property-navigation.cjs` 接收隔离 `page` 和 `tests/fixtures/shoulder-region.json` 工程对象，检查顶栏主菜单、左右栏入口归属、竖排属性分组、全局分类不随选区跳转、工具与选区属性范围、高级构造编辑器及源曲线导出入口。`test-selection-scope-browser.cjs` 同样使用此 fixture，覆盖区域属性提交、切换选区时的输入草稿、源线选择与恢复后实体导出；选择工具拖动不修改几何。
 
 ## 目录
+
+`examples/draw-cup-emblem.mjs` 导出 `drawCupEmblem(call)`，只通过公开 API 在实例工程副本上创建参数化纹样。`tests/browser/test-agent-spline-authoring.cjs` 接收隔离 Playwright page 和可选输出目录，自行载入已提交的 `public/sandrone-example.spl`，验证开放的 1/8 轮廓跨相邻扇区连接构面、母线编辑、拖动中的派生预览、断口诊断与平面/立体切换、一步撤销、参数控件、原杯身保留、保存重开及实体/3MF 导出。只能在独立测试端口和新 browser context 执行。
+
+`tests/browser/test-endpoint-snapping.cjs` 同样接收隔离 page 和可选截图目录，仅在实例工程的测试副本上用真实指针验证保持接缝、Alt 解除、断口吸附修复、一步撤销、Esc 取消及关闭吸附。不得连接用户页面或写入用户绑定的文件。
 
 - `build/`：供 Vite 配置导入的构建辅助模块；`vite-public-assets.ts` 服务和复制兼容静态资源，保留描线 Worker 的绝对 URL。
 - `tests/unit/`：可直接用 Node 运行的核心、几何和导出回归。

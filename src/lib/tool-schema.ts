@@ -5,6 +5,7 @@ export type ToolProperty = {
   properties?: Record<string, ToolProperty>;
   additionalProperties?: boolean;
   description?: string;
+  required?: string[];
   minimum?: number;
   maximum?: number;
 };

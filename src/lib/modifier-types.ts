@@ -1,4 +1,13 @@
 // UI contract for the declarative program and its evaluated diagnostics.
+import type { Cubic, Point } from './project';
+export type CurvePreview = {
+  objectId: string;
+  stageId: string;
+  name: string;
+  curves: Cubic[];
+  junctions: { point: Point; degree: number }[];
+  diagnostic?: string;
+};
 export type SurfaceRef = { key: string; name: string; topology?: string };
 export type SurfaceScope = { kind: 'all' | 'selected'; refs?: SurfaceRef[] };
 export type SurfaceOption = { ref: SurfaceRef; name: string };
@@ -10,13 +19,23 @@ export type ModifierInputRef = {
 export type SurfaceModifier = {
   id: string;
   name: string;
-  type: 'boolean' | 'split' | 'offset';
+  type:
+    | 'boolean'
+    | 'split'
+    | 'offset'
+    | 'radial_array'
+    | 'curve_mirror'
+    | 'curve_array'
+    | 'fill';
   operation?: string;
   enabled: boolean;
   targets: SurfaceScope;
   input?: ModifierInputRef;
   distanceMM?: number;
   joinMM?: number;
+  count?: number;
+  angleDeg?: number;
+  centerMM?: { x: number; y: number };
 };
 export type ModifierObject = {
   id: string;
@@ -42,6 +61,7 @@ export type ModifierCell = {
   targetTopology?: string;
 };
 export type ModifierScene = {
+  curvePreviews?: CurvePreview[];
   errors?: { objectId: string; message: string; pathIds?: string[] }[];
   creation: { objects: ModifierObject[] };
   cells: ModifierCell[];

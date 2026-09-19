@@ -4,6 +4,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   useEffectEvent,
   type ComponentProps,
 } from 'react';
@@ -38,6 +39,13 @@ import {
 } from '@/components/source-editor/spline-inspector';
 import { splineEndpoint, extendSpline } from '@/lib/source-editor/extend.mjs';
 import SplineEndpoints from '@/components/source-editor/spline-endpoints';
+import EndpointSnapOverlay, {
+  type EndpointSnapFeedback,
+} from '@/components/source-editor/endpoint-snap-overlay';
+import {
+  endpointSnapContext,
+  snapEndpoint,
+} from '@/lib/source-editor/endpoint-snap.mjs';
 import {
   cloneTraceValue,
   initialTraceProject,
@@ -45,6 +53,11 @@ import {
   type TraceSettings,
 } from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
+import { splineTools } from '@/lib/spline-api';
+import {
+  editSplines,
+  inspectSplines,
+} from '@/lib/source-editor/spline-edit.mjs';
 import type {
   AgentCreationCommandArgs,
   AgentCreationExportArgs,
@@ -232,6 +245,8 @@ type DragGesture = DragBase &
         point: number;
         base: Project;
         origin: Point;
+        snapContext?: ReturnType<typeof endpointSnapContext>;
+        snapTarget?: string;
       }
   );
 type GeometryReportItem = {
@@ -409,6 +424,11 @@ export default function StudioApp() {
     height: number;
   } | null>(null);
   const [gesturing, setGesturing] = useState(false);
+  const [nodeSnap, setNodeSnap] = useState(true),
+    [keepSeams, setKeepSeams] = useState(true),
+    [snapFeedback, setSnapFeedback] = useState<EndpointSnapFeedback | null>(
+      null,
+    );
   const lastNodeTap = useRef<{
     pathId: string;
     index: number;
@@ -1498,6 +1518,7 @@ export default function StudioApp() {
       stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
+    setSnapFeedback(null);
     setStatus('已取消拖动，恢复原位置');
   };
   const selectCanvasPath = (e: React.PointerEvent, id: string) => {
@@ -1633,6 +1654,31 @@ export default function StudioApp() {
         if (Math.abs(dx) > Math.abs(dy)) dy = 0;
         else dx = 0;
       }
+      const snapped =
+        g.kind === 'nodes' &&
+        g.snapContext &&
+        nodeSnap &&
+        !e.altKey &&
+        !e.shiftKey
+          ? snapEndpoint(
+              g.snapContext,
+              {
+                x: g.snapContext.origin.x + dx,
+                y: g.snapContext.origin.y + dy,
+              },
+              {
+                scale: vr.current.s,
+                preserveSeam: keepSeams,
+                previousId: g.snapTarget,
+              },
+            )
+          : null;
+      g.snapTarget = snapped?.id;
+      setSnapFeedback(snapped);
+      if (snapped && g.snapContext) {
+        dx = snapped.position.x - g.snapContext.origin.x;
+        dy = snapped.position.y - g.snapContext.origin.y;
+      }
       {
         const path = q.paths.find((p) => p.id === g.path);
         if (!path) return;
@@ -1654,7 +1700,10 @@ export default function StudioApp() {
       pr.current = q;
       setProject(q);
       setStatus(
-        '移动 X ' +
+        (snapped
+          ? `${snapped.locked ? '保持' : '吸附'} ${snapped.label} · Alt 解除 · `
+          : '') +
+          '移动 X ' +
           dx.toFixed(1) +
           ' / Y ' +
           dy.toFixed(1) +
@@ -1744,6 +1793,7 @@ export default function StudioApp() {
       stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
+    setSnapFeedback(null);
     if (!g.moved && g.collapseNode !== undefined) {
       const path = pr.current.paths.find((p) => p.id === g.path);
       if (path) setSelection(nodeSelection(path, g.collapseNode));
@@ -1870,9 +1920,13 @@ export default function StudioApp() {
       origin: coordinate(e),
       base: pr.current,
       moved: false,
+      ...(index !== null && ids.length === 1
+        ? { snapContext: endpointSnapContext(pr.current, path.id, index) }
+        : {}),
       ...(index !== null && ids.length > 1 ? { collapseNode: index } : {}),
     };
     setGesturing(true);
+    setSnapFeedback(null);
     stage.current?.setPointerCapture(e.pointerId);
   };
   const splitAt = (e: React.MouseEvent, pathId: string) => {
@@ -2514,6 +2568,7 @@ export default function StudioApp() {
         creation: creationApi.current?.state(),
         selectedNodes: nodesRef.current,
         gesturing: !!drag.current,
+        nodeSnapping: { enabled: nodeSnap, keepSeams, target: snapFeedback },
         view: vr.current,
         modifiers: modifierRef.current,
         mergeSource,
@@ -2593,7 +2648,7 @@ export default function StudioApp() {
           },
         ]),
       ),
-      creation_inspect: () => creationApi.current?.inspect(),
+      creation_inspect: () => creationApi.current?.inspect(() => pr.current),
       creation_focus: (a: AgentCreationFocusArgs) =>
         creationApi.current?.focus(a.objectId),
       creation_select: (a: AgentCreationSelectArgs) =>
@@ -2610,6 +2665,18 @@ export default function StudioApp() {
       creation_export: (a: AgentCreationExportArgs) =>
         creationApi.current?.export(a.format, false),
       create_path: createPath,
+      spline_inspect: (a: Parameters<typeof inspectSplines>[1]) =>
+        inspectSplines(pr.current, a),
+      spline_apply: (a: Parameters<typeof editSplines>[1]) => {
+        if (busyRef.current || fileBusyRef.current || drag.current)
+          throw Error('请先完成当前描线、拖动或保存');
+        const result = editSplines(pr.current, a);
+        setDoc(result.project as Project);
+        finish();
+        setProposed(null);
+        setStatus(`已提交 ${result.pathIds.length} 条精确样条 · Ctrl+Z 撤销`);
+        return { pathIds: result.pathIds };
+      },
       resume_path: (a: AgentPathEndArgs) => resumePath(a.pathId, a.end),
       add_anchor: (a: { position: Point } & Partial<TraceSettings>) =>
         addAnchor(a.position, a),
@@ -2761,7 +2828,7 @@ export default function StudioApp() {
   useEffect(() => {
     const traceWindow = window as TraceStudioWindow;
     traceWindow.traceStudio = {
-      version: '4.0',
+      version: '4.1',
       call: async (action: string, args: unknown = {}) => {
         const fn = apiRef.current?.[action];
         if (!fn) throw Error('未知操作 ' + action);
@@ -2789,6 +2856,7 @@ export default function StudioApp() {
     const names = [
       ...Object.keys(modelTools),
       ...Object.keys(creationTools),
+      ...Object.keys(splineTools),
       'state',
       'detect_candidates',
       'create_path',
@@ -2809,15 +2877,15 @@ export default function StudioApp() {
       'delete_node',
       'get_project',
       'set_point',
+      'undo',
       'inspect_geometry',
       'export',
     ];
     const properties: Record<string, unknown> = {
       ...Object.fromEntries(
-        Object.entries({ ...modelTools, ...creationTools }).map(([name, t]) => [
-          name,
-          t.properties,
-        ]),
+        Object.entries({ ...modelTools, ...creationTools, ...splineTools }).map(
+          ([name, t]) => [name, t.properties],
+        ),
       ),
       state: {},
       select_paths: { pathIds: { type: 'array', items: { type: 'string' } } },
@@ -2912,6 +2980,7 @@ export default function StudioApp() {
         nodeIndex: { type: 'integer' },
       },
       get_project: {},
+      undo: {},
       inspect_geometry: {},
       set_point: {
         pathId: { type: 'string' },
@@ -2928,7 +2997,8 @@ export default function StudioApp() {
             {
               name: 'bezier_' + name,
               description:
-                { ...modelTools, ...creationTools }[name]?.description ||
+                { ...modelTools, ...creationTools, ...splineTools }[name]
+                  ?.description ||
                 (
                   {
                     state:
@@ -2970,6 +3040,7 @@ export default function StudioApp() {
                       'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
                     get_project:
                       'Read complete image and editable Bezier geometry.',
+                    undo: 'Undo the last project mutation, including one entire spline_apply batch. Call creation_inspect afterwards to wait for recomputation.',
                     set_point:
                       'Edit a cubic control handle by path, curve index, and handle index.',
                     export:
@@ -2980,7 +3051,8 @@ export default function StudioApp() {
                 type: 'object',
                 properties: properties[name],
                 required:
-                  { ...modelTools, ...creationTools }[name]?.required ||
+                  { ...modelTools, ...creationTools, ...splineTools }[name]
+                    ?.required ||
                   (name === 'resume_path'
                     ? ['pathId', 'end']
                     : name === 'add_anchor'
@@ -3022,7 +3094,8 @@ export default function StudioApp() {
               },
               annotations: {
                 readOnlyHint:
-                  { ...modelTools, ...creationTools }[name]?.readOnly ||
+                  { ...modelTools, ...creationTools, ...splineTools }[name]
+                    ?.readOnly ||
                   [
                     'state',
                     'get_project',
@@ -3099,6 +3172,13 @@ export default function StudioApp() {
     dialog === 'export' ? inspectGeometry(project.paths) : [];
   const current = project.paths.find((p) => p.id === active),
     count = project.paths.reduce((s, p) => s + p.curves.length, 0);
+  const endpointGuides = useMemo(() => {
+    if (!nodeSnap || tool !== 'edit' || !current || selectedNodes.length !== 1)
+      return [];
+    return (
+      endpointSnapContext(project, current.id, selectedNodes[0])?.lines || []
+    );
+  }, [project, current, tool, selectedNodes, nodeSnap]);
   const projectSettings = (
     <>
       {' '}
@@ -3139,6 +3219,30 @@ export default function StudioApp() {
     >
       <div className="properties-area">
         <div aria-label="节点属性" hidden={propertyTab !== 'node'}>
+          <section className="endpoint-snap-settings" aria-label="端点吸附设置">
+            <h3>端点吸附</h3>
+            <label>
+              <input
+                type="checkbox"
+                checked={nodeSnap}
+                onChange={(e) => setNodeSnap(e.target.checked)}
+              />
+              端点吸附
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={keepSeams}
+                disabled={!nodeSnap}
+                onChange={(e) => setKeepSeams(e.target.checked)}
+              />
+              保持已有对称接缝
+            </label>
+            <p>
+              拖近端点或接缝时吸附；已有接缝可沿线滑动。Alt 暂时解除，Shift
+              轴向移动并暂停吸附。
+            </p>
+          </section>
           <section>
             <h3>
               {selectedNodes.length
@@ -3801,6 +3905,11 @@ export default function StudioApp() {
                   ) : null}
                 </g>
               )}
+              <EndpointSnapOverlay
+                feedback={snapFeedback}
+                scale={view.s}
+                guides={endpointGuides}
+              />
               {mergeSource && (
                 <g>
                   {coords &&
