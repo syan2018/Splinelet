@@ -14,6 +14,8 @@ export function createPathIntent(request, displayed) {
       'close-path',
       'refit-path',
       'straighten-edge',
+      'delete-path-vertices',
+      'merge-paths',
     ].includes(action?.kind)
   )
     throw Error('路径动作尚未适配');
@@ -29,6 +31,13 @@ export function createPathIntent(request, displayed) {
     if (ref?.kind !== 'path') throw Error('路径选区已失效');
     return ref;
   };
+  const expectedEdges = (path) =>
+    path.identity.edgeIds.map((id, index) => ({
+      edgeId: view.source.identities.byId[id].id,
+      reversed:
+        view.source.identities.byId[path.identity.handleIds[index][0]].end ===
+        'end',
+    }));
   let command;
   if (action.kind === 'start-path') {
     command = {
@@ -46,14 +55,52 @@ export function createPathIntent(request, displayed) {
       pathRefs: action.pathIds.map(resolve),
       value: action.value,
     };
+  } else if (action.kind === 'merge-paths') {
+    command = {
+      kind: action.kind,
+      firstPathRef: resolve(action.firstPathId),
+      secondPathRef: resolve(action.secondPathId),
+      firstEnd: action.firstEnd,
+      secondEnd: action.secondEnd,
+    };
   } else if (
     action.kind === 'refit-path' ||
-    action.kind === 'straighten-edge'
+    action.kind === 'straighten-edge' ||
+    action.kind === 'delete-path-vertices'
   ) {
     const pathRef = resolve(action.pathId);
     const path = view.source.paths.find((item) => item.id === action.pathId);
     if (!path) throw Error('路径来源当前无法显示，请先修复');
-    if (action.kind === 'straighten-edge') {
+    if (action.kind === 'delete-path-vertices') {
+      if (
+        !Array.isArray(action.anchorIdentityIds) ||
+        !action.anchorIdentityIds.length
+      )
+        throw Error('请明确选择待删除节点');
+      if (
+        !Number.isFinite(action.tolerancePixels) ||
+        action.tolerancePixels <= 0
+      )
+        throw Error('节点删除需要正有限拟合容差');
+      command = {
+        kind: action.kind,
+        pathRef,
+        vertexIds: action.anchorIdentityIds.map((id) => {
+          const ref = view.source.identities.byId[id];
+          if (
+            !path.identity.anchorIds.includes(id) ||
+            ref?.kind !== 'vertex' ||
+            ref.sketchId !== pathRef.sketchId
+          )
+            throw Error('节点不属于所选路径');
+          return ref.id;
+        }),
+        expectedEdges: expectedEdges(path),
+        toleranceMM:
+          (action.tolerancePixels * view.source.frame.widthMM) /
+          view.source.frame.width,
+      };
+    } else if (action.kind === 'straighten-edge') {
       if (!path.identity.edgeIds.includes(action.edgeIdentityId))
         throw Error('曲线段不属于所选路径');
       const edge = view.source.identities.byId[action.edgeIdentityId];
@@ -64,12 +111,7 @@ export function createPathIntent(request, displayed) {
       command = {
         kind: action.kind,
         pathRef,
-        expectedEdges: path.identity.edgeIds.map((id, index) => ({
-          edgeId: view.source.identities.byId[id].id,
-          reversed:
-            view.source.identities.byId[path.identity.handleIds[index][0]]
-              .end === 'end',
-        })),
+        expectedEdges: expectedEdges(path),
         cubics: action.pixelCubics.map((cubic) => {
           if (!Array.isArray(cubic) || cubic.length !== 4)
             throw Error('重拟合每段必须是 cubic');

@@ -31,6 +31,12 @@ import {
   createPathGeometryCommand,
   PATH_GEOMETRY_ACTIONS,
 } from './path-geometry.mjs';
+import {
+  createPathNodeDeletionCommand,
+  PATH_NODE_DELETION_ACTIONS,
+} from './path-node-deletion.mjs';
+import { PATH_MERGE_ACTIONS } from './path-merge.mjs';
+import { createPathMergeAuthoringCommand } from './path-merge-authoring.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -331,6 +337,10 @@ export function createAuthoringCommand(action) {
       return createPathDeletionCommand(action)(document);
     if (PATH_GEOMETRY_ACTIONS.includes(action.kind))
       return createPathGeometryCommand(action)(document);
+    if (PATH_NODE_DELETION_ACTIONS.includes(action.kind))
+      return createPathNodeDeletionCommand(action)(document, { idFactory });
+    if (PATH_MERGE_ACTIONS.includes(action.kind))
+      return createPathMergeAuthoringCommand(action)(document, { idFactory });
     if (action.kind === 'set-node') {
       const node = document.nodes[action.nodeId];
       if (!node) throw Error('部件不存在');
