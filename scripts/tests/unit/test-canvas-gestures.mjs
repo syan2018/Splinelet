@@ -3,7 +3,7 @@ import {
   screenToDocument,
   zoomAt,
   framePathsView,
-} from '../../../lib/source-editor/canvas-gestures.mjs';
+} from '../../../src/lib/source-editor/canvas-gestures.mjs';
 
 const rect = { left: 100, top: 50 };
 for (const view of [

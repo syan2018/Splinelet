@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { evaluateCreation } from '../../../lib/creation-engine.mjs';
-import { creationCommand } from '../../../lib/creation-commands.mjs';
+import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
+import { creationCommand } from '../../../src/lib/creation-commands.mjs';
 import {
   creationEditTargets,
   regionsForPaths,
   pathsForRegions,
-} from '../../../lib/creation-selection.mjs';
+} from '../../../src/lib/creation-selection.mjs';
 
 const project = JSON.parse(
   fs.readFileSync(new URL('../fixtures/shoulder-region.json', import.meta.url)),

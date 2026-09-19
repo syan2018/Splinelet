@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { creationCommand } from '../../../lib/creation-commands.mjs';
+import { creationCommand } from '../../../src/lib/creation-commands.mjs';
 import {
   creationDocument,
   validateCreation,
-} from '../../../lib/creation-schema.mjs';
-import { evaluateCreation } from '../../../lib/creation-engine.mjs';
-import { swatchOwners } from '../../../lib/creation-colors.mjs';
+} from '../../../src/lib/creation-schema.mjs';
+import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
+import { swatchOwners } from '../../../src/lib/creation-colors.mjs';
 
 const source = JSON.parse(
   fs.readFileSync(new URL('../fixtures/shoulder-region.json', import.meta.url)),

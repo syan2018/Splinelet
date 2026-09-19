@@ -1,5 +1,5 @@
 import { nodeModes, enforceContinuity } from './continuity.mjs';
-import { evaluate, fitSingleCurve } from '../../public/geometry.mjs';
+import { evaluate, fitSingleCurve } from '../../../public/geometry.mjs';
 
 // A closed spline has one unique node per cubic; its seam is not a second node.
 export function pathNodes(path) {

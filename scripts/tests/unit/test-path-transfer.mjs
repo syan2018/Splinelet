@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { creationCommand } from '../../../lib/creation-commands.mjs';
-import { creationDocument } from '../../../lib/creation-schema.mjs';
-import { evaluateCreation } from '../../../lib/creation-engine.mjs';
+import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationDocument } from '../../../src/lib/creation-schema.mjs';
+import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
 import {
   liveSurfaces,
   rectangle,

@@ -1,5 +1,5 @@
-import { emptyModel } from '../../../lib/model-schema.mjs';
-import { defaultSwatches } from '../../../lib/creation-schema.mjs';
+import { emptyModel } from '../../../src/lib/model-schema.mjs';
+import { defaultSwatches } from '../../../src/lib/creation-schema.mjs';
 
 export const rectangle = (id, x1, y1, x2, y2) => {
   const points = [

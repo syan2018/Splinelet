@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { pickVisibleIntersection } from '../../../lib/creation-pick.mjs';
+import { pickVisibleIntersection } from '../../../src/lib/creation-pick.mjs';
 
 const hit = (key, distance, pickOrder = 0) => ({
   distance,

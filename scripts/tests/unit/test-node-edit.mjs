@@ -4,7 +4,7 @@ import {
   nodeSelection,
   selectedNode,
   removeNode,
-} from '../../../lib/source-editor/node-edit.mjs';
+} from '../../../src/lib/source-editor/node-edit.mjs';
 import { evaluate } from '../../../public/geometry.mjs';
 const pt = (x, y) => ({ x, y });
 const line = (a, b) => [

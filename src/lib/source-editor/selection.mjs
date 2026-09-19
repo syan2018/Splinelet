@@ -1,5 +1,5 @@
 import { pathNodes, removeNode } from './node-edit.mjs';
-import { evaluate } from '../../public/geometry.mjs';
+import { evaluate } from '../../../public/geometry.mjs';
 
 /**
  * @param {string[]} existing

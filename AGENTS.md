@@ -3,9 +3,9 @@
 ## 项目边界
 
 - Splinelet 是 Web 与 Tauri 桌面端共用前端的 2.5D 浮雕建模工具，使用 React 19、TypeScript、Vinext/Vite、Cloudflare/Wrangler、Three.js、JSTS 与 Manifold。
-- `app/` 只放路由入口与全局样式。`components/` 按工作区或功能域组织界面，`hooks/` 放可复用 React 状态逻辑，`lib/` 放领域模型、几何、实体、导出与命令逻辑。
-- `app/page.tsx` 与 `desktop/main.tsx` 共同引用 `components/studio/studio-app.tsx`；桌面入口不依赖 Web 路由组件。`lib/platform/` 放浏览器与 Tauri 能力适配，`src-tauri/src/` 放原生命令、文件权限与应用装配。
-- `lib/source-editor/` 放编辑算法，`lib/persistence/` 放恢复草稿与文件写入队列。`public/` 只保留静态资源及有兼容 URL 的 `trace-worker.js` / `geometry.mjs`；后者仍被应用与 Node 测试导入。改动时同时检查页面、Worker 和 Node 测试。
+- `app/` 只放路由入口与全局样式。`src/components/` 按工作区或功能域组织界面，`src/hooks/` 放可复用 React 状态逻辑，`src/lib/` 放领域模型、几何、实体、导出与命令逻辑，`src/types/` 放环境类型声明。`@/*` 映射到 `src/*`。
+- `app/page.tsx` 与 `src/desktop/main.tsx` 共同引用 `src/components/studio/studio-app.tsx`；桌面入口不依赖 Web 路由组件。`src/lib/platform/` 放浏览器与 Tauri 能力适配，`src-tauri/src/` 放原生命令、文件权限与应用装配。
+- `src/lib/source-editor/` 放编辑算法，`src/lib/persistence/` 放恢复草稿与文件写入队列。根目录主要保留 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/` 和 `docs/`；`dist/` 是不纳入版本控制的 Web 构建生成目录，桌面前端输出位于 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。`public/` 只保留静态资源及有兼容 URL 的 `trace-worker.js` / `geometry.mjs`；后者仍被应用与 Node 测试导入。改动时同时检查页面、Worker 和 Node 测试。
 - `scripts/` 包含测试、样例、维护和外部验证工具；fixture 必须是可进入版本控制的最小复现数据。具体分类见 `scripts/README.md`。
 - `docs/` 放当前指南与架构说明；`docs/qa/` 仅存历史验收快照。产品事实以 README 和当前专题文档为准。
 
@@ -32,7 +32,7 @@ pnpm desktop:check
 
 ## 高风险区域
 
-- 保持 `app/page.tsx` 为薄根路由入口。共享应用位于 `components/studio/studio-app.tsx`；继续拆分时优先抽取纯 helper、hook 或 props 边界清晰的面板，不要顺手改变全局状态、持久化、选择语义或 `window.traceStudio.call`。
+- 保持 `app/page.tsx` 为薄根路由入口。共享应用位于 `src/components/studio/studio-app.tsx`；继续拆分时优先抽取纯 helper、hook 或 props 边界清晰的面板，不要顺手改变全局状态、持久化、选择语义或 `window.traceStudio.call`。
 - `public/trace-worker.js` 由绝对 URL `/trace-worker.js` 加载，并相对导入 `./geometry.mjs`。移动前必须统一更新 Worker URL、相对导入、页面调用、Node 脚本与文档。
 - `/reference.png` 与 `/sandrone-example.spl` 是兼容路径。重命名时同步校验器、fetch、生成脚本和恢复测试。
 - `model-worker.ts?worker` 与 `manifold.wasm?url` 使用构建器特殊加载。移动后必须执行生产构建，不能只依赖 TypeScript。

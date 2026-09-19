@@ -31,7 +31,7 @@
 
 ## 模块与兼容
 
-- `lib/print-stack.mjs`：参数、整数厚度、旧工程转换、通用层命令、最终定位。
+- `src/lib/print-stack.mjs`：参数、整数厚度、旧工程转换、通用层命令、最终定位。
 - `creation-schema`：可选 `printStack` 与成员引用校验，新部件默认进入最高层。
 - `creation-commands`：厚度与分层写入统一历史；局部厚度只写所选输出。
 - `modifier-engine`：面运算结束后调用统一定位。旧工程未启用时继续使用旧对象依附。

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { unzipSync, strFromU8 } from 'three/addons/libs/fflate.module.js';
 import { liveSurfaces, rectangle } from '../fixtures/live-surfaces.mjs';
-import { export3MF, pack3MF } from '../../../lib/three-mf.mjs';
-import { buildSolid } from '../../../lib/solid-engine.mjs';
+import { export3MF, pack3MF } from '../../../src/lib/three-mf.mjs';
+import { buildSolid } from '../../../src/lib/solid-engine.mjs';
 
 const p = liveSurfaces();
 p.creation.objects[0].roles.hole = 'guide';

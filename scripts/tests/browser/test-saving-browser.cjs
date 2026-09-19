@@ -1,6 +1,6 @@
 module.exports = async (page) => {
   const assert = require('node:assert/strict');
-  const { decodeProject } = await import('../../../lib/project-format.mjs');
+  const { decodeProject } = await import('../../../src/lib/project-format.mjs');
   const call = (action, args = {}) =>
     page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
       action,

@@ -121,7 +121,7 @@ import {
   evaluate,
   dist,
   inspectGeometry,
-} from '../../public/geometry.mjs';
+} from '../../../public/geometry.mjs';
 import {
   pathNodes,
   nodeSelection,

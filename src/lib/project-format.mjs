@@ -188,7 +188,7 @@ const zipEntryNames = (bytes) => {
       !name ||
       name.includes('\\') ||
       name.startsWith('/') ||
-      name.split('/').some((part) => part === '..' || part === '')
+      name.split('/').some((part) => part === '../..' || part === '')
     )
       fail('ZIP 包含不安全路径');
     if (names.includes(name)) fail('ZIP 包含重复条目');

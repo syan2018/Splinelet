@@ -3,13 +3,16 @@ import {
   emptyModel,
   validateModel,
   regionDependants,
-} from '../../../lib/model-schema.mjs';
-import { evaluateRegions, previewRegion } from '../../../lib/region-engine.mjs';
+} from '../../../src/lib/model-schema.mjs';
+import {
+  evaluateRegions,
+  previewRegion,
+} from '../../../src/lib/region-engine.mjs';
 import {
   buildSolid,
   meshSTL,
   inspectMesh,
-} from '../../../lib/solid-engine.mjs';
+} from '../../../src/lib/solid-engine.mjs';
 const path = (id, pts, closed = true) => ({
   id,
   name: id,

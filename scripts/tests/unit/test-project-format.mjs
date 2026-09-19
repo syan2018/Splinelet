@@ -9,7 +9,7 @@ import {
   decodeProject,
   encodeProject,
   SPL_MIME,
-} from '../../../lib/project-format.mjs';
+} from '../../../src/lib/project-format.mjs';
 
 const png = new Uint8Array([
   137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,

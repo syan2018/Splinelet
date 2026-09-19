@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import {
   evaluateCreation,
   compileCreation,
-} from '../../../lib/creation-engine.mjs';
-import { creationCommand } from '../../../lib/creation-commands.mjs';
-import { validateCreation } from '../../../lib/creation-schema.mjs';
-import { regionContext } from '../../../lib/region-engine.mjs';
-import { buildSolid, resolveHeights } from '../../../lib/solid-engine.mjs';
+} from '../../../src/lib/creation-engine.mjs';
+import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { validateCreation } from '../../../src/lib/creation-schema.mjs';
+import { regionContext } from '../../../src/lib/region-engine.mjs';
+import { buildSolid, resolveHeights } from '../../../src/lib/solid-engine.mjs';
 import {
   liveSurfaces,
   rectangle,

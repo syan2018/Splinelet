@@ -5,14 +5,14 @@ import {
   surfaceObject,
   liveSurfaces,
 } from '../fixtures/live-surfaces.mjs';
-import { creationCommand } from '../../../lib/creation-commands.mjs';
+import { creationCommand } from '../../../src/lib/creation-commands.mjs';
 import {
   evaluateCreation,
   compileCreation,
   previewCreationBase,
-} from '../../../lib/creation-engine.mjs';
-import { buildSolid } from '../../../lib/solid-engine.mjs';
-import { resolvePrintStack } from '../../../lib/print-stack.mjs';
+} from '../../../src/lib/creation-engine.mjs';
+import { buildSolid } from '../../../src/lib/solid-engine.mjs';
+import { resolvePrintStack } from '../../../src/lib/print-stack.mjs';
 const command = (p, action, args = {}) =>
   creationCommand(p, action, args, evaluateCreation(p));
 const scene = (p) => {

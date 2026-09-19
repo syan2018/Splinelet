@@ -47,7 +47,7 @@ pnpm desktop:build   # 只构建桌面前端
 pnpm desktop:release # 构建免安装桌面程序
 ```
 
-Windows 发布产物为 `src-tauri/target/release/splinelet.exe`，前端资源已内嵌，直接运行即可，不需要附带 `dist-desktop/`。目标电脑需要已安装 WebView2 Runtime；应用不再生成安装包，也不自动注册 `.spl` 文件关联。恢复草稿仍保存在用户数据目录，免安装不代表数据随 EXE 携带。
+Windows 发布产物为 `src-tauri/target/release/splinelet.exe`，前端资源已内嵌，直接运行即可，不需要附带 `src-tauri/target/frontend/`。目标电脑需要已安装 WebView2 Runtime；应用不再生成安装包，也不自动注册 `.spl` 文件关联。恢复草稿仍保存在用户数据目录，免安装不代表数据随 EXE 携带。
 
 桌面版支持通过“打开工程”或命令行路径打开 `.spl`、单实例传递和原子保存。用户也可在 Windows 中手动设置打开方式，但移动 EXE 后需重新指定路径。应用使用与工作区一致的无终端自绘窗口框架；Web 版与桌面版共用同一套 React、Worker 和几何实现。
 
@@ -149,7 +149,26 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 
 主要使用 React、TypeScript、Vinext / Vite、Three.js、JSTS 和 Manifold。底图、曲线与几何计算在浏览器中处理，构面和实体运算放在 Worker 中。
 
-Web 路由 `app/page.tsx` 和桌面入口 `desktop/main.tsx` 共用 `components/studio/studio-app.tsx`。浏览器与 Tauri 能力位于 `lib/platform/`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
+### 仓库结构
+
+根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/` 和 `docs/`；`dist/` 是构建生成目录，不纳入版本控制。
+
+```text
+app/                 Web 路由入口与全局样式
+src/
+  components/        共享应用与工作区界面
+  desktop/           桌面 HTML 与 React 启动入口
+  hooks/             可复用 React 状态逻辑
+  lib/               领域模型、几何、导出与平台适配
+  types/             Vite 资源与 Worker 导入类型
+public/              静态资源与兼容 URL 运行时
+src-tauri/           Tauri 原生宿主；target/frontend/ 为桌面前端输出
+scripts/             构建、测试与验证工具
+docs/                当前指南、架构和历史 QA
+dist/                Web 构建输出
+```
+
+Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
 
 部分核心回归检查：
 

@@ -3,9 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { emptyModel, validateModel } from '../../lib/model-schema.mjs';
-import { previewRegion, evaluateRegions } from '../../lib/region-engine.mjs';
-import { buildSolid, meshSTL } from '../../lib/solid-engine.mjs';
+import { emptyModel, validateModel } from '../../src/lib/model-schema.mjs';
+import {
+  previewRegion,
+  evaluateRegions,
+} from '../../src/lib/region-engine.mjs';
+import { buildSolid, meshSTL } from '../../src/lib/solid-engine.mjs';
 
 const [source, directory] = process.argv.slice(2);
 if (!source || !directory)

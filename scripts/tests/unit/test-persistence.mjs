@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { FileWriter } from '../../../lib/persistence/workspace.mjs';
+import { FileWriter } from '../../../src/lib/persistence/workspace.mjs';
 const deferred = () => {
   let resolve;
   return { promise: new Promise((done) => (resolve = done)), resolve };

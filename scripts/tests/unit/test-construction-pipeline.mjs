@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import {
   evaluateCreation,
   compileCreation,
-} from '../../../lib/creation-engine.mjs';
-import { creationCommand } from '../../../lib/creation-commands.mjs';
-import { bindSurfaceGraphs } from '../../../lib/surface-lineage.mjs';
-import { validateCreation } from '../../../lib/creation-schema.mjs';
-import { translatePaths } from '../../../lib/source-editor/selection.mjs';
+} from '../../../src/lib/creation-engine.mjs';
+import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { bindSurfaceGraphs } from '../../../src/lib/surface-lineage.mjs';
+import { validateCreation } from '../../../src/lib/creation-schema.mjs';
+import { translatePaths } from '../../../src/lib/source-editor/selection.mjs';
 import {
   liveSurfaces,
   rectangle,

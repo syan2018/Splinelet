@@ -4,8 +4,8 @@ import {
   readSlicerTemplate,
   bambuPackage,
   validateSlicerTemplate,
-} from '../../../lib/bambu-3mf.mjs';
-import { export3MF } from '../../../lib/three-mf.mjs';
+} from '../../../src/lib/bambu-3mf.mjs';
+import { export3MF } from '../../../src/lib/three-mf.mjs';
 
 import { liveSurfaces } from '../fixtures/live-surfaces.mjs';
 
