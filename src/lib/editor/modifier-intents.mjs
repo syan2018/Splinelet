@@ -188,3 +188,72 @@ export function compileModifierUpdate(document, request) {
   action.params = params;
   return action;
 }
+
+/** Append to the published curve stage without implicitly rewiring regions. */
+export function compileModifierAdd(document, request) {
+  if (document?.version !== 4) throw Error('修改器写入需要 V4 Document');
+  if (!record(request)) throw Error('modifier_add request 必须是 object');
+  if (!['curve_mirror', 'curve_array'].includes(request.type))
+    throw Error(`modifier_add 尚不支持类型：${request.type}`);
+  exactKeys(
+    request,
+    new Set([
+      'objectId',
+      'type',
+      'name',
+      'targets',
+      'angleDeg',
+      'centerMM',
+      ...(request.type === 'curve_array' ? ['count'] : []),
+    ]),
+    'modifier_add request',
+  );
+  text(request.objectId, 'objectId');
+  const owner = document.nodes?.[request.objectId];
+  if (!owner) throw Error(`部件不存在：${request.objectId}`);
+  if (owner.kind !== 'shape') throw Error('修改器所有者必须是 Shape');
+  if (effectiveNodeState(document, owner.id).locked)
+    throw Error('修改器所有者已锁定');
+  const program = document.programs?.[owner.programId];
+  if (!program || program.ownerNodeId !== owner.id)
+    throw Error('Shape 的 Program 所有权无效');
+  if (program.outputs?.regions)
+    throw Error('已发布区域的部件需要明确调整构造接线，不能直接追加曲线修改器');
+  if (!record(request.targets) || request.targets.kind !== 'all')
+    throw Error('曲线修改器 targets 必须是 all');
+  exactKeys(request.targets, new Set(['kind']), 'targets');
+  const mirror = request.type === 'curve_mirror';
+  const pose = worldMatrix(document, owner.id);
+  const angle = bounded(
+    request.angleDeg === undefined ? 90 : request.angleDeg,
+    'angleDeg',
+    -360,
+    360,
+  );
+  const action = {
+    kind: mirror ? 'mirror-curves' : 'repeat-curves',
+    ownerNodeId: owner.id,
+    name:
+      request.name === undefined
+        ? mirror
+          ? '曲线镜像'
+          : '曲线阵列'
+        : text(request.name, 'name'),
+    center: transformPoint(
+      inverseTransform(pose),
+      centerPoint(
+        request.centerMM === undefined ? { x: 0, y: 0 } : request.centerMM,
+      ),
+    ),
+    angleRad:
+      degreesToRadians(angle) - (mirror ? matrixPose(pose).rotationRad : 0),
+  };
+  if (!mirror) {
+    const count = request.count === undefined ? 4 : request.count;
+    if (!Number.isInteger(count)) throw Error('count 必须是整数');
+    action.count = bounded(count, 'count', 1, 64);
+  }
+  // currentPort in the authoring command validates that curves are published
+  // and evaluable before allocating or connecting the new operator.
+  return action;
+}

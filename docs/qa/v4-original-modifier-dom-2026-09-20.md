@@ -20,3 +20,13 @@ pnpm test:browser --suite legacy --case modifiers --target web --port 4198 --ins
 `pnpm check:all` 退出码 0，89 项 hermetic 单元测试、类型、lint、格式、Rust 格式与编译及双端构建通过；日志为 `outputs/v4-qa/check-all-original-modifier-dom-2026-09-20.log`。随后调整阶段提示文字及浏览器测试，重新执行双端构建、组件浏览器验证、全库 lint/格式及上述双端旧流程验证。CommonJS 浏览器脚本的 lint override 处理 Node 模块函数解构误报；产品规则不变，Worker 单测明确等待 terminate。
 
 默认根入口仍使用原 UI 的旧后端。完整 goal 保持进行中。
+
+## 同日补充：纯曲线阶段新增
+
+原添加表单在可用的纯曲线部件上开放镜像和阵列。命令追加到当前曲线发布端口，保持唯一源几何，按世界坐标中心及镜像角度转换；阵列角度保留相对步进。读取能力与命令分别检查锁定、求值状态和已有区域。已有区域时拒绝简化追加，避免只改曲线而未影响区域或隐式改写复杂构造。
+
+`test-v4-modifier-add.mjs` 覆盖真实运行时中的连续镜像→阵列接线、输出变化、原源不变、逐次撤销、错误原子拒绝、父级锁定及可添加类型投影。原组件浏览器用例新增真实表单输入：三份阵列使曲线变为三倍，输入引用指向前序镜像，中心 `(17,32)` 转换到部件局部 `(2,3)`，一次撤销恢复完整 Document。
+
+本次 `pnpm check:all` 退出码 0，90 项 hermetic 单元测试及所有类型、lint、格式、Rust、双端构建检查通过。日志：`outputs/v4-qa/check-all-original-modifier-add-2026-09-20.log`。原组件浏览器用例通过，结果仍在上文独立 fixture 目录。
+
+闭合构面的旧 `joinMM` 焊接及失败处理与 V4 Fill 不等价，本次明确拒绝，不默认丢弃参数。已有区域的新增、删除排序及原画布派生样条预览仍未接线；后者当前仍调用旧曲线求值器，是后续默认根工作区接入的必要依赖。

@@ -16,6 +16,7 @@ import {
 import { targetForCell } from '@/lib/modifier-schema.mjs';
 import { modifierStages } from '@/lib/modifier-stages.mjs';
 import ConstructionPipeline from './construction-pipeline';
+import ProgramModifierAdd from './program-modifier-add';
 import type {
   SurfaceModifier,
   ModifierInputRef,
@@ -692,12 +693,9 @@ export default function CreationModifiers({
         {!programStatuses.length && (
           <p className="modifier-empty">当前没有可展示的修改器参数。</p>
         )}
-        <button className="modifier-add" disabled title="暂不支持添加新步骤">
-          <Plus size={15} />
-          添加修改器
-        </button>
+        <ProgramModifierAdd object={object} onCommand={onCommand} />
         <p className="modifier-hint">
-          当前支持编辑已有步骤的名称、启用状态及参数，暂不支持增删和排序。
+          当前支持编辑已有步骤的名称、启用状态及参数，暂不支持删除和排序。
         </p>
         <p className="modifier-output">输出面 → 按“颜色与高低”中的厚度拉伸</p>
       </fieldset>

@@ -111,6 +111,42 @@ async function main() {
     assert.equal((await evidence()).baselineRestored, true);
 
     before = await evidence();
+    // Add through the original form; inspect the actual V4 graph and geometry.
+    await page.getByRole('button', { name: '添加修改器', exact: true }).click();
+    await page
+      .getByRole('combobox', { name: '新修改器类型' })
+      .selectOption('curve_array');
+    const form = page.locator('.modifier-add-form');
+    for (const [name, value] of [
+      ['阵列数量', '3'],
+      ['每份旋转角度', '120'],
+      ['阵列中心 X', '17'],
+      ['阵列中心 Y', '32'],
+    ]) {
+      await form.getByRole('spinbutton', { name, exact: true }).fill(value);
+      await form.getByRole('spinbutton', { name, exact: true }).press('Enter');
+    }
+    await form.getByRole('button', { name: '添加', exact: true }).click();
+    await waitRevision(before.revision);
+    const added = await evidence();
+    const array = added.operators.find(
+      (operator) => operator.type === 'curve-array',
+    );
+    assert.deepEqual(array.params.center, [2, 3]);
+    assert.equal(array.params.count, 3);
+    assert.ok(Math.abs(array.params.angleRad - (2 * Math.PI) / 3) < 1e-8);
+    assert.equal(
+      array.inputs.input[0].operatorId,
+      before.operators.find((operator) => operator.type === 'curve-mirror').id,
+    );
+    assert.equal(added.curveCount, before.curveCount * 3);
+    assert.equal(added.rawUnchanged, true);
+    assert.equal(added.revision, before.revision + 1);
+    assert.equal(await page.locator('.modifier-card').count(), 2);
+    await page.getByRole('button', { name: '测试撤销', exact: true }).click();
+    await waitRevision(added.revision);
+    assert.equal((await evidence()).baselineRestored, true);
+    before = await evidence();
     await card.getByRole('checkbox').uncheck();
     await waitRevision(before.revision);
     assert.equal((await evidence()).enabled, false);
@@ -152,6 +188,12 @@ async function main() {
     assert.equal(await card.getByRole('checkbox').isDisabled(), true);
     assert.equal(
       await page
+        .getByRole('button', { name: '添加修改器', exact: true })
+        .isDisabled(),
+      true,
+    );
+    assert.equal(
+      await page
         .getByRole('spinbutton', { name: '镜像中心 X', exact: true })
         .isDisabled(),
       true,
@@ -171,7 +213,7 @@ async function main() {
       ),
     );
     console.log(
-      'PASS original modifier DOM: V4 values, real edit and undo, parameter binding, missing value and lock',
+      'PASS original modifier DOM: V4 values, append array and graph connection, edit and undo, parameter binding, missing value and lock',
     );
   } catch (error) {
     if (page)

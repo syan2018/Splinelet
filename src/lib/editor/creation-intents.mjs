@@ -1,6 +1,9 @@
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { outputIdentity } from '../relief/appearance.mjs';
-import { compileModifierUpdate } from './modifier-intents.mjs';
+import {
+  compileModifierAdd,
+  compileModifierUpdate,
+} from './modifier-intents.mjs';
 
 export const CREATION_INTENTS = Object.freeze([
   'paint',
@@ -11,6 +14,7 @@ export const CREATION_INTENTS = Object.freeze([
   'object',
   'new_object',
   'modifier_update',
+  'modifier_add',
   'print_settings',
   'print_layer_add',
   'print_layer_rename',
@@ -174,6 +178,8 @@ export function createCreationIntent(action, args, displayed) {
         });
     } else if (action === 'modifier_update') {
       run(compileModifierUpdate(document, request));
+    } else if (action === 'modifier_add') {
+      run(compileModifierAdd(document, request));
     } else if (action === 'print_settings') {
       requirePrintStack();
       run({ kind: 'set-print-settings', layerHeightMM: request.layerHeightMM });

@@ -6,6 +6,7 @@ import { createDocument } from '../../../src/lib/document/schema.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 import { createV4CreationRuntime } from '../../../src/lib/editor/creation-runtime.mjs';
+import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
 
 const h = React.createElement;
 let serial = 0;
@@ -77,6 +78,11 @@ function Fixture() {
   };
   const document = editor.state.document;
   const evidence = {
+    operators: Object.values(document.programs[owner.programId].operators).map(
+      ({ id, type, inputs, params }) => ({ id, type, inputs, params }),
+    ),
+    curveCount:
+      evaluateProgram(document, owner.id).curves.value?.curves.length ?? 0,
     revision: editor.state.revision,
     rawUnchanged:
       JSON.stringify(document.sketches) === JSON.stringify(baseline.sketches),

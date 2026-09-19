@@ -368,6 +368,21 @@ export function projectCreationView(document, snapshot) {
       order: node.order,
       pose: clone(node.pose),
       pathIds,
+      modifierAdd: {
+        types:
+          !state.locked &&
+          !program?.outputs.regions &&
+          ['ready', 'empty'].includes(objectStages.get(node.id).curves)
+            ? ['curve_mirror', 'curve_array']
+            : [],
+        reason: state.locked
+          ? '部件已锁定'
+          : program?.outputs.regions
+            ? '已有区域的部件暂不支持从这里添加曲线修改器'
+            : !['ready', 'empty'].includes(objectStages.get(node.id).curves)
+              ? '请先建立可用的源线条'
+              : null,
+      },
       roles: {},
       visible: state.visible,
       locked: state.locked,

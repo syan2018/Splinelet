@@ -58,6 +58,7 @@ export type SurfaceModifier = {
 export type ModifierObject = {
   id: string;
   name: string;
+  modifierAdd?: { types: string[]; reason: string | null };
   modifiers?: SurfaceModifier[];
   sources?: Record<string, { regionId: string; modifiers: SurfaceModifier[] }>;
 };
