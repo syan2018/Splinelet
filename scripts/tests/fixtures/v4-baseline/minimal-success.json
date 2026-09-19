@@ -1,0 +1,136 @@
+{
+  "worldCubics": [
+    {
+      "id": "body:outer",
+      "curves": [
+        [
+          [0, 0],
+          [0, 0],
+          [20, 0],
+          [20, 0]
+        ],
+        [
+          [20, 0],
+          [20, 0],
+          [20, 20],
+          [20, 20]
+        ],
+        [
+          [20, 20],
+          [20, 20],
+          [0, 20],
+          [0, 20]
+        ],
+        [
+          [0, 20],
+          [0, 20],
+          [0, 0],
+          [0, 0]
+        ]
+      ]
+    }
+  ],
+  "planar": [
+    {
+      "id": "body:face",
+      "areaMM2": 336,
+      "components": 1,
+      "holes": 1,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [20, 0],
+            [20, 20],
+            [0, 20],
+            [0, 0]
+          ],
+          [
+            [6, 6],
+            [14, 6],
+            [14, 14],
+            [6, 14],
+            [6, 6]
+          ]
+        ]
+      }
+    },
+    {
+      "id": "detail:face",
+      "areaMM2": 16,
+      "components": 1,
+      "holes": 0,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [30, 0],
+            [34, 0],
+            [34, 4],
+            [30, 4],
+            [30, 0]
+          ]
+        ]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "id": "body:face",
+      "color": "#f3ead7",
+      "mode": "add",
+      "thicknessMM": 2,
+      "zMM": 0,
+      "heightLayers": 10,
+      "layerId": "base",
+      "partId": "main",
+      "materialId": "cream",
+      "enabled": true
+    },
+    {
+      "id": "detail:face",
+      "color": "#e46e7f",
+      "mode": "add",
+      "thicknessMM": 0.6,
+      "zMM": 2,
+      "heightLayers": 3,
+      "layerId": "top",
+      "partId": "main",
+      "materialId": "ink",
+      "enabled": true
+    }
+  ],
+  "bodies": [
+    {
+      "id": "main:cream",
+      "partId": "main",
+      "materialId": "cream",
+      "valid": true,
+      "components": 1,
+      "volumeMM3": 672
+    },
+    {
+      "id": "main:ink",
+      "partId": "main",
+      "materialId": "ink",
+      "valid": true,
+      "components": 1,
+      "volumeMM3": 9.6
+    }
+  ],
+  "states": [
+    {
+      "id": "body:fill",
+      "state": "ready",
+      "reasonCode": null,
+      "outputIds": ["body:face"]
+    },
+    {
+      "id": "detail:fill",
+      "state": "ready",
+      "reasonCode": null,
+      "outputIds": ["detail:face"]
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "1fc9902",
+  "thresholds": {
+    "worldCubicMM": 1e-9,
+    "planarAreaMM2": 0,
+    "planarBoundaryMM": 0,
+    "physicalMM": 1e-6,
+    "volumeAbsoluteMM3": 0.001,
+    "volumeRelative": 1e-5
+  },
+  "thresholdBasis": {
+    "worldCubicMM": "src/lib/modifier-engine.mjs uses equalsExact(..., 1e-9) for legacy curve identity.",
+    "planarAreaMM2": "No legacy global area error budget exists; zero forbids an invented migration allowance.",
+    "planarBoundaryMM": "JSTS DiscreteHausdorffDistance uses its installed HausdorffSimilarityMeasure densify fraction of 0.25; no migration distance allowance is added.",
+    "physicalMM": "src/lib/print-stack.mjs materializes physical millimetres with toFixed(6).",
+    "volume": "src/lib/solid-engine.mjs checks volume with max(0.001, volume * 1e-5). Bodies use a stable id and aggregate components per partId/materialId, so same-Part materials remain distinct."
+  },
+  "fixtures": [
+    {
+      "id": "minimal-success",
+      "outcome": "success",
+      "source": {
+        "path": "scripts/tests/fixtures/v4-baseline/minimal-success.json",
+        "sha256": "e078777d47e3095297d384f566a39d99f443bfb718e9791137c12b6774c5dcc6"
+      },
+      "metrics": [
+        "world-cubic",
+        "planar-area-boundary-holes-components",
+        "style-print-part-material",
+        "solid-validity"
+      ]
+    },
+    {
+      "id": "live-surfaces",
+      "outcome": "success",
+      "source": {
+        "path": "scripts/tests/fixtures/live-surfaces.mjs",
+        "sha256": "32334b35e391b71087d49dac80be8c12cace747166016d47c1578469bd20e1f4"
+      },
+      "metrics": ["multiple-source", "hole", "legacy-material-body"]
+    },
+    {
+      "id": "surface-lineage",
+      "outcome": "success",
+      "source": {
+        "path": "scripts/tests/fixtures/surface-lineage.json",
+        "sha256": "aba92a0a47f496e77e25468ce69106741cfdf11d2595680f85821739c8e48e51"
+      },
+      "metrics": ["topology-identity", "assignment"]
+    },
+    {
+      "id": "hair-partition",
+      "outcome": "success",
+      "source": {
+        "path": "scripts/tests/fixtures/hair-partition.json",
+        "sha256": "07f3f65d348a95d53836d94becf2bd43950cf53ddbb10e93d92361ccf0d3e441"
+      },
+      "metrics": ["partition", "precise-local-target"]
+    },
+    {
+      "id": "shoulder-region",
+      "outcome": "success",
+      "source": {
+        "path": "scripts/tests/fixtures/shoulder-region.json",
+        "sha256": "59579b6dcc2b3f29c83216d286fa4b0e6b991c0962e1efa7974097a1cc580cad"
+      },
+      "metrics": ["local-z", "region-style"]
+    }
+  ],
+  "legacyDefects": [
+    {
+      "id": "F01",
+      "outcome": "expected-legacy-failure",
+      "source": {
+        "path": "scripts/tests/fixtures/v4-baseline/legacy-defects.mjs",
+        "sha256": "e9dc7ebd81292bc250a9460877ff3d1c08c19cf7e74998dfc8cd37994651969c"
+      },
+      "reproductionTest": {
+        "path": "scripts/tests/unit/test-v4-legacy-baseline.mjs",
+        "sha256": "520814094eeb62767c85a26a7034db809c06c9ed82a474cfff0c4955248e673e"
+      },
+      "reproduction": "The minimal Node fixture translates the only source of a curve array. Legacy translation changes cubic points but leaves the modifier center in its old world position.",
+      "v4RequiredSemantic": "The object pose and every evaluated world cubic must move together; a Fill may not silently use the pre-move center."
+    },
+    {
+      "id": "F02",
+      "outcome": "expected-legacy-failure",
+      "source": {
+        "path": "scripts/tests/fixtures/v4-baseline/legacy-defects.mjs",
+        "sha256": "e9dc7ebd81292bc250a9460877ff3d1c08c19cf7e74998dfc8cd37994651969c"
+      },
+      "reproductionTest": {
+        "path": "scripts/tests/unit/test-v4-legacy-baseline.mjs",
+        "sha256": "520814094eeb62767c85a26a7034db809c06c9ed82a474cfff0c4955248e673e"
+      },
+      "reproduction": "The minimal Node fixture invokes the legacy source-group move. It changes path.groupId but leaves creation.objects[].pathIds in the old owner, proving the two same-named moves write different authority.",
+      "v4RequiredSemantic": "A source has one typed Program owner; failed evaluation must retain its source and diagnostic and must not reuse a prior output."
+    }
+  ]
+}
