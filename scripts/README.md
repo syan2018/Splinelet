@@ -38,6 +38,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 `test-v4-start-path.mjs` 验证首点显示、移动、保存重开、续画与每次落点撤销；`test-v4-single-vertex-path.mjs` 验证零边 Path 的结构、软引用诊断、复制和共享源转移闭包。旧单点工程的 V1–V3 导入保真由 `test-v4-migration.mjs` 覆盖。
 
+`test-v4-path-deletion.mjs` 覆盖删除影响、共享几何保留、失效构造保存和撤销；`test-v4-path-geometry-command.mjs` 覆盖重拟合/直连的身份、权限与原子性；`test-v4-path-intents.mjs` 从原像素视图核对反向重拟合、原直连控制柄行为及坏路径修复入口。这些同样纳入 `pnpm test`。
+
 `node scripts/tests/unit/test-v4-legacy-equivalence.mjs` 比较内置 Sandrone 的源 cubic、求值区域与逐区域属性，并检查修改来源后的动态结果；可选首个位置参数或 `SPLINELET_LEGACY_EQUIVALENCE_PROJECT` 环境变量指定额外 `.spl`。测试只读原件，额外文件不作为单元测试的隐式依赖。这是导入模块验证，不能替代原界面的文件打开、手势编辑和保存重开验收。
 
 具体分发和验收入口见 [V4 任务总控](../tasks/editor-model-v4-refactor/README.md)。[P01 验证工作包](../tasks/editor-model-v4-refactor/01-validation-2026-09-19.md)提供统一浏览器入口：先安装 `pnpm exec playwright install chromium` 并构建对应前端，再运行 `pnpm test:browser --suite legacy --target web` 或 `--target desktop`；可用 `--case <用例名>` 选择单项。runner 自建隔离服务、浏览器和 context，输出构建摘要、fixture 摘要及失败证据到 `outputs/v4-qa/`；不连接用户页面。原简化 V4 候选页面入口已撤销，`--suite v4` 的历史用例需要改为原工作区的接入验收，当前不能用来证明功能保持或完成重构。未登记的 case 明确失败，不算跳过通过。`check:all` 不包含浏览器或 Tauri 原生交互验收，桌面静态前端测试也不等于原生文件会话验收。

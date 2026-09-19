@@ -26,6 +26,8 @@ node scripts/tests/unit/test-v4-legacy-equivalence.mjs F:/Projects/Splinelet/out
 
 ## 未完成项
 
+路径拓扑检查点 `e1c5c26`：本轮 `pnpm check:all` 通过，含 77 个单元测试、Rust 检查与双端构建，日志 `outputs/v4-qa/check-all-path-topology-2026-09-19.log`。最终核对后将直连控制柄修正为原 `straightCubic` 的三分之一位置，并重跑几何命令/像素意图两组测试及全库 typecheck/lint/format，均通过。删除计划保留共享几何及可修复引用，列出传递下游影响；重拟合保持拓扑与端点身份，坏路径仍可改名/删除。原节点删除、合并和工作区接线仍待完成。
+
 - 原工作区的文件、历史、源手势、构造和模型面板尚未全面接入 V4。
 - 真正含混的多 owner 声明结构化拒绝；尚无曲线集合算子时，跨 owner 多曲线 between/split 也拒绝，不复制来源兜底。两份指定工程没有这些情况。
 
