@@ -126,3 +126,17 @@ CreationRuntime 只允许已提交、当前签发的 project 读取吸附目标�
 `test-v4-object-gesture.mjs` 验证旋转组内的世界位移、父子选区去重、镜像派生曲线随位姿移动、所有非 nodes 定义不变、连续基线预览、取消、单次撤销、锁定和替换会话失效。Sandrone 原 SVG fixture 以真实鼠标移动部件，验证显示位移、一次提交、raw sketches/programs 不变和撤销恢复；同批节点/源路径/吸附/文件重开检查仍通过。
 
 本批 `pnpm check:all` 退出 0：101 项单测、类型/lint/格式、Rust 检查及双端前端构建通过。日志：`outputs/v4-qa/check-all-object-pose-gesture-2026-09-20.log`。
+
+## 完整原 Studio 的会话注入
+
+`StudioApp({ host })` 保留原界面，通过 `useStudioProject` 订阅 V4 会话；未提供 host 时仍走原默认入口。原节点操作、节点/柄手势、吸附、按 nodeIds 的部件移动、撤销/重做和保存复用同一会话。原 Project setter/事务在 V4 分支拒绝未适配写入，防止把展示投影当作第二个可写工程。撤销同步清理原选区与临时绘制状态。
+
+`test-v4-original-studio.cjs` 在临时端口、独立浏览器 context、真实 Worker 下挂载完整原 Studio，使用内置 Sandrone。真实鼠标节点拖动仅改变源几何；部件拖动仅改变节点位姿；两者各提交一次，分别撤销恢复基线。原保存按钮写入 OPFS 副本，读取文件字节验证为当前 V4 文档；76 条源路径、11 个部件不变，页面和控制台无错误。证据位于 `output/playwright/v4-original-studio/result.json` 与 `original-studio.png`。
+
+此次真实界面测试发现并修复 `.view-controls` 同时继承 left 和 right 导致按钮留在左侧、被派生曲线控件遮挡的问题；原缩放控件恢复右侧定位。工程标题读取会话当前文件名。浏览器测试以正常点击验证适合画布按钮，无强制点击。
+
+`pnpm check:all` 退出 0，101 项单测、格式、Rust 检查及双端构建通过，日志为 `outputs/v4-qa/check-all-original-studio-host-2026-09-20.log`。检查运行期间补充的标题/历史清理改动另行通过类型与定向 lint，最终产品已进入该次双端构建；新增浏览器文件另行通过格式/lint及真实执行。原组件修改器、Sandrone 源编辑/保存和吸附脚本仍通过。
+
+这是原根接线的可运行阶段，不是默认切换：新建、打开、参考图修改、描绘、部分源树操作、ModelWorkspace 和完整 Agent API 写入仍须适配；原生文件旅程尚未签收。
+
+无 host 的原默认入口另行通过 Web 和 desktop-frontend 的 `endpoint-snapping` 真实浏览器回归；证据分别为 `outputs/v4-qa/original-host-legacy-web-2026-09-20/manifest.json` 与 `outputs/v4-qa/original-host-legacy-desktop-2026-09-20/manifest.json`。

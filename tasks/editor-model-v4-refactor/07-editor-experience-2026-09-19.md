@@ -307,3 +307,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 默认根后续接线必须区分对象与源编辑：`CreationWorkspace.prepare_move` 当前只返回 pathIds，旧根据此调用 translatePaths；V4 对象移动须传 nodeIds 并通过 move-nodes 更新部件 pose，不能把已验证的 beginV4PathGesture 当作对象移动验收。此整理保留原工具/布局，改正对象组织与变换权威。
 
 2026-09-20 部件位姿手势：runtime.beginObjectGesture 接 nodeIds，通过 move-nodes 写场景 pose；共用 runtime-gesture 维护源/对象预览的同一会话边界。原 prepare_move 开始返回 nodeIds，V4 手势 hook 具备对象入口。旋转父组、父子同时选中、派生镜像跟随、原始定义不变和 Sandrone 原 SVG 实际鼠标检查通过。默认根仍待注入 StudioHost/runtime，当前只有原组件 fixture 接线，不能签收默认对象移动旅程。
+
+2026-09-20 原根可注入会话：原 `StudioApp` 接受可选 `StudioHost`，通过订阅读取唯一会话的只读展示投影；原组件布局保留。V4 分支接入源节点操作、节点/柄拖动及吸附、按 nodeIds 的部件移动、撤销/重做、保存及自动草稿。旧 Project 事务在该分支明确拒绝，不能回写显示投影。默认无 host 入口继续原行为。完整原根浏览器验收脚本为 `test-v4-original-studio.cjs`；新建/打开、参考图修改、描绘、源树部分操作、建模和完整 API 写入仍未接线，不构成默认切换或全部旅程签收。

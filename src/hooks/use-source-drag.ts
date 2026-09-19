@@ -44,7 +44,8 @@ export function useSourceDrag({
   snapEnabled = false,
   scale = 1,
   onSnapFeedback = () => {},
-}: Pick<SourceInput, 'runtime' | 'project' | 'pathId'> & {
+}: Pick<SourceInput, 'project' | 'pathId'> & {
+  runtime: SourceInput['runtime'] | null;
   nodes: number[];
   disabled?: boolean;
   isPanning?: () => boolean;
@@ -107,6 +108,7 @@ export function useSourceDrag({
   };
   return {
     onObjectPointerDown(event: PointerEvent, nodeIds: string[]) {
+      if (!runtime) return;
       if (active.current || disabled || isPanning() || event.button !== 0)
         return;
       event.stopPropagation();
@@ -128,6 +130,7 @@ export function useSourceDrag({
       }
     },
     onPathPointerDown(event: PointerEvent, pathIds: string[]) {
+      if (!runtime) return;
       if (active.current || disabled || isPanning() || event.button !== 0)
         return;
       event.stopPropagation();
@@ -149,6 +152,7 @@ export function useSourceDrag({
       }
     },
     onPointPointerDown(event: PointerEvent, curve: number, point: number) {
+      if (!runtime) return;
       if (active.current || disabled || isPanning() || event.button !== 0)
         return;
       event.stopPropagation();
@@ -261,7 +265,9 @@ export function useSourceDrag({
     onLostPointerCapture(event: PointerEvent) {
       if (active.current?.pointerId === event.pointerId) finish(false);
     },
-    onKeyDown(event: KeyboardEvent) {
+    onKeyDown(
+      event: Pick<KeyboardEvent, 'key' | 'preventDefault' | 'stopPropagation'>,
+    ) {
       if (event.key === 'Escape' && active.current) {
         event.preventDefault();
         event.stopPropagation();

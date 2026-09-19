@@ -3,6 +3,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useEffectEvent,
@@ -153,7 +154,12 @@ import {
   moveHandle,
   enforceContinuity,
 } from '@/lib/source-editor/continuity.mjs';
-import { createLegacyNodeActions } from '@/lib/source-editor/node-actions.mjs';
+import {
+  createLegacyNodeActions,
+  createV4NodeActions,
+} from '@/lib/source-editor/node-actions.mjs';
+import { useStudioProject, type StudioHost } from '@/hooks/use-studio-project';
+import { useSourceDrag } from '@/hooks/use-source-drag';
 
 type ModelApi = {
   state: (input?: unknown) => unknown;
@@ -291,7 +297,7 @@ const encodeProjectBytes = async (project: Project) => {
   });
 };
 
-export default function StudioApp() {
+export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<ModelApi>(null);
   const creationApi = useRef<CreationApi>(null);
@@ -303,8 +309,15 @@ export default function StudioApp() {
   const highlightSourceSelection = creationSelectionKind !== 'cell';
   const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
-  const [project, setProject] = useState<Project>(initialTraceProject),
-    pr = useRef(project);
+  const {
+    project,
+    setProject,
+    snapshot: studioSnapshot,
+  } = useStudioProject(host);
+  const pr = useRef(project);
+  useLayoutEffect(() => {
+    if (host) pr.current = project;
+  }, [host, project]);
   const [active, setActive] = useState<string | null>(null),
     ar = useRef(active);
   const [tool, setTool] = useState('select'),
@@ -374,11 +387,22 @@ export default function StudioApp() {
   const history = useRef<Project[]>([]),
     future = useRef<Project[]>([]),
     [, setHistoryTick] = useState(0),
-    [historySize, setHistorySize] = useState(0),
-    [futureSize, setFutureSize] = useState(0),
+    [legacyHistorySize, setHistorySize] = useState(0),
+    [legacyFutureSize, setFutureSize] = useState(0),
     [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null),
-    [saved, setSaved] = useState('正在恢复工程…'),
-    [initialized, setInitialized] = useState(false);
+    [legacySaved, setSaved] = useState('正在恢复工程…'),
+    [initialized, setInitialized] = useState(!!host);
+  const historySize = studioSnapshot
+    ? Number(studioSnapshot.editorState.canUndo)
+    : legacyHistorySize;
+  const futureSize = studioSnapshot
+    ? Number(studioSnapshot.editorState.canRedo)
+    : legacyFutureSize;
+  const saved = studioSnapshot
+    ? studioSnapshot.storage.dirty
+      ? '有修改未保存'
+      : '已保存'
+    : legacySaved;
   const file = useRef<HTMLInputElement>(null),
     projectFile = useRef<HTMLInputElement>(null),
     space = useRef(false),
@@ -466,6 +490,7 @@ export default function StudioApp() {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
+    studioDrag.cancel();
     if (['trace', 'edit', 'move'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
     if (next !== 'trace') finish();
@@ -596,6 +621,13 @@ export default function StudioApp() {
     project: Project;
   } | null>(null);
   const [fileName, setFileName] = useState('');
+  const displayedFileName = studioSnapshot
+    ? studioSnapshot.storage.target?.kind === 'web'
+      ? studioSnapshot.storage.target.handle.name
+      : studioSnapshot.storage.target?.kind === 'desktop'
+        ? projectNameFromPath(studioSnapshot.storage.target.path)
+        : studioSnapshot.presentation.fileName || ''
+    : fileName;
   const [fileBusy, setFileBusy] = useState(false);
   const fileBusyRef = useRef(false);
   const [bindingVersion, setBindingVersion] = useState(0);
@@ -640,6 +672,61 @@ export default function StudioApp() {
       setSaved('已保存到 ' + handle.name);
   };
   const saveProject = async (saveAs = false) => {
+    if (host) {
+      if (fileBusyRef.current) return;
+      const before = host.getSnapshot();
+      if (before.editorState.previewId) {
+        setStatus('请先完成或取消拖动，再保存工程');
+        return;
+      }
+      fileBusyRef.current = true;
+      setFileBusy(true);
+      try {
+        let target = saveAs ? null : before.storage.target;
+        const suggestedName =
+          before.presentation.fileName || 'Splinelet工程.spl';
+        if (!target && isDesktopRuntime()) {
+          const path = await desktopProjectSavePath(suggestedName);
+          if (!path) return;
+          target = { kind: 'desktop', path };
+        } else if (!target) {
+          const pickerWindow = window as FilePickerWindow;
+          if (!pickerWindow.showSaveFilePicker) {
+            const { encodeDocument } = await import('@/lib/document/codec.mjs');
+            download(
+              encodeDocument(before.storage.document, {
+                assets: before.storage.assets,
+              }),
+              suggestedName,
+              SPL_MIME,
+            );
+            setStatus('已下载工程副本 · 浏览器草稿仍用于恢复');
+            return;
+          }
+          const handle = await pickerWindow.showSaveFilePicker({
+            suggestedName,
+            types: [
+              {
+                description: 'Splinelet工程',
+                accept: { [SPL_MIME]: ['.spl'] },
+              },
+            ],
+          });
+          target = { kind: 'web', handle };
+        }
+        if (host.getSnapshot().editorState.epoch !== before.editorState.epoch)
+          throw Error('选择保存位置期间工程已切换，请重新保存');
+        await host.save(target);
+        setStatus('工程已保存');
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError'))
+          setStatus(errorMessage(error));
+      } finally {
+        fileBusyRef.current = false;
+        setFileBusy(false);
+      }
+      return;
+    }
     if (fileBusyRef.current || drag.current) {
       if (drag.current) setStatus('请先完成或取消拖动，再保存工程');
       return;
@@ -843,6 +930,13 @@ export default function StudioApp() {
     }
   };
   const setDoc = (p: Project, record = true) => {
+    if (host) {
+      if (p === host.getSnapshot().project) {
+        pr.current = p;
+        return;
+      }
+      throw Error('此操作尚未接入统一工程命令');
+    }
     if (record) {
       history.current.push(cloneTraceValue(pr.current));
       if (history.current.length > 80) history.current.shift();
@@ -855,15 +949,24 @@ export default function StudioApp() {
     setHistoryTick((t) => t + 1);
   };
   const transact = (fn: (p: Project) => void) => {
+    if (host) throw Error('此操作尚未接入统一工程命令');
     const p = cloneTraceValue(pr.current);
     fn(p);
     setDoc(p);
   };
   const nodeActions = () =>
-    createLegacyNodeActions({
-      getProject: () => pr.current,
-      transact,
-    });
+    host
+      ? createV4NodeActions({
+          runtime: host.getSnapshot().runtime,
+          project: host.getSnapshot().project,
+          onCommit: (next: Project) => {
+            pr.current = next;
+          },
+        })
+      : createLegacyNodeActions({
+          getProject: () => pr.current,
+          transact,
+        });
   const setActiveNow = (id: string | null) => {
     if (ar.current !== id) {
       setSelection(null);
@@ -922,8 +1025,10 @@ export default function StudioApp() {
       });
       worker.current.postMessage({ ...args, id });
     });
+  const restoreDocument = useEffectEvent(setDoc);
   useEffect(() => {
     let alive = true;
+    if (host) return;
     const startingProject = pr.current;
     workspaceDB('get')
       .then(
@@ -944,7 +1049,7 @@ export default function StudioApp() {
           // A late restore must never replace an import or edit made meanwhile.
           if (v && alive && pr.current === startingProject) {
             try {
-              setDoc(validateProject(v), false);
+              restoreDocument(validateProject(v), false);
               if (session?.handle) {
                 bindFile(session.handle);
                 fileSaved.current = null;
@@ -963,9 +1068,16 @@ export default function StudioApp() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [host]);
   useEffect(() => {
     if (!initialized || gesturing) return;
+    if (host) {
+      if (studioSnapshot?.editorState.previewId) return;
+      const timer = setTimeout(() => {
+        host.autosave().catch((error) => setStatus(errorMessage(error)));
+      }, 200);
+      return () => clearTimeout(timer);
+    }
     const handle = fileHandle.current;
     const binding = projectBinding.current;
     setSaved(
@@ -1004,8 +1116,16 @@ export default function StudioApp() {
     return () => {
       clearTimeout(backupTimer);
     };
-  }, [project, initialized, bindingVersion, gesturing]);
+  }, [
+    project,
+    initialized,
+    bindingVersion,
+    gesturing,
+    host,
+    studioSnapshot?.editorState.previewId,
+  ]);
   useEffect(() => {
+    if (host) return;
     const flush = () => {
       if (
         initialized &&
@@ -1035,7 +1155,7 @@ export default function StudioApp() {
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('beforeunload', leave);
     };
-  }, [initialized]);
+  }, [initialized, host]);
   useEffect(() => {
     if (!initialized) return;
     let alive = true;
@@ -1119,6 +1239,29 @@ export default function StudioApp() {
     return () => observer.disconnect();
   }, []);
   const undo = () => {
+    if (host) {
+      if (busyRef.current || drag.current) return;
+      studioDrag.cancel();
+      host.undo();
+      const p = host.getSnapshot().project as Project;
+      pr.current = p;
+      lastNodeTap.current = null;
+      setPreview([]);
+      setProposed(null);
+      previewToken.current++;
+      if (!p.paths.some((x) => x.id === ar.current)) {
+        setActiveNow(p.paths.at(-1)?.id || null);
+        setDrawing(false);
+      }
+      setSelection(null);
+      setMergeSource(null);
+      if (p.paths.find((x) => x.id === ar.current)?.closed) finish();
+      selectPathsNow(
+        pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
+      );
+      setStatus('已撤销');
+      return;
+    }
     if (busyRef.current || drag.current) return;
     lastNodeTap.current = null;
     const p = history.current.pop();
@@ -1143,6 +1286,22 @@ export default function StudioApp() {
     setStatus('已撤销');
   };
   const redo = () => {
+    if (host) {
+      if (busyRef.current || drag.current) return;
+      studioDrag.cancel();
+      host.redo();
+      const p = host.getSnapshot().project as Project;
+      pr.current = p;
+      lastNodeTap.current = null;
+      setSelection(null);
+      setMergeSource(null);
+      if (!p.paths.some((x) => x.id === ar.current && !x.closed)) finish();
+      selectPathsNow(
+        pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
+      );
+      setStatus('已重做');
+      return;
+    }
     if (busyRef.current || drag.current) return;
     lastNodeTap.current = null;
     const p = future.current.pop();
@@ -1515,7 +1674,27 @@ export default function StudioApp() {
     ) || { x: 0, y: 0 };
   const inside = (p: Point) =>
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
+  const studioDrag = useSourceDrag({
+    runtime: studioSnapshot?.runtime ?? null,
+    project,
+    pathId: active ?? '',
+    nodes: selectedNodes,
+    disabled: busy || !!mergeSource,
+    isPanning: () => space.current || tool === 'pan',
+    getCaptureTarget: () => stage.current,
+    toPoint: coordinate,
+    onSelectionChange: (nodes, selection) => {
+      selectNodesNow(nodes);
+      setPointSelection(selection);
+    },
+    onError: (error) => setStatus(errorMessage(error)),
+    snapEnabled: settings.snap,
+    scale: view.s,
+    onSnapFeedback: (feedback) =>
+      setSnapFeedback(feedback as EndpointSnapFeedback | null),
+  });
   const cancelGesture = () => {
+    studioDrag.cancel();
     const g = drag.current;
     if (!g) return;
     if (g.base) {
@@ -1589,6 +1768,11 @@ export default function StudioApp() {
     stage.current?.focus({ preventScroll: true });
     const toggle = e.shiftKey || e.ctrlKey || e.metaKey;
     const selected = creationApi.current?.prepare_move({ ...target, toggle });
+    if (host) {
+      if (!selected?.nodeIds.length || toggle) return;
+      studioDrag.onObjectPointerDown(e, selected.nodeIds);
+      return;
+    }
     if (!selected?.pathIds.length) {
       setStatus('此选区没有可移动的源线 · 请选中有源线的部件');
       return;
@@ -1853,13 +2037,14 @@ export default function StudioApp() {
   useEffect(() => {
     if (tool !== 'edit') queueMicrotask(() => setMergeSource(null));
   }, [tool]);
+  const mergePathsForEffect = useEffectEvent(mergePaths);
   useEffect(() => {
     if (!mergeTarget) return;
     queueMicrotask(() => {
       setMergeTarget(null);
       if (!mergeSource) return;
       try {
-        mergePaths({
+        mergePathsForEffect({
           firstId: mergeSource.pathId,
           firstEnd: mergeSource.end,
           secondId: mergeTarget.pathId,
@@ -1972,6 +2157,10 @@ export default function StudioApp() {
     curve: number,
     point: number,
   ) => {
+    if (host) {
+      if (tool === 'edit') studioDrag.onPointPointerDown(e, curve, point);
+      return;
+    }
     if (drag.current) return;
     if (space.current || e.button !== 0 || tool === 'pan') return;
     e.stopPropagation();
@@ -2094,6 +2283,8 @@ export default function StudioApp() {
         !((e.ctrlKey || e.metaKey) && ['z', 's'].includes(e.key.toLowerCase()))
       )
         return;
+      if (e.defaultPrevented) return;
+      studioDrag.onKeyDown(e);
       if (e.defaultPrevented) return;
       updateModifiers(e);
       // Select menus have no text-edit undo stack. Keep document undo/redo
@@ -3554,8 +3745,8 @@ export default function StudioApp() {
           className="project-name"
           data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
         >
-          <span title={fileName || '未绑定文件'}>
-            {fileName || '未命名工程'}
+          <span title={displayedFileName || '未绑定文件'}>
+            {displayedFileName || '未命名工程'}
           </span>{' '}
           <i title={saved} aria-label={saved}>
             <span className="sr-only">{saved}</span>
@@ -3691,12 +3882,20 @@ export default function StudioApp() {
           ref={setStage}
           aria-label="编辑画布"
           className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
-          onPointerMove={pointerMove}
-          onPointerUp={pointerUp}
+          onPointerMove={(e) => {
+            studioDrag.onPointerMove(e);
+            pointerMove(e);
+          }}
+          onPointerUp={(e) => {
+            studioDrag.onPointerUp(e);
+            pointerUp(e);
+          }}
           onPointerCancel={(e) => {
+            studioDrag.onPointerCancel(e);
             if (drag.current?.pointerId === e.pointerId) cancelGesture();
           }}
           onLostPointerCapture={(e) => {
+            studioDrag.onLostPointerCapture(e);
             if (drag.current?.pointerId === e.pointerId) cancelGesture();
           }}
         >
@@ -4089,6 +4288,7 @@ export default function StudioApp() {
         <>
           <CreationWorkspace
             project={project}
+            runtime={studioSnapshot?.runtime}
             enabled={true}
             viewMode={creationView}
             tool={tool}

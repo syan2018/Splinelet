@@ -223,6 +223,7 @@
 }
 .creation-stage .view-controls {
   bottom: 87px;
+  left: auto;
   right: 17px;
 }
 .creation-stage .preview-actions {

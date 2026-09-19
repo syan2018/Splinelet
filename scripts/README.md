@@ -58,6 +58,8 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 原组件浏览器脚本另含 `v4-sandrone-reference.mjs`：读取内置样例，在原节点面板编辑并撤销，通过隔离 context 所属临时 origin 的 OPFS 真正写入 V4 副本，再以浏览器文件句柄重开，验证图片解码、资源释放和文档等价。它不读写用户工程绑定，不替代默认工作区或 Tauri 原生文件验收。
 
+`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 在临时端口和全新浏览器 context 中，将 `StudioHost` 注入完整原 `StudioApp`，载入内置 Sandrone，检查原布局、真实节点拖动、撤销和原保存按钮写入 OPFS 副本；读取实际保存字节验证 V4 文档。它使用真实 `/trace-worker.js` 和原样式，不操作用户页面。默认入口尚未切换；新建、打开、描绘、建模和完整 API 写入等未接线旅程不能据此签收。
+
 `test-v4-studio-session.mjs` 验证原工作区根会话控制器：会话订阅发出同一运行时的只读展示句柄，源/构造命令共用历史，打开时编辑与文件版本对齐，预览不写文件，实际 V4 编码保存、换文件后的迟到写入、恢复及失效恢复保护。`test-v4-persistence.mjs` 同时检查打开的显式初始版本/dirty、取消或相同版本同步不置脏、旧工程始终另存为，以及输入失败时保留原文件状态。原组件浏览器 fixture 已通过 `useSyncExternalStore` 订阅此控制器，不自行维护另一份可写 Project；仍不是默认根工作区完整切换验收。
 
 `test-v4-node-actions.mjs` 对比原节点操作算法和 V4 源命令的连接方式、直连、批量删点结果，验证稳定身份、错误原子性和一次撤销。原主界面及节点 API 复用这个动作边界；原组件浏览器用例同时挂载 `SplineNodeInspector`，验证实际下拉框、直连/删除按钮、实时派生结果和撤销。
