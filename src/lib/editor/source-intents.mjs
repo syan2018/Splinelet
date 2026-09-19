@@ -7,16 +7,45 @@ import {
 import { sourceViewToWorld } from './source-view.mjs';
 import { resolveRelation } from '../geometry/relations.mjs';
 
+const intentKinds = new Set([
+  'move-anchor',
+  'move-anchors',
+  'move-handle',
+  'split-span',
+  'set-handle-mode',
+  'set-handle-modes',
+]);
+const targetKind = (kind) =>
+  ({
+    'move-anchor': 'vertex',
+    'move-anchors': 'vertex',
+    'move-handle': 'edge-end',
+    'split-span': 'edge',
+    'set-handle-mode': 'vertex',
+    'set-handle-modes': 'vertex',
+  })[kind];
+const refKey = (ref) =>
+  JSON.stringify(
+    ref.kind === 'edge-end'
+      ? [ref.kind, ref.sketchId, ref.edgeId, ref.end]
+      : [ref.kind, ref.sketchId, ref.id],
+  );
+const samePoint = (left, right) => left?.x === right?.x && left?.y === right?.y;
+const targetFromView = (view, identityId, kind) => {
+  const target = view.source.identities?.byId[identityId];
+  if (!target || target.kind !== targetKind(kind))
+    throw Error('源选区身份已失效');
+  return target;
+};
+const uniqueChangedRefs = (refs) => [
+  ...new Map(refs.map((ref) => [JSON.stringify(ref), ref])).values(),
+];
+
 /** Source gestures resolve stable identities in their captured view, never array indices. */
 export function createSourceIntent(request, displayed) {
   const action = structuredClone(request);
   const view = structuredClone(displayed);
-  if (
-    !['move-anchor', 'move-handle', 'split-span', 'set-handle-mode'].includes(
-      action?.kind,
-    )
-  )
-    throw Error('源编辑动作尚未适配');
+  if (!intentKinds.has(action?.kind)) throw Error('源编辑动作尚未适配');
   if (
     typeof view?.epoch !== 'string' ||
     !Number.isInteger(view.revision) ||
@@ -24,27 +53,47 @@ export function createSourceIntent(request, displayed) {
   )
     throw Error('源编辑需要携带当前会话身份的视图');
   if (view.previewId != null) throw Error('源手势必须从已提交视图开始');
-  const target = view.source.identities?.byId[action.identityId];
-  const kind = {
-    'move-anchor': 'vertex',
-    'move-handle': 'edge-end',
-    'split-span': 'edge',
-    'set-handle-mode': 'vertex',
-  }[action.kind];
-  if (!target || target.kind !== kind) throw Error('源选区身份已失效');
+  let batchItems;
+  if (action.kind === 'move-anchors' || action.kind === 'set-handle-modes') {
+    if (!Array.isArray(action.items) || !action.items.length)
+      throw Error('批量源编辑需要非空 items');
+    const byTarget = new Map();
+    for (const item of action.items) {
+      const target = targetFromView(view, item?.identityId, action.kind);
+      const key =
+        action.kind === 'set-handle-modes'
+          ? JSON.stringify([item?.pathId ?? '', refKey(target)])
+          : refKey(target);
+      const previous = byTarget.get(key);
+      if (
+        previous &&
+        action.kind === 'move-anchors' &&
+        !samePoint(previous.item.pixelPoint, item?.pixelPoint)
+      )
+        throw Error('同一源目标包含冲突位置');
+      if (!previous) byTarget.set(key, { item, target });
+    }
+    batchItems = [...byTarget.values()];
+  }
+  const target = batchItems
+    ? null
+    : targetFromView(view, action.identityId, action.kind);
   return (document, context) => {
     if (context.epoch !== view.epoch || context.revision !== view.revision)
       throw Error('源视图已失效，请重新选择');
-    const sketch = document.sketches[target.sketchId];
-    if (!sketch) throw Error('线条来源不存在');
-    const selectedPath = () => {
+    const requireSketch = (itemTarget) => {
+      const sketch = document.sketches[itemTarget.sketchId];
+      if (!sketch) throw Error('线条来源不存在');
+      return sketch;
+    };
+    const selectedPath = (item, itemTarget, sketch, kind) => {
       const paths = view.source.paths.filter(
         (path) =>
-          (!action.pathId || path.id === action.pathId) &&
-          (action.kind === 'set-handle-mode'
+          (!item.pathId || path.id === item.pathId) &&
+          (kind === 'set-handle-mode' || kind === 'set-handle-modes'
             ? path.identity.anchorIds
             : path.identity.handleIds.flat()
-          ).includes(action.identityId),
+          ).includes(item.identityId),
       );
       if (paths.length !== 1) throw Error('请明确选择控制柄所属路径');
       const ref = view.source.identities.byId[paths[0].identity.pathId];
@@ -52,11 +101,54 @@ export function createSourceIntent(request, displayed) {
         throw Error('路径来源已失效');
       return ref.id;
     };
+    const localPoint = (itemTarget, pixelPoint) => {
+      const sketch = requireSketch(itemTarget);
+      return transformPoint(
+        inverseTransform(worldMatrix(document, sketch.ownerNodeId)),
+        sourceViewToWorld(view.source.frame, pixelPoint),
+      );
+    };
+    const runBatch = (commands) => {
+      let current = document;
+      const changedRefs = [];
+      for (const command of commands) {
+        const result = createSourceCommand(command)(current, context);
+        current = result.document;
+        changedRefs.push(...(result.changedRefs || []));
+      }
+      return {
+        document: current,
+        changedRefs: uniqueChangedRefs(changedRefs),
+      };
+    };
+    if (action.kind === 'move-anchors')
+      return runBatch(
+        batchItems.map(({ item, target: itemTarget }) => ({
+          kind: 'set-vertex',
+          sketchId: itemTarget.sketchId,
+          vertexId: itemTarget.id,
+          value: localPoint(itemTarget, item.pixelPoint),
+        })),
+      );
+    if (action.kind === 'set-handle-modes')
+      return runBatch(
+        batchItems.map(({ item, target: itemTarget }) => {
+          const sketch = requireSketch(itemTarget);
+          return {
+            kind: 'set-path-handle-mode',
+            sketchId: sketch.id,
+            pathId: selectedPath(item, itemTarget, sketch, action.kind),
+            vertexId: itemTarget.id,
+            mode: action.mode,
+          };
+        }),
+      );
+    const sketch = requireSketch(target);
     if (action.kind === 'set-handle-mode')
       return createSourceCommand({
         kind: 'set-path-handle-mode',
         sketchId: sketch.id,
-        pathId: selectedPath(),
+        pathId: selectedPath(action, target, sketch, action.kind),
         vertexId: target.id,
         mode: action.mode,
       })(document, context);
@@ -76,10 +168,7 @@ export function createSourceIntent(request, displayed) {
         t: uses[0].reversed ? 1 - action.t : action.t,
       })(document, context);
     }
-    const local = transformPoint(
-      inverseTransform(worldMatrix(document, sketch.ownerNodeId)),
-      sourceViewToWorld(view.source.frame, action.pixelPoint),
-    );
+    const local = localPoint(target, action.pixelPoint);
     if (action.kind === 'move-anchor')
       return createSourceCommand({
         kind: 'set-vertex',
@@ -108,7 +197,7 @@ export function createSourceIntent(request, displayed) {
     return createSourceCommand({
       kind: 'move-path-handle',
       sketchId: sketch.id,
-      pathId: selectedPath(),
+      pathId: selectedPath(action, target, sketch, action.kind),
       edgeId: edge.id,
       end: target.end,
       vector: [local[0] - anchor[0], local[1] - anchor[1]],
