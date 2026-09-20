@@ -364,4 +364,4 @@ pnpm test:browser --suite v4 --case reference-space --target web
 
 2026-09-20 用途切换底层成员命令：新增 curve-filter 与 set-region-path-membership，在特定构面输入中排除/恢复 PathRef，保留原 Source/Fill 及 even-odd 内圈语义。regionPathMemberships 可读取暂停的成员关系；原只读 roles 只显示当前参与的成员。共享筛选复制后再改，同一 Fill 输入有多个区域用途时拒绝隐式联动；源定义、发布端口和下游赋值不重建。结构性筛选默认隐藏。此项仍是原 roles 接线的底层能力，尚未签收原按钮的完整边界/参考/分区/挖洞切换。
 
-用途按钮接线前还须处理普通绘制延续：basicProgram/ensureFill 当前仅认识直接 Source → Fill。应使成员筛选仍属于普通构面输入管理，保证暂停/恢复用途后再画内圈不会被误判成高级构造并追加独立填充区域；同时覆盖参考线改为开放路径后继续绘制，不可因重新枚举闭合路径而丢失暂停成员关系。这是明确待办，当前底层命令验收不涵盖该组合旅程。
+2026-09-20 普通绘制延续已接通：basicProgram/ensureFill 识别恒等局部 Source → curve-filter → Fill，把成员筛选留在普通构面输入管理中；暂停/恢复用途后再画内圈仍形成原构面的孔洞。暂停的成员即使变为开放路径，也保留在筛选前的 Source 输入中，后续绘制和重新闭合均不丢失暂停状态。继续绘制仅更新输入，保留已有 Fill 的名称和参数。变换、停用或无效的筛选仍不当作普通构面。组合单元覆盖这些旅程及一次撤销；原 roles 按钮本身仍未接线。

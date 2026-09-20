@@ -336,3 +336,11 @@ curve-filter 仅筛选构造输入，不创建新的曲线/边身份。set-regio
 check-all-path-membership-final-2026-09-20.log 记录 pnpm check:all 退出 0；前一轮因算子注册清单测试未包含 curve-filter 失败，更新清单后完整重跑通过。original-path-membership-2026-09-20.log 为 PASS，原 Studio 的 Sandrone、样式、编辑、撤销、保存、V4/旧工程/示例打开及无效文件保护继续通过。
 
 本轮只完成成员命令，未签收原 roles 按钮。其接线和“用途往返后继续普通绘制”的组合行为仍需完成；默认入口、宽度和 ModelWorkspace 等剩余事项保持未签收。
+
+## 2026-09-20 成员切换后的普通绘制延续
+
+basicProgram/ensureFill 现在识别恒等局部成员筛选。成员暂停或恢复后继续画内圈，仍使用同一 Fill，面积分别从 400→396、300→296；保留既有 Fill 名称、参数、筛选和发布端口。暂停成员改为开放路径后再绘制、重新闭合仍保留暂停状态，明确恢复后才重新构成孔洞。停用或带实际变换的筛选仍按高级独立分支追加，不被普通输入扩展覆盖。
+
+test-v4-region-path-membership.mjs 的组合旅程与一次撤销通过；test-v4-boundary-drawing.mjs 中真实高级样例、保存续画与身份保留通过。check-all-membership-drawing-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 118 项单元、类型/lint/格式/Rust 检查和双端构建。original-membership-drawing-2026-09-20.log 为 PASS，原 Studio 的 Sandrone、样式、编辑、撤销、保存及工程打开继续通过；已目视检查原界面截图。
+
+上述结果补齐上一节列出的普通绘制组合行为；原 roles 按钮本身和其他默认入口待办仍未签收。

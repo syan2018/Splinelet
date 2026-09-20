@@ -59,6 +59,7 @@ import {
 } from './source-organization.mjs';
 import { createSupportCommand } from './support.mjs';
 import { createRegionPathMembershipCommand } from './region-path-membership.mjs';
+import { curveFilterOperator } from '../../construction/operators/curves/filter.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -110,7 +111,28 @@ function createShape(document, action, idFactory) {
   };
   return id;
 }
-// Only plain Source / Fill programs permit in-place input extension.
+const localCurveInput = (ref, ownerNodeId) =>
+  ref?.kind === 'port' &&
+  ref.ownerNodeId === ownerNodeId &&
+  ref.domain === 'curves' &&
+  ref.port === 'curves' &&
+  ref.space === 'local-result' &&
+  Array.isArray(ref.transform) &&
+  ref.transform.length === 6 &&
+  ref.transform.every((value, i) => value === identity()[i]);
+
+function fillInputChain(program) {
+  const fill = program.operators[program.outputs.regions?.operatorId];
+  const input = fill?.inputs.input?.[0];
+  const upstream = program.operators[input?.operatorId];
+  const filter = upstream?.type === 'curve-filter' ? upstream : null;
+  const source = filter
+    ? program.operators[filter.inputs.input?.[0]?.operatorId]
+    : upstream;
+  return { fill, filter, source, input };
+}
+
+// Plain Source / Fill plus its structural membership filter permit extension.
 // New contours in complex programs use an independent unpublished branch.
 function basicProgram(document, ownerNodeId, allowAdvanced = false) {
   writable(document, ownerNodeId);
@@ -119,10 +141,8 @@ function basicProgram(document, ownerNodeId, allowAdvanced = false) {
   const program = document.programs[node.programId];
   const all = Object.values(program.operators);
   const source = program.operators[program.outputs.curves?.operatorId];
-  const fill = program.operators[program.outputs.regions?.operatorId];
-  const fillSource =
-    fill && program.operators[fill.inputs.input?.[0]?.operatorId];
-  const known = new Set([source, fill, fillSource].filter(Boolean));
+  const { fill, filter, source: fillSource, input } = fillInputChain(program);
+  const known = new Set([source, fill, filter, fillSource].filter(Boolean));
   if (
     all.some((item) => !known.has(item)) ||
     (source && (!source.enabled || source.type !== 'source')) ||
@@ -130,6 +150,12 @@ function basicProgram(document, ownerNodeId, allowAdvanced = false) {
       (!fill.enabled ||
         fill.inputs.input?.length !== 1 ||
         fill.type !== 'fill' ||
+        !localCurveInput(input, ownerNodeId) ||
+        (filter &&
+          (!filter.enabled ||
+            filter.inputs.input?.length !== 1 ||
+            !localCurveInput(filter.inputs.input[0], ownerNodeId) ||
+            curveFilterOperator.validateParams(filter.params) !== true)) ||
         fillSource?.type !== 'source' ||
         !fillSource.enabled ||
         program.outputs.regions?.operatorId !== fill.id))
@@ -140,18 +166,26 @@ function basicProgram(document, ownerNodeId, allowAdvanced = false) {
   return { program, source, fill };
 }
 function ensureFill(document, program, source, ownerNodeId, idFactory) {
-  const fill = program.operators[program.outputs.regions?.operatorId];
-  let fillSource = fill && program.operators[fill.inputs.input[0].operatorId];
+  const { fill, filter, source: previousSource } = fillInputChain(program);
+  let fillSource = previousSource;
   if (!fillSource || fillSource.id === source.id) {
     fillSource = operator(idFactory(), 'source', { paths: [] });
     program.operators[fillSource.id] = fillSource;
   }
+  // Keep suspended members even if they are now open. The filter owns their
+  // participation; dropping them here would break their restore references.
+  const excluded = new Set(
+    (filter?.params.excludedPaths || []).map((ref) =>
+      JSON.stringify([ref.sketchId, ref.id]),
+    ),
+  );
   // Save explicit closed-path membership; unrelated open drawing cannot break Fill.
   fillSource.inputs.paths = source.inputs.paths
     .map((input) => {
       const sketch = document.sketches[input.sketchId];
       const pathIds = (input.pathIds || Object.keys(sketch.paths)).filter(
         (id) => {
+          if (excluded.has(JSON.stringify([sketch.id, id]))) return true;
           const uses = sketch.paths[id].edges;
           if (!uses.length) return false;
           const first = uses[0],
@@ -169,21 +203,27 @@ function ensureFill(document, program, source, ownerNodeId, idFactory) {
       return { ...input, pathIds };
     })
     .filter((input) => input.pathIds.length);
+  if (filter)
+    filter.inputs.input = [
+      {
+        ...port(ownerNodeId, fillSource.id, 'curves'),
+        space: 'local-result',
+        transform: identity(),
+      },
+    ];
   const id = fill?.id || idFactory();
-  program.operators[id] = operator(
-    id,
-    'fill',
-    {
-      input: [
-        {
-          ...port(ownerNodeId, fillSource.id, 'curves'),
-          space: 'local-result',
-          transform: identity(),
-        },
-      ],
-    },
-    { rule: 'even-odd' },
-  );
+  const inputs = {
+    input: [
+      {
+        ...port(ownerNodeId, filter?.id || fillSource.id, 'curves'),
+        space: 'local-result',
+        transform: identity(),
+      },
+    ],
+  };
+  if (fill) fill.inputs = inputs;
+  else
+    program.operators[id] = operator(id, 'fill', inputs, { rule: 'even-odd' });
   program.outputs.regions = port(ownerNodeId, id, 'regions');
 }
 function drawPath(document, action, rawIdFactory) {

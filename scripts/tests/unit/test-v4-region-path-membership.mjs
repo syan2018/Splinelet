@@ -231,3 +231,108 @@ assert.deepEqual(
 console.log(
   'PASS path participation suspends and restores even-odd holes without source edits, output identity changes or shared-consumer mutations',
 );
+
+// Role changes must not turn the next ordinary contour into an independent
+// filled island. Both an active and a restored filter retain even-odd drawing.
+restored.programs[program.id].operators[use.operatorId].name = '保留原构面名称';
+const smallContour = {
+  kind: 'draw-path',
+  ownerNodeId: owner,
+  closed: true,
+  points: [
+    [1, 1],
+    [3, 1],
+    [3, 3],
+    [1, 3],
+  ],
+};
+for (const [start, expected] of [
+  [restored, 296],
+  [filtered, 396],
+]) {
+  const next = createAuthoringCommand(smallContour)(structuredClone(start), {
+    idFactory,
+  }).document;
+  assert.equal(area(next), expected);
+  assert.deepEqual(
+    next.programs[program.id].outputs,
+    start.programs[program.id].outputs,
+  );
+  assert.equal(
+    Object.values(next.programs[program.id].operators).filter(
+      (op) => op.type === 'fill',
+    ).length,
+    1,
+  );
+  assert.deepEqual(
+    next.programs[program.id].operators[filterId],
+    start.programs[program.id].operators[filterId],
+  );
+  assert.deepEqual(
+    next.programs[program.id].operators[use.operatorId],
+    start.programs[program.id].operators[use.operatorId],
+  );
+}
+
+// An excluded boundary may be edited open while it is a guide. Further drawing
+// must not discard the suspended reference while rebuilding closed membership.
+const corners = [
+  [5, 5],
+  [15, 5],
+  [15, 15],
+  [5, 15],
+];
+const openGuide = createAuthoringCommand({
+  kind: 'replace-path-geometry',
+  pathRef: inner,
+  expectedEdges: filtered.sketches[inner.sketchId].paths[inner.id].edges,
+  closed: false,
+  cubics: corners
+    .slice(0, -1)
+    .map((a, i) => [a, a, corners[i + 1], corners[i + 1]]),
+})(filtered, { idFactory }).document;
+assert.equal(area(openGuide), 400);
+const continued = createAuthoringCommand(smallContour)(openGuide, {
+  idFactory,
+}).document;
+assert.equal(area(continued), 396);
+assert.equal(regionPathMemberships(continued, inner)[0].included, false);
+const reclosed = createAuthoringCommand({
+  kind: 'close-path',
+  sketchId: inner.sketchId,
+  pathId: inner.id,
+})(continued, { idFactory }).document;
+assert.equal(
+  area(reclosed),
+  396,
+  'closing an excluded guide must not activate it',
+);
+assert.equal(area(toggle(true, reclosed).document), 296);
+const drawingSession = createEditorSession(filtered, { idFactory });
+drawingSession.dispatch(createAuthoringCommand(smallContour), {
+  expectedRevision: drawingSession.state.revision,
+});
+assert.equal(area(drawingSession.state.document), 396);
+drawingSession.undo({ expectedRevision: drawingSession.state.revision });
+assert.deepEqual(drawingSession.state.document, filtered);
+for (const disabled of [false, true]) {
+  const advanced = structuredClone(filtered);
+  const advancedFilter = advanced.programs[program.id].operators[filterId];
+  if (disabled) advancedFilter.enabled = false;
+  else advancedFilter.inputs.input[0].transform[4] = 0.5;
+  const beforeFilter = structuredClone(advancedFilter);
+  const next = createAuthoringCommand(smallContour)(advanced, {
+    idFactory,
+  }).document;
+  assert.deepEqual(next.programs[program.id].operators[filterId], beforeFilter);
+  assert.equal(
+    Object.values(next.programs[program.id].operators).filter(
+      (op) => op.type === 'fill',
+    ).length,
+    2,
+    'actual transforms and disabled filters still use independent advanced drawing',
+  );
+}
+console.log(
+  'PASS ordinary drawing after participation changes keeps one Fill, even-odd holes, open guide references and one undo',
+);
