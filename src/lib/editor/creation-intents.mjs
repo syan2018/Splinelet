@@ -12,6 +12,7 @@ import {
   createObjectPlacementIntent,
 } from './creation-basic-intents.mjs';
 import { createConnectionIntent } from './connection-intents.mjs';
+import { childrenOf } from '../scene/hierarchy.mjs';
 
 export const CREATION_INTENTS = Object.freeze([
   'roles',
@@ -23,6 +24,10 @@ export const CREATION_INTENTS = Object.freeze([
   'delete_swatch',
   'object',
   'new_object',
+  'scene_group',
+  'scene_ungroup',
+  'scene_reparent',
+  'scene_node',
   'modifier_update',
   'modifier_add',
   'modifier_move',
@@ -106,7 +111,32 @@ export function createCreationIntent(action, args, displayed) {
         ...new Map(refs.map((ref) => [outputIdentity(ref), ref])).values(),
       ];
     };
-    if (action === 'roles') {
+    if (action === 'scene_group')
+      run({
+        kind: 'group-nodes',
+        nodeIds: request.nodeIds,
+        name: request.name || '对象组',
+      });
+    else if (action === 'scene_ungroup')
+      run({ kind: 'ungroup-nodes', nodeIds: request.nodeIds });
+    else if (action === 'scene_node')
+      run({ kind: 'set-node', nodeId: request.id, value: request.changes });
+    else if (action === 'scene_reparent') {
+      const before = request.beforeId ? document.nodes[request.beforeId] : null;
+      const parentId = before ? before.parentId : (request.parentId ?? null);
+      const siblings = childrenOf(document, parentId).filter(
+        (node) => !request.nodeIds.includes(node.id),
+      );
+      run({
+        kind: 'reparent-nodes',
+        nodeIds: request.nodeIds,
+        parentId,
+        keepWorld: true,
+        ...(before && {
+          index: siblings.findIndex((node) => node.id === before.id),
+        }),
+      });
+    } else if (action === 'roles') {
       if (
         Object.keys(request).some(
           (key) => !['objectId', 'pathIds', 'role'].includes(key),

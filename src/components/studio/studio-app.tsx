@@ -54,6 +54,8 @@ import {
 } from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
 import { splineTools } from '@/lib/spline-api';
+import { v4AgentTools } from '@/lib/agent/tool-catalog';
+import { agentJSONValue } from '@/lib/agent/transport.mjs';
 import { inspectSplines } from '@/lib/source-editor/spline-edit.mjs';
 import type {
   AgentCreationCommandArgs,
@@ -185,6 +187,32 @@ type FilePickerWindow = Window &
   };
 type AgentHandler = { invoke(args?: unknown): unknown }['invoke'];
 type TraceApi = Record<string, AgentHandler>;
+const legacyAgentWrites = new Set([
+  'create_path',
+  'resume_path',
+  'add_anchor',
+  'finish_path',
+  'close_path',
+  'commit_preview',
+  'refit_path',
+  'set_node_mode',
+  'manage_group',
+  'move_path',
+  'move_paths',
+  'merge_paths',
+  'straighten_span',
+  'delete_node',
+  'set_point',
+  'spline_apply',
+  'creation_command',
+  'model_command',
+  'load_project',
+  'undo',
+  'redo',
+  ...Object.entries(modelTools)
+    .filter(([name, tool]) => !tool.readOnly && name !== 'set_workspace')
+    .map(([name]) => name),
+]);
 type TraceStudioWindow = Window &
   typeof globalThis & {
     traceStudio?: {
@@ -2603,11 +2631,33 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   }, []);
   useEffect(() => {
     const traceWindow = window as TraceStudioWindow;
+    host.setSelectionReader(() => creationApi.current?.readSelection() || null);
     traceWindow.traceStudio = {
-      version: '4.1',
+      version: '5.0',
       call: async (action: string, args: unknown = {}) => {
+        if (
+          action.includes('.') ||
+          (['undo', 'redo'].includes(action) &&
+            typeof args === 'object' &&
+            args !== null &&
+            'expectedRevision' in args)
+        )
+          return host.agentCall(action, args);
         const fn = apiRef.current?.[action];
         if (!fn) throw Error('未知操作 ' + action);
+        if (legacyAgentWrites.has(action)) {
+          const request = args as Record<string, unknown>;
+          if (!request || !Number.isInteger(request.expectedRevision))
+            throw Error(
+              '兼容写操作必须提供 document.get 返回的 expectedRevision',
+            );
+          if (
+            request.expectedRevision !== host.getSnapshot().editorState.revision
+          )
+            throw Error('expectedRevision 已过期，请重新读取工程');
+          const { expectedRevision: _revision, ...payload } = request;
+          args = payload;
+        }
         if (
           drag.current &&
           !['state', 'get_project', 'inspect_geometry', 'export'].includes(
@@ -2630,6 +2680,18 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       ).modelContext,
       controller = new AbortController();
     const names = [
+      'capabilities.get',
+      'document.get',
+      'selection.get',
+      'authoring.run',
+      'evaluation.request',
+      'export.run',
+      'preview.begin',
+      'preview.update',
+      'preview.commit',
+      'preview.cancel',
+      'legacy.read',
+      'redo',
       ...Object.keys(modelTools),
       ...Object.keys(creationTools),
       ...Object.keys(splineTools),
@@ -2658,6 +2720,44 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       'export',
     ];
     const properties: Record<string, unknown> = {
+      ...Object.fromEntries(
+        ['authoring.run', 'preview.update'].map((name) => [
+          name,
+          {
+            expectedRevision: { type: 'integer' },
+            action: { type: 'object' },
+            previewId: { type: 'string' },
+          },
+        ]),
+      ),
+      ...Object.fromEntries(
+        [
+          'preview.begin',
+          'preview.commit',
+          'preview.cancel',
+          'undo',
+          'redo',
+        ].map((name) => [
+          name,
+          {
+            expectedRevision: { type: 'integer' },
+            previewId: { type: 'string' },
+          },
+        ]),
+      ),
+      ...Object.fromEntries(
+        ['evaluation.request', 'export.run', 'legacy.read'].map((name) => [
+          name,
+          {
+            epoch: { type: 'string' },
+            revision: { type: 'integer' },
+            domains: { type: 'array', items: { type: 'string' } },
+            format: { type: 'string' },
+            stage: { type: 'string' },
+            options: { type: 'object' },
+          },
+        ]),
+      ),
       ...Object.fromEntries(
         Object.entries({ ...modelTools, ...creationTools, ...splineTools }).map(
           ([name, t]) => [name, t.properties],
@@ -2773,8 +2873,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             {
               name: 'bezier_' + name,
               description:
-                { ...modelTools, ...creationTools, ...splineTools }[name]
-                  ?.description ||
+                {
+                  ...modelTools,
+                  ...creationTools,
+                  ...splineTools,
+                  ...v4AgentTools,
+                }[name]?.description ||
                 (
                   {
                     state:
@@ -2825,53 +2929,74 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                 )[name],
               inputSchema: {
                 type: 'object',
-                properties: properties[name],
-                required:
-                  { ...modelTools, ...creationTools, ...splineTools }[name]
-                    ?.required ||
-                  (name === 'resume_path'
-                    ? ['pathId', 'end']
-                    : name === 'add_anchor'
-                      ? ['position']
-                      : ['select_paths', 'move_paths'].includes(name)
-                        ? ['pathIds']
-                        : name === 'move_path'
-                          ? ['pathId']
-                          : name === 'set_node_mode'
-                            ? ['pathId', 'nodeIndex', 'mode']
-                            : name === 'manage_group'
-                              ? ['action']
-                              : name === 'merge_paths'
-                                ? [
-                                    'firstId',
-                                    'firstEnd',
-                                    'secondId',
-                                    'secondEnd',
-                                  ]
-                                : name === 'straighten_span'
-                                  ? ['pathId']
-                                  : name === 'create_path'
-                                    ? ['points']
-                                    : ['select_node', 'delete_node'].includes(
-                                          name,
-                                        )
-                                      ? ['pathId', 'nodeIndex']
-                                      : name === 'set_point'
-                                        ? [
-                                            'pathId',
-                                            'curve',
-                                            'point',
-                                            'position',
-                                          ]
-                                        : name === 'export'
-                                          ? ['format']
-                                          : []),
+                properties: {
+                  ...(properties[name] as Record<string, unknown>),
+                  ...v4AgentTools[name]?.properties,
+                  ...(legacyAgentWrites.has(name) && {
+                    expectedRevision: { type: 'integer' },
+                  }),
+                },
+                required: [
+                  ...new Set([
+                    ...(legacyAgentWrites.has(name)
+                      ? ['expectedRevision']
+                      : []),
+                    ...({
+                      ...modelTools,
+                      ...creationTools,
+                      ...splineTools,
+                      ...v4AgentTools,
+                    }[name]?.required ||
+                      (name === 'resume_path'
+                        ? ['pathId', 'end']
+                        : name === 'add_anchor'
+                          ? ['position']
+                          : ['select_paths', 'move_paths'].includes(name)
+                            ? ['pathIds']
+                            : name === 'move_path'
+                              ? ['pathId']
+                              : name === 'set_node_mode'
+                                ? ['pathId', 'nodeIndex', 'mode']
+                                : name === 'manage_group'
+                                  ? ['action']
+                                  : name === 'merge_paths'
+                                    ? [
+                                        'firstId',
+                                        'firstEnd',
+                                        'secondId',
+                                        'secondEnd',
+                                      ]
+                                    : name === 'straighten_span'
+                                      ? ['pathId']
+                                      : name === 'create_path'
+                                        ? ['points']
+                                        : [
+                                              'select_node',
+                                              'delete_node',
+                                            ].includes(name)
+                                          ? ['pathId', 'nodeIndex']
+                                          : name === 'set_point'
+                                            ? [
+                                                'pathId',
+                                                'curve',
+                                                'point',
+                                                'position',
+                                              ]
+                                            : name === 'export'
+                                              ? ['format']
+                                              : [])),
+                  ]),
+                ],
                 additionalProperties: false,
               },
               annotations: {
                 readOnlyHint:
-                  { ...modelTools, ...creationTools, ...splineTools }[name]
-                    ?.readOnly ||
+                  {
+                    ...modelTools,
+                    ...creationTools,
+                    ...splineTools,
+                    ...v4AgentTools,
+                  }[name]?.readOnly ||
                   [
                     'state',
                     'get_project',
@@ -2881,7 +3006,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                 untrustedContentHint: true,
               },
               execute: (args: unknown) =>
-                traceWindow.traceStudio!.call(name, args),
+                traceWindow.traceStudio!.call(name, args).then(agentJSONValue),
             },
             { signal: controller.signal },
           ),
@@ -2928,7 +3053,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             await fetch('http://127.0.0.1:4318/result', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(result),
+              body: JSON.stringify(agentJSONValue(result)),
             });
           }
         }
@@ -2941,9 +3066,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       stopped = true;
       clearTimeout(timer);
       controller.abort();
+      host.setSelectionReader(null);
       delete traceWindow.traceStudio;
     };
-  }, []);
+  }, [host]);
   const geometryReport: GeometryReportItem[] =
     dialog === 'export' ? inspectGeometry(project.paths) : [];
   const current = project.paths.find((p) => p.id === active),
@@ -4052,7 +4178,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             </>
           ) : dialog === 'api' ? (
             <>
-              <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
+              <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nconst observed = await window.traceStudio.call('document.get');\nawait window.traceStudio.call('create_path', {\n  expectedRevision: observed.revision,\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nconst edited = await window.traceStudio.call('document.get');\nawait window.traceStudio.call('commit_preview', {\n  expectedRevision: edited.revision\n});`}</pre>
               <p>
                 统一创作：creation_inspect、creation_focus、creation_select、creation_command、creation_view、creation_export。
                 填色和厚度命令须带最新 creation_inspect 返回的 revision。

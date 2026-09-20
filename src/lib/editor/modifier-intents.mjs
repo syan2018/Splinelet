@@ -29,6 +29,8 @@ const TYPE_FIELDS = Object.freeze({
   offset: new Set(['distanceMM']),
   boolean: new Set(['operation']),
   partition: new Set(),
+  join: new Set(['connections']),
+  fill: new Set(['rule']),
 });
 const BOOLEAN_OPERATIONS = new Set(['difference', 'intersection', 'union']);
 const degreesToRadians = (value) => (value * Math.PI) / 180;
@@ -156,6 +158,15 @@ export function compileModifierUpdate(document, request) {
   if (!parameterFields.length) return action;
   if (!record(operator.params)) throw Error('修改器 params 无效');
   const params = structuredClone(operator.params);
+  if (Object.hasOwn(changes, 'connections')) {
+    if (!Array.isArray(changes.connections)) throw Error('接合对应必须是数组');
+    params.connections = structuredClone(changes.connections);
+  }
+  if (Object.hasOwn(changes, 'rule')) {
+    if (!['even-odd', 'non-zero'].includes(changes.rule))
+      throw Error('构面规则无效');
+    params.rule = changes.rule;
+  }
 
   if (Object.hasOwn(changes, 'count')) {
     editableScalar(operator.params.count, 'count');
@@ -196,7 +207,7 @@ export function compileModifierUpdate(document, request) {
 export function compileModifierAdd(document, request) {
   if (document?.version !== 4) throw Error('修改器写入需要 V4 Document');
   if (!record(request)) throw Error('modifier_add request 必须是 object');
-  if (!['curve_mirror', 'curve_array'].includes(request.type))
+  if (!['curve_mirror', 'curve_array', 'join', 'fill'].includes(request.type))
     throw Error(`modifier_add 尚不支持类型：${request.type}`);
   exactKeys(
     request,
@@ -207,6 +218,8 @@ export function compileModifierAdd(document, request) {
       'targets',
       'angleDeg',
       'centerMM',
+      'connections',
+      'rule',
       ...(request.type === 'curve_array' ? ['count'] : []),
     ]),
     'modifier_add request',
@@ -222,6 +235,20 @@ export function compileModifierAdd(document, request) {
     throw Error('Shape 的 Program 所有权无效');
   const capability = curveModifierAddCapability(document, owner.id);
   if (!capability.enabled) throw Error(capability.reason);
+  if (request.type === 'join' || request.type === 'fill') {
+    if (request.type === 'join' && !Array.isArray(request.connections))
+      throw Error('接合需要明确的端点实例对应');
+    return {
+      kind: 'add-program-modifier',
+      ownerNodeId: owner.id,
+      type: request.type,
+      name: request.name || (request.type === 'join' ? '连接边界' : '闭合构面'),
+      params:
+        request.type === 'join'
+          ? { connections: structuredClone(request.connections) }
+          : { rule: request.rule || 'even-odd' },
+    };
+  }
   if (!record(request.targets) || request.targets.kind !== 'all')
     throw Error('曲线修改器 targets 必须是 all');
   exactKeys(request.targets, new Set(['kind']), 'targets');

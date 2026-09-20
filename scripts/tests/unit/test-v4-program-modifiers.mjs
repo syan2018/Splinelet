@@ -234,11 +234,13 @@ const snapshot = await evaluateDocument(editor.state.document, {
 });
 const view = projectCreationView(editor.state.document, snapshot);
 const visibleIds = view.modifierStatus.map((status) => status.modifierId);
-assert.deepEqual(visibleIds, [mirror.id, array.id, first, second]);
-assert.deepEqual(view.creation.objects[0].modifierAdd, {
-  types: ['curve_mirror', 'curve_array'],
-  reason: null,
-});
+assert.deepEqual(visibleIds, [mirror.id, array.id, fillId, first, second]);
+assert.deepEqual(view.creation.objects[0].modifierAdd.types, [
+  'curve_mirror',
+  'curve_array',
+  'join',
+]);
+assert.equal(view.creation.objects[0].modifierAdd.reason, null);
 assert.equal(
   view.modifierStatus.find((status) => status.modifierId === second).structure
     .moveUp.enabled,

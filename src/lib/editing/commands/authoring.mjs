@@ -736,6 +736,11 @@ export function createAuthoringCommand(action) {
           name: action.name,
         }),
         changedRefs: [nodeRef(id)],
+        selectionIntent: {
+          scope: 'objects',
+          entityRefs: [nodeRef(id)],
+          activeRef: nodeRef(id),
+        },
       };
     }
     if (action.kind === 'ungroup-nodes') {

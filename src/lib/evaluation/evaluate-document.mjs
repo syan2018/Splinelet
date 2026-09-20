@@ -14,7 +14,12 @@ const absent = (domain) => ({
 const wants = (requested, ...domains) =>
   domains.some((domain) => requested.has(domain));
 const published = (planar, domain) =>
-  Object.values(planar.published).filter((result) => result.domain === domain);
+  Object.entries(planar.published)
+    .filter(([, result]) => result.domain === domain)
+    .map(([key, result]) => ({
+      ...result,
+      ownerNodeId: key.slice(0, -(domain.length + 1)),
+    }));
 
 /** Pure V4 domain assembly. It only passes immutable stage DTOs between services. */
 export async function evaluateDocument(document, options = {}) {

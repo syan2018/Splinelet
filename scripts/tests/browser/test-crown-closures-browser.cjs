@@ -1,10 +1,6 @@
 module.exports = async (page, fixture) => {
   const assert = require('node:assert/strict');
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const project = () => call('get_project');
   const scene = () => call('creation_inspect');
   const checks = [];

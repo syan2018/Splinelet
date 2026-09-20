@@ -93,13 +93,13 @@ for (const document of documents) {
   const after = session.state.document;
   const result = evaluateProgram(after, advanced.ownerNodeId);
   assert.deepEqual(
-    projectCreationView(after, {}).modifierStatus.map(
-      (item) => item.modifierId,
-    ),
-    projectCreationView(before, {}).modifierStatus.map(
-      (item) => item.modifierId,
-    ),
-    'appending a boundary introduces no technical nodes into the user modifier list',
+    projectCreationView(after, {})
+      .modifierStatus.filter((item) => item.type !== 'fill')
+      .map((item) => item.modifierId),
+    projectCreationView(before, {})
+      .modifierStatus.filter((item) => item.type !== 'fill')
+      .map((item) => item.modifierId),
+    'appending a boundary exposes Fill but introduces no source/collection implementation nodes',
   );
   assert.equal(result.regions.status, 'ready');
   assert.equal(result.curves.status, 'ready');

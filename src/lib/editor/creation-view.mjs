@@ -2,6 +2,9 @@ import { childrenOf, effectiveNodeState } from '../scene/hierarchy.mjs';
 import { transformPoint, worldMatrix } from '../scene/transforms.mjs';
 import { outputIdentity, resolveAppearance } from '../relief/appearance.mjs';
 import { isExcluded } from '../manufacturing/parts.mjs';
+import { resolveReliefDefinition } from '../relief/resolve.mjs';
+import { readyReliefMembers } from '../evaluation/branch-stages.mjs';
+import { projectJoinEndpoints } from './join-view.mjs';
 import { sourcePathId } from './source-view.mjs';
 import { orderedSourcePaths } from '../geometry/source-order.mjs';
 import { projectModifierControls } from './modifier-view.mjs';
@@ -75,8 +78,7 @@ const stageDiagnostics = (stage, objectId, source) =>
 const indexMembers = (stage, label, diagnostics) => {
   const result = new Map();
   const ambiguous = new Set();
-  if (stage?.status !== 'ready') return result;
-  for (const member of stage.value?.reliefs || []) {
+  for (const member of readyReliefMembers(stage)) {
     const key = outputIdentity(member.ref);
     if (ambiguous.has(key)) continue;
     if (result.has(key)) {
@@ -114,6 +116,8 @@ const nodeTree = (document, parentId = null) =>
       pose: clone(node.pose),
       visible: state.visible,
       locked: state.locked,
+      ownVisible: node.visible,
+      ownLocked: node.locked,
       hiddenBy: clone(state.hiddenBy),
       lockedBy: clone(state.lockedBy),
       children: node.kind === 'group' ? nodeTree(document, node.id) : [],
@@ -155,13 +159,9 @@ const operatorStatus = (document, snapshot, node) => {
     .filter(
       (operator) =>
         operator.authoring?.phase !== 'drawing' &&
-        ![
-          'source',
-          'fill',
-          'curve-collect',
-          'curve-filter',
-          'region-collect',
-        ].includes(operator.type),
+        !['source', 'curve-collect', 'curve-filter', 'region-collect'].includes(
+          operator.type,
+        ),
     )
     .map((operator) => {
       const component =
@@ -175,7 +175,17 @@ const operatorStatus = (document, snapshot, node) => {
         type: operator.type,
         name: operator.name,
         enabled: operator.enabled,
-        controls: projectModifierControls(document, node.id, operator.id),
+        controls: {
+          ...projectModifierControls(document, node.id, operator.id),
+          ...(operator.type === 'join' && {
+            endpoints: projectJoinEndpoints(
+              document,
+              snapshot?.planar?.components?.[
+                `operator:${operator.inputs.input?.[0]?.operatorId}`
+              ]?.ports?.curves,
+            ),
+          }),
+        },
         structure: programModifierCapabilities(document, node.id, operator.id),
         status: blocked
           ? 'blocked'
@@ -307,6 +317,7 @@ export function projectCreationView(document, snapshot) {
       const key = creationCellKey(ref);
       const relief = reliefMembers.get(identity) || null;
       const placed = placedMembers.get(identity) || null;
+      const definition = resolveReliefDefinition(document, node.id, ref);
       const appearance = resolveAppearance(document, node.id, ref);
       diagnostics.push(...stageDiagnostics(appearance, node.id, 'appearance'));
       if (appearance.status === 'blocked')
@@ -348,8 +359,10 @@ export function projectCreationView(document, snapshot) {
         outputRef: ref,
         objectId: node.id,
         name: node.name,
-        painted: Boolean(relief),
-        enabled: Boolean(relief),
+        painted: definition.status === 'ready' && definition.value.enabled,
+        enabled: definition.status === 'ready' && definition.value.enabled,
+        flatOnly: !placed,
+        evaluation: placed ? 'ready' : relief ? 'unplaced' : 'blocked',
         excluded: isExcluded(document, { ref }),
         color: appearance.status === 'ready' ? appearance.value.color : null,
         swatchId:
@@ -431,8 +444,19 @@ export function projectCreationView(document, snapshot) {
           .map((operator) => operator.params.endpointJoin?.toleranceMM ?? 0),
       ),
       modifierAdd: {
-        types: modifierAdd.enabled ? ['curve_mirror', 'curve_array'] : [],
+        types: modifierAdd.enabled
+          ? [
+              'curve_mirror',
+              'curve_array',
+              'join',
+              ...(!program.outputs.regions ? ['fill'] : []),
+            ]
+          : [],
         reason: modifierAdd.reason,
+        endpoints: projectJoinEndpoints(
+          document,
+          currentPublishedStage(snapshot, node, 'curves'),
+        ),
       },
       roles: Object.fromEntries(
         ownedPaths.flatMap(({ sketch, path }) => {
@@ -499,6 +523,7 @@ export function projectCreationView(document, snapshot) {
   return freeze({
     creation: {
       objects,
+      tree: nodeTree(document),
       // Use authored references, including currently unresolved outputs, so
       // the delete dialog agrees with the canonical resource command.
       swatchOwners: Object.fromEntries(

@@ -1,19 +1,16 @@
 import { resolveThicknessMM } from './dimensions.mjs';
 import { isExcluded, partForRelief } from './parts.mjs';
-import { sameOutputRef } from '../relief/appearance.mjs';
+import { outputIdentity, sameOutputRef } from '../relief/appearance.mjs';
+import {
+  aggregateReliefBranches,
+  readyReliefMembers,
+} from '../evaluation/branch-stages.mjs';
 
 const diag = (kind, message, ref) => ({
   severity: 'error',
   kind,
   ...(ref && { ref }),
   message,
-});
-const result = (status, value, diagnostics, dependencies) => ({
-  domain: 'placed-relief',
-  status,
-  ...(value === undefined ? {} : { value }),
-  diagnostics,
-  dependencies: [...new Set(dependencies)],
 });
 const matrixFor = (matrices, id) =>
   typeof matrices === 'function'
@@ -31,186 +28,215 @@ const mapCoordinates = (value, matrix) =>
       : value.map((item) => mapCoordinates(item, matrix))
     : value;
 
-/** Resolves Z and Part only; it never changes scene XY poses or persisted intent. */
+/** Resolve each dependency once. Branch results are current preview data; only
+ * the complete aggregate is eligible for solid construction and export. */
 export function resolveManufacturing(
   document,
   reliefResult,
   worldMatrices = {},
 ) {
   if (!reliefResult || reliefResult.domain !== 'relief')
-    return result(
-      'blocked',
-      undefined,
-      [diag('invalid-input', '需要 ReliefSet')],
-      [],
+    return aggregateReliefBranches('placed-relief', [
+      {
+        status: 'blocked',
+        diagnostics: [diag('invalid-input', '需要 ReliefSet')],
+      },
+    ]);
+  const branches = reliefResult.branches || [reliefResult];
+  const failures = new Map();
+  const ownerBranches = new Map();
+  const excludedOwner = (id) =>
+    document.manufacturing.excluded.some(
+      (ref) => ref.kind === 'node' && ref.id === id,
     );
-  if (reliefResult.status === 'absent')
-    return result(
-      'absent',
-      undefined,
-      reliefResult.diagnostics || [],
-      reliefResult.dependencies || [],
-    );
-  if (reliefResult.status === 'blocked')
-    return result(
-      'blocked',
-      undefined,
-      reliefResult.diagnostics || [],
-      reliefResult.dependencies || [],
-    );
-  if (reliefResult.status === 'empty')
-    return result(
-      'empty',
-      { reliefs: [], provenance: [] },
-      reliefResult.diagnostics || [],
-      reliefResult.dependencies || [],
-    );
-  const dependencies = [...(reliefResult.dependencies || [])],
-    diagnostics = [],
-    raw = reliefResult.value?.reliefs;
-  if (!Array.isArray(raw))
-    return result(
-      'blocked',
-      undefined,
-      [diag('invalid-input', 'ReliefSet DTO 无效')],
-      dependencies,
-    );
-  let members;
-  try {
-    members = raw
-      .filter((item) => !isExcluded(document, item))
-      .map((item) => ({
-        ...structuredClone(item),
-        partId: partForRelief(document, item),
-        ...resolveThicknessMM(
+  for (const branch of branches) {
+    const id = branch.ownerNodeId || null;
+    if (excludedOwner(id)) continue;
+    ownerBranches.set(id, branch);
+    if (branch.status === 'blocked') failures.set(id, branch.diagnostics || []);
+  }
+  const members = [];
+  const errors = new Map();
+  for (const item of readyReliefMembers(reliefResult)) {
+    if (isExcluded(document, item)) continue;
+    const key = outputIdentity(item.ref);
+    const member = { ...structuredClone(item) };
+    members.push(member);
+    try {
+      member.partId = partForRelief(document, item);
+      Object.assign(
+        member,
+        resolveThicknessMM(
           item.thickness,
           document.manufacturing.layerHeightMM,
         ),
-      }));
-  } catch (error) {
-    return result(
-      'blocked',
-      undefined,
-      [diag('invalid-reference', error.message)],
-      dependencies,
-    );
-  }
-  const layers = new Map(
-    document.manufacturing.layerOrder.map((id) => [id, []]),
-  );
-  for (const item of members)
-    if (item.placement.kind === 'layer') {
-      if (!layers.has(item.placement.layerId))
-        return result(
-          'blocked',
-          undefined,
-          [
-            diag(
-              'unresolved-reference',
-              `打印层不存在：${item.placement.layerId}`,
-              item.ref,
-            ),
-          ],
-          dependencies,
-        );
-      layers.get(item.placement.layerId).push(item);
+      );
+      if (
+        item.placement.kind === 'layer' &&
+        !document.manufacturing.layerOrder.includes(item.placement.layerId)
+      )
+        throw Error(`打印层不存在：${item.placement.layerId}`);
+    } catch (error) {
+      errors.set(key, [diag('invalid-reference', error.message, item.ref)]);
     }
-  const bases = new Map();
-  let top = 0;
-  for (const [id, items] of layers) {
-    bases.set(id, top);
-    top = Math.max(
-      top,
-      ...items
-        .filter((item) => item.mode === 'add')
-        .map((item) => top + item.mm + item.placement.offsetMM),
-    );
+  }
+  // A failed source may hide an enabled layer contribution. Such a layer's top
+  // is unknown, even though its base and unrelated free placements remain known.
+  const uncertainLayers = new Set();
+  for (const owner of failures.keys()) {
+    const fallback = document.reliefDefinitions?.defaults?.[owner] || {};
+    const values = [
+      fallback,
+      ...Object.values(document.reliefDefinitions?.overrides || {})
+        .filter(
+          (item) =>
+            item.target.ownerNodeId === owner &&
+            !item.suppressed &&
+            !isExcluded(document, { ref: item.target }),
+        )
+        .map((item) => ({ ...fallback, ...item.value })),
+    ];
+    for (const value of values)
+      if (
+        value.enabled &&
+        value.mode === 'add' &&
+        value.placement?.kind === 'layer'
+      )
+        uncertainLayers.add(value.placement.layerId);
   }
   const placed = new Map();
-  for (const item of members)
-    if (item.placement.kind !== 'attached') {
-      const base =
-        item.placement.kind === 'free'
-          ? item.placement.zMM
-          : bases.get(item.placement.layerId) + item.placement.offsetMM;
-      placed.set(
-        item.ref.key +
-          JSON.stringify(item.ref.lineage) +
-          JSON.stringify(item.ref.instances),
-        {
-          ...item,
-          zBase: base,
-          zTop: base + item.mm,
-          geometry: {
-            ...item.geometry,
-            coordinates: mapCoordinates(
-              item.geometry.coordinates,
-              matrixFor(worldMatrices, item.ref.ownerNodeId),
-            ),
-          },
-        },
-      );
+  const active = new Set();
+  const layerBases = new Map();
+  const layerBase = (id) => {
+    if (layerBases.has(id)) return layerBases.get(id);
+    const index = document.manufacturing.layerOrder.indexOf(id);
+    if (index < 0) throw Error(`打印层不存在：${id}`);
+    if (index === 0) {
+      layerBases.set(id, 0);
+      return 0;
     }
-  let pending = members.filter((item) => item.placement.kind === 'attached');
-  while (pending.length) {
-    const next = [];
-    let progress = false;
-    for (const item of pending) {
-      const target = item.placement.target;
-      const candidates = [...placed.values()].filter(
-        (other) =>
-          other.partId === item.partId &&
-          other.enabled &&
-          other.mode === 'add' &&
-          (target.kind === 'output'
-            ? sameOutputRef(other.ref, target)
-            : other.ref.ownerNodeId === target.id),
-      );
-      if (!candidates.length) {
-        next.push(item);
-        continue;
+    const previous = document.manufacturing.layerOrder[index - 1];
+    const base = layerBase(previous);
+    if (uncertainLayers.has(previous) || failures.has(null))
+      throw Error(`前序打印层 ${previous} 有未求出的成员`);
+    const contributors = members.filter(
+      (item) =>
+        item.mode === 'add' &&
+        item.placement.kind === 'layer' &&
+        item.placement.layerId === previous,
+    );
+    const top = Math.max(base, ...contributors.map((item) => place(item).zTop));
+    layerBases.set(id, top);
+    return top;
+  };
+  const place = (item) => {
+    const key = outputIdentity(item.ref);
+    if (placed.has(key)) return placed.get(key);
+    if (errors.has(key)) throw Error(errors.get(key)[0].message);
+    if (active.has(key)) throw Error('依附目标存在循环');
+    active.add(key);
+    try {
+      const placement = item.placement;
+      let base;
+      if (placement.kind === 'free') base = placement.zMM;
+      else if (placement.kind === 'layer')
+        base = layerBase(placement.layerId) + placement.offsetMM;
+      else {
+        const target = placement.target;
+        const owner = target.kind === 'output' ? target.ownerNodeId : target.id;
+        if (failures.has(owner) || failures.has(null))
+          throw Error('依附目标的区域或浮雕求值被阻断');
+        const candidates = members.filter(
+          (other) =>
+            outputIdentity(other.ref) !== key &&
+            other.partId === item.partId &&
+            other.enabled &&
+            other.mode === 'add' &&
+            (target.kind === 'output'
+              ? sameOutputRef(other.ref, target)
+              : other.ref.ownerNodeId === target.id),
+        );
+        if (!candidates.length) throw Error('依附目标缺失、被排除或跨 Part');
+        // A node target means its complete top, not the first available member.
+        base =
+          Math.max(...candidates.map((other) => place(other).zTop)) +
+          placement.offsetMM;
       }
-      const base =
-        Math.max(...candidates.map((other) => other.zTop)) +
-        item.placement.offsetMM;
-      placed.set(
-        item.ref.key +
-          JSON.stringify(item.ref.lineage) +
-          JSON.stringify(item.ref.instances),
-        {
-          ...item,
-          zBase: base,
-          zTop: base + item.mm,
-          geometry: {
-            ...item.geometry,
-            coordinates: mapCoordinates(
-              item.geometry.coordinates,
-              matrixFor(worldMatrices, item.ref.ownerNodeId),
-            ),
-          },
+      const value = {
+        ...item,
+        zBase: base,
+        zTop: base + item.mm,
+        geometry: {
+          ...item.geometry,
+          coordinates: mapCoordinates(
+            item.geometry.coordinates,
+            matrixFor(worldMatrices, item.ref.ownerNodeId),
+          ),
         },
-      );
-      progress = true;
+      };
+      placed.set(key, value);
+      return value;
+    } catch (error) {
+      errors.set(key, [diag('placement-blocked', error.message, item.ref)]);
+      throw error;
+    } finally {
+      active.delete(key);
     }
-    if (!progress)
-      return result(
-        'blocked',
-        undefined,
-        [diag('attachment-blocked', '依附目标缺失、跨 Part 或存在循环')],
-        dependencies,
-      );
-    pending = next;
+  };
+  for (const item of members) {
+    try {
+      place(item);
+    } catch {
+      /* Recorded on this output, propagated only to dependents. */
+    }
   }
-  return result(
-    placed.size ? 'ready' : 'empty',
-    {
-      reliefs: [...placed.values()],
-      provenance: [...placed.values()].map((item) => ({
-        ref: item.ref,
-        sources: item.ref.lineage,
-      })),
-    },
-    diagnostics,
-    dependencies,
+  const owners = new Set([
+    ...ownerBranches.keys(),
+    ...members.map((item) => item.ref.ownerNodeId),
+  ]);
+  return aggregateReliefBranches(
+    'placed-relief',
+    [...owners].map((ownerNodeId) => {
+      const own = members.filter(
+        (item) => item.ref.ownerNodeId === ownerNodeId,
+      );
+      const diagnostics = [
+        ...(failures.get(ownerNodeId) || []),
+        ...own.flatMap((item) => errors.get(outputIdentity(item.ref)) || []),
+      ];
+      const blocked = failures.has(ownerNodeId) || diagnostics.length > 0;
+      const reliefs = own.flatMap((item) =>
+        placed.has(outputIdentity(item.ref))
+          ? [placed.get(outputIdentity(item.ref))]
+          : [],
+      );
+      const absent = ownerBranches.get(ownerNodeId)?.status === 'absent';
+      return {
+        ownerNodeId,
+        domain: 'placed-relief',
+        status: blocked
+          ? 'blocked'
+          : reliefs.length
+            ? 'ready'
+            : absent
+              ? 'absent'
+              : 'empty',
+        ...(!blocked &&
+          !absent && {
+            value: {
+              reliefs,
+              provenance: reliefs.map((item) => ({
+                ref: item.ref,
+                sources: item.ref.lineage,
+              })),
+            },
+          }),
+        diagnostics,
+        dependencies:
+          ownerBranches.get(ownerNodeId)?.dependencies ||
+          reliefResult.dependencies ||
+          [],
+      };
+    }),
   );
 }

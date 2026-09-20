@@ -50,6 +50,9 @@ const AUTHORING_ACTIONS = Object.freeze([
   'set-thickness',
   'set-vertex',
   'ungroup-nodes',
+  'add-program-modifier',
+  'move-program-modifier',
+  'remove-program-modifier',
 ]);
 const EVALUATION_DOMAINS = new Set([
   'curves',

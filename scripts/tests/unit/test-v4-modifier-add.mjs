@@ -57,11 +57,8 @@ const initialPort = before.programs[owner.programId].outputs.curves;
 const project = runtime.project();
 const scene = await runtime.evaluate('creation', {}, project);
 assert.deepEqual(
-  scene.creation.objects.find((item) => item.id === owner.id).modifierAdd,
-  {
-    types: ['curve_mirror', 'curve_array'],
-    reason: null,
-  },
+  scene.creation.objects.find((item) => item.id === owner.id).modifierAdd.types,
+  ['curve_mirror', 'curve_array', 'join', 'fill'],
 );
 runtime.command('modifier_add', request, { project, scene }).commit();
 let program = editor.state.document.programs[owner.programId];
@@ -126,7 +123,7 @@ const invalidRequests = [
   [{ operation: 'union' }, /未知字段/],
   [{ sourceFeatureId: 'other' }, /未知字段/],
   [{ count: 3 }, /未知字段/],
-  [{ type: 'fill', joinMM: 0 }, /尚不支持类型/],
+  [{ type: 'fill', joinMM: 0 }, /未知字段/],
   [{ type: 'offset' }, /尚不支持类型/],
   [{ objectId: 'missing' }, /不存在/],
   [{ type: 'curve_array', count: 1.5 }, /整数/],
@@ -189,13 +186,20 @@ editor.undo({ expectedRevision: editor.state.revision });
 dispatch(
   createAuthoringCommand({ kind: 'fill-curves', ownerNodeId: owner.id }),
 );
-reject(request, /当前已发布构造结果不可用/);
 const regionsView = await runtime.evaluate('creation', {}, runtime.project());
 const regionsCapability = regionsView.creation.objects.find(
   (item) => item.id === owner.id,
 ).modifierAdd;
-assert.deepEqual(regionsCapability.types, []);
-assert.match(regionsCapability.reason, /构造结果不可用/);
+assert.deepEqual(regionsCapability.types, [
+  'curve_mirror',
+  'curve_array',
+  'join',
+]);
+assert.equal(
+  regionsCapability.reason,
+  null,
+  'an incomplete Fill remains repairable from its ready curve input',
+);
 
 const filledEditor = createEditorSession(createDocument({ idFactory }), {
   idFactory,

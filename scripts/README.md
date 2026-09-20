@@ -20,6 +20,7 @@ pnpm desktop:check
 - `pnpm test:core`：构造链、修改器和打印分层回归。
 - `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
+- `node scripts/tests/browser/smoke/test-v4-final-preview.cjs`：临时端口和独立 context 加载原 Studio 与真实求值 Worker，检查开放 1/8 源线经镜像、四向阵列、Join、Fill 后的带孔面默认可见、工具切换保留显示方式、重载恢复默认，以及显示不写入工程。最小数据复用 `v4-programs.mjs`，入口为 `v4-final-preview.mjs`；截图与结果在 `outputs/v4-qa/final-preview/`。此开发装配回归须单独执行，不包含在 `check:all` 中。
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
 - `test-spline-edit.mjs`：精确双柄样条、坐标往返、矩阵变换、来源保留与整批失败；共用提案解析器在冻结的几何/归属视图上工作，不分配 ID 或修改展示数据。
 - `test-v4-path-replacement.mjs`：精确源曲线替换，验证带 pose 的反向拓扑、端点和双柄、开闭及节点数变化、单点继续编辑、路径身份与构造保留、一次撤销，以及共享/关系/过期/整批失败保护。
@@ -85,7 +86,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 `test-v4-modifier-intents.mjs` 检查原修改器字段到 V4 算子的所有权、世界/局部坐标、参数引用保护和字段约束；`test-v4-modifier-control-runtime.mjs` 验证只读控件值→原 `modifier_update` 意图→同一 V4 会话→重新求值与一次撤销。它们不替代修改器面板的实际 DOM 接线验收。
 
-`test-v4-modifier-add.mjs` 验证原 `modifier_add` 的纯曲线阶段镜像/阵列：世界坐标转换、发布端口接线、原线不变、一次撤销和错误原子拒绝；已有区域、锁定或不可用曲线不能通过简化入口追加。上述原组件浏览器用例同时验证实际新增阵列、三倍曲线输出、正确前序引用和撤销。构面接合、已有区域的修改器增删排序尚需独立接线，不属于这一项通过范围。
+`test-v4-modifier-add.mjs` 验证镜像/阵列插入、世界到局部转换、修复中的 Fill 仍可编辑、撤销和危险接线拒绝。`test-v4-final-preview.cjs` 另通过原界面完成镜像、阵列、端点对应、Join、Fill，并验证两级场景组的选择、显隐、锁定、实际拖动和撤销。
 
 `test-v4-curve-preview.mjs` 检查 V4 当前曲线结果到原画布预览的世界坐标、显式端点拓扑、隐藏、稳定阶段及最终输出失效不回退；`test-v4-curve-preview-runtime.mjs` 检查同步读取、不可变缓存、拖动预览版本、取消与过期句柄拒绝。原组件浏览器用例同时挂载原预览开关、阶段选择和 SVG overlay，验证新增阵列后的六条曲线、切回镜像阶段的两条曲线，以及失效输出的空路径；不替代默认根工作区和完整源拖动旅程。
 
@@ -95,7 +96,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 `tests/unit/test-v4-source-order.mjs` 覆盖导入/容器重开后的源路径与集合顺序、新线追加、排序意图和过期视图；`test-v4-source-organization.mjs` 覆盖整理集合及全局源顺序的原子命令、重叠成员、锁定和一次撤销。它们不替代原树拖放的 UI 接线验收。
 
-`examples/draw-cup-emblem.mjs` 导出 `drawCupEmblem(call)`，只通过公开 API 在实例工程副本上创建参数化纹样。`tests/browser/test-agent-spline-authoring.cjs` 接收隔离 Playwright page 和可选输出目录，自行载入已提交的 `public/sandrone-example.spl`，验证开放的 1/8 轮廓跨相邻扇区连接构面、母线编辑、拖动中的派生预览、断口诊断与平面/立体切换、一步撤销、参数控件、原杯身保留、保存重开及实体/3MF 导出。只能在独立测试端口和新 browser context 执行。
+`examples/draw-cup-emblem.mjs` 导出 `drawCupEmblem(call)`，只通过公开 API 在实例工程副本上创建参数化纹样。`tests/browser/test-agent-spline-authoring.cjs` 接收隔离 Playwright page 和可选输出目录，自行载入已提交的 `public/sandrone-example.spl`，验证开放的 1/8 轮廓跨相邻扇区连接构面、API 5 稳定引用作者命令、断口故障隔离和残缺导出拒绝、一步撤销、修订拒绝、参数控件、GUI/API 输出身份、原杯身保留、V4 保存重开及 3MF 导出。只能在独立测试端口和新 browser context 执行。
 
 `tests/browser/test-endpoint-snapping.cjs` 同样接收隔离 page 和可选截图目录，仅在实例工程的测试副本上用真实指针验证保持接缝、Alt 解除、断口吸附修复、一步撤销、Esc 取消及关闭吸附。不得连接用户页面或写入用户绑定的文件。
 
@@ -160,3 +161,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-program-modifiers.mjs` 验证唯一 Fill 前插入、线性同域链上下移/删除、能力投影及危险重接的原子拒绝。`test-v4-connection-intents.mjs` 验证分区补边范围、逐端点开关、当前世界坐标辅助线、源数据不变和撤销。
 
 高级构面回归还验证布尔与分区建立独立派生 Shape，保留输入面；候选子集复用预览 Program，区域重绑迁移明确引用，普通体块换来源保留旧区域的显示作者态。制造清理由文档/迁移/Body/full-pipeline 测试覆盖，真实样例必须保留原文件的清理设置后检查实体，不能用关闭清理的结果替代。
+
+`test-v4-review-repairs.mjs` 覆盖独立分支预览、附着/层依赖、隐藏与排除、继承放置的 Z 编辑、两级 Group、keepWorld 换父级、撤销和文件往返。原 Studio 浏览器脚本的兼容写入显式携带读取到的 expectedRevision。
+
+兼容 GUI 浏览器用例通过 [harness/legacy-call.cjs](tests/browser/harness/legacy-call.cjs) 在每次调用前读取 `document.get` 并传入 `expectedRevision`；显式传入的修订不被替换。Agent 协议验收直接调用公开 API，单独验证缺失和过期修订被拒绝。

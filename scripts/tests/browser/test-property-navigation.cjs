@@ -3,11 +3,7 @@ module.exports = async (page, fixture) => {
   const checks = [];
   fixture = structuredClone(fixture);
   fixture.model.parts.push({ id: 'property-test-empty', name: '空零件' });
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const settle = async () => {
     await page.waitForFunction(
       async () =>

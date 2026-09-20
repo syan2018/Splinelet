@@ -3,10 +3,14 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { ModifierNumber } from './modifier-controls';
 import type { ModifierCommand, ModifierObject } from '@/lib/modifier-types';
+import type { JoinConnection } from '@/lib/modifier-types';
+import JoinConnections from './join-connections';
 
 const names: Record<string, string> = {
   curve_mirror: '曲线镜像',
   curve_array: '曲线阵列',
+  join: '连接边界',
+  fill: '闭合构面',
 };
 
 /** Existing add-form interaction, backed by explicitly available commands. */
@@ -23,6 +27,7 @@ export default function ProgramModifierAdd({
   const [angleDeg, setAngleDeg] = useState(90);
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
+  const [connections, setConnections] = useState<JoinConnection[]>([]);
   const options = (object.modifierAdd?.types || []).filter(
     (type) => names[type],
   );
@@ -54,7 +59,10 @@ export default function ProgramModifierAdd({
         <select
           aria-label="新修改器类型"
           value={type}
-          onChange={(event) => setKind(event.target.value)}
+          onChange={(event) => {
+            setKind(event.target.value);
+            setAngleDeg(90);
+          }}
         >
           {options.map((option) => (
             <option key={option} value={option}>
@@ -74,33 +82,49 @@ export default function ProgramModifierAdd({
           onChange={setCount}
         />
       )}
-      <ModifierNumber
-        label={type === 'curve_array' ? '每份旋转角度' : '镜像轴角度'}
-        value={angleDeg}
-        min={-360}
-        max={360}
-        step={1}
-        unit="°"
-        onChange={setAngleDeg}
-      />
-      <ModifierNumber
-        label={type === 'curve_array' ? '阵列中心 X' : '镜像中心 X'}
-        value={x}
-        min={-10000}
-        max={10000}
-        onChange={setX}
-      />
-      <ModifierNumber
-        label={type === 'curve_array' ? '阵列中心 Y' : '镜像中心 Y'}
-        value={y}
-        min={-10000}
-        max={10000}
-        onChange={setY}
-      />
-      <p className="modifier-hint">
-        源线保持可编辑，新线条由当前曲线派生。中心以毫米计，画布中心为 (0, 0)，Y
-        轴向上。
-      </p>
+      {['curve_mirror', 'curve_array'].includes(type) && (
+        <>
+          <ModifierNumber
+            label={type === 'curve_array' ? '每份旋转角度' : '镜像轴角度'}
+            value={angleDeg}
+            min={-360}
+            max={360}
+            step={1}
+            unit="°"
+            onChange={setAngleDeg}
+          />
+          <ModifierNumber
+            label={type === 'curve_array' ? '阵列中心 X' : '镜像中心 X'}
+            value={x}
+            min={-10000}
+            max={10000}
+            onChange={setX}
+          />
+          <ModifierNumber
+            label={type === 'curve_array' ? '阵列中心 Y' : '镜像中心 Y'}
+            value={y}
+            min={-10000}
+            max={10000}
+            onChange={setY}
+          />
+          <p className="modifier-hint">
+            源线保持可编辑，新线条由当前曲线派生。中心以毫米计，画布中心为 (0,
+            0)，Y 轴向上。
+          </p>
+        </>
+      )}
+      {type === 'join' && (
+        <JoinConnections
+          value={connections}
+          options={object.modifierAdd?.endpoints || []}
+          onChange={setConnections}
+        />
+      )}
+      {type === 'fill' && (
+        <p className="modifier-hint">
+          从当前曲线的连接关系生成面和孔洞。开放端点会保留诊断，供继续编辑。
+        </p>
+      )}
       <div className="modifier-actions">
         <button
           onClick={() => {
@@ -108,10 +132,16 @@ export default function ProgramModifierAdd({
               objectId: object.id,
               type,
               name: names[type],
-              targets: { kind: 'all' },
-              angleDeg,
-              centerMM: { x, y },
-              ...(type === 'curve_array' ? { count } : {}),
+              ...(type === 'join'
+                ? { connections }
+                : type === 'fill'
+                  ? { rule: 'even-odd' }
+                  : {
+                      targets: { kind: 'all' },
+                      angleDeg,
+                      centerMM: { x, y },
+                      ...(type === 'curve_array' ? { count } : {}),
+                    }),
             });
             setOpen(false);
           }}

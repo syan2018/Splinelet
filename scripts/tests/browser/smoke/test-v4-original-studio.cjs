@@ -73,6 +73,16 @@ async function main() {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     });
+    await context.addInitScript(() => {
+      // Compatibility calls still carry an observed canonical revision.
+      window.reviewCall = async (action, args = {}) => {
+        const observed = await window.traceStudio.call('document.get');
+        return window.traceStudio.call(action, {
+          expectedRevision: observed.revision,
+          ...args,
+        });
+      };
+    });
     page = await context.newPage();
     page.on('worker', (worker) => workerUrls.push(worker.url()));
     page.setDefaultTimeout(120000);
@@ -164,7 +174,7 @@ async function main() {
     console.log('Checking canonical Sandrone body through worker');
     const solidReport = await page.evaluate(() =>
       Promise.race([
-        window.traceStudio.call('creation_export', { format: 'check' }),
+        window.reviewCall('creation_export', { format: 'check' }),
         new Promise((_, reject) =>
           setTimeout(
             () => reject(Error('Body request timed out after 120 seconds')),
@@ -177,7 +187,7 @@ async function main() {
     assert.equal(solidReport.report.valid, true);
     assert.ok(solidReport.report.volumeMM3 > 0);
     const generic3mf = await page.evaluate(() =>
-      window.traceStudio.call('creation_export', { format: '3mf-generic' }),
+      window.reviewCall('creation_export', { format: '3mf-generic' }),
     );
     assert.equal(generic3mf.report.valid, true);
     const { unzipSync, strFromU8 } =
@@ -187,7 +197,7 @@ async function main() {
     const { decodeDocument } =
       await import('../../../../src/lib/document/codec.mjs');
     const projectCopy = await page.evaluate(() =>
-      window.traceStudio.call('export', { format: 'json' }),
+      window.reviewCall('export', { format: 'json' }),
     );
     assert.equal(projectCopy.filename, 'Splinelet工程.spl');
     const decodedCopy = decodeDocument(
@@ -213,10 +223,10 @@ async function main() {
       .getByRole('spinbutton', { name: '挤出厚度', exact: true })
       .fill('7.5');
     await waitForCondition(
-      async () => (await window.traceStudio.call('state')).depthMM === 7.5,
+      async () => (await window.reviewCall('state')).depthMM === 7.5,
     );
     const blenderCopy = await page.evaluate(() =>
-      window.traceStudio.call('export', { format: 'blender' }),
+      window.reviewCall('export', { format: 'blender' }),
     );
     const blenderData = JSON.parse(
       JSON.parse(
@@ -296,7 +306,14 @@ async function main() {
     await page
       .getByRole('button', { name: '移动对象 (H)', exact: true })
       .click();
+    await page.evaluate(() => window.reviewCall('creation_inspect'));
     const beforeMove = await evidence();
+    assert.equal(
+      (await page.evaluate(() => window.reviewCall('state'))).creation.selection
+        .kind,
+      'object',
+      'move mode must have converted the source selection before dragging',
+    );
     await page.mouse.move(point.x, point.y);
     await page.mouse.down();
     await page.mouse.move(point.x + 22, point.y + 14, { steps: 5 });
@@ -477,8 +494,8 @@ async function main() {
     assert.equal((await evidence()).pendingRegionDrawings, 1);
     // The public completion API must publish the same pending branch as Enter.
     const apiFinished = await page.evaluate(async (pathId) => {
-      await window.traceStudio.call('resume_path', { pathId, end: 'end' });
-      return window.traceStudio.call('finish_path', {});
+      await window.reviewCall('resume_path', { pathId, end: 'end' });
+      return window.reviewCall('finish_path', {});
     }, divided.pathGeometry.at(-1).id);
     assert.deepEqual(apiFinished, { finished: true });
     await waitForCondition(
@@ -495,7 +512,7 @@ async function main() {
     const unfinishedHole = await evidence();
     const finishIssue = await page.evaluate(async () => {
       try {
-        await window.traceStudio.call('finish_path', {});
+        await window.reviewCall('finish_path', {});
         return null;
       } catch (error) {
         return error.message;
@@ -640,20 +657,20 @@ async function main() {
     for (const point of [1, 2]) {
       const beforeApiHandle = await evidence();
       const movedApiHandle = await page.evaluate(async (pointIndex) => {
-        const { splines } = await window.traceStudio.call('spline_inspect', {});
+        const { splines } = await window.reviewCall('spline_inspect', {});
         const spline = splines[0];
         const original =
           pointIndex === 1
             ? spline.nodes[0].handleRight
             : spline.nodes[1].handleLeft;
         const position = { x: original.x + 6, y: original.y + 4 };
-        await window.traceStudio.call('set_point', {
+        await window.reviewCall('set_point', {
           pathId: spline.id,
           curve: 0,
           point: pointIndex,
           position,
         });
-        const inspected = await window.traceStudio.call('spline_inspect', {
+        const inspected = await window.reviewCall('spline_inspect', {
           pathIds: [spline.id],
         });
         return {
@@ -734,7 +751,7 @@ async function main() {
     const batch = async (preview) =>
       page.evaluate(
         (preview) =>
-          window.traceStudio.call('create_path', {
+          window.reviewCall('create_path', {
             name: 'candidate path',
             mode: 'manual',
             snap: false,
@@ -801,12 +818,12 @@ async function main() {
     );
     const groupPaths = (await evidence()).pathGeometry.map((path) => path.id);
     await page.evaluate(
-      (pathIds) => window.traceStudio.call('select_paths', { pathIds }),
+      (pathIds) => window.reviewCall('select_paths', { pathIds }),
       groupPaths,
     );
     await page.keyboard.press('Control+g');
     const groupedProject = await page.evaluate(() =>
-      window.traceStudio.call('get_project'),
+      window.reviewCall('get_project'),
     );
     assert.equal(groupedProject.groups.length, 1);
     const sourceGroup = groupedProject.groups[0].id;
@@ -825,14 +842,14 @@ async function main() {
     );
     await page.getByRole('button', { name: '重做', exact: true }).click();
     const secondGroup = await page.evaluate(() =>
-      window.traceStudio.call('manage_group', {
+      window.reviewCall('manage_group', {
         action: 'create',
         name: 'API 分组',
       }),
     );
     await page.evaluate(
       ({ id, pathId }) =>
-        window.traceStudio.call('manage_group', {
+        window.reviewCall('manage_group', {
           action: 'assign',
           id,
           pathIds: [pathId],
@@ -841,7 +858,7 @@ async function main() {
     );
     await page.evaluate(
       (id) =>
-        window.traceStudio.call('manage_group', {
+        window.reviewCall('manage_group', {
           action: 'rename',
           id,
           name: '重命名分组',
@@ -850,7 +867,7 @@ async function main() {
     );
     await page.evaluate(
       (id) =>
-        window.traceStudio.call('manage_group', {
+        window.reviewCall('manage_group', {
           action: 'visibility',
           id,
           visible: false,
@@ -858,14 +875,14 @@ async function main() {
       secondGroup.id,
     );
     assert.equal(
-      (
-        await page.evaluate(() => window.traceStudio.call('get_project'))
-      ).paths.find((path) => path.id === groupPaths[0]).visible,
+      (await page.evaluate(() => window.reviewCall('get_project'))).paths.find(
+        (path) => path.id === groupPaths[0],
+      ).visible,
       false,
     );
     await page.evaluate(
       (id) =>
-        window.traceStudio.call('manage_group', {
+        window.reviewCall('manage_group', {
           action: 'visibility',
           id,
           visible: true,
@@ -874,7 +891,7 @@ async function main() {
     );
     await page.evaluate(
       ({ pathId, targetId }) =>
-        window.traceStudio.call('move_paths', {
+        window.reviewCall('move_paths', {
           pathIds: [pathId],
           targetId,
           after: true,
@@ -882,7 +899,7 @@ async function main() {
       { pathId: groupPaths[0], targetId: groupPaths[1] },
     );
     const reordered = await page.evaluate(() =>
-      window.traceStudio.call('get_project'),
+      window.reviewCall('get_project'),
     );
     assert.deepEqual(
       reordered.paths.map((path) => path.id),
@@ -890,7 +907,7 @@ async function main() {
     );
     assert.ok(reordered.paths.every((path) => path.groupId === sourceGroup));
     await page.evaluate(
-      (id) => window.traceStudio.call('manage_group', { action: 'delete', id }),
+      (id) => window.reviewCall('manage_group', { action: 'delete', id }),
       secondGroup.id,
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
@@ -900,7 +917,7 @@ async function main() {
     );
     const splineRevision = (await evidence()).revision;
     const exactBatch = await page.evaluate(() =>
-      window.traceStudio.call('spline_apply', {
+      window.reviewCall('spline_apply', {
         units: 'model',
         splines: [
           {
@@ -924,7 +941,7 @@ async function main() {
     );
     assert.equal(exactBatch.pathIds.length, 2);
     const exactRoles = await page.evaluate(() =>
-      window.traceStudio.call('get_project'),
+      window.reviewCall('get_project'),
     );
     const boundaryOwner = exactRoles.creation.objects.find((object) =>
       object.pathIds.includes(exactBatch.pathIds[1]),
@@ -934,7 +951,7 @@ async function main() {
     const exactState = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
-    await page.evaluate(() => window.traceStudio.call('undo'));
+    await page.evaluate(() => window.reviewCall('undo'));
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioDocument()),
       beforeSplines,
@@ -946,7 +963,7 @@ async function main() {
     );
     const applied = await page.evaluate(
       (id) =>
-        window.traceStudio.call('spline_apply', {
+        window.reviewCall('spline_apply', {
           units: 'model',
           splines: [{ id, matrix: [0, 1, -1, 0, 2, 3] }],
         }),
@@ -955,7 +972,7 @@ async function main() {
     assert.deepEqual(applied.pathIds, [exactBatch.pathIds[0]]);
     const exactRead = await page.evaluate(
       (id) =>
-        window.traceStudio.call('spline_inspect', {
+        window.reviewCall('spline_inspect', {
           pathIds: [id],
           units: 'model',
         }),
@@ -963,7 +980,7 @@ async function main() {
     );
     assert.ok(Math.abs(exactRead.splines[0].nodes[0].handleRight.x + 7) < 1e-8);
     assert.ok(Math.abs(exactRead.splines[0].nodes[0].handleRight.y + 4) < 1e-8);
-    await page.evaluate(() => window.traceStudio.call('undo'));
+    await page.evaluate(() => window.reviewCall('undo'));
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioDocument()),
       exactState,
@@ -975,8 +992,8 @@ async function main() {
     );
     await page.evaluate(
       async ({ objectId, pathId }) => {
-        await window.traceStudio.call('creation_focus', { objectId });
-        return window.traceStudio.call('select_paths', { pathIds: [pathId] });
+        await window.reviewCall('creation_focus', { objectId });
+        return window.reviewCall('select_paths', { pathIds: [pathId] });
       },
       { objectId: boundaryOwner.id, pathId: exactBatch.pathIds[1] },
     );
@@ -1024,13 +1041,13 @@ async function main() {
       beforeRolesRevision + 2,
       'boundary button must commit exactly once',
     );
-    await page.evaluate(() => window.traceStudio.call('undo'));
+    await page.evaluate(() => window.reviewCall('undo'));
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioDocument()),
       afterGuide,
       'one undo restores guide membership',
     );
-    await page.evaluate(() => window.traceStudio.call('undo'));
+    await page.evaluate(() => window.reviewCall('undo'));
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioDocument()),
       beforeSupport,
@@ -1043,7 +1060,7 @@ async function main() {
       return path.ownerNodeId;
     }, exactBatch.pathIds[1]);
     await page.evaluate(
-      (objectId) => window.traceStudio.call('creation_focus', { objectId }),
+      (objectId) => window.reviewCall('creation_focus', { objectId }),
       supportSource,
     );
     await page
@@ -1075,7 +1092,7 @@ async function main() {
       Object.keys(beforeSupport.nodes).length + 1,
     );
     assert.deepEqual(afterSupport.sketches, beforeSupport.sketches);
-    await page.evaluate(() => window.traceStudio.call('undo'));
+    await page.evaluate(() => window.reviewCall('undo'));
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioDocument()),
       beforeSupport,
@@ -1092,11 +1109,11 @@ async function main() {
       window.originalStudioDocument(),
     );
     const savedApiCopy = await page.evaluate(() =>
-      window.traceStudio.call('export', { format: 'json' }),
+      window.reviewCall('export', { format: 'json' }),
     );
     const loadError = await page.evaluate(async () => {
       try {
-        await window.traceStudio.call('load_project', { base64: 'AAAA' });
+        await window.reviewCall('load_project', { base64: 'AAAA' });
         return null;
       } catch (error) {
         return error.message;
@@ -1106,7 +1123,7 @@ async function main() {
     assert.deepEqual(await evidence(), beforeApiLoad);
     const loadedApiCopy = await page.evaluate(
       (base64) =>
-        window.traceStudio.call('load_project', {
+        window.reviewCall('load_project', {
           base64,
           filename: 'api-copy.spl',
         }),
@@ -1133,15 +1150,26 @@ async function main() {
       const bytes = new Uint8Array(
         await (await fetch('/sandrone-example.spl')).arrayBuffer(),
       );
-      return Promise.all([
-        window.traceStudio.call('load_project', { base64 }),
-        window.traceStudio.call('load_project', {
+      return Promise.allSettled([
+        window.reviewCall('load_project', { base64 }),
+        window.reviewCall('load_project', {
           project: decodeProject(bytes),
         }),
       ]);
     }, savedApiCopy.base64);
-    assert.equal(concurrentLoads[0].paths, beforeApiLoad.paths);
-    assert.equal(concurrentLoads[1].paths, 76);
+    assert.equal(concurrentLoads[0].status, 'fulfilled');
+    assert.equal(concurrentLoads[0].value.paths, beforeApiLoad.paths);
+    assert.equal(concurrentLoads[1].status, 'rejected');
+    const reloadedAfterConflict = await page.evaluate(async () => {
+      const { decodeProject } = await import('/src/lib/project-format.mjs');
+      const bytes = new Uint8Array(
+        await (await fetch('/sandrone-example.spl')).arrayBuffer(),
+      );
+      return window.reviewCall('load_project', {
+        project: decodeProject(bytes),
+      });
+    });
+    assert.equal(reloadedAfterConflict.paths, 76);
     assert.equal((await evidence()).targetKind, null);
     assert.equal((await evidence()).dirty, true);
     assert.equal((await evidence()).canUndo, false);
@@ -1154,7 +1182,7 @@ async function main() {
       window.originalStudioDocument(),
     );
     await page.evaluate(() =>
-      window.traceStudio.call('set_workspace', { mode: 'faces' }),
+      window.reviewCall('set_workspace', { mode: 'faces' }),
     );
     const advancedDialog = page.getByRole('dialog', {
       name: '高级构造编辑器',
@@ -1165,7 +1193,7 @@ async function main() {
       () => document.querySelectorAll('[data-region-row]').length === 69,
     );
     const inspectedModel = await page.evaluate(() =>
-      window.traceStudio.call('inspect_model'),
+      window.reviewCall('inspect_model'),
     );
     assert.equal(inspectedModel.regions.length, 69);
     assert.equal(inspectedModel.model.features.length, 69);
@@ -1180,9 +1208,7 @@ async function main() {
     );
     let advancedState;
     for (let attempt = 0; attempt < 120; attempt++) {
-      advancedState = await page.evaluate(() =>
-        window.traceStudio.call('state'),
-      );
+      advancedState = await page.evaluate(() => window.reviewCall('state'));
       if (!advancedState.model.calculating && advancedState.model.report?.valid)
         break;
       await page.waitForTimeout(250);
@@ -1231,19 +1257,19 @@ async function main() {
       beforeAdvanced,
     );
     const advancedProperties = await page.evaluate(() =>
-      window.traceStudio.call('inspect_model'),
+      window.reviewCall('inspect_model'),
     );
     const renamedFeatureId = advancedProperties.model.features[0].id;
     await page.evaluate(
       (id) =>
-        window.traceStudio.call('set_relief', {
+        window.reviewCall('set_relief', {
           id,
           changes: { name: '原面板独立体块名称', color: '#abcdef' },
         }),
       renamedFeatureId,
     );
     const renamedProperties = await page.evaluate(() =>
-      window.traceStudio.call('inspect_model'),
+      window.reviewCall('inspect_model'),
     );
     const renamedFeature = renamedProperties.model.features.find(
       (item) => item.id === renamedFeatureId,
@@ -1261,15 +1287,15 @@ async function main() {
       await page.evaluate(() => window.originalStudioDocument()),
       beforeAdvanced,
     );
-    await page.evaluate(() => window.traceStudio.call('inspect_model'));
+    await page.evaluate(() => window.reviewCall('inspect_model'));
     await page.evaluate(() =>
-      window.traceStudio.call('set_model_options', {
+      window.reviewCall('set_model_options', {
         toleranceMM: 0.02,
         manufacturingMM: 0.02,
       }),
     );
     const cleanedProperties = await page.evaluate(() =>
-      window.traceStudio.call('inspect_model'),
+      window.reviewCall('inspect_model'),
     );
     assert.equal(cleanedProperties.model.toleranceMM, 0.02);
     assert.equal(cleanedProperties.model.manufacturingMM, 0.02);
@@ -1280,7 +1306,7 @@ async function main() {
       await page.evaluate(() => window.originalStudioDocument()),
       beforeAdvanced,
     );
-    await page.evaluate(() => window.traceStudio.call('inspect_model'));
+    await page.evaluate(() => window.reviewCall('inspect_model'));
     const beforeDisableRevision = (await evidence()).revision;
     await advancedDialog
       .locator('[data-feature-row]')
@@ -1334,7 +1360,7 @@ async function main() {
     assert.ok(Math.abs(afterWidth.sourceFrame.widthMM - nextWidth) < 1e-9);
     assert.deepEqual(afterWidth.programs, beforeWidth.programs);
     const widthCopy = await page.evaluate(() =>
-      window.traceStudio.call('export', { format: 'json' }),
+      window.reviewCall('export', { format: 'json' }),
     );
     assert.deepEqual(
       decodeDocument(Buffer.from(widthCopy.base64, 'base64')).document,
@@ -1355,7 +1381,7 @@ async function main() {
       afterWidth,
     );
     await page.evaluate(
-      (base64) => window.traceStudio.call('load_project', { base64 }),
+      (base64) => window.reviewCall('load_project', { base64 }),
       widthCopy.base64,
     );
     assert.equal(

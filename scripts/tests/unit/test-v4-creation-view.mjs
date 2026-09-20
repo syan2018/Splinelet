@@ -89,8 +89,8 @@ assert.deepEqual(
 );
 assert.equal(
   view.modifierStatus.length,
-  0,
-  'implicit Source and Fill are not shown as modifier directories',
+  1,
+  'Fill is an editable modifier; Source stays in the source tree',
 );
 
 const target = structuredClone(view.cells[0].outputRef);
@@ -236,7 +236,12 @@ const ambiguousView = projectCreationView(
   session.state.document,
   ambiguousSnapshot,
 );
-assert.equal(ambiguousView.cells[0].painted, false);
+assert.equal(
+  ambiguousView.cells[0].painted,
+  true,
+  'authored enable is independent of evaluation readiness',
+);
+assert.equal(ambiguousView.cells[0].flatOnly, true);
 assert.equal(ambiguousView.cells[0].heightMM, null);
 assert.equal(
   ambiguousView.diagnostics.filter(

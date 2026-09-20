@@ -1,4 +1,5 @@
 import { resolveAppearance, sameOutputRef } from './appearance.mjs';
+import { aggregateReliefBranches } from '../evaluation/branch-stages.mjs';
 import {
   assignmentsForTarget,
   proposeOutputAssignmentInheritance,
@@ -93,7 +94,7 @@ function invalidAssignments(document, regions) {
  * per-output color, thickness authority, mode, and placement intent; T10 owns
  * layer/mm conversion and all placement/manufacturing solving.
  */
-export function resolveRelief(document, regionResults) {
+function resolveReliefBranch(document, regionResults) {
   const inputs = normalizeResults(regionResults);
   const dependencies = [];
   const diagnostics = [];
@@ -133,6 +134,9 @@ export function resolveRelief(document, regionResults) {
       );
     regions.push(...input.value.regions);
   }
+  const invalid = invalidAssignments(document, regions);
+  if (invalid.length)
+    return blocked([...diagnostics, ...invalid], dependencies);
   if (!regions.length) {
     if (sawAbsent && !sawEmpty)
       return stage('absent', undefined, diagnostics, dependencies);
@@ -148,9 +152,6 @@ export function resolveRelief(document, regionResults) {
     );
   }
 
-  const invalid = invalidAssignments(document, regions);
-  if (invalid.length)
-    return blocked([...diagnostics, ...invalid], dependencies);
   const reliefs = [];
   for (const region of regions) {
     if (!validOutputRef(region.ref) || !region.geometry)
@@ -224,6 +225,67 @@ export function resolveRelief(document, regionResults) {
     value,
     diagnostics,
     dependencies,
+  );
+}
+
+export function resolveRelief(document, regionResults) {
+  const byOwner = new Map();
+  for (const input of normalizeResults(regionResults)) {
+    const owners = input?.ownerNodeId
+      ? [input.ownerNodeId]
+      : [
+          ...new Set(
+            (input?.value?.regions || []).map(
+              (region) => region.ref?.ownerNodeId,
+            ),
+          ),
+        ];
+    for (const ownerNodeId of owners.length ? owners : [null]) {
+      const branch =
+        ownerNodeId && input?.status === 'ready'
+          ? {
+              ...input,
+              value: {
+                ...input.value,
+                regions: input.value.regions.filter(
+                  (region) => region.ref?.ownerNodeId === ownerNodeId,
+                ),
+              },
+            }
+          : input;
+      if (!byOwner.has(ownerNodeId)) byOwner.set(ownerNodeId, []);
+      byOwner.get(ownerNodeId).push(branch);
+    }
+  }
+  // Missing publication still leaves an authored assignment unresolved.
+  for (const assignment of [
+    ...Object.values(document.appearances?.overrides || {}),
+    ...Object.values(document.reliefDefinitions?.overrides || {}),
+  ]) {
+    const owner = assignment.target.ownerNodeId;
+    if (!byOwner.has(null) && !byOwner.has(owner)) byOwner.set(owner, []);
+  }
+  const scope = (record, owner) => ({
+    ...record,
+    overrides: Object.fromEntries(
+      Object.entries(record?.overrides || {}).filter(
+        ([, item]) => !owner || item.target.ownerNodeId === owner,
+      ),
+    ),
+  });
+  return aggregateReliefBranches(
+    'relief',
+    [...byOwner].map(([ownerNodeId, inputs]) => ({
+      ownerNodeId,
+      ...resolveReliefBranch(
+        {
+          ...document,
+          appearances: scope(document.appearances, ownerNodeId),
+          reliefDefinitions: scope(document.reliefDefinitions, ownerNodeId),
+        },
+        inputs,
+      ),
+    })),
   );
 }
 

@@ -557,6 +557,7 @@ const selectEdge = (edges, endpoint, selector, iteration, fixed) => {
   const matching = edges.filter(
     (edge) => edgeMatches(edge, endpoint) && matchesFixedInstances(edge, fixed),
   );
+  if (!selector) return matching.length === 1 ? matching[0] : undefined;
   const indexes = instancesFor(matching, selector.operatorId);
   const base = selector.index === 'each' ? iteration : selector.index;
   let index = base;
@@ -594,19 +595,14 @@ export const joinOperator = {
     ).entries()) {
       const left = connection?.a;
       const right = connection?.b;
-      if (
-        !left?.edgeEnd ||
-        !right?.edgeEnd ||
-        !left.selector ||
-        !right.selector
-      ) {
+      if (!left?.edgeEnd || !right?.edgeEnd) {
         diagnostics.push(
           diag('invalid-join', `Join ${connectionIndex} 缺少端点或实例选择器`),
         );
         continue;
       }
       const iterations =
-        left.selector.index === 'each'
+        left.selector?.index === 'each'
           ? instancesFor(
               edges.filter(
                 (edge) =>
@@ -615,7 +611,7 @@ export const joinOperator = {
               ),
               left.selector.operatorId,
             )
-          : [left.selector.index];
+          : [left.selector?.index ?? 0];
       for (const iteration of iterations) {
         const a = selectEdge(
           edges,

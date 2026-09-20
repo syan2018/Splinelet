@@ -78,7 +78,7 @@ Windows 发布产物为 `src-tauri/target/release/splinelet.exe`，前端资源�
 
 使用「上色」给区域填色，或在右侧“选区 → 属性”中修改颜色与厚度。选整个部件会作用于其多个区域，编辑前先看详情栏的选择范围。项目色卡位于“工程 → 色卡”；修改色卡会联动引用它的区域。
 
-「底图」「叠色」「分色」只改变显示方式。单选一个部件或它的区域时，可在“选区 → 构造”组合分区、布尔或偏移步骤；这些操作不改写源贝塞尔节点。需要整理全工程的构面来源、体块或零件时，从“工程 → 设置 → 工程高级构造”打开编辑器。
+平面默认使用「叠色」，同时显示参考图、源线和修改器求值后的面。「底图」「叠色」「分色」只改变显示方式，切换工具会保留已选显示方式。单选一个部件或它的区域时，可在“选区 → 构造”组合分区、布尔或偏移步骤；这些操作不改写源贝塞尔节点。需要整理全工程的构面来源、体块或零件时，从“工程 → 设置 → 工程高级构造”打开编辑器。
 
 ![分色视图中选择杯子部件并调整其属性](docs/images/workflow-regions.png)
 
@@ -148,7 +148,7 @@ Splinelet 面向轮廓拉伸得到的 2.5D 浮雕，仍在迭代中。面修改�
 - [完整文档索引](docs/README.md)
 - [统一创作与 API](docs/creation-2026-09-19.md)
 - [源线编辑与快捷键](docs/source-editor.md)
-- [编辑模型评审与重构计划](docs/architecture/editor-model-review-and-refactor-2026-09-19.md)（对象组织、求值管线与渐进交互；设计提案，尚未实施）
+- [编辑模型评审与重构计划](docs/architecture/editor-model-review-and-refactor-2026-09-19.md)（原设计与验收方向；当前行为见构造链与 API 文档）
 - [V4 重构任务总控](tasks/editor-model-v4-refactor/README.md)（模块分发、并行依赖、交付与验收）
 - [面修改器](docs/modifiers.md) · [构造链与失效处理](docs/architecture/construction-pipeline.md)
 - [打印分层](docs/print-stack.md) · [3MF 导出](docs/3mf-export.md)
@@ -195,7 +195,7 @@ pnpm build
 
 浏览器提供 `window.traceStudio.call(action, args)`。先用 `state`、`creation_inspect` 读取当前状态，再执行命令；涉及区域修改时使用最新 `revision`。
 
-Agent API 4.1 的 `spline_inspect` / `spline_apply` 可直接读写锚点与双控制柄，批量变换、复制或替换精确贝塞尔，一次提交对应一次撤销；详见[精确样条接口](docs/source-editor.md#精确样条-api-41)。重复纹样可通过“曲线镜像 → 曲线旋转阵列 → 闭合构面”构造，之后继续使用同一套颜色、厚度、分层和导出，见[修改器](docs/modifiers.md)。
+原工作台提供 [Agent API 5](docs/agent-api-2026-09-20.md)，以稳定引用、修订检查和同一编辑事务创建源线、修改器与场景层级。添加菜单支持镜像、阵列、显式端点连接和构面；默认显示修改器后的面。独立部件故障不清空整个预览，未完成的制造结果拒绝导出。兼容样条写入同样要求 expectedRevision。
 
 平面和立体画布支持[派生样条预览](docs/modifiers.md#派生样条预览)：切换源线、镜像和阵列阶段，拖动源节点即时查看结果，构面失败时仍显示当前曲线与未接合端点。API 可通过 `creation_inspect.curvePreviews` 读取相同阶段与诊断。
 

@@ -20,13 +20,14 @@
 
 ## 设计评审
 
-- [编辑模型评审与重构计划（2026-09-19）](architecture/editor-model-review-and-refactor-2026-09-19.md)：对象组织、源定义到曲线/区域/浮雕/实体的管线、默认简单与按需展开的交互，以及 V4 迁移和体验验收；尚未实施。
+- [编辑模型评审与重构计划（2026-09-19）](architecture/editor-model-review-and-refactor-2026-09-19.md)：对象组织、源定义到曲线/区域/浮雕/实体的管线、默认简单与按需展开的交互，以及 V4 迁移和体验验收；V4 已接入双端默认工作区，剩余问题见本次复审。
+- [V4 重构复审与默认预览修复（2026-09-20）](qa/v4-refactor-review-2026-09-20.md)：故障隔离、完整构造入口、Z 位移和场景树的待修复项，以及本次预览修复的验证范围。
 - [交互设计稿（2026-09-19）](interaction-design-2026-09-19.md)：目标交互、当前修正范围与待实现项。
 
 ## 执行任务
 
 - [复杂任务目录](../tasks/README.md)：分发、依赖、交付与验收管理。
-- [V4 编辑模型重构](../tasks/editor-model-v4-refactor/README.md)：8 个模块工作包、包内检查点、四并发优先调度及阶段门槛；实施尚未开始。
+- [V4 编辑模型重构](../tasks/editor-model-v4-refactor/README.md)：模块工作包、包内检查点及验收记录；历史分发状态不代表当前产品能力。
 
 ## 历史 QA 快照
 
@@ -41,3 +42,5 @@
 - [Endpoint continuation and spline inspectors（2026-09-12）](qa/spline-endpoints-2026-09-12.md)
 
 历史记录中引用的 `outputs/`、`backups/` 或工作区外路径通常是未纳入仓库的本地证据。可重复回归应以 `scripts/tests/fixtures/` 和当前测试脚本为准。
+
+- [Agent API 5](agent-api-2026-09-20.md)：原宿主接线、稳定引用、修订、重复纹样、二进制传输与兼容写入。

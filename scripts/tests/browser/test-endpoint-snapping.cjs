@@ -3,11 +3,7 @@ module.exports = async (page, outputDirectory) => {
   const path = require('node:path');
   const fs = require('node:fs/promises');
   const { drawCupEmblem } = await import('../../examples/draw-cup-emblem.mjs');
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   await page
     .locator('input[accept=".spl,.bezier.json,.json"]')
     .setInputFiles(

@@ -112,7 +112,10 @@ session.undo({ expectedRevision: session.state.revision });
 assert.deepEqual(session.state.document, initial);
 session.redo({ expectedRevision: session.state.revision });
 assert.equal(area(session.state.document), 400);
-assert.deepEqual(projectCreationView(filtered, {}).modifierStatus, []);
+assert.deepEqual(
+  projectCreationView(filtered, {}).modifierStatus.map((item) => item.type),
+  ['fill'],
+);
 assert.deepEqual(projectCurvePreviews(filtered, evaluatePlanar(filtered)), []);
 const allExcluded = createAuthoringCommand({
   kind: 'set-region-path-membership',

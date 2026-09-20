@@ -34,6 +34,14 @@ export function projectModifierControls(document, ownerNodeId, operatorId) {
       drivenFields.push(field);
   };
   const params = operator.params;
+  if (operator.type === 'join') {
+    values.connections = structuredClone(params.connections);
+    editableFields.push('connections');
+  }
+  if (operator.type === 'fill') {
+    values.rule = params.rule;
+    editableFields.push('rule');
+  }
   if (['curve-mirror', 'curve-array', 'region-array'].includes(operator.type)) {
     const matrix = worldMatrix(document, ownerNodeId);
     const rotation =

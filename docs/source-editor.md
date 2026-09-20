@@ -68,14 +68,15 @@ Ctrl+S 或“保存工程”首次选择并绑定工程文件，之后每次按�
 
 “工程 → 导出”导出通用 3MF、分色 SVG、精确源曲线 SVG，以及包含最终实体和源贝塞尔的 Blender 脚本；先选择需要输出的零件。STL 保留在兼容 API 中。源曲线 SVG 保留所有可见路径及分组。毫米尺寸按整张底图计算；Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景。具体差别见 [统一创作指南](creation-2026-09-19.md)。
 
-## Agent API 2.0
+## 原图像素兼容 API
 
-浏览器调用 `window.traceStudio.call(action,args)`；主要操作也通过 WebMCP 暴露。HTTP 配套接口为 POST /command，body 为 `{action,args}`；GET /state 读取连接状态。所有坐标均为原图像素。
+默认入口为 [Agent API 5](agent-api-2026-09-20.md)。下列兼容源命令仍使用原图像素，写入必须携带 document.get 读取到的 expectedRevision；不能在提交时补取当前修订来覆盖原读版本。HTTP 配套接口为 POST /command，body 为 `{action,args}`；WebMCP 使用同一动作和修订约束。
 
 ```javascript
-await window.traceStudio.call('state'); // tool、active、selectedPaths、selectedNodes、view、gesturing、paths、groups
-await window.traceStudio.call('detect_candidates', { limit: 48, spacing: 30 });
-await window.traceStudio.call('create_path', {
+const call = window.traceStudio.call;
+const observed = await call('document.get');
+await call('create_path', {
+  expectedRevision: observed.revision,
   name: '轮廓',
   points: [
     { x: 20, y: 30 },
@@ -84,45 +85,18 @@ await window.traceStudio.call('create_path', {
   mode: 'ink',
   preview: true,
 });
-await window.traceStudio.call('commit_preview');
-await window.traceStudio.call('resume_path', { pathId: 'a', end: 'start' });
-await window.traceStudio.call('add_anchor', {
-  position: { x: 10, y: 40 },
-  mode: 'ink',
-  snap: false,
-});
-await window.traceStudio.call('finish_path'); // 结束当前续画；state.drawing 返回当前 pathId / end 或 null
-await window.traceStudio.call('select_paths', { pathIds: ['a', 'b'] }); // 空数组取消选择
-await window.traceStudio.call('move_paths', {
-  pathIds: ['a', 'b'],
-  groupId: 'g',
-  targetId: 'c',
-  after: true,
-});
-await window.traceStudio.call('select_node', { pathId: 'a', nodeIndex: 2 });
-await window.traceStudio.call('set_node_mode', {
-  pathId: 'a',
-  nodeIndex: 2,
-  mode: 'symmetric',
-});
-await window.traceStudio.call('set_point', {
-  pathId: 'a',
-  curve: 1,
-  point: 1,
-  position: { x: 50, y: 60 },
-});
-await window.traceStudio.call('export', { format: 'svg' });
+await call('commit_preview', { expectedRevision: observed.revision });
 ```
 
 `create_path` 接受候选编号或点坐标，返回 fitError / needsAnchor。`manage_group` 支持 create / rename / assign / visibility / delete。`move_path` 保留单条移动兼容入口；`select_path` 现在进入路径选择模式，节点编辑使用 `select_node`。`delete_node`、`merge_paths`、`straighten_span`、`get_project`、`inspect_geometry`、`undo`、`set_view`、`load_project` 保持可用。`refit_path` 仅打开确认框，不能绕过用户确认。拖动期间拒绝 API 修改工程。
 
-注入 V4 会话的原界面中，`finish_path` 与结束按钮、Enter 使用同一完成管线：不添加曲线几何，但会将有效的待完成分区发布为一次可撤销命令。未闭合孔、无效目标等会返回错误，并保留原始线条供续画；不会仅退出绘制就报告构造成功。默认旧会话仍沿用原结束行为。
+注入 V4 会话的原界面中，`finish_path` 与结束按钮、Enter 使用同一完成管线：不添加曲线几何，但会将有效的待完成分区发布为一次可撤销命令。未闭合孔、无效目标等会返回错误，并保留原始线条供续画；不会仅退出绘制就报告构造成功。
 
-同一 V4 会话中的“导出 .spl 工程副本”读取当前已提交文档及资源，生成可重新打开的完整容器。API `export({format:'json'})` 保留调用名称，但在 V4 下返回 `{filename, mimeType, base64}`，其中 base64 是 `.spl` 容器，不能当成 JSON 文本解析；旧会话仍返回 JSON `content`。导出副本不绑定文件、不清除未保存状态，也不加入撤销历史；拖动预览期间拒绝导出。SVG 与 Blender 源曲线导出入口保持原格式。
+同一 V4 会话中的“导出 .spl 工程副本”读取当前已提交文档及资源，生成可重新打开的完整容器。API `export({format:'json'})` 保留调用名称，但在 V4 下返回 `{filename, mimeType, base64}`，其中 base64 是 `.spl` 容器，不能当成 JSON 文本解析。导出副本不绑定文件、不清除未保存状态，也不加入撤销历史；拖动预览期间拒绝导出。SVG 与 Blender 源曲线导出入口保持原格式。
 
 V4 会话中，源曲线导出窗口的“挤出厚度”是 Blender 脚本的导出偏好。它由会话持有，不改变作品的区域厚度、规范文件或撤销记录；设置后 `export({format:'blender'})` 使用新值。区域的实际厚度仍通过原“高低”工具和区域属性编辑。
 
-`load_project` 接受 `{project: 旧版工程对象}` 或 `{base64: 完整工程容器}`，二者只能提供一个，可附带显示用 `filename`。V4 会话复用文件打开管线：旧对象正式迁移，V4 容器校验文档与资源；成功后重置历史和选区，保持无文件绑定，旧工程导入标为待保存。可以将 V4 `export({format:'json'})` 返回的 `base64` 传回此入口；不要传只读展示对象或缺少资源的裸 V4 JSON。失败保留当前工程；绘制计算、保存或拖动期间拒绝替换。
+`load_project` 接受 `{expectedRevision,project: 旧版工程对象}` 或 `{expectedRevision,base64: 完整工程容器}`，二者只能提供一个，可附带显示用 `filename`。V4 会话复用文件打开管线：旧对象正式迁移，V4 容器校验文档与资源；成功后重置历史和选区，保持无文件绑定，旧工程导入标为待保存。可以将 V4 `export({format:'json'})` 返回的 `base64` 传回此入口；不要传只读展示对象或缺少资源的裸 V4 JSON。失败保留当前工程；绘制计算、保存或拖动期间拒绝替换。
 
 V4 的 `set_point` 保留原图像素坐标与控制柄 1/2 参数，通过当前源视图解析稳定身份，复用鼠标拖柄的命令；平滑/对称模式会按原规则联动另一侧控制柄。一次调用对应一次撤销，过期视图或受约束的非法改写不会退回旧工程写入。
 
@@ -136,7 +110,9 @@ V4 会话中的原 API 先从只读源视图解析精确提案，再在一次规
 
 ```js
 const call = (action, args = {}) => window.traceStudio.call(action, args);
+const observed = await call('document.get');
 const { pathIds } = await call('spline_apply', {
+  expectedRevision: observed.revision,
   objectId,
   units: 'model',
   splines: [
@@ -151,9 +127,11 @@ const { pathIds } = await call('spline_apply', {
     },
   ],
 });
+const edited = await call('document.get');
 const { splines } = await call('spline_inspect', { pathIds, units: 'model' });
 // 修改读回的节点后可带原 id 提交；也可省略 nodes，只变换现有曲线。
 await call('spline_apply', {
+  expectedRevision: edited.revision,
   units: 'model',
   splines: [{ id: pathIds[0], matrix: [1, 0, 0, 1, 2, 0] }],
 });
@@ -166,7 +144,7 @@ await call('creation_inspect');
 - `matrix:[a,b,c,d,e,f]` 在所选单位下计算 `x'=a*x+c*y+e, y'=b*x+d*y+f`，再转存储坐标；支持平移、缩放、旋转、镜像，拒绝退化矩阵。
 - 新路径 `role` 为 boundary/hole/guide；边界与洞须闭合，洞须指定部件。显式曲线流水线使用 guide 源线，避免先隐式构面。修改已有用途/归属继续使用创作命令。
 - 每批 1–200 条，每条最多 1000 个节点；开放至少 2 个、闭合至少 3 个。返回 `{pathIds}` 与输入顺序一致。整批验证后一次提交，任意错误均不产生部分修改；`undo` 撤销整批。
-- 两个入口通过浏览器、WebMCP `bezier_spline_*` 和本机 HTTP 共同暴露；WebMCP 也提供 `bezier_undo`。后续步骤见[曲线与面流水线](modifiers.md#曲线到面的流水线)。
+- 两个入口通过浏览器、WebMCP `bezier_spline_*` 和本机 HTTP 共同暴露；WebMCP 也提供 `bezier_undo`。后续步骤见[曲线与面流水线](modifiers.md#添加排序与删除)。
 
 ## 验证
 

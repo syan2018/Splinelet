@@ -300,7 +300,9 @@ const analyzeCurveInsertion = (document, ownerNodeId) => {
     seen.add(operator.id);
     if (operator.authoring)
       return { enabled: false, reason: '请先完成或继续绘制这条线' };
-    if (operator.type === 'source') break;
+    // Insertion consumes the collection's output without rewriting its inputs.
+    // A collection is a safe boundary, not a chain that must be flattened.
+    if (['source', 'curve-collect'].includes(operator.type)) break;
     const domain = sameDomain(operator);
     if (domain !== 'curves')
       return { enabled: false, reason: '曲线链包含跨域或多输入步骤' };
@@ -316,8 +318,10 @@ const analyzeCurveInsertion = (document, ownerNodeId) => {
     reference = prior;
   }
   const stage = evaluateProgram(document, ownerNodeId);
-  const published = fill ? stage.regions : stage.curves;
-  if (!['ready', 'empty'].includes(published.status))
+  const published = fill
+    ? stage.components[`operator:${insertion.operatorId}`]?.ports?.curves
+    : stage.curves;
+  if (!['ready', 'empty'].includes(published?.status))
     return { enabled: false, reason: '当前已发布构造结果不可用' };
   return {
     enabled: true,
@@ -398,10 +402,14 @@ export function createProgramModifierCommand(request) {
     const assigned = outputRefs(document, action.ownerNodeId);
     if (kind === 'add-program-modifier') {
       if (typeof idFactory !== 'function') throw Error('缺少修改器 ID 生成器');
-      if (!['curve-mirror', 'curve-array'].includes(action.type))
-        throw Error('只支持添加曲线镜像或曲线阵列');
+      if (
+        !['curve-mirror', 'curve-array', 'join', 'fill'].includes(action.type)
+      )
+        throw Error('不支持的曲线修改器类型');
       const analysis = analyzeCurveInsertion(document, action.ownerNodeId);
       if (!analysis.enabled) throw Error(analysis.reason);
+      if (action.type === 'fill' && analysis.program.outputs.regions)
+        throw Error('部件已有区域输出，请编辑现有构面步骤');
       const id = idFactory();
       if (
         typeof id !== 'string' ||
@@ -429,14 +437,14 @@ export function createProgramModifierCommand(request) {
         },
         params: clone(action.params),
       };
-      const output = retarget(targetInput, action.ownerNodeId, id, 'curves');
+      const domain = action.type === 'fill' ? 'regions' : 'curves';
+      const output = retarget(targetInput, action.ownerNodeId, id, domain);
       if (analysis.fill) analysis.fill.inputs.input[0] = output;
-      if (samePort(analysis.program.outputs.curves, analysis.insertion))
-        analysis.program.outputs.curves = port(
-          action.ownerNodeId,
-          id,
-          'curves',
-        );
+      if (
+        domain === 'regions' ||
+        samePort(analysis.program.outputs.curves, analysis.insertion)
+      )
+        analysis.program.outputs[domain] = port(action.ownerNodeId, id, domain);
     } else {
       const capability = linearProgramCapability(
         document,
@@ -481,7 +489,13 @@ export function createProgramModifierCommand(request) {
         );
       }
     }
-    assertPublishedReady(document, action.ownerNodeId);
+    // Open contours and an incomplete Fill remain editable repair states.
+    if (kind !== 'add-program-modifier')
+      assertPublishedReady(document, action.ownerNodeId);
+    else if (
+      evaluateProgram(document, action.ownerNodeId).curves.status === 'blocked'
+    )
+      throw Error('修改器无法生成有效曲线');
     validateAssignedOutputs(document, action.ownerNodeId, assigned);
     return {
       document,

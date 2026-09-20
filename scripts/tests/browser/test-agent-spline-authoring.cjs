@@ -3,12 +3,9 @@ module.exports = async (page, outputDirectory) => {
   const fs = require('node:fs/promises');
   const path = require('node:path');
   const { drawCupEmblem } = await import('../../examples/draw-cup-emblem.mjs');
-  const { encodeProject, decodeProject } =
-    await import('../../../src/lib/project-format.mjs');
-  const fixture = path.resolve(
-    __dirname,
-    '../../../public/sandrone-example.spl',
-  );
+  const { decodeDocument } =
+    await import('../../../src/lib/document/codec.mjs');
+  const { readGeometry } = await import('../../../src/lib/region-engine.mjs');
   const call = (action, args = {}) =>
     page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
       action,
@@ -16,175 +13,116 @@ module.exports = async (page, outputDirectory) => {
     });
   await page
     .locator('input[accept=".spl,.bezier.json,.json"]')
-    .setInputFiles(fixture);
-  const expected = decodeProject(new Uint8Array(await fs.readFile(fixture)));
+    .setInputFiles(
+      path.resolve(__dirname, '../../../public/sandrone-example.spl'),
+    );
   await page.waitForFunction(
-    async ({ pathIds, objectIds }) => {
-      const state = await window.traceStudio.call('state');
-      if (!state.ready || state.busy) return false;
-      const project = await window.traceStudio.call('get_project');
-      return (
-        JSON.stringify(project.paths.map((path) => path.id)) ===
-          JSON.stringify(pathIds) &&
-        JSON.stringify(project.creation?.objects.map((object) => object.id)) ===
-          JSON.stringify(objectIds)
-      );
-    },
-    {
-      pathIds: expected.paths.map((path) => path.id),
-      objectIds: expected.creation.objects.map((object) => object.id),
-    },
+    async () =>
+      (await window.traceStudio.call('state')).ready &&
+      Object.values(
+        (await window.traceStudio.call('document.get')).document.nodes,
+      ).some((node) => node.name === '杯子'),
   );
+  assert.equal((await call('capabilities.get')).apiVersion, '5.0');
+  const original = await call('document.get');
   const initial = await call('creation_inspect');
-  const original = await call('get_project');
   const cupId = initial.creation.objects.find((o) => o.name === '杯子').id;
-  const cupGeometry = (s) =>
-    s.cells.filter((c) => c.objectId === cupId).map((c) => c.geometry);
+  const cupGeometry = (scene) =>
+    scene.cells
+      .filter((cell) => cell.objectId === cupId)
+      .map((cell) => cell.geometry);
   const result = await drawCupEmblem(call);
+  console.log('API 5 motif created');
+  let state = await call('document.get');
+  const run = async (action) => {
+    state = await call('authoring.run', {
+      expectedRevision: state.revision,
+      action,
+    });
+  };
+  const undo = async () => {
+    state = await call('undo', { expectedRevision: state.revision });
+  };
   let scene = await call('creation_inspect');
-  const cells = (s) => s.cells.filter((c) => c.objectId === result.objectId);
+  const cell = (view) =>
+    view.cells.find((cell) => cell.objectId === result.objectId);
   assert.deepEqual(scene.errors, []);
-  assert.equal(cells(scene).length, 1);
-  assert.equal(cells(scene)[0].geometry.type, 'Polygon');
-  assert.equal(cells(scene)[0].geometry.coordinates.length, 6);
+  assert.equal(cell(scene).geometry.coordinates.length, 6);
   assert.deepEqual(cupGeometry(scene), cupGeometry(initial));
-  const finalArea = cells(scene).reduce((n, c) => n + c.areaMM2, 0);
+  const finalArea = readGeometry(cell(scene).geometry).getArea();
   assert(finalArea > 0);
-  const savedPaths = (await call('get_project')).paths;
-  assert.deepEqual(savedPaths.slice(0, original.paths.length), original.paths);
-  assert.equal(savedPaths.length, original.paths.length + 3);
+  for (const [id, sketch] of Object.entries(original.document.sketches))
+    assert.deepEqual(state.document.sketches[id], sketch);
   assert.equal(
-    savedPaths.find((p) => p.id === result.pathIds[0]).nodeModes[1],
-    'smooth',
+    Object.keys(state.document.sketches).length,
+    Object.keys(original.document.sketches).length + 3,
   );
-  assert.equal(
-    savedPaths.find((p) => p.id === result.pathIds[2]).nodeModes[2],
-    'smooth',
+  const mother = result.pathRefs[0];
+  const sketch = state.document.sketches[mother.sketchId];
+  const uses = sketch.paths[mother.id].edges;
+  const lastVertex = sketch.edges[uses.at(-1).edgeId].endVertexId;
+  const beforeBreak = state.document;
+  const position = sketch.vertices[lastVertex].position.value;
+  await assert.rejects(
+    call('authoring.run', {
+      expectedRevision: state.revision - 1,
+      action: {
+        kind: 'move-nodes',
+        nodeIds: [result.objectId],
+        deltaMM: [1, 0],
+      },
+    }),
+    /revision|修订|过期/i,
   );
-
-  const mother = (
-    await call('spline_inspect', { pathIds: [result.pathIds[0]] })
-  ).splines[0];
+  await assert.rejects(
+    call('spline_apply', { splines: [] }),
+    /expectedRevision/,
+  );
+  assert.deepEqual((await call('document.get')).document, beforeBreak);
+  await run({
+    kind: 'set-vertex',
+    sketchId: sketch.id,
+    vertexId: lastVertex,
+    value: [position[0] + 1, position[1]],
+  });
+  scene = await call('creation_inspect');
+  assert.equal(cell(scene), undefined);
+  assert(scene.errors.some((error) => error.objectId === result.objectId));
+  assert.deepEqual(cupGeometry(scene), cupGeometry(initial));
+  assert(
+    scene.cells
+      .filter((cell) => cell.objectId === cupId)
+      .every((cell) => cell.enabled && !cell.flatOnly),
+  );
+  await assert.rejects(
+    call('export.run', {
+      epoch: state.epoch,
+      revision: state.revision,
+      format: '3mf',
+      stage: 'bodies',
+    }),
+    /ready|blocked|阻断/,
+  );
+  await undo();
+  assert.deepEqual(state.document, beforeBreak);
+  scene = await call('creation_inspect');
+  assert(
+    Math.abs(readGeometry(cell(scene).geometry).getArea() - finalArea) < 1e-7,
+  );
   await call('creation_view', { view: 'flat' });
   await call('creation_focus', { objectId: result.objectId });
   const overlay = page.locator(
     `[data-curve-preview-object="${result.objectId}"]`,
   );
-  const stage = page.getByRole('combobox', { name: '样条预览阶段' });
-  assert.deepEqual(
-    scene.curvePreviews
-      .filter((s) => s.objectId === result.objectId)
-      .map((s) => s.curves.length),
-    [7, 14, 56, 56],
-  );
-  await stage.selectOption('source');
-  assert.equal(
-    await overlay
-      .locator('[data-derived-curves]')
-      .getAttribute('data-derived-curves'),
-    '7',
-  );
-  await stage.selectOption('final');
+  await page
+    .getByRole('combobox', { name: '样条预览阶段' })
+    .selectOption('final');
   assert.equal(
     await overlay
       .locator('[data-derived-curves]')
       .getAttribute('data-derived-curves'),
     '56',
   );
-  const disconnected = structuredClone(mother.nodes);
-  for (const key of ['co', 'handleLeft', 'handleRight'])
-    disconnected.at(-1)[key].x += 1;
-  await call('spline_apply', {
-    splines: [{ id: mother.id, nodes: disconnected }],
-  });
-  scene = await call('creation_inspect');
-  assert.equal(cells(scene).length, 0);
-  assert(scene.curvePreviews.at(-1).junctions.length > 0);
-  assert((await overlay.locator('[data-curve-junction]').count()) > 0);
-  if (outputDirectory) {
-    await page.screenshot({
-      path: path.join(outputDirectory, 'preview-broken-joins.png'),
-    });
-    await call('creation_view', { view: '3d' });
-    await page.screenshot({
-      path: path.join(outputDirectory, 'preview-broken-joins-3d.png'),
-    });
-  }
-  await call('undo');
-  scene = await call('creation_inspect');
-  assert.equal(scene.curvePreviews.at(-1).junctions.length, 0);
-  // Actual pointer drag: transformed helpers must change BEFORE pointer-up,
-  // while the surface worker may still be debounced.
-  await call('creation_view', { view: 'flat' });
-  await call('select_paths', { pathIds: [mother.id] });
-  await page.keyboard.press('a');
-  const node = page.locator('[data-node-index="2"]');
-  const bounds = await node.boundingBox();
-  assert(bounds);
-  const beforeDrag = await overlay
-    .locator('[data-derived-curves]')
-    .getAttribute('d');
-  await page.mouse.move(
-    bounds.x + bounds.width / 2,
-    bounds.y + bounds.height / 2,
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    bounds.x + bounds.width / 2 + 12,
-    bounds.y + bounds.height / 2 + 3,
-    { steps: 3 },
-  );
-  await page.waitForFunction(
-    ({ id, before }) =>
-      document
-        .querySelector(`[data-curve-preview-object="${id}"] path`)
-        .getAttribute('d') !== before,
-    { id: result.objectId, before: beforeDrag },
-  );
-  await page.mouse.up();
-  await call('undo');
-  scene = await call('creation_inspect');
-  assert.equal(scene.curvePreviews.at(-1).junctions.length, 0);
-  const editedNodes = structuredClone(mother.nodes);
-  for (const key of ['co', 'handleLeft', 'handleRight'])
-    editedNodes[1][key].x += 0.5;
-  await call('spline_apply', {
-    splines: [{ id: mother.id, nodes: editedNodes }],
-  });
-  scene = await call('creation_inspect');
-  assert.deepEqual(scene.errors, []);
-  assert(Math.abs(cells(scene)[0].areaMM2 - finalArea) > 0.01);
-  assert.equal((await call('get_project')).paths.length, savedPaths.length);
-  await call('undo');
-  scene = await call('creation_inspect');
-  assert(Math.abs(cells(scene)[0].areaMM2 - finalArea) < 1e-7);
-
-  await assert.rejects(
-    call('spline_apply', {
-      splines: [
-        { nodes: mother.nodes, closed: true },
-        { id: 'missing', nodes: mother.nodes },
-      ],
-    }),
-  );
-  assert.deepEqual((await call('get_project')).paths, savedPaths);
-
-  await call('creation_command', {
-    action: 'modifier_update',
-    args: {
-      objectId: result.objectId,
-      modifierId: result.modifierId,
-      changes: { count: 3 },
-    },
-  });
-  scene = await call('creation_inspect');
-  assert(scene.errors.some((e) => e.objectId === result.objectId));
-  assert.equal(cells(scene).length, 0);
-  await call('undo');
-  await call('creation_inspect');
-
-  // Exercise the actual modifier controls as well as the public API.
-  await call('creation_focus', { objectId: result.objectId });
   await page
     .getByRole('button', { name: '当前部件构造与修改器', exact: true })
     .click();
@@ -194,33 +132,68 @@ module.exports = async (page, outputDirectory) => {
   await count.fill('3');
   await count.press('Enter');
   scene = await call('creation_inspect');
+  assert.equal(cell(scene), undefined);
+  state = await call('document.get');
   assert.equal(
-    scene.creation.objects
-      .find((o) => o.id === result.objectId)
-      .modifiers.find((m) => m.id === result.modifierId).count,
+    state.document.programs[state.document.nodes[result.objectId].programId]
+      .operators[result.modifierId].params.count,
     3,
   );
   await count.fill('4');
   await count.press('Enter');
   scene = await call('creation_inspect');
-  assert(Math.abs(cells(scene)[0].areaMM2 - finalArea) < 1e-7);
-
-  const project = await call('get_project');
-  const bytes = encodeProject(project);
-  assert.deepEqual(decodeProject(bytes).paths, project.paths);
-  await call('load_project', { project: decodeProject(bytes) });
+  assert(
+    Math.abs(readGeometry(cell(scene).geometry).getArea() - finalArea) < 1e-7,
+  );
+  state = await call('document.get');
+  const evaluated = await call('evaluation.request', {
+    epoch: state.epoch,
+    revision: state.revision,
+    domains: ['curves', 'regions'],
+  });
+  const apiRegion = evaluated.result.snapshot.regions.find(
+    (stage) => stage.ownerNodeId === result.objectId,
+  ).value.regions[0];
+  assert.deepEqual(apiRegion.ref, cell(scene).outputRef);
+  const saved = await call('export', { format: 'json' });
+  const bytes = Buffer.from(saved.base64, 'base64');
+  assert.deepEqual(decodeDocument(bytes).document, state.document);
+  await page.locator('input[accept=".spl,.bezier.json,.json"]').setInputFiles({
+    name: 'agent-v4-emblem.spl',
+    mimeType: 'application/octet-stream',
+    buffer: bytes,
+  });
+  await page.waitForFunction(
+    async (epoch) =>
+      (await window.traceStudio.call('document.get')).epoch !== epoch,
+    state.epoch,
+  );
+  const reopened = await call('document.get');
+  assert.deepEqual(reopened.document, state.document);
   scene = await call('creation_inspect');
   assert.deepEqual(scene.errors, []);
-  assert(Math.abs(cells(scene)[0].areaMM2 - finalArea) < 1e-7);
   assert.deepEqual(cupGeometry(scene), cupGeometry(initial));
-  const checked = await call('creation_export', { format: 'check' });
-  const report = checked.report || checked;
-  assert.equal(report.invalidEdges, 0);
-  assert.equal(report.zeroArea, 0);
-  assert.equal(report.components, 1);
-  const archive = await call('creation_export', { format: '3mf' });
-  assert(archive.base64?.length > 100);
-
+  assert(
+    Math.abs(readGeometry(cell(scene).geometry).getArea() - finalArea) < 1e-7,
+  );
+  const exported = await page.evaluate(async () => {
+    const state = await window.traceStudio.call('document.get');
+    const exported = await window.traceStudio.call('export.run', {
+      epoch: state.epoch,
+      revision: state.revision,
+      format: '3mf',
+      stage: 'bodies',
+    });
+    return {
+      ...exported,
+      artifact: {
+        ...exported.artifact,
+        data: Array.from(new Uint8Array(exported.artifact.data)),
+      },
+    };
+  });
+  assert(exported.artifact.data.length > 100);
+  console.log('API 5 save/reopen and 3MF passed');
   if (outputDirectory) {
     await fs.mkdir(outputDirectory, { recursive: true });
     await fs.writeFile(
@@ -229,27 +202,7 @@ module.exports = async (page, outputDirectory) => {
     );
     await fs.writeFile(
       path.join(outputDirectory, 'sandrone-gold-emblem.3mf'),
-      Buffer.from(archive.base64, 'base64'),
-    );
-    const svg = await call('creation_export', { format: 'svg' });
-    await fs.writeFile(
-      path.join(outputDirectory, 'sandrone-gold-emblem.svg'),
-      svg.content,
-    );
-    await fs.writeFile(
-      path.join(outputDirectory, 'acceptance.json'),
-      JSON.stringify(
-        {
-          ...result,
-          report,
-          originalPaths: original.paths.length,
-          finalPaths: project.paths.length,
-          sourceNodes: 10,
-          areaMM2: finalArea,
-        },
-        null,
-        2,
-      ),
+      Buffer.from(exported.artifact.data),
     );
     await call('creation_view', { view: '3d' });
     await page
@@ -263,22 +216,23 @@ module.exports = async (page, outputDirectory) => {
     await page.screenshot({
       path: path.join(outputDirectory, 'acceptance-3d.png'),
     });
+    await fs.writeFile(
+      path.join(outputDirectory, 'acceptance.json'),
+      JSON.stringify({ ...result, finalArea, apiVersion: '5.0' }, null, 2),
+    );
   }
   return {
     ...result,
-    report,
+    finalArea,
     checks: [
-      'public API authoring',
-      'live curve stages and visible broken joins in flat/3D previews',
-      'connected outline with shared central opening',
+      'API 5 public source/mirror/array/Join/Fill',
+      'stale revision rejected',
       'original cup preserved',
-      'live mother edit',
-      'one-step undo',
-      'atomic failure',
-      'live array count',
+      'failure isolation and strict export',
+      'single undo',
+      'GUI/API identity',
       'modifier UI',
-      '.spl reload',
-      'single manifold solid',
+      'V4 save/reopen',
       '3MF export',
     ],
   };

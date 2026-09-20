@@ -21,7 +21,9 @@ V4 的 Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保�
 
 ## 添加、排序与删除
 
-当前「添加修改器」提供曲线镜像和曲线阵列：存在唯一线性曲线链时追加；存在唯一 Fill 时插入其前并同步接线。区域布尔、分区、孔洞与承托使用对应任务入口，不通过不完整的通用添加表单猜测接线。
+当前「添加修改器」提供曲线镜像、曲线阵列、连接边界和闭合构面：存在明确曲线插入点时追加；存在唯一 Fill 时将曲线步骤插入其前。源曲线汇集可作为插入边界，不展开或隐式改接它的输入。区域布尔、分区、孔洞与承托使用对应任务入口，不通过不完整的通用添加表单猜测接线。
+
+连接边界表单选择源边端和派生实例，支持每份、下一份、上一份的循环对应；连接记录和填充规则可在卡片继续编辑。Fill 只在尚无区域输出时新建，未闭合时保留诊断以便修复。标准 Fill 卡片可见，源汇集等内部节点保持在源结构中。
 
 上下移动和删除按 Program 的真实拓扑判断。可旁路的同域线性步骤可以重接；分叉、跨域、精确区域选区或会使已有作者态输出引用失效的改动会拒绝。菜单显示每个动作的可用性与原因。一次命令失败不会留下半条构造链；结构变化只需一次撤销。
 
@@ -38,7 +40,9 @@ V4 的 Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保�
 先调用 `creation_inspect` 获取当前修订和 `modifierStatus`。其中 `controls` 提供可编辑参数，`structure` 提供上下移、删除的能力和原因；不能把投影修改后提交为工程。
 
 ```js
+const observed = await traceStudio.call('document.get');
 await traceStudio.call('creation_command', {
+  expectedRevision: observed.revision,
   action: 'modifier_add',
   args: {
     objectId,
@@ -51,8 +55,9 @@ await traceStudio.call('creation_command', {
 });
 ```
 
-- `modifier_add`：`curve_mirror` / `curve_array`，`objectId`、`targets:{kind:'all'}`、`name?`、`angleDeg?`、`centerMM?`，阵列另有 `count?`。
-- `modifier_update`：`objectId`、`modifierId`、`changes`；按类型支持名称、启用、角度、中心、数量、偏移距离或布尔运算。`input`、`targets`、`joinMM` 不作为普通参数写入。
+- `modifier_add`：镜像/阵列使用 `curve_mirror` / `curve_array`，`objectId`、`targets:{kind:'all'}`、`name?`、`angleDeg?`、`centerMM?`，阵列另有 `count?`。
+- `modifier_add` 还支持 `join` + `connections`（端点选项来自 `modifierAdd.endpoints`），以及 `fill` + `rule`。API 5 的 `repeat-pattern` 可一次建立整条重复构造，见 [Agent API 5](agent-api-2026-09-20.md)。
+- `modifier_update`：`objectId`、`modifierId`、`changes`；按类型支持名称、启用、角度、中心、数量、偏移距离、布尔运算、接合 connections 或构面 rule。`input`、`targets`、`joinMM` 不作为普通参数写入。
 - `modifier_move`：`objectId`、`modifierId`、`direction:-1|1`；不支持旧 `beforeId` 语义。
 - `modifier_remove`：`objectId`、`modifierId`。
 

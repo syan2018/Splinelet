@@ -193,12 +193,12 @@ assert.equal(
     status: 'empty',
     value: { ...regions.value, regions: [] },
   }).status,
-  'empty',
+  'blocked',
 );
 assert.equal(
   resolveRelief(document, { ...regions, status: 'absent', value: undefined })
     .status,
-  'absent',
+  'blocked',
 );
 assert.equal(
   resolveRelief(document, {

@@ -6,11 +6,7 @@ module.exports = async (page, fixture) => {
   const expected = decodeProject(readFileSync(fixture)).creation.objects.find(
     (object) => object.name === '头饰',
   );
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const checks = [];
   const check = (value, label) => {
     assert(value, label);

@@ -17,6 +17,7 @@ import { targetForCell } from '@/lib/modifier-schema.mjs';
 import { modifierStages } from '@/lib/modifier-stages.mjs';
 import ConstructionPipeline from './construction-pipeline';
 import ProgramModifierAdd from './program-modifier-add';
+import JoinConnections from './join-connections';
 import type {
   SurfaceModifier,
   ModifierInputRef,
@@ -202,6 +203,28 @@ function ProgramModifierCard({
       )}
       {open && (
         <div className="modifier-parameters">
+          {type === 'join' && (
+            <JoinConnections
+              value={values.connections || []}
+              options={controls.endpoints || []}
+              disabled={!editable('connections')}
+              onChange={(connections) => update({ connections })}
+            />
+          )}
+          {type === 'fill' && (
+            <label className="modifier-field">
+              填充规则
+              <select
+                aria-label="构面填充规则"
+                value={values.rule}
+                disabled={!editable('rule')}
+                onChange={(event) => update({ rule: event.target.value })}
+              >
+                <option value="even-odd">奇偶 · 交替镂空</option>
+                <option value="non-zero">非零环绕</option>
+              </select>
+            </label>
+          )}
           {type === 'boolean' && (
             <label className="modifier-field">
               <span>运算</span>
@@ -264,7 +287,7 @@ function ProgramModifierCard({
             </>
           )}
           <p className="modifier-hint">
-            此处暂不支持更改来源、作用范围和接合参数。
+            修改器使用部件局部几何；来源和作用范围由构造程序确定。
           </p>
         </div>
       )}
@@ -731,7 +754,13 @@ export default function CreationModifiers({
         {!programStatuses.length && (
           <p className="modifier-empty">当前没有可展示的修改器参数。</p>
         )}
-        <ProgramModifierAdd object={object} onCommand={onCommand} />
+        <ProgramModifierAdd
+          object={
+            scene?.creation.objects.find((item) => item.id === object.id) ||
+            object
+          }
+          onCommand={onCommand}
+        />
         <p className="modifier-hint">
           线性同域步骤可排序或删除；分叉、跨域和精确区域范围会明确禁用结构调整。
         </p>

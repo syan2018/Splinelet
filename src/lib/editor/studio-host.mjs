@@ -57,6 +57,14 @@ export function createStudioHost({ opened, presentation, urls, ...options }) {
       alive();
       return session.subscribe(listener);
     },
+    agentCall(action, args) {
+      alive();
+      return session.agentCall(action, args);
+    },
+    setSelectionReader(read) {
+      alive();
+      session.setSelectionReader(read);
+    },
     dispatch(command) {
       alive();
       return session.dispatch(command);

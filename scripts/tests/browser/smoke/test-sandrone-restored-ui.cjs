@@ -151,10 +151,7 @@ async function settle(page) {
 }
 
 async function call(page, action, args = {}) {
-  return page.evaluate(
-    ({ action, args }) => window.traceStudio.call(action, args),
-    { action, args },
-  );
+  return require('../harness/legacy-call.cjs').legacyCaller(page)(action, args);
 }
 
 async function selectSourceAndRegion(page, scene, objectName) {

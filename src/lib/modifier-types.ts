@@ -1,5 +1,12 @@
 // UI contract for the declarative program and its evaluated diagnostics.
 import type { Cubic, Point } from './project';
+export type JoinEndpoint = {
+  edgeEnd: { kind: string; sketchId: string; edgeId: string; end: string };
+  instances?: { operatorId: string; index: number }[];
+  selector?: { operatorId: string; index: number | string; wrap?: boolean };
+};
+export type JoinConnection = { a: JoinEndpoint; b: JoinEndpoint };
+export type JoinEndpointOption = { label: string; endpoint: JoinEndpoint };
 export type CurvePreview = {
   objectId: string;
   stageId: string;
@@ -12,6 +19,7 @@ export type SurfaceRef = { key: string; name: string; topology?: string };
 export type SurfaceScope = { kind: 'all' | 'selected'; refs?: SurfaceRef[] };
 export type SurfaceOption = { ref: SurfaceRef; name: string };
 export type ModifierControls = {
+  endpoints?: JoinEndpointOption[];
   operatorId: string;
   ownerNodeId: string;
   type: string;
@@ -23,6 +31,8 @@ export type ModifierControls = {
     count?: number;
     distanceMM?: number;
     operation?: string;
+    connections?: JoinConnection[];
+    rule?: string;
   };
   editableFields: readonly string[];
   drivenFields: readonly string[];
@@ -67,7 +77,11 @@ export type SurfaceModifier = {
 export type ModifierObject = {
   id: string;
   name: string;
-  modifierAdd?: { types: string[]; reason: string | null };
+  modifierAdd?: {
+    types: string[];
+    reason: string | null;
+    endpoints?: JoinEndpointOption[];
+  };
   modifiers?: SurfaceModifier[];
   sources?: Record<string, { regionId: string; modifiers: SurfaceModifier[] }>;
 };

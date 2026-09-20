@@ -3,7 +3,7 @@ import type { ToolCatalog } from './tool-schema';
 export const creationTools: ToolCatalog = {
   creation_inspect: {
     description:
-      'Read unified objects, creation.printStack (ordered bottom-to-top manufacturing layers), printLevels (resolved slice counts and mm bounds; blocked levels have null bounds), pipelineStatus, surfaceGraphs, surfaceGraphCandidates, live cells, modifierStatus, modifierBaseCells, curvePreviews (exact model-mm cubic controls and junctions for each source/mirror/array/fill-input stage, retained even when fill fails), divider diagnostics and face closures. Cells include printLayerId and heightLayers when printing is enabled. Objects include modifiers and nested sources[featureId]. Waits up to 30 seconds for the latest committed evaluation used by editing/export, including pending React updates. Call again after edits before selecting targets or painting.',
+      'Read the current canonical creation projection: recursive scene tree, Shape objects, exact OutputRef cells, modifierStatus controls/structure, and current derived curve stages. Group nodes own transforms; path collections are separate. Waits for current evaluation. Authored enabled/painted flags remain independent of flatOnly placement failure. No writable legacy modifiers or nested source stacks.',
     properties: {},
     readOnly: true,
   },
@@ -20,11 +20,12 @@ export const creationTools: ToolCatalog = {
   },
   creation_command: {
     description:
-      'Run one undoable creation command. paint/height use objectIds or cellKeys; paint accepts swatchId or color (#RRGGBB). roles uses {objectId,pathIds,role}; it computes the proposed regions before applying and returns {applied,regionCount} or {applied:false,issue}, leaving the project unchanged on failure. closure_boundary uses {objectId,featureId,regionId,boundaryRegionId,joinMM?}; choose a live boundaryOptions ID (null restores straight caps), default joinMM 0.15. It validates the clipped face before applying and never moves source nodes. A divider already used as a band edge retains its existing face; existing_boundary diagnostics explain the closure control. Custom colors are created/reused atomically; swatch edits update shared colors globally. delete_swatch uses {id,replacementId?}; a referenced colour requires a different replacement, with all references remapped atomically and geometry/heights unchanged. At least one swatch must remain. Painting or height changes are blocked for objects with failed geometry.',
-    // Print parameters are documented alongside the modifier commands below.
+      'Compatibility creation intent using the same V4 dispatcher. expectedRevision must come from document.get; paint/height also require creation_inspect revision. Prefer API 5 authoring.run for new automation. Geometry failures retain diagnostics; object/group changes do not rewrite source coordinates.',
+    // These compatibility intents compile to the same canonical commands.
     // Modifier parameters are documented here as well as in docs/modifiers.md,
     // so an agent can operate the stack from tool discovery alone.
     properties: {
+      expectedRevision: { type: 'integer' },
       action: {
         enum: [
           'paint',
@@ -40,17 +41,16 @@ export const creationTools: ToolCatalog = {
           'delete_swatch',
           'object',
           'new_object',
+          'scene_group',
+          'scene_ungroup',
+          'scene_reparent',
+          'scene_node',
           'move_paths',
           'roles',
           'reorder',
-          'continue_partition',
           'combine_objects',
           'join',
           'connection',
-          'remove_connection',
-          'closure_boundary',
-          'rebuild_surfaces',
-          'modifier_truncate',
           'modifier_add',
           'modifier_update',
           'modifier_remove',
@@ -60,7 +60,7 @@ export const creationTools: ToolCatalog = {
       args: {
         type: 'object',
         description:
-          'Print commands: print_enable {layerHeightMM,confirm:true} converts old heights/attachments into one generic stack layer; only confirm after the user accepts this conversion. print_settings {layerHeightMM} keeps integer counts while changing physical dimensions. print_layer_add {name?}; print_layer_rename {layerId,name}; print_layer_move {layerId,direction:1|-1} moves up/down physically; print_layer_remove {layerId} requires an empty layer. print_assign {objectIds,layerId} changes whole-object membership. height uses {objectIds|cellKeys,heightLayers} in printing mode; counts must be integers. All upper levels follow lower maximum printable thickness. rebuild_surfaces uses {objectId,confirm:true}; only invoke after the user accepts the affected output changes. modifier_truncate uses {objectId,modifierId,confirm:true} and removes that step plus downstream steps with their styles. Modifier commands use objectId and optional sourceFeatureId for a nested source stack. modifier_add: type boolean|split|offset|radial_array|curve_mirror|curve_array|fill, name?, operation difference|union|intersection, input {kind:path|region|object,id,projection?:surface|outline}, targets {kind:all} or {kind:selected,refs:inputOptions[].ref}, or current cellKeys; offset uses distanceMM, split uses joinMM. radial_array uses count (integer 1..64, includes original), angleDeg (step -360..360, positive counterclockwise), centerMM {x,y} in image-centered Y-up millimeters; no input operand. Defaults: 4, 90, {x:0,y:0}. Each target surface repeats with holes and its style; overlapping copies union. Source splines remain unchanged. Put holes before the array to repeat them. modifier_update: modifierId and changes {name,enabled,operation,input,targets,distanceMM,joinMM,count,angleDeg,centerMM}, or cellKeys. modifier_move: modifierId with direction -1/+1 or beforeId (null moves last). modifier_remove: modifierId. curve_mirror and curve_array operate on the entire independent object guide-path collection BEFORE fill, never on surfaces; targets must be all. curve_mirror uses angleDeg (axis measured CCW from model +X) and centerMM, defaults 90 and origin. curve_array uses the same count/angleDeg/centerMM as radial_array but transforms exact Bezier curves. fill uses joinMM (default 0.001, range 0..1), welds derived endpoints and uses even-odd closed-loop filling; dangling, branched, crossing or self-intersecting contours fail without adding straight caps. Fill creates surfaces in the same style/height/export pipeline. Inspect pipelines for typed stage order and modifierStatus inputCurveCount/outputCurveCount/closedLoops. Read modifierStatus errors and refreshed inputOptions after each change. Object inputs reference final evaluated faces; cyclic references fail.',
+          'modifier_add supports curve_mirror/curve_array (targets:{kind:all}, centerMM, angleDeg, count), join (explicit connections from modifierAdd.endpoints), and fill (rule:even-odd|non-zero, only when no region output exists). modifier_update edits type-specific parameters including connections/rule; move/remove use the reported structure capabilities. scene_group {nodeIds,name?}, scene_ungroup {nodeIds}, scene_reparent {nodeIds,parentId|beforeId}, scene_node {id,changes} operate on scene Nodes, preserving world placement. Legacy manage_group refers only to path Collections.',
       },
       revision: {
         type: 'integer',
@@ -68,7 +68,7 @@ export const creationTools: ToolCatalog = {
           'Required for paint and height; use the revision returned by creation_inspect.',
       },
     },
-    required: ['action', 'args'],
+    required: ['expectedRevision', 'action', 'args'],
   },
   creation_view: {
     description:

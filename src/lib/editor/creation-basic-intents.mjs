@@ -102,7 +102,11 @@ const setObjectPlacement = (document, request) => {
   const fallback = ensureDefault(document, node.id);
   const records = [
     fallback,
-    ...ownerOverrides(document, node.id).map((x) => x.value),
+    // An override without placement inherits the default. Moving the object
+    // must not materialize that inheritance or apply the delta twice.
+    ...ownerOverrides(document, node.id)
+      .map((x) => x.value)
+      .filter((value) => value.placement !== undefined),
   ];
   if (changes.zMM !== undefined) {
     const current = request.currentZMM ?? scalarPlacement(fallback.placement);

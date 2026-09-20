@@ -94,7 +94,9 @@ for (const role of ['divider', 'hole']) {
   for (const key of ['appearances', 'reliefDefinitions', 'manufacturing'])
     assert.deepEqual(drawing[key], original[key]);
   assert.equal(
-    projectCreationView(drawing, {}).modifierStatus.length,
+    projectCreationView(drawing, {}).modifierStatus.filter(
+      (item) => item.type !== 'fill',
+    ).length,
     0,
     'unfinished drawing is not a modifier',
   );
