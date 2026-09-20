@@ -354,3 +354,11 @@ test-v4-region-path-membership.mjs 的组合旅程与一次撤销通过；test-v
 original-path-roles-final-2026-09-20.log 为 PASS：真实原按钮切为参考、恢复轮廓，各增加一次规范修订；一次撤销回到参考，再一次撤销精确恢复之前的完整 Document。Sandrone、样式、其他编辑、保存、V4/旧工程/示例打开继续通过。前面的浏览器失败先发现选区不同步，随后是测试使用异步 waitForFunction 谓词而提前执行撤销；已改为等待真实宿主修订号，最小浏览器复现确认提交序列正常。
 
 check-all-path-roles-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 119 项单元、类型/lint/格式/Rust 与双端构建；后补的文档编码回读单元及最终 lint/格式检查也通过。该结果签收原用途接线，不代表默认入口、工程宽度、ModelWorkspace 或完整原生验收已完成。
+
+## 源比例命令基础（2026-09-20）
+
+- 新增 `calibrate-source-scale` 的原子源空间标定，尚未接入原宽度控件。Program 参数、InputRef、输出约定、共享 Parameter、厚度和容差均不自动缩放；空间 Scalar 的使用点包裹显式乘法，可逆标定合并系数。
+- `test-v4-source-scale.mjs` 检查偏移仍为 2 mm、嵌套旋转平移、世界/局部关系驱动点、三种连续柄、参考图仿射、锁定状态、文件往返、无变化提交、单次撤销与非法/溢出原子拒绝。
+- `pnpm check:all` exit 0，120 hermetic 单元通过，含 Web/桌面前端构建及 Rust 检查。日志：`outputs/v4-qa/check-all-source-scale-2026-09-20.log`。
+- 本地只读探针不能作为样例等价验收：原 Sandrone 宽度乘 1.5 时出现接合容差及输出关系失效；乘 1.01 时内置样例旧引擎有 9 条错误，V4 relief ready；gold 旧引擎有 10 条错误，V4 有一个 blocked 区域、relief blocked。日志：`outputs/v4-qa/source-scale-samples-diagnostic-2026-09-20.log`。需继续区分旧输出身份缺陷、固定毫米参数及原接合语义；不应为了得到成功结果擅自缩放容差或清空输出约定。
+- 尚欠无参考图 frame 的持久归属、标定/撤销后的 runtime/frame 同步、原输入事件与真实样例交互验收。默认入口仍未切换。

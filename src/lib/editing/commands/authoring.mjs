@@ -60,6 +60,7 @@ import {
 import { createSupportCommand } from './support.mjs';
 import { createRegionPathMembershipCommand } from './region-path-membership.mjs';
 import { createPathRolesCommand } from './path-roles.mjs';
+import { createSourceScaleCommand } from './source-scale.mjs';
 import { curveFilterOperator } from '../../construction/operators/curves/filter.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
@@ -363,6 +364,8 @@ export function createAuthoringCommand(action) {
   const request = structuredClone(action);
   return (document, { idFactory }) => {
     const action = request;
+    if (action.kind === 'calibrate-source-scale')
+      return createSourceScaleCommand(action)(document);
     if (action.kind === 'set-path-roles')
       return createPathRolesCommand(action)(document, { idFactory });
     if (action.kind === 'set-region-path-membership')

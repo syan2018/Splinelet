@@ -367,3 +367,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 普通绘制延续已接通：basicProgram/ensureFill 识别恒等局部 Source → curve-filter → Fill，把成员筛选留在普通构面输入管理中；暂停/恢复用途后再画内圈仍形成原构面的孔洞。暂停的成员即使变为开放路径，也保留在筛选前的 Source 输入中，后续绘制和重新闭合均不丢失暂停状态。继续绘制仅更新输入，保留已有 Fill 的名称和参数。变换、停用或无效的筛选仍不当作普通构面。组合单元覆盖这些旅程及一次撤销；原 roles 按钮本身仍未接线。
 
 2026-09-20 原 roles 写侧已接线：createCreationIntent 将原 objectId/pathIds 解析为当前 PathRef，调用 set-path-roles；使用原 prepare→evaluate→commitPrepared 管线和一次撤销。覆盖已有用途往返、新边界/挖洞/分区及批量失败回滚。挖洞/分区暂停时显式设置空切割输入保留上游结果，恢复后仍校验原目标与契约。默认参考线现在有明确的只读 guide；复杂派生来源不显示猜测用途，也不允许用简单用途命令静默绕过实际构造。select_paths API 同步创作选区，修复画布已选路径而属性面板仍为整个部件的问题。原按钮验收结果见 QA；其余默认入口和高级业务待办保持未完成。
+
+2026-09-20 源比例命令基础：新增 calibrate-source-scale，原子标定自由源点/柄、节点平移、空间 Datum/Relation 和参考图仿射；关系所用 Scalar 显式乘比例，共享 Parameter 本身及 Program 参数/InputRef、制造厚度和容差不变。隐藏/锁定状态保留，明确全局标定包含锁定来源，避免混合单位。120 项单元及 check:all 通过。原宽度控件尚未接线；无参考图 frame 的持久归属、运行时随标定/撤销更新和真实样例结果对照仍待完成，不能按此命令签收宽度旅程。
