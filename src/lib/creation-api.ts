@@ -69,6 +69,7 @@ export const creationTools: ToolCatalog = {
       },
     },
     required: ['expectedRevision', 'action', 'args'],
+    compatibilityWrite: true,
   },
   creation_view: {
     description:

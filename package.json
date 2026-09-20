@@ -22,6 +22,8 @@
     "typecheck": "tsc --noEmit --incremental false",
     "test": "node scripts/tests/run-unit.mjs",
     "test:browser": "node scripts/tests/run-browser.cjs",
+    "test:browser:all": "node scripts/tests/run-browser.cjs --suite legacy && node scripts/tests/run-browser.cjs --suite studio",
+    "test:browser:studio": "node scripts/tests/run-browser.cjs --suite studio",
     "test:core": "node scripts/tests/unit/test-construction-pipeline.mjs && node scripts/tests/unit/test-modifiers.mjs && node scripts/tests/unit/test-print-stack.mjs",
     "test:export": "node scripts/tests/unit/test-3mf.mjs && node scripts/tests/unit/test-bambu-3mf.mjs",
     "lint": "oxlint",

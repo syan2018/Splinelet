@@ -33,6 +33,7 @@ export function createBrowserStudioHost(options: Record<string, unknown>) {
           epoch: string;
           revision: number;
           previewId: string | null;
+          previewVersion?: number;
           requestedDomains: string[];
         },
       ) => {
@@ -44,6 +45,9 @@ export function createBrowserStudioHost(options: Record<string, unknown>) {
           epoch: request.epoch,
           revision: request.revision,
           previewId: request.previewId,
+          ...(request.previewId && {
+            previewVersion: request.previewVersion ?? 0,
+          }),
           domains: canonicalDomains(request.requestedDomains),
         });
         if (response.kind !== 'result') throw Error(response.error);

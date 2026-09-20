@@ -1,3 +1,4 @@
+import { resolveJoinPairs } from './join-selection.mjs';
 import {
   assertTransform,
   identityTransform,
@@ -8,6 +9,7 @@ import {
 } from '../../../scene/transforms.mjs';
 import { transformScalarPoint } from '../../../scene/rebase.mjs';
 import { curveFilterOperator } from './filter.mjs';
+import { validateJoinParams } from '../../../document/join-params.mjs';
 
 const sort = (a, b) => String(a).localeCompare(String(b));
 const clone = (value) => structuredClone(value);
@@ -529,57 +531,12 @@ export const curveArrayOperator = {
   copy: copyCurveOperator,
 };
 
-const edgeMatches = (edge, endpoint) =>
-  edge.source?.sketchId === endpoint.sketchId &&
-  edge.source?.id === endpoint.edgeId;
-const instancesFor = (value, operator) =>
-  [
-    ...new Set(
-      value
-        .filter((edge) =>
-          edge.instances?.some((item) => item.operatorId === operator),
-        )
-        .map(
-          (edge) =>
-            edge.instances.find((item) => item.operatorId === operator).index,
-        ),
-    ),
-  ].sort((a, b) => a - b);
-const matchesFixedInstances = (edge, fixed) =>
-  (fixed || []).every((instance) =>
-    edge.instances?.some(
-      (item) =>
-        item.operatorId === instance.operatorId &&
-        item.index === instance.index,
-    ),
-  );
-const selectEdge = (edges, endpoint, selector, iteration, fixed) => {
-  const matching = edges.filter(
-    (edge) => edgeMatches(edge, endpoint) && matchesFixedInstances(edge, fixed),
-  );
-  if (!selector) return matching.length === 1 ? matching[0] : undefined;
-  const indexes = instancesFor(matching, selector.operatorId);
-  const base = selector.index === 'each' ? iteration : selector.index;
-  let index = base;
-  if (selector.index === 'next' || selector.index === 'previous')
-    index = iteration + (selector.index === 'next' ? 1 : -1);
-  if (!Number.isInteger(index)) return undefined;
-  if (selector.wrap && indexes.length)
-    index = ((index % indexes.length) + indexes.length) % indexes.length;
-  const matches = matching.filter((edge) =>
-    edge.instances?.some(
-      (item) => item.operatorId === selector.operatorId && item.index === index,
-    ),
-  );
-  return matches.length === 1 ? matches[0] : undefined;
-};
 export const joinOperator = {
   type: 'join',
   bypass: { curves: 'input' },
   inputPorts: { input: { domain: 'curves', min: 1, max: 1 } },
   outputPorts: { curves: { domain: 'curves' } },
-  validateParams: (params) =>
-    Array.isArray(params?.connections) || 'join 需要 connections 数组',
+  validateParams: validateJoinParams,
   evaluate: ({ document, ownerNodeId, inputs, operator }) => {
     const input = stageInput(inputs);
     if (input.status !== 'ready' && input.status !== 'empty')
@@ -601,32 +558,7 @@ export const joinOperator = {
         );
         continue;
       }
-      const iterations =
-        left.selector?.index === 'each'
-          ? instancesFor(
-              edges.filter(
-                (edge) =>
-                  edgeMatches(edge, left.edgeEnd) &&
-                  matchesFixedInstances(edge, left.instances),
-              ),
-              left.selector.operatorId,
-            )
-          : [left.selector?.index ?? 0];
-      for (const iteration of iterations) {
-        const a = selectEdge(
-          edges,
-          left.edgeEnd,
-          left.selector,
-          iteration,
-          left.instances,
-        );
-        const b = selectEdge(
-          edges,
-          right.edgeEnd,
-          right.selector,
-          iteration,
-          right.instances,
-        );
+      for (const { a, b, iteration } of resolveJoinPairs(edges, connection)) {
         if (!a || !b) {
           diagnostics.push(
             diag('join-selector-empty', `Join ${connectionIndex} 未选择到实例`),

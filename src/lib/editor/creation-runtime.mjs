@@ -1,6 +1,7 @@
 import { createCreationIntent } from './creation-intents.mjs';
 import { projectCreationView } from './creation-view.mjs';
 import { evaluateDocument } from '../evaluation/evaluate-document.mjs';
+import { createDocumentEvaluationSession } from '../evaluation/document-session.mjs';
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { sameDocument } from '../editing/history.mjs';
 import { evaluatePlanar } from '../construction/document-evaluation.mjs';
@@ -53,11 +54,15 @@ export function createV4CreationRuntime({
   editorSession,
   toDisplayProject,
   evaluate = evaluateDocument,
+  evaluationService,
   intent = createCreationIntent,
   sourceFrame,
 }) {
   if (!editorSession?.dispatch || typeof toDisplayProject !== 'function')
     throw Error('创作运行时需要编辑会话和只读展示投影');
+  const evaluation =
+    evaluationService ||
+    createDocumentEvaluationSession({ editorSession, evaluate });
   const projects = new WeakMap();
   const snapFrame = structuredClone(sourceFrame);
   let snapCache = null;
@@ -138,6 +143,7 @@ export function createV4CreationRuntime({
       project: issue(prospective, null, token),
       token,
     });
+    projects.get(handle.project).baseline = base;
     prepared.set(handle, { token, baseProject: context.project });
     return handle;
   };
@@ -247,10 +253,11 @@ export function createV4CreationRuntime({
           scene: null,
         });
         const prospective = metadata(handle.project);
-        const snapshot = await evaluate(prospective.state.document, {
-          ...identity(prospective.state),
-          requestedDomains: ['curves', 'regions', 'relief', 'placed-relief'],
-        });
+        const snapshot = await evaluation.candidate(
+          prospective.state.document,
+          entry.state,
+          ['curves', 'regions', 'relief', 'placed-relief'],
+        );
         current(project);
         const scene = projectCreationView(prospective.state.document, snapshot);
         prospective.view = scene;
@@ -265,19 +272,7 @@ export function createV4CreationRuntime({
       if (action === 'solid' || action === '3mf') {
         current(project);
         const request = structuredClone(args || {});
-        if (!entry.bodyEvaluation)
-          entry.bodyEvaluation = Promise.resolve()
-            .then(() =>
-              evaluate(entry.state.document, {
-                ...identity(entry.state),
-                requestedDomains: ['bodies'],
-              }),
-            )
-            .catch((error) => {
-              delete entry.bodyEvaluation;
-              throw error;
-            });
-        const snapshot = await entry.bodyEvaluation;
+        const snapshot = await evaluation.snapshot(entry.state, ['bodies']);
         current(project);
         return creationOutput(entry.state.document, snapshot, action, request);
       }
@@ -285,12 +280,16 @@ export function createV4CreationRuntime({
         throw Error(`V4 创作求值尚未适配：${action}`);
       if (Object.keys(args || {}).length)
         throw Error('预览参数须先通过明确的预备命令编译');
-      const snapshot = await evaluate(documentOf(entry.state), {
-        ...identity(entry.state),
-        requestedDomains: ['curves', 'regions', 'relief', 'placed-relief'],
-      });
+      const requested = ['curves', 'regions', 'relief', 'placed-relief'];
+      const snapshot = entry.token
+        ? await evaluation.candidate(
+            documentOf(entry.state),
+            entry.baseline,
+            requested,
+          )
+        : await evaluation.snapshot(entry.state, requested);
       assertAlive();
-      if (!sameState(entry.state, editorSession.state))
+      if (!sameState(entry.baseline || entry.state, editorSession.state))
         throw Error('求值期间工程已变化');
       const modelView =
         action === 'model_workspace'
@@ -507,6 +506,7 @@ export function createV4CreationRuntime({
       throw Error('V4 新线条必须通过源编辑命令建立稳定身份');
     },
     dispose() {
+      if (!evaluationService) evaluation.dispose();
       disposed = true;
     },
   });

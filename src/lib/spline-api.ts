@@ -61,5 +61,6 @@ export const splineTools: ToolCatalog = {
       },
     },
     required: ['splines'],
+    compatibilityWrite: true,
   },
 };

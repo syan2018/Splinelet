@@ -40,14 +40,20 @@ export function assertIdentity(value) {
     (typeof value.previewId !== 'string' || !value.previewId)
   )
     throw Error('previewId 必须是 null 或非空字符串');
+  if (
+    value.previewVersion !== undefined &&
+    (!Number.isInteger(value.previewVersion) || value.previewVersion < 0)
+  )
+    throw Error('previewVersion 必须为非负整数');
 }
 
 const keyFor = (identity, requestedDomains) =>
-  `${identity.epoch}\u0000${identity.revision}\u0000${identity.previewId || ''}\u0000${requestedDomains.join(',')}`;
+  `${identity.epoch}\u0000${identity.revision}\u0000${identity.previewId || ''}\u0000${identity.previewVersion ?? 0}\u0000${requestedDomains.join(',')}`;
 const sameIdentity = (a, b) =>
   a?.epoch === b?.epoch &&
   a?.revision === b?.revision &&
-  a?.previewId === b?.previewId;
+  a?.previewId === b?.previewId &&
+  (a?.previewVersion ?? 0) === (b?.previewVersion ?? 0);
 const responseMatches = (request, response) =>
   response &&
   response.requestId === request.requestId &&
@@ -182,6 +188,7 @@ export function createEvaluationSession(options = {}) {
         epoch: current.epoch,
         revision: current.revision,
         previewId: current.previewId,
+        ...(current.previewId && { previewVersion: current.previewVersion }),
       },
       results: Object.fromEntries(results),
       failures: Object.fromEntries(failures),
@@ -190,6 +197,9 @@ export function createEvaluationSession(options = {}) {
         epoch: entry.request.epoch,
         revision: entry.request.revision,
         previewId: entry.request.previewId,
+        ...(entry.request.previewId && {
+          previewVersion: entry.request.previewVersion,
+        }),
         domains: entry.request.domains,
       })),
     });
@@ -262,7 +272,6 @@ export function createEvaluationSession(options = {}) {
       const next = editorCapture(editorState);
       if (
         sameIdentity(current, next) &&
-        current.previewVersion === next.previewVersion &&
         sameDocument(current.document, next.document)
       )
         return state();
@@ -294,6 +303,9 @@ export function createEvaluationSession(options = {}) {
             epoch: capture.epoch,
             revision: capture.revision,
             previewId: capture.previewId,
+            ...(capture.previewId && {
+              previewVersion: capture.previewVersion,
+            }),
             domains: requestedDomains,
             unavailableDomains: unavailable,
           }),
@@ -302,6 +314,7 @@ export function createEvaluationSession(options = {}) {
         return Promise.resolve(state());
       }
       if (pending.has(key)) return pending.get(key).promise;
+      if (results.has(key)) return Promise.resolve(state());
       const request = createRequest(capture, requestedDomains);
       let resolvePending;
       let rejectPending;
@@ -335,6 +348,9 @@ export function createEvaluationSession(options = {}) {
                 epoch: request.epoch,
                 revision: request.revision,
                 previewId: request.previewId,
+                ...(request.previewId && {
+                  previewVersion: request.previewVersion,
+                }),
                 domains: request.domains,
                 error: errorMessage(error),
               }),
@@ -344,6 +360,15 @@ export function createEvaluationSession(options = {}) {
         },
       );
       return promise;
+    },
+    async evaluate(input) {
+      const requestedDomains = canonicalDomains(input?.domains);
+      if (!sameIdentity(requireCurrent(), input)) throw Error('求值身份已过期');
+      await this.request({ domains: requestedDomains });
+      if (!sameIdentity(requireCurrent(), input)) throw Error('求值身份已过期');
+      const result = results.get(keyFor(input, requestedDomains));
+      if (result?.status !== 'ready') throw Error('请求的求值阶段不可用');
+      return readonly(result.snapshot);
     },
     capture({ epoch, revision, domains: requested } = {}) {
       const capture = requireCurrent();

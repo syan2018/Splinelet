@@ -1,5 +1,7 @@
 'use client';
+import { useState } from 'react';
 import type { JoinConnection, JoinEndpointOption } from '@/lib/modifier-types';
+import JoinPreview from './join-preview';
 
 export default function JoinConnections({
   value,
@@ -12,21 +14,36 @@ export default function JoinConnections({
   onChange: (value: JoinConnection[]) => void;
   disabled?: boolean;
 }) {
+  const [active, setActive] = useState(0);
   return (
     <fieldset disabled={disabled} className="modifier-parameters">
       <legend>端点连接</legend>
+      <JoinPreview
+        options={options}
+        connection={value[Math.min(active, value.length - 1)]}
+      />
+      {!!value.length && (
+        <p className="modifier-hint">
+          连接 {Math.min(active + 1, value.length)} · A 金色 → B 青色
+        </p>
+      )}
       {value.map((connection, index) => (
-        <div key={index} className="modifier-field">
+        <div
+          key={index}
+          className="modifier-field"
+          onFocusCapture={() => setActive(index)}
+        >
           {(['a', 'b'] as const).map((side) => {
             const endpoint = connection[side];
             const current = JSON.stringify(endpoint);
             return (
               <label key={side}>
-                {side === 'a' ? '从' : '接到'}
+                {side === 'a' ? 'A · 从' : 'B · 接到'}
                 <select
                   aria-label={`连接 ${index + 1} ${side}`}
                   value={current}
                   onChange={(event) => {
+                    setActive(index);
                     const next = structuredClone(value);
                     next[index][side] = JSON.parse(event.target.value);
                     onChange(next);
@@ -36,7 +53,8 @@ export default function JoinConnections({
                     (option) => JSON.stringify(option.endpoint) === current,
                   ) && (
                     <option value={current}>
-                      已保存的连接 · {endpoint.edgeEnd.end} ·{' '}
+                      {endpoint.edgeEnd.edgeId} ·{' '}
+                      {endpoint.edgeEnd.end === 'start' ? '起端' : '末端'} ·{' '}
                       {endpoint.selector?.index ?? '源'}
                     </option>
                   )}
@@ -54,6 +72,7 @@ export default function JoinConnections({
                     aria-label={`连接 ${index + 1} ${side} 重复`}
                     value={String(endpoint.selector.index)}
                     onChange={(event) => {
+                      setActive(index);
                       const next = structuredClone(value);
                       const raw = event.target.value;
                       next[index][side].selector = {
@@ -68,8 +87,8 @@ export default function JoinConnections({
                       <option value={endpoint.selector.index}>仅此实例</option>
                     )}
                     <option value="each">每份</option>
-                    <option value="next">下一份</option>
-                    <option value="previous">上一份</option>
+                    {side === 'b' && <option value="next">下一份</option>}
+                    {side === 'b' && <option value="previous">上一份</option>}
                   </select>
                 )}
               </label>
@@ -82,12 +101,13 @@ export default function JoinConnections({
       ))}
       <button
         disabled={!options.length}
-        onClick={() =>
+        onClick={() => {
+          setActive(value.length);
           onChange([
             ...value,
             { a: options[0].endpoint, b: (options[1] || options[0]).endpoint },
-          ])
-        }
+          ]);
+        }}
       >
         添加端点对应
       </button>

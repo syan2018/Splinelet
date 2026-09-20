@@ -45,6 +45,35 @@ const uniqueValue = (values) => {
     ? present[0]
     : null;
 };
+const ownerStage = (stage, ownerNodeId) =>
+  stage?.branches
+    ? stage.branches.find((branch) => branch.ownerNodeId === ownerNodeId)
+    : stage;
+const cellEvaluation = ({
+  definition,
+  appearance,
+  excluded,
+  reliefStage,
+  placementStage,
+  relief,
+  placed,
+}) => {
+  if (definition.status === 'blocked' || appearance.status === 'blocked')
+    return 'blocked';
+  if (!definition.value.enabled) return 'disabled';
+  if (excluded) return 'excluded';
+  if (placed) return 'ready';
+  if (reliefStage?.status === 'blocked' || placementStage?.status === 'blocked')
+    return 'blocked';
+  if (
+    !reliefStage ||
+    reliefStage.status === 'absent' ||
+    !placementStage ||
+    placementStage.status === 'absent'
+  )
+    return 'unevaluated';
+  return relief ? 'unplaced' : 'blocked';
+};
 
 /**
  * Stable, lossless cell identity. The encoded value includes the complete
@@ -319,6 +348,7 @@ export function projectCreationView(document, snapshot) {
       const placed = placedMembers.get(identity) || null;
       const definition = resolveReliefDefinition(document, node.id, ref);
       const appearance = resolveAppearance(document, node.id, ref);
+      const excluded = isExcluded(document, { ref });
       diagnostics.push(...stageDiagnostics(appearance, node.id, 'appearance'));
       if (appearance.status === 'blocked')
         errors.push(
@@ -362,8 +392,16 @@ export function projectCreationView(document, snapshot) {
         painted: definition.status === 'ready' && definition.value.enabled,
         enabled: definition.status === 'ready' && definition.value.enabled,
         flatOnly: !placed,
-        evaluation: placed ? 'ready' : relief ? 'unplaced' : 'blocked',
-        excluded: isExcluded(document, { ref }),
+        evaluation: cellEvaluation({
+          definition,
+          appearance,
+          excluded,
+          relief,
+          placed,
+          reliefStage: ownerStage(snapshot.relief, node.id),
+          placementStage: ownerStage(snapshot.placedRelief, node.id),
+        }),
+        excluded,
         color: appearance.status === 'ready' ? appearance.value.color : null,
         swatchId:
           appearance.status === 'ready' ? appearance.value.swatchId : null,

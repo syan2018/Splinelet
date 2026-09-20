@@ -45,7 +45,31 @@ assert.deepEqual(
     help: false,
   },
 );
+assert.deepEqual(
+  harness.parseArguments(['--suite', 'studio', '--case', 'final-preview']),
+  {
+    suite: 'studio',
+    target: 'web',
+    caseName: 'final-preview',
+    port: harness.DEFAULT_PORT,
+    inspectorPort: harness.DEFAULT_INSPECTOR_PORT,
+    timeoutMs: harness.DEFAULT_TIMEOUT_MS,
+    output: null,
+    help: false,
+  },
+);
+assert.equal(harness.parseArguments(['--timeout', '120000']).timeoutMs, 120000);
 assert.throws(() => harness.parseArguments(['--suite', 'other']), /未知 suite/);
+assert.throws(
+  () =>
+    harness.parseArguments([
+      '--suite',
+      'studio',
+      '--target',
+      'desktop-frontend',
+    ]),
+  /仅支持 web fixture/,
+);
 assert.throws(() => harness.parseArguments(['--port', '0']), /1–65535/);
 assert.throws(
   () =>
@@ -59,6 +83,23 @@ assert.equal(registered.length, 14);
 assert.deepEqual(
   registered.map((entry) => entry.module).sort(),
   harness.discoverLegacyModules().sort(),
+);
+const studioRegistered = harness.verifyStudioRegistry();
+assert.deepEqual(
+  studioRegistered.map((entry) => entry.name),
+  ['final-preview', 'original-studio', 'scene-group-selection'],
+);
+assert.equal(
+  studioRegistered.find((entry) => entry.name === 'final-preview').fixture.path,
+  'scripts/tests/fixtures/v4-final-preview.mjs',
+);
+assert.deepEqual(
+  studioRegistered.find((entry) => entry.name === 'final-preview')
+    .supportingFiles,
+  [
+    'scripts/tests/browser/smoke/review-repair-interactions.cjs',
+    'scripts/tests/fixtures/v4-programs.mjs',
+  ],
 );
 assert.equal(
   registered.find((entry) => entry.name === 'crown-closures').fixture.path,
@@ -77,14 +118,24 @@ assert.throws(
   /未知或未实施/,
 );
 assert.throws(
-  () => harness.selectCases({ suite: 'v4', caseName: null }),
-  /候选界面测试入口已移除/,
+  () => harness.selectCases({ suite: 'studio', caseName: 'not-a-case' }),
+  /未知或未实施的 studio case/,
+);
+assert.equal(
+  harness.selectCases({ suite: 'studio', caseName: 'final-preview' }).length,
+  1,
+);
+assert.deepEqual(
+  harness
+    .selectCases({ suite: 'studio', caseName: null })
+    .map((entry) => entry.name),
+  ['final-preview', 'original-studio', 'scene-group-selection'],
 );
 assert.throws(
-  () => harness.selectCases({ suite: 'v4', caseName: 'not-implemented' }),
-  /候选界面测试入口已移除/,
+  () => harness.selectCases({ suite: 'v4', caseName: null }),
+  /未知 suite/,
 );
-assert.match(harness.usage(), /--suite legacy/);
+assert.match(harness.usage(), /--suite legacy\|studio/);
 const webArguments = harness.createWebServerArguments(
   48123,
   49230,
@@ -116,6 +167,17 @@ const manifestWithArtifacts = harness.createManifest(
   'unit-run',
   registered.slice(0, 1),
   resolve('F:/Projects/Splinelet/outputs/v4-qa/unit-run'),
+);
+const studioManifest = harness.createManifest(
+  harness.parseArguments(['--suite', 'studio']),
+  'studio-unit-run',
+  studioRegistered.slice(0, 1),
+  resolve('F:/Projects/Splinelet/outputs/v4-qa/studio-unit-run'),
+);
+assert.equal(studioManifest.cases[0].adapter, 'studio-fixture');
+assert.equal(
+  studioManifest.cases[0].source.supportingFiles[0].path,
+  'scripts/tests/browser/smoke/review-repair-interactions.cjs',
 );
 assert.match(
   manifestWithArtifacts.buildArtifacts.web.digest.sha256,
@@ -206,5 +268,5 @@ try {
 }
 
 console.log(
-  'PASS: browser runner argument validation, complete legacy registry, V4 rejection, and isolated static server.',
+  'PASS: browser runner argument validation, legacy and Studio registry selection, manifests, and isolated static server.',
 );

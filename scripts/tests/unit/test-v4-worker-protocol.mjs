@@ -172,18 +172,32 @@ const failureSession = createEvaluationSession({
 failureSession.update(editorState('open-d', 5));
 await failureSession.request({ domains: ['curves'] });
 failureMode = true;
+await failureSession.request({ domains: ['curves'] });
+assert.equal(
+  Object.values(failureSession.state.results)[0].snapshot.name,
+  'last-valid',
+  'same revision reuses its completed stage without calling the backend',
+);
+failureSession.update(editorState('open-d', 6));
 await assert.rejects(
   failureSession.request({ domains: ['curves'] }),
   /service offline/,
 );
-assert.equal(
-  Object.values(failureSession.state.results)[0].snapshot.name,
-  'last-valid',
-  'a service failure cannot erase the current valid stage',
+assert.deepEqual(
+  Object.values(failureSession.state.results),
+  [],
+  'a new revision cannot retain the previous valid result after a service failure',
 );
 assert.equal(
   Object.values(failureSession.state.failures)[0].error,
   'service offline',
+);
+failureMode = false;
+await failureSession.request({ domains: ['curves'] });
+assert.deepEqual(
+  Object.values(failureSession.state.failures),
+  [],
+  'failed requests can be retried',
 );
 
 let unavailableCalls = 0;

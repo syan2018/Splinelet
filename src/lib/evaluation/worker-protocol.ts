@@ -11,6 +11,7 @@ export type EvaluationIdentity = Readonly<{
   epoch: string;
   revision: number;
   previewId: string | null;
+  previewVersion?: number;
 }>;
 export type WorkerEvaluationRequest = Readonly<
   EvaluationIdentity & {
@@ -74,6 +75,11 @@ export function assertEvaluationIdentity(
     (typeof identity.previewId !== 'string' || !identity.previewId)
   )
     throw Error('previewId 必须是 null 或非空字符串');
+  if (
+    identity.previewVersion !== undefined &&
+    (!Number.isInteger(identity.previewVersion) || identity.previewVersion < 0)
+  )
+    throw Error('previewVersion 必须为非负整数');
 }
 
 export function createWorkerRequest(
@@ -90,6 +96,7 @@ export function createWorkerRequest(
     epoch: value.epoch,
     revision: value.revision,
     previewId: value.previewId,
+    ...(value.previewId && { previewVersion: value.previewVersion ?? 0 }),
     domains: freeze(canonicalDomains(value.domains)),
     document: clone(value.document),
   });

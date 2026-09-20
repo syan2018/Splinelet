@@ -10,8 +10,12 @@ import { PATH_NODE_DELETION_ACTIONS } from '../editing/commands/path-node-deleti
 import { PATH_MERGE_ACTIONS } from '../editing/commands/path-merge.mjs';
 import { SOURCE_ORGANIZATION_ACTIONS } from '../editing/commands/source-organization.mjs';
 import { exportSnapshot } from '../export/snapshot.mjs';
+import {
+  V4_AGENT_API_VERSION,
+  v4AgentCapabilityMetadata,
+} from './contract.mjs';
 
-export const V4_AGENT_API_VERSION = '5.0';
+export { V4_AGENT_API_VERSION } from './contract.mjs';
 
 const AUTHORING_ACTIONS = Object.freeze([
   ...SOURCE_ACTIONS,
@@ -242,37 +246,12 @@ export function createV4AgentAPI(options = {}) {
         )
         .map((entry) => ({ format: entry.format, stage: entry.stage }))
     : [];
-  const actionNames = [
-    'capabilities.get',
-    'document.get',
-    'legacy.read',
-    'authoring.run',
-    'preview.begin',
-    'preview.update',
-    'preview.commit',
-    'preview.cancel',
-    'undo',
-    'redo',
-    ...(typeof options.getSelection === 'function' ? ['selection.get'] : []),
-    ...(evaluation ? ['evaluation.request'] : []),
-    ...(exportCapabilities.length ? ['export.run'] : []),
-  ];
-  const capabilities = Object.freeze({
-    apiVersion: V4_AGENT_API_VERSION,
-    documentVersion: 4,
-    units: 'mm',
-    actions: actionNames,
-    authoringActions: [...AUTHORING_ACTIONS],
-    evaluationDomains: advertisedEvaluation,
-    exports: exportCapabilities,
+  const capabilities = v4AgentCapabilityMetadata({
     selectionRead: typeof options.getSelection === 'function',
-    previewWrites: true,
-    preparedWrites: false,
-    legacy: {
-      readProjection: true,
-      stableRefsOnly: true,
-      write: false,
-    },
+    evaluationAvailable: Boolean(evaluation),
+    evaluationDomains: evaluation ? advertisedEvaluation : [],
+    exports: exportCapabilities,
+    authoringActions: AUTHORING_ACTIONS,
   });
 
   const call = async (action, args = {}) => {

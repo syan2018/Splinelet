@@ -1,68 +1,12 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
-const { mkdir, writeFile } = require('node:fs/promises');
+const { writeFile } = require('node:fs/promises');
 const { resolve } = require('node:path');
-const { chromium } = require('playwright');
 
-const root = resolve(__dirname, '../../../..');
-const output = resolve(root, 'outputs/v4-qa/final-preview');
-
-async function main() {
-  const { createServer } = await import('vite');
-  const { default: tailwindcss } = await import('@tailwindcss/postcss');
-  const server = await createServer({
-    configFile: false,
-    root,
-    cacheDir: resolve(output, 'browser-cache'),
-    publicDir: resolve(root, 'public'),
-    css: { postcss: { plugins: [tailwindcss()] } },
-    optimizeDeps: {
-      entries: [resolve(root, 'scripts/tests/fixtures/v4-final-preview.mjs')],
-      include: [
-        '@tauri-apps/api/core',
-        '@tauri-apps/api/event',
-        '@tauri-apps/api/window',
-      ],
-    },
-    resolve: { alias: { '@': resolve(root, 'src') } },
-    server: {
-      host: '127.0.0.1',
-      port: 0,
-      watch: {
-        ignored: ['**/src-tauri/target/**', '**/dist/**', '**/outputs/**'],
-      },
-    },
-    plugins: [
-      {
-        name: 'isolated-final-preview',
-        configureServer(devServer) {
-          devServer.middlewares.use(async (req, res, next) => {
-            if (req.url !== '/') return next();
-            res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            res.end(
-              await devServer.transformIndexHtml(
-                '/',
-                '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="/scripts/tests/fixtures/v4-final-preview.mjs"></script></body></html>',
-              ),
-            );
-          });
-        },
-      },
-    ],
-  });
-  let browser;
-  let page;
+async function test(page, output) {
   const errors = [];
-  await mkdir(output, { recursive: true });
   try {
-    await server.listen();
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 1000 },
-    });
-    page = await context.newPage();
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/`);
     const cell = page.locator('[data-creation-cell]');
     await cell.first().waitFor();
     assert.equal(
@@ -158,13 +102,30 @@ async function main() {
     console.error('Browser errors:', errors);
     if (page) await page.screenshot({ path: resolve(output, 'failure.png') });
     throw error;
-  } finally {
-    await browser?.close();
-    await server.close();
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+module.exports = test;
+
+if (require.main === module) {
+  const harness = require('../harness/browser-runner.cjs');
+  const options = harness.parseArguments([
+    '--suite',
+    'studio',
+    '--case',
+    'final-preview',
+    ...process.argv.slice(2),
+  ]);
+  harness
+    .run(options)
+    .then(({ outputDirectory }) => {
+      console.log(`PASS: final-preview browser case`);
+      console.log(`Evidence: ${outputDirectory}`);
+    })
+    .catch((error) => {
+      console.error(
+        error instanceof Error ? error.stack || error.message : error,
+      );
+      process.exitCode = 1;
+    });
+}

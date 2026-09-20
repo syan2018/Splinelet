@@ -80,7 +80,26 @@ module.exports = async (page, output) => {
       await page
         .getByLabel(`连接 ${index + 1} b 重复`, { exact: true })
         .selectOption(repeat);
+      const preview = page.locator('svg[aria-label="连接端点预览"]');
+      await preview.waitFor({ state: 'visible' });
+      assert.match(
+        await preview.locator('..').textContent(),
+        new RegExp(`连接 ${index + 1} · A 金色 → B 青色`),
+      );
+      assert.equal(
+        await preview.locator('[data-join-highlight="a"]').count(),
+        4,
+      );
+      assert.equal(
+        await preview.locator('[data-join-highlight="b"]').count(),
+        4,
+      );
     }
+    const preview = page.locator('svg[aria-label="连接端点预览"]');
+    await preview.scrollIntoViewIfNeeded();
+    await preview.screenshot({
+      path: resolve(output, 'join-endpoint-preview.png'),
+    });
   });
   await add('fill');
   scene = await call('creation_inspect');

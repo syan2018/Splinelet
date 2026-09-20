@@ -7,8 +7,10 @@ import { projectSourceView } from './source-view.mjs';
 import { projectStudioDisplay } from './studio-display.mjs';
 import { createSourceScaleCommand } from '../editing/commands/source-scale.mjs';
 import { createV4AgentAPI } from '../agent/v4-api.mjs';
-import { createEvaluationSession } from '../evaluation/session.mjs';
-import { evaluateDocument } from '../evaluation/evaluate-document.mjs';
+import {
+  createDocumentEvaluationSession,
+  documentEvaluationDomains,
+} from '../evaluation/document-session.mjs';
 
 const freeze = (value) => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -97,19 +99,14 @@ export function createStudioSession({
   layout = initial.nextLayout;
   openedLayout = layout;
   const editor = createEditorSession(initial.next.document, { idFactory });
-  const domains = ['curves', 'regions', 'relief', 'placed-relief', 'bodies'];
-  const evaluation = createEvaluationSession({
-    capabilities: domains,
-    evaluate: (request) =>
-      (evaluate || evaluateDocument)(request.document, {
-        ...request,
-        requestedDomains: request.domains,
-      }),
+  const evaluation = createDocumentEvaluationSession({
+    editorSession: editor,
+    evaluate,
   });
   const agent = createV4AgentAPI({
     editorSession: editor,
-    evaluationSession: evaluation,
-    evaluationCapabilities: domains,
+    evaluationSession: evaluation.session,
+    evaluationCapabilities: documentEvaluationDomains,
     getSelection: () => selectionReader(),
   });
   const openStorage = (input, state) =>
@@ -123,7 +120,7 @@ export function createStudioSession({
     createV4CreationRuntime({
       editorSession: editor,
       sourceFrame: layout.frame,
-      evaluate,
+      evaluationService: evaluation,
       toDisplayProject: (state, creation) => project(state, creation, layout),
     });
   runtime = makeRuntime();
@@ -152,7 +149,6 @@ export function createStudioSession({
   // Preview notifications publish display state only. A cancellation or no-op
   // undo retains the same committed identity and must preserve a clean file.
   const detach = editor.subscribe((state) => {
-    evaluation.update(state);
     if (replacing || disposed) return;
     const document = documentOf(state);
     const reference =

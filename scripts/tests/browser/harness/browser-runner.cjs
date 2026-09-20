@@ -103,6 +103,34 @@ const legacyCases = [
   },
 ];
 
+// Studio acceptance uses committed Vite fixture entries so the original GUI can
+// run against source modules and its real workers.  They remain an explicit
+// suite instead of being hidden behind one-off smoke commands.
+const studioCases = [
+  {
+    name: 'final-preview',
+    module: 'smoke/test-v4-final-preview.cjs',
+    adapter: 'studio-fixture',
+    fixture: fixture('file', 'scripts/tests/fixtures/v4-final-preview.mjs'),
+    supportingFiles: [
+      'scripts/tests/browser/smoke/review-repair-interactions.cjs',
+      'scripts/tests/fixtures/v4-programs.mjs',
+    ],
+  },
+  {
+    name: 'original-studio',
+    module: 'smoke/test-v4-original-studio.cjs',
+    adapter: 'studio-fixture',
+    fixture: fixture('file', 'scripts/tests/fixtures/v4-original-studio.mjs'),
+  },
+  {
+    name: 'scene-group-selection',
+    module: 'studio/test-scene-group-selection.cjs',
+    adapter: 'studio-fixture',
+    fixture: fixture('file', 'scripts/tests/fixtures/v4-original-studio.mjs'),
+  },
+];
+
 function parseArguments(argv) {
   const options = {
     suite: 'legacy',
@@ -140,16 +168,27 @@ function parseArguments(argv) {
     else if (token === '--output') options.output = value;
     else {
       const parsed = Number(value);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535)
-        throw Error(`${token} 必须是 1–65535 的整数`);
+      if (
+        !Number.isInteger(parsed) ||
+        parsed < 1 ||
+        (token !== '--timeout' && parsed > 65535)
+      )
+        throw Error(
+          token === '--timeout'
+            ? '--timeout 必须是正整数毫秒值'
+            : `${token} 必须是 1–65535 的整数`,
+        );
       if (token === '--port') options.port = parsed;
       else if (token === '--inspector-port') options.inspectorPort = parsed;
       else options.timeoutMs = parsed;
     }
   }
-  if (options.suite !== 'legacy') throw Error(`未知 suite：${options.suite}`);
+  if (!['legacy', 'studio'].includes(options.suite))
+    throw Error(`未知 suite：${options.suite}`);
   if (!['web', 'desktop-frontend'].includes(options.target))
     throw Error(`未知 target：${options.target}`);
+  if (options.suite === 'studio' && options.target !== 'web')
+    throw Error('studio suite 仅支持 web fixture target。');
   if (options.port === options.inspectorPort)
     throw Error('--port 与 --inspector-port 必须不同。');
   return options;
@@ -157,12 +196,12 @@ function parseArguments(argv) {
 
 function usage() {
   return [
-    'Usage: pnpm test:browser --suite legacy --target web [options]',
+    'Usage: pnpm test:browser --suite legacy|studio --target web [options]',
     '',
     'Options:',
-    '  --suite legacy              defaults to legacy',
+    '  --suite legacy|studio       defaults to legacy',
     '  --target web|desktop-frontend  defaults to web',
-    '  --case <legacy-case>           run one registered case',
+    '  --case <registered-case>       run one registered case',
     `  --port <1-65535>               defaults to ${DEFAULT_PORT}; fails if occupied`,
     `  --inspector-port <1-65535>     defaults to ${DEFAULT_INSPECTOR_PORT}; local only`,
     `  --timeout <ms>                 defaults to ${DEFAULT_TIMEOUT_MS}`,
@@ -188,14 +227,35 @@ function verifyLegacyRegistry(directory = BROWSER_DIRECTORY) {
   return legacyCases.slice();
 }
 
-function selectCases(options, cases = legacyCases) {
-  if (options.suite !== 'legacy')
-    throw Error('候选界面测试入口已移除；请运行原 Studio 回归');
+function verifyStudioRegistry() {
+  for (const entry of studioCases) {
+    const modulePath = resolve(BROWSER_DIRECTORY, entry.module);
+    const fixturePath = entry.fixture && resolve(ROOT, entry.fixture.path);
+    if (!existsSync(modulePath) || !fixturePath || !existsSync(fixturePath))
+      throw Error(`studio browser registry 不完整：${entry.name}`);
+    for (const path of entry.supportingFiles || [])
+      if (!existsSync(resolve(ROOT, path)))
+        throw Error(
+          `studio browser registry 缺少依赖：${entry.name} → ${path}`,
+        );
+  }
+  return studioCases.slice();
+}
+
+function selectCases(options, cases) {
+  const suiteCases =
+    cases ||
+    (options.suite === 'legacy'
+      ? legacyCases
+      : options.suite === 'studio'
+        ? studioCases
+        : null);
+  if (!suiteCases) throw Error(`未知 suite：${options.suite}`);
   const selected = options.caseName
-    ? cases.filter((entry) => entry.name === options.caseName)
-    : cases;
+    ? suiteCases.filter((entry) => entry.name === options.caseName)
+    : suiteCases;
   if (!selected.length)
-    throw Error(`未知或未实施的 legacy case：${options.caseName}`);
+    throw Error(`未知或未实施的 ${options.suite} case：${options.caseName}`);
   return selected;
 }
 
@@ -314,6 +374,14 @@ function caseManifest(entry) {
       path: relative(ROOT, path).replaceAll('\\', '/'),
       sha256: sha256File(path),
     };
+  if (entry.supportingFiles?.length)
+    source.supportingFiles = entry.supportingFiles.map((supportingFile) => {
+      const supportingPath = resolve(ROOT, supportingFile);
+      return {
+        path: relative(ROOT, supportingPath).replaceAll('\\', '/'),
+        sha256: sha256File(supportingPath),
+      };
+    });
   return { name: entry.name, adapter: entry.adapter, source };
 }
 
@@ -628,6 +696,78 @@ async function startTargetServer(options, outputDirectory) {
   return startStaticServer(DESKTOP_ROOT, options.port);
 }
 
+async function startStudioFixtureServer(entry, outputDirectory) {
+  const { createServer: createViteServer } = await import('vite');
+  const { default: tailwindcss } = await import('@tailwindcss/postcss');
+  const fixtureEntry = resolve(ROOT, entry.fixture.path);
+  const caseDirectory = resolve(outputDirectory, entry.name);
+  const fixtureUrl = '/' + relative(ROOT, fixtureEntry).replaceAll('\\', '/');
+  const server = await createViteServer({
+    configFile: false,
+    root: ROOT,
+    cacheDir: resolve(caseDirectory, 'vite-cache'),
+    publicDir: resolve(ROOT, 'public'),
+    css: { postcss: { plugins: [tailwindcss()] } },
+    optimizeDeps: {
+      entries: [fixtureEntry],
+      include: [
+        '@tauri-apps/api/core',
+        '@tauri-apps/api/event',
+        '@tauri-apps/api/window',
+      ],
+    },
+    resolve: { alias: { '@': resolve(ROOT, 'src') } },
+    server: {
+      host: '127.0.0.1',
+      port: 0,
+      hmr: false,
+      watch: {
+        ignored: [
+          '**/src-tauri/target/**',
+          '**/dist/**',
+          '**/output/**',
+          '**/outputs/**',
+        ],
+      },
+    },
+    plugins: [
+      {
+        name: `isolated-${entry.name}`,
+        configureServer(devServer) {
+          devServer.middlewares.use(async (request, response, next) => {
+            if (request.url !== '/') return next();
+            const html = await devServer.transformIndexHtml(
+              '/',
+              `<!doctype html><html><head><meta charset="utf-8"><title>${entry.name}</title><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="${fixtureUrl}"></script></body></html>`,
+            );
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(html);
+          });
+        },
+      },
+    ],
+  });
+  await mkdir(caseDirectory, { recursive: true });
+  await server.listen();
+  // Prime static imports before opening Chromium. Without this, a fresh Vite
+  // optimizer can answer the first module graph with transient 504 responses.
+  await server.warmupRequest(fixtureUrl);
+  await server.waitForRequestsIdle();
+  const address = server.httpServer?.address();
+  if (!address || typeof address === 'string') {
+    await server.close();
+    throw Error(`无法读取 studio fixture ${entry.name} 的隔离端口`);
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    pid: null,
+    kind: 'vite-fixture',
+    async close() {
+      await server.close();
+    },
+  };
+}
+
 function loadPlaywright() {
   try {
     return require('playwright');
@@ -650,25 +790,35 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
   const context = await browser.newContext();
   let page;
   const lifecycle = [];
+  const browserErrors = [];
   const record = (event) =>
     lifecycle.push({ event, at: new Date().toISOString() });
   browser.once?.('disconnected', () => record('browser-disconnected'));
   context.once?.('close', () => record('context-closed'));
   try {
+    if (entry.adapter === 'studio-fixture' && test.setup)
+      await test.setup(context);
     page = await context.newPage();
     page.once?.('close', () => record('page-closed'));
     page.once?.('crash', () => record('page-crashed'));
+    page.on?.('pageerror', (error) => browserErrors.push(error.message));
+    page.on?.('console', (message) => {
+      if (message.type() === 'error') browserErrors.push(message.text());
+    });
     page.setDefaultTimeout(timeoutMs);
     page.setDefaultNavigationTimeout(timeoutMs);
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
     });
 
-    await page.waitForFunction(() => window.traceStudio);
+    if (entry.adapter !== 'studio-fixture')
+      await page.waitForFunction(() => window.traceStudio);
     if (entry.adapter === 'page') return await test(page);
     if (entry.adapter === 'page-output')
       return await test(page, resolve(outputDirectory, entry.name));
     if (entry.adapter === 'page-fixture') return await test(page, fixtureValue);
+    if (entry.adapter === 'studio-fixture')
+      return await test(page, resolve(outputDirectory, entry.name));
     throw Error(`${entry.name} 的 adapter 未实现：${entry.adapter}`);
   } catch (error) {
     if (page) {
@@ -700,6 +850,7 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
               creationInspect: await inspect('creation_inspect'),
             };
           });
+          diagnostics.browserErrors = browserErrors;
         } catch (diagnosticError) {
           diagnostics = {
             error:
@@ -735,7 +886,8 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
 
 async function run(options) {
   if (options.help) return { help: usage() };
-  verifyLegacyRegistry();
+  if (options.suite === 'legacy') verifyLegacyRegistry();
+  else verifyStudioRegistry();
   const cases = selectCases(options);
   const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}-${randomUUID().slice(0, 8)}`;
   const outputDirectory = resolveOutputDirectory(options.output, runId);
@@ -745,34 +897,49 @@ async function run(options) {
   const manifest = createManifest(options, runId, cases, outputDirectory);
   await writeManifest(outputDirectory, manifest);
   let browser;
-  let service;
+  let sharedService;
+  let caseService;
   try {
-    service = await startTargetServer(options, outputDirectory);
-    manifest.service = {
-      target: options.target,
-      url: service.url,
-      pid: service.pid || null,
-      inspectorPort: options.target === 'web' ? options.inspectorPort : null,
-      persistTo:
-        options.target === 'web'
-          ? relative(
-              ROOT,
-              resolve(outputDirectory, 'wrangler-state'),
-            ).replaceAll('\\', '/')
-          : null,
-    };
+    if (options.suite === 'legacy') {
+      sharedService = await startTargetServer(options, outputDirectory);
+      manifest.service = {
+        target: options.target,
+        url: sharedService.url,
+        pid: sharedService.pid || null,
+        inspectorPort: options.target === 'web' ? options.inspectorPort : null,
+        persistTo:
+          options.target === 'web'
+            ? relative(
+                ROOT,
+                resolve(outputDirectory, 'wrangler-state'),
+              ).replaceAll('\\', '/')
+            : null,
+      };
+    }
+    manifest.services = [];
     await writeManifest(outputDirectory, manifest);
     let failureCount = 0;
     for (const entry of cases) {
       const startedAt = new Date().toISOString();
       browser = await loadPlaywright().chromium.launch({ headless: true });
       try {
+        caseService =
+          entry.adapter === 'studio-fixture'
+            ? await startStudioFixtureServer(entry, outputDirectory)
+            : sharedService;
+        manifest.services.push({
+          case: entry.name,
+          kind: caseService.kind || options.target,
+          url: caseService.url,
+          pid: caseService.pid || null,
+        });
+        await writeManifest(outputDirectory, manifest);
         const result = await runCase(
           entry,
           browser,
-          service.url,
+          caseService.url,
           outputDirectory,
-          options.timeoutMs,
+          entry.timeoutMs || options.timeoutMs,
         );
         manifest.results.push({
           name: entry.name,
@@ -795,6 +962,9 @@ async function run(options) {
         await writeManifest(outputDirectory, manifest);
         await browser.close();
         browser = undefined;
+        if (caseService && caseService !== sharedService)
+          await caseService.close();
+        caseService = undefined;
       }
     }
     if (failureCount > 0)
@@ -816,7 +986,8 @@ async function run(options) {
     manifest.finishedAt = new Date().toISOString();
     await writeManifest(outputDirectory, manifest);
     if (browser) await browser.close();
-    if (service) await service.close();
+    if (caseService) await caseService.close();
+    if (sharedService) await sharedService.close();
   }
 }
 
@@ -839,6 +1010,9 @@ module.exports = {
   runCase,
   selectCases,
   startStaticServer,
+  startStudioFixtureServer,
+  studioCases,
   usage,
   verifyLegacyRegistry,
+  verifyStudioRegistry,
 };

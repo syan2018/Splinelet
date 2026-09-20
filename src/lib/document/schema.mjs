@@ -1,3 +1,5 @@
+import { validateJoinParams } from './join-params.mjs';
+
 const topLevelKeys = [
   'version',
   'id',
@@ -473,6 +475,10 @@ const validateOperator = (key, operator, seen) => {
   text(operator.type, 'Operator.type');
   text(operator.name, 'Operator.name');
   bool(operator.enabled, 'Operator.enabled');
+  if (operator.type === 'join') {
+    const result = validateJoinParams(operator.params);
+    if (result !== true) fail(result);
+  }
   if (operator.authoring !== undefined) {
     exactKeys(operator.authoring, ['phase'], 'Operator.authoring');
     if (

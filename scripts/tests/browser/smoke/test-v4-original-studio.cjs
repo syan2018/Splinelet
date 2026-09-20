@@ -1,58 +1,26 @@
 #!/usr/bin/env node
-// Full original UI with an injected V4 host, fresh browser context and ephemeral port.
+// Full original UI with an injected V4 host. The browser runner provides the
+// fresh context and ephemeral Vite origin.
 const assert = require('node:assert/strict');
-const { mkdir, writeFile, readFile } = require('node:fs/promises');
+const { writeFile, readFile } = require('node:fs/promises');
 const { resolve } = require('node:path');
-const { chromium } = require('playwright');
 
 const root = resolve(__dirname, '../../../..');
-const output = resolve(root, 'output/playwright/v4-original-studio');
 
-async function main() {
-  const { createServer } = await import('vite');
-  const { default: tailwindcss } = await import('@tailwindcss/postcss');
-  const server = await createServer({
-    configFile: false,
-    root,
-    cacheDir: resolve(output, 'vite-cache'),
-    publicDir: resolve(root, 'public'),
-    css: { postcss: { plugins: [tailwindcss()] } },
-    optimizeDeps: {
-      entries: [resolve(root, 'scripts/tests/fixtures/v4-original-studio.mjs')],
-      include: [
-        '@tauri-apps/api/core',
-        '@tauri-apps/api/event',
-        '@tauri-apps/api/window',
-      ],
-    },
-    resolve: { alias: { '@': resolve(root, 'src') } },
-    server: {
-      host: '127.0.0.1',
-      port: 0,
-      hmr: false,
-      watch: {
-        ignored: ['**/src-tauri/target/**', '**/dist/**', '**/output/**'],
-      },
-    },
-    plugins: [
-      {
-        name: 'isolated-original-studio',
-        configureServer(devServer) {
-          devServer.middlewares.use(async (req, res, next) => {
-            if (req.url !== '/') return next();
-            const html = await devServer.transformIndexHtml(
-              '/',
-              '<!doctype html><html><head><meta charset="utf-8"><title>原 Studio V4 验收</title><link rel="stylesheet" href="/app/globals.css"><link rel="stylesheet" href="/app/creation.css"></head><body><div id="root"></div><script type="module" src="/scripts/tests/fixtures/v4-original-studio.mjs"></script></body></html>',
-            );
-            res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            res.end(html);
-          });
-        },
-      },
-    ],
+async function setup(context) {
+  await context.addInitScript(() => {
+    // Compatibility calls still carry an observed canonical revision.
+    window.reviewCall = async (action, args = {}) => {
+      const observed = await window.traceStudio.call('document.get');
+      return window.traceStudio.call(action, {
+        expectedRevision: observed.revision,
+        ...args,
+      });
+    };
   });
-  let browser;
-  let page;
+}
+
+async function test(page, output) {
   // Await API promises before deciding whether a condition has become true.
   // Playwright waitForFunction otherwise treats the Promise itself as truthy.
   const waitForCondition = async (predicate, arg, options = {}) => {
@@ -66,31 +34,13 @@ async function main() {
   const errors = [];
   const consoleErrors = [];
   const workerUrls = [];
-  await mkdir(output, { recursive: true });
   try {
-    await server.listen();
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      viewport: { width: 1440, height: 1000 },
-    });
-    await context.addInitScript(() => {
-      // Compatibility calls still carry an observed canonical revision.
-      window.reviewCall = async (action, args = {}) => {
-        const observed = await window.traceStudio.call('document.get');
-        return window.traceStudio.call(action, {
-          expectedRevision: observed.revision,
-          ...args,
-        });
-      };
-    });
-    page = await context.newPage();
     page.on('worker', (worker) => workerUrls.push(worker.url()));
     page.setDefaultTimeout(120000);
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text());
     });
-    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/`);
     await page.locator('.studio.creation-studio').waitFor({ timeout: 60000 });
     await page.locator('.source-path-layer').first().waitFor();
     const evidence = () => page.evaluate(() => window.originalStudioEvidence());
@@ -452,12 +402,20 @@ async function main() {
     assert.equal((await evidence()).pathGeometry[0].segments, 2);
     await page.getByRole('button', { name: '重做', exact: true }).click();
     assert.equal((await evidence()).pathGeometry[0].closed, true);
-    await page.locator('[data-creation-cell]').first().waitFor();
+    await page.evaluate(() => window.reviewCall('creation_inspect'));
+    const createdCell = page.locator('[data-creation-cell]').first();
+    await createdCell.waitFor();
     await page.getByRole('button', { name: '选择 (V)', exact: true }).click();
-    await page.mouse.click(
-      imageBox.x + imageBox.width * 0.5,
-      imageBox.y + imageBox.height * 0.4,
-    );
+    // Click inside the rendered region. Image-relative coordinates are not
+    // stable after the canvas changes its fitted transform for a new image.
+    const createdCellBox = await createdCell.boundingBox();
+    assert(createdCellBox, 'the rendered region must have a screen box');
+    await createdCell.click({
+      position: {
+        x: createdCellBox.width * 0.75,
+        y: createdCellBox.height * 0.25,
+      },
+    });
     assert.match(
       await page.locator('.creation-canvas-bar').innerText(),
       /单个区域/,
@@ -1450,12 +1408,34 @@ async function main() {
       );
     }
     throw error;
-  } finally {
-    await browser?.close();
-    await server.close();
   }
 }
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+
+module.exports = test;
+module.exports.setup = setup;
+
+if (require.main === module) {
+  const harness = require('../harness/browser-runner.cjs');
+  const forwarded = process.argv
+    .slice(2)
+    .filter((argument) => argument !== '--palette-only');
+  const options = harness.parseArguments([
+    '--suite',
+    'studio',
+    '--case',
+    'original-studio',
+    ...forwarded,
+  ]);
+  harness
+    .run(options)
+    .then(({ outputDirectory }) => {
+      console.log(`PASS: original-studio browser case`);
+      console.log(`Evidence: ${outputDirectory}`);
+    })
+    .catch((error) => {
+      console.error(
+        error instanceof Error ? error.stack || error.message : error,
+      );
+      process.exitCode = 1;
+    });
+}

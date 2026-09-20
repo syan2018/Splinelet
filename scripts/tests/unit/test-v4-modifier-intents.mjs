@@ -112,7 +112,26 @@ document.programs.program = {
     }),
     fill: operator('fill', 'fill', { rule: 'even-odd' }),
     join: operator('join', 'join', {
-      connections: [{ id: 'stable-connection' }],
+      connections: [
+        {
+          a: {
+            edgeEnd: {
+              kind: 'edge-end',
+              sketchId: 'sketch',
+              edgeId: 'edge-a',
+              end: 'start',
+            },
+          },
+          b: {
+            edgeEnd: {
+              kind: 'edge-end',
+              sketchId: 'sketch',
+              edgeId: 'edge-b',
+              end: 'end',
+            },
+          },
+        },
+      ],
     }),
   },
   outputs: {},

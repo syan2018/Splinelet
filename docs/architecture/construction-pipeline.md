@@ -1,6 +1,6 @@
 # 构造链与失效处理
 
-更新：2026-09-20。本文描述当前 V4 运行链；旧工程经导入边界转换，旧 Project/modifier 数组不再是编辑权威。
+更新：2026-09-21。本文描述当前 V4 运行链；旧工程经导入边界转换，旧 Project/modifier 数组不再是编辑权威。
 
 ## 持久定义与求值结果
 
@@ -24,6 +24,8 @@ OutputRef 的 owner、operator、port、key、instances、lineage 共同参与�
 
 浮雕赋值在所属 Shape 范围内解析。一个 Shape 的 Fill 或赋值失败，不清空另一个独立 Shape。作者启用状态独立于求值状态：二维仍可显示区域，无法放置的区域标记 flatOnly，不伪造厚度或复用上一帧实体。
 
+Creation cell 的 evaluation 区分 disabled（未启用浮雕）、excluded（制造排除）、unevaluated（相关阶段未求值）、unplaced（有浮雕定义但无放置成员）、ready 与 blocked。没有浮雕成员本身不代表出错；只有失败的当前分支、赋值或无法唯一解析的成员才标记 blocked。
+
 放置按真实依赖求解：自由放置独立；节点附着等待目标的完整有效加料成员，输出附着使用完整 OutputRef；附着目标失败、跨 Part、缺失或循环会阻断依赖者。打印层基面由前序层顶面确定，前序未知加料使后序放置暂停，同层基面及独立自由放置仍可确定。被制造排除的部件不贡献层高；隐藏只影响视图，不能静默排除制造错误。
 
 当前 BodySet 及导出保守要求全部未排除制造分支完整，包括选择单个 Part 时。只要有未解决阻断便拒绝导出；这避免未知切料/附着使输出缺件，尚不提供隔离 Part 的部分成功导出。
@@ -31,6 +33,10 @@ OutputRef 的 owner、operator、port、key、instances、lineage 共同参与�
 ## 编辑、并发与保存
 
 原 Studio host 持有唯一 editor session。GUI 意图、API 5 作者命令、预览、撤销、保存均进入该会话。Worker 求值使用 epoch/revision/previewId 标识；过期结果不接入当前显示。API 的求值请求也调用同一求值器与 Worker，不运行另一套兼容几何。
+
+host 同时持有唯一 document evaluation session。GUI 的区域/实体视图与 Agent 的求值/导出共用请求与完成缓存，缓存键包含 epoch、revision、previewId、previewVersion 和规范化后的阶段集合；相同请求合并，错误请求可重试，编辑或打开新工程使旧结果失效。阶段集合不同的请求分别计算，不把缺少阶段的快照当成完整结果。
+
+预备底板等候选文档不是当前修订，使用同一后端单独求值，并在返回时检查其基准状态。候选结果不进入当前修订缓存。拖动中的精确样条辅助预览保留同步轻量求值，不等待曲面/实体 Worker；它不参与成品导出。
 
 作品树消费递归 scene tree，Group 可选择、移动、隐藏、锁定、保持世界位置换父级和解组。子 Shape 的源线和区域仍在原树行中。组的路径列表只是用于选区/拖动的后代投影，不转移源所有权。
 

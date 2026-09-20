@@ -3,6 +3,12 @@ import {
   createV4AgentAPI,
   V4AgentAPIError,
 } from '../../../src/lib/agent/v4-api.mjs';
+import {
+  V4_AGENT_CORE_ACTIONS,
+  V4_AGENT_OPTIONAL_ACTIONS,
+  v4AgentActionNames,
+  v4AgentCapabilityMetadata,
+} from '../../../src/lib/agent/contract.mjs';
 import { createDocument } from '../../../src/lib/document/schema.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
@@ -67,6 +73,21 @@ assert.equal(capabilities.legacy.write, false);
 assert.equal(capabilities.preparedWrites, false);
 assert.ok(capabilities.authoringActions.includes('draw-path'));
 assert.ok(!capabilities.authoringActions.includes('partition'));
+assert.deepEqual(
+  capabilities.actions,
+  v4AgentActionNames({
+    evaluation: true,
+    exportAvailable: true,
+  }),
+  'capability action names are derived from the public contract',
+);
+assert.ok(!capabilities.actions.includes(V4_AGENT_OPTIONAL_ACTIONS.selection));
+
+const contractWithoutOptionalHosts = v4AgentCapabilityMetadata({
+  authoringActions: ['draw-path'],
+});
+assert.deepEqual(contractWithoutOptionalHosts.actions, V4_AGENT_CORE_ACTIONS);
+assert.equal(contractWithoutOptionalHosts.legacy.write, false);
 
 const read = await api.call('document.get');
 read.document.geometrySettings.curveToleranceMM = 99;
@@ -182,6 +203,7 @@ const minimal = createV4AgentAPI({ editorSession: makeEditor('minimal') });
 assert.equal(minimal.capabilities.selectionRead, false);
 assert.deepEqual(minimal.capabilities.evaluationDomains, []);
 assert.ok(!minimal.capabilities.actions.includes('export.run'));
+assert.deepEqual(minimal.capabilities.actions, V4_AGENT_CORE_ACTIONS);
 await assert.rejects(
   minimal.call('selection.get'),
   (error) => error.code === 'capability-unavailable',

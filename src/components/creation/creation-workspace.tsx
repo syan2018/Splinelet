@@ -43,6 +43,7 @@ import {
   pathsForRegions,
 } from '@/lib/creation-selection.mjs';
 import { useCreationSelection } from '@/hooks/use-creation-selection';
+import { sceneGroupSelection } from '@/lib/editor/scene-group-selection.mjs';
 import { sceneTreeRows } from '@/lib/editor/scene-tree.mjs';
 import type { OutputRef } from '@/lib/document/types';
 import type {
@@ -451,11 +452,20 @@ export default function CreationWorkspace(p: Props) {
       commitSelection({ kind: 'object', ids: objects });
   }, [p.tool, selection.kind, objects, commitSelection]);
   const sceneRows = sceneTreeRows(doc.tree, doc.objects) as SceneRow[];
-  const selectedGroup = sceneRows.findLast(
-    (row) => objects.includes(row.id) && row.kind === 'group',
-  );
+  const groupSelection = sceneGroupSelection(
+    sceneRows,
+    selection.kind === 'object' ? selection.ids : [],
+  ) as {
+    selected: SceneRow[];
+    groups: SceneRow[];
+    shapes: SceneRow[];
+    rootGroups: SceneRow[];
+    singleGroup: SceneRow | null;
+  };
+  const selectedGroup = groupSelection.singleGroup;
+  const hasSelectedGroups = groupSelection.groups.length > 0;
   const canEditModifiers =
-    selection.kind !== 'path' && objects.length === 1 && !selectedGroup;
+    selection.kind !== 'path' && objects.length === 1 && !hasSelectedGroups;
   const tab = ['object', 'lines', 'modifiers'].includes(requestedPage)
     ? !selection.ids.length
       ? 'tool'
@@ -1023,7 +1033,7 @@ export default function CreationWorkspace(p: Props) {
       },
       trace_target: () => {
         const ownerNodeId = objects.at(-1);
-        if (!ownerNodeId || selectedGroup) return { role: 'boundary' };
+        if (!ownerNodeId || hasSelectedGroups) return { role: 'boundary' };
         if (ref.current.runtime && nextRole.current !== 'boundary') {
           if (revision.current !== ref.current.project)
             throw Error('区域正在更新，请稍候再落点');
@@ -2218,12 +2228,64 @@ export default function CreationWorkspace(p: Props) {
                 </label>
                 <button
                   onClick={() =>
-                    safely(() =>
-                      run('scene_ungroup', { nodeIds: [selectedGroup.id] }),
-                    )
+                    safely(() => {
+                      run('scene_ungroup', { nodeIds: [selectedGroup.id] });
+                      selectionState.commit(
+                        {
+                          kind: 'object',
+                          ids: selection.ids.filter(
+                            (id) => id !== selectedGroup.id,
+                          ),
+                        },
+                        false,
+                      );
+                    })
                   }
                 >
                   解散场景组
+                </button>
+              </section>
+            )}
+            {hasSelectedGroups && !selectedGroup && tab === 'object' && (
+              <section className="creation-section" aria-live="polite">
+                <h3>场景组选区</h3>
+                <p>
+                  已选 {groupSelection.groups.length} 个场景组
+                  {groupSelection.shapes.length
+                    ? `、${groupSelection.shapes.length} 个部件`
+                    : ''}
+                  。
+                </p>
+                {groupSelection.rootGroups.length !==
+                  groupSelection.groups.length && (
+                  <p className="creation-muted">
+                    已选内层组由外层组涵盖；解组按{' '}
+                    {groupSelection.rootGroups.length} 个根场景组执行。
+                  </p>
+                )}
+                <p className="creation-muted">
+                  父级只能单选场景组后修改；部件属性请单选部件。
+                </p>
+                <button
+                  onClick={() =>
+                    safely(() => {
+                      const groupIds = groupSelection.rootGroups.map(
+                        (group) => group.id,
+                      );
+                      run('scene_ungroup', { nodeIds: groupIds });
+                      selectionState.commit(
+                        {
+                          kind: 'object',
+                          ids: selection.ids.filter(
+                            (id) => !groupIds.includes(id),
+                          ),
+                        },
+                        false,
+                      );
+                    })
+                  }
+                >
+                  解散选中的 {groupSelection.rootGroups.length} 个根场景组
                 </button>
               </section>
             )}
@@ -2262,7 +2324,13 @@ export default function CreationWorkspace(p: Props) {
                           ? selection.ids.length + ' 条线条'
                           : selection.kind === 'cell'
                             ? selection.ids.length + ' 个区域'
-                            : selection.ids.length + ' 个部件'
+                            : hasSelectedGroups
+                              ? `${groupSelection.groups.length} 个场景组${
+                                  groupSelection.shapes.length
+                                    ? `、${groupSelection.shapes.length} 个部件`
+                                    : ''
+                                }`
+                              : selection.ids.length + ' 个部件'
                         : '未选择对象'}
                 </span>
               </div>
@@ -2424,25 +2492,27 @@ export default function CreationWorkspace(p: Props) {
                     </p>
                   </div>
                 ))}
-              {['object', 'lines'].includes(tab) && current && (
-                <CreationSelectionDetails
-                  selection={selection}
-                  objects={objects}
-                  project={p.project}
-                  scene={scene}
-                  onSelect={(next) => selectionState.commit(next)}
-                  onEnable={() => safely(() => applyHeight(displayedHeight))}
-                  onEdit={() => {
-                    const ids =
-                      selection.kind === 'cell'
-                        ? pathsForRegions(p.project, scene, cellKeys)
-                        : current.pathIds;
-                    selectionState.selectPaths(ids);
-                    p.onTool('edit');
-                    setTab('tool');
-                  }}
-                />
-              )}
+              {['object', 'lines'].includes(tab) &&
+                current &&
+                !hasSelectedGroups && (
+                  <CreationSelectionDetails
+                    selection={selection}
+                    objects={objects}
+                    project={p.project}
+                    scene={scene}
+                    onSelect={(next) => selectionState.commit(next)}
+                    onEnable={() => safely(() => applyHeight(displayedHeight))}
+                    onEdit={() => {
+                      const ids =
+                        selection.kind === 'cell'
+                          ? pathsForRegions(p.project, scene, cellKeys)
+                          : current.pathIds;
+                      selectionState.selectPaths(ids);
+                      p.onTool('edit');
+                      setTab('tool');
+                    }}
+                  />
+                )}
               {tab === 'modifiers' &&
                 selection.kind !== 'path' &&
                 objects.length === 1 && (
@@ -2587,7 +2657,7 @@ export default function CreationWorkspace(p: Props) {
                     />
                   );
                 })}
-              {tab === 'object' && !selectedGroup && (
+              {tab === 'object' && !hasSelectedGroups && (
                 <>
                   {current ? (
                     <>

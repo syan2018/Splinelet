@@ -54,7 +54,7 @@ import {
 } from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
 import { splineTools } from '@/lib/spline-api';
-import { v4AgentTools } from '@/lib/agent/tool-catalog';
+import { createStudioAgentTools } from '@/lib/agent/tool-catalog';
 import { agentJSONValue } from '@/lib/agent/transport.mjs';
 import { inspectSplines } from '@/lib/source-editor/spline-edit.mjs';
 import type {
@@ -187,32 +187,11 @@ type FilePickerWindow = Window &
   };
 type AgentHandler = { invoke(args?: unknown): unknown }['invoke'];
 type TraceApi = Record<string, AgentHandler>;
-const legacyAgentWrites = new Set([
-  'create_path',
-  'resume_path',
-  'add_anchor',
-  'finish_path',
-  'close_path',
-  'commit_preview',
-  'refit_path',
-  'set_node_mode',
-  'manage_group',
-  'move_path',
-  'move_paths',
-  'merge_paths',
-  'straighten_span',
-  'delete_node',
-  'set_point',
-  'spline_apply',
-  'creation_command',
-  'model_command',
-  'load_project',
-  'undo',
-  'redo',
-  ...Object.entries(modelTools)
-    .filter(([name, tool]) => !tool.readOnly && name !== 'set_workspace')
-    .map(([name]) => name),
-]);
+const studioAgentTools = createStudioAgentTools({
+  modelTools,
+  creationTools,
+  splineTools,
+});
 type TraceStudioWindow = Window &
   typeof globalThis & {
     traceStudio?: {
@@ -2645,7 +2624,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           return host.agentCall(action, args);
         const fn = apiRef.current?.[action];
         if (!fn) throw Error('未知操作 ' + action);
-        if (legacyAgentWrites.has(action)) {
+        if (studioAgentTools[action]?.compatibilityWrite) {
           const request = args as Record<string, unknown>;
           if (!request || !Number.isInteger(request.expectedRevision))
             throw Error(
@@ -2679,330 +2658,34 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         }
       ).modelContext,
       controller = new AbortController();
-    const names = [
-      'capabilities.get',
-      'document.get',
-      'selection.get',
-      'authoring.run',
-      'evaluation.request',
-      'export.run',
-      'preview.begin',
-      'preview.update',
-      'preview.commit',
-      'preview.cancel',
-      'legacy.read',
-      'redo',
-      ...Object.keys(modelTools),
-      ...Object.keys(creationTools),
-      ...Object.keys(splineTools),
-      'state',
-      'detect_candidates',
-      'create_path',
-      'resume_path',
-      'add_anchor',
-      'finish_path',
-      'close_path',
-      'commit_preview',
-      'refit_path',
-      'set_node_mode',
-      'manage_group',
-      'move_path',
-      'select_paths',
-      'move_paths',
-      'merge_paths',
-      'straighten_span',
-      'select_node',
-      'delete_node',
-      'get_project',
-      'set_point',
-      'undo',
-      'inspect_geometry',
-      'export',
-    ];
-    const properties: Record<string, unknown> = {
-      ...Object.fromEntries(
-        ['authoring.run', 'preview.update'].map((name) => [
-          name,
-          {
-            expectedRevision: { type: 'integer' },
-            action: { type: 'object' },
-            previewId: { type: 'string' },
-          },
-        ]),
-      ),
-      ...Object.fromEntries(
-        [
-          'preview.begin',
-          'preview.commit',
-          'preview.cancel',
-          'undo',
-          'redo',
-        ].map((name) => [
-          name,
-          {
-            expectedRevision: { type: 'integer' },
-            previewId: { type: 'string' },
-          },
-        ]),
-      ),
-      ...Object.fromEntries(
-        ['evaluation.request', 'export.run', 'legacy.read'].map((name) => [
-          name,
-          {
-            epoch: { type: 'string' },
-            revision: { type: 'integer' },
-            domains: { type: 'array', items: { type: 'string' } },
-            format: { type: 'string' },
-            stage: { type: 'string' },
-            options: { type: 'object' },
-          },
-        ]),
-      ),
-      ...Object.fromEntries(
-        Object.entries({ ...modelTools, ...creationTools, ...splineTools }).map(
-          ([name, t]) => [name, t.properties],
-        ),
-      ),
-      state: {},
-      select_paths: { pathIds: { type: 'array', items: { type: 'string' } } },
-      move_paths: {
-        pathIds: { type: 'array', items: { type: 'string' } },
-        groupId: { type: 'string' },
-        targetId: { type: 'string' },
-        after: { type: 'boolean' },
-      },
-      detect_candidates: {
-        limit: { type: 'number' },
-        spacing: { type: 'number' },
-        region: { type: 'object' },
-      },
-      create_path: {
-        points: {
-          type: 'array',
-          items: {
-            oneOf: [
-              { type: 'string' },
-              {
-                type: 'object',
-                properties: { x: { type: 'number' }, y: { type: 'number' } },
-                required: ['x', 'y'],
-              },
-            ],
-          },
-        },
-        name: { type: 'string' },
-        closed: { type: 'boolean' },
-        preview: { type: 'boolean' },
-        mode: { enum: ['ink', 'edge', 'manual'] },
-        tolerance: { type: 'number' },
-        corridor: { type: 'number' },
-        snap: { type: 'boolean' },
-      },
-      commit_preview: {},
-      resume_path: {
-        pathId: { type: 'string' },
-        end: { enum: ['start', 'end'] },
-      },
-      add_anchor: {
-        position: {
-          type: 'object',
-          properties: { x: { type: 'number' }, y: { type: 'number' } },
-          required: ['x', 'y'],
-        },
-        mode: { enum: ['ink', 'edge', 'manual'] },
-        snap: { type: 'boolean' },
-      },
-      finish_path: {},
-      close_path: {
-        mode: { enum: ['ink', 'edge', 'manual'] },
-        snap: { type: 'boolean' },
-      },
-      refit_path: { id: { type: 'string' } },
-      set_node_mode: {
-        pathId: { type: 'string' },
-        nodeIndex: { type: 'integer' },
-        mode: { enum: ['corner', 'smooth', 'symmetric'] },
-      },
-      move_path: {
-        pathId: { type: 'string' },
-        groupId: { type: 'string' },
-        beforeId: { type: 'string' },
-      },
-      manage_group: {
-        action: {
-          enum: ['create', 'rename', 'assign', 'visibility', 'delete'],
-        },
-        id: { type: 'string' },
-        name: { type: 'string' },
-        pathIds: { type: 'array', items: { type: 'string' } },
-        visible: { type: 'boolean' },
-      },
-      merge_paths: {
-        firstId: { type: 'string' },
-        firstEnd: { enum: ['start', 'end'] },
-        secondId: { type: 'string' },
-        secondEnd: { enum: ['start', 'end'] },
-      },
-      straighten_span: {
-        pathId: { type: 'string' },
-        curve: { type: 'integer' },
-      },
-      select_node: {
-        pathId: { type: 'string' },
-        nodeIndex: { type: 'integer' },
-      },
-      delete_node: {
-        pathId: { type: 'string' },
-        nodeIndex: { type: 'integer' },
-      },
-      get_project: {},
-      undo: {},
-      inspect_geometry: {},
-      set_point: {
-        pathId: { type: 'string' },
-        curve: { type: 'integer' },
-        point: { enum: [1, 2] },
-        position: { type: 'object' },
-      },
-      export: { format: { enum: ['svg', 'blender', 'json'] } },
-    };
+    const names = Object.keys(studioAgentTools);
     for (const name of names)
       try {
         void Promise.resolve(
           context?.registerTool(
             {
               name: 'bezier_' + name,
-              description:
-                {
-                  ...modelTools,
-                  ...creationTools,
-                  ...splineTools,
-                  ...v4AgentTools,
-                }[name]?.description ||
-                (
-                  {
-                    state:
-                      'Read image dimensions, paths, tool, selection sets and fit quality.',
-                    select_paths:
-                      'Select multiple paths by ID and enter object selection mode; empty list deselects.',
-                    move_paths:
-                      'Move multiple paths to a group or before/after a target path, preserving tree order. One undo step.',
-                    detect_candidates:
-                      'Generate numbered image corner candidates and display on canvas. Original image pixel coordinates.',
-                    create_path:
-                      'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
-                    resume_path:
-                      'Resume an existing visible open path from its start or end. Changes drawing state only; keeps existing geometry and undo history unchanged.',
-                    add_anchor:
-                      'Add one point at the current drawing endpoint, with exactly one new cubic. If no drawing is active, starts a new path. Original-image pixel coordinates. Undoable.',
-                    finish_path:
-                      'Finish the current drawing session without adding geometry. In V4, publish a valid pending divider as one undoable command. Incomplete or invalid construction rejects and retains its raw path for resuming.',
-                    close_path:
-                      'Close the active open path from the current drawing endpoint with one cubic. Undoable.',
-                    refit_path:
-                      'Request a refit confirmation dialog. No geometry changes until the user explicitly confirms in the UI. Refitting replaces manual handle edits and continuity modes.',
-                    set_node_mode:
-                      'Set corner, smooth (collinear), or symmetric (equal opposite handles, C1) for one internal node. Undoable.',
-                    move_path:
-                      'Move a path into a group, or before another path (also adopting its group). Undoable.',
-                    manage_group:
-                      'Create, rename, assign paths, toggle group visibility, or dissolve a group without deleting paths. Undoable.',
-                    merge_paths:
-                      'Join two distinct open splines at chosen endpoints. Preserve curve shapes by reversing directions when needed; insert one straight cubic only when endpoints differ. Undoable; keep first path ID.',
-                    straighten_span:
-                      'Replace one existing cubic with a straight cubic at the same endpoints; keep all anchors. curve defaults to selection or last span. Undoable.',
-                    select_node:
-                      'Select a unique anchor by zero-based nodeIndex. Closed seam counts once. Highlight on canvas.',
-                    delete_node:
-                      'Delete one anchor by zero-based nodeIndex. Merge affected spans into exactly one cubic, preserve other spans. Undoable. Last node removes empty path.',
-                    commit_preview: 'Commit the staged path to the project.',
-                    inspect_geometry:
-                      'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
-                    get_project:
-                      'Read complete image and editable Bezier geometry.',
-                    undo: 'Undo the last project mutation, including one entire spline_apply batch. Call creation_inspect afterwards to wait for recomputation.',
-                    set_point:
-                      'Edit a cubic control handle by path, curve index, and handle index.',
-                    export:
-                      'Return SVG, Blender Python, or a project copy without downloading. json returns the complete .spl ZIP as base64 with filename and mimeType, including assets.',
-                  } as Record<string, string>
-                )[name],
+              description: studioAgentTools[name]!.description,
               inputSchema: {
                 type: 'object',
                 properties: {
-                  ...(properties[name] as Record<string, unknown>),
-                  ...v4AgentTools[name]?.properties,
-                  ...(legacyAgentWrites.has(name) && {
+                  ...studioAgentTools[name]!.properties,
+                  ...(studioAgentTools[name]!.compatibilityWrite && {
                     expectedRevision: { type: 'integer' },
                   }),
                 },
                 required: [
                   ...new Set([
-                    ...(legacyAgentWrites.has(name)
+                    ...(studioAgentTools[name]!.compatibilityWrite
                       ? ['expectedRevision']
                       : []),
-                    ...({
-                      ...modelTools,
-                      ...creationTools,
-                      ...splineTools,
-                      ...v4AgentTools,
-                    }[name]?.required ||
-                      (name === 'resume_path'
-                        ? ['pathId', 'end']
-                        : name === 'add_anchor'
-                          ? ['position']
-                          : ['select_paths', 'move_paths'].includes(name)
-                            ? ['pathIds']
-                            : name === 'move_path'
-                              ? ['pathId']
-                              : name === 'set_node_mode'
-                                ? ['pathId', 'nodeIndex', 'mode']
-                                : name === 'manage_group'
-                                  ? ['action']
-                                  : name === 'merge_paths'
-                                    ? [
-                                        'firstId',
-                                        'firstEnd',
-                                        'secondId',
-                                        'secondEnd',
-                                      ]
-                                    : name === 'straighten_span'
-                                      ? ['pathId']
-                                      : name === 'create_path'
-                                        ? ['points']
-                                        : [
-                                              'select_node',
-                                              'delete_node',
-                                            ].includes(name)
-                                          ? ['pathId', 'nodeIndex']
-                                          : name === 'set_point'
-                                            ? [
-                                                'pathId',
-                                                'curve',
-                                                'point',
-                                                'position',
-                                              ]
-                                            : name === 'export'
-                                              ? ['format']
-                                              : [])),
+                    ...(studioAgentTools[name]!.required || []),
                   ]),
                 ],
                 additionalProperties: false,
               },
               annotations: {
-                readOnlyHint:
-                  {
-                    ...modelTools,
-                    ...creationTools,
-                    ...splineTools,
-                    ...v4AgentTools,
-                  }[name]?.readOnly ||
-                  [
-                    'state',
-                    'get_project',
-                    'inspect_geometry',
-                    'export',
-                  ].includes(name),
+                readOnlyHint: studioAgentTools[name]!.readOnly,
                 untrustedContentHint: true,
               },
               execute: (args: unknown) =>
@@ -4178,13 +3861,17 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             </>
           ) : dialog === 'api' ? (
             <>
-              <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nconst observed = await window.traceStudio.call('document.get');\nawait window.traceStudio.call('create_path', {\n  expectedRevision: observed.revision,\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nconst edited = await window.traceStudio.call('document.get');\nawait window.traceStudio.call('commit_preview', {\n  expectedRevision: edited.revision\n});`}</pre>
+              <pre>{`const call = window.traceStudio.call;\nconst observed = await call('document.get');\nconst changed = await call('authoring.run', {\n  expectedRevision: observed.revision,\n  action: { kind: 'create-shape', name: '刘海' },\n});\nawait call('undo', { expectedRevision: changed.revision });`}</pre>
               <p>
-                统一创作：creation_inspect、creation_focus、creation_select、creation_command、creation_view、creation_export。
-                填色和厚度命令须带最新 creation_inspect 返回的 revision。
+                先用 capabilities.get 发现 API 5 操作，再用 document.get
+                读取修订；每个写入传回读取到的 expectedRevision。 WebMCP 的
+                bezier_ 工具和浏览器调用使用同一注册表。
               </p>
               <p>
-                描线操作：state、detect_candidates、create_path、resume_path、add_anchor、finish_path、close_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
+                creation_command、spline_apply
+                和原图像素描线入口保留兼容调用；写入同样需要
+                expectedRevision，paint / height 另带最新 creation_inspect
+                revision。
               </p>
               <p>
                 构面 /

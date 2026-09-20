@@ -6,7 +6,11 @@ export type JoinEndpoint = {
   selector?: { operatorId: string; index: number | string; wrap?: boolean };
 };
 export type JoinConnection = { a: JoinEndpoint; b: JoinEndpoint };
-export type JoinEndpointOption = { label: string; endpoint: JoinEndpoint };
+export type JoinEndpointOption = {
+  label: string;
+  endpoint: JoinEndpoint;
+  cubic: number[][];
+};
 export type CurvePreview = {
   objectId: string;
   stageId: string;
