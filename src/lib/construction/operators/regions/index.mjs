@@ -709,6 +709,9 @@ export const booleanOperator = {
   outputPorts: { regions: { domain: 'regions' } },
   validateParams: (params) =>
     (['union', 'difference', 'intersection'].includes(params?.operation) &&
+      (params.emptyInput === undefined ||
+        (params.emptyInput === 'passthrough' &&
+          params.operation === 'difference')) &&
       (params?.scope?.kind === 'all' || params?.scope?.kind === 'selected')) ||
     'boolean 需要 operation 和显式 scope',
   evaluate: ({ ownerNodeId, operator, inputs }) => {
@@ -718,6 +721,16 @@ export const booleanOperator = {
       return { regions: { ...base, domain: 'regions' } };
     if (operand.status !== 'ready' && operand.status !== 'empty')
       return { regions: { ...operand, domain: 'regions' } };
+    if (
+      operator.params.emptyInput === 'passthrough' &&
+      operand.status === 'empty'
+    )
+      return {
+        regions: {
+          ...clone(base),
+          dependencies: [...base.dependencies, ...operand.dependencies],
+        },
+      };
     const scope = selected(base, operator.params.scope);
     if (scope.stage) return { regions: scope.stage };
     try {
@@ -794,6 +807,8 @@ export const partitionOperator = {
   },
   outputPorts: { regions: { domain: 'regions' } },
   validateParams: (params) => {
+    if (params?.emptyInput !== undefined && params.emptyInput !== 'passthrough')
+      return 'partition emptyInput 必须是 passthrough';
     if (!['all', 'selected'].includes(params?.scope?.kind))
       return 'partition 需要显式 scope';
     if (params.endpointJoin !== undefined)
@@ -807,6 +822,16 @@ export const partitionOperator = {
       return { regions: { ...source, domain: 'regions' } };
     if (cutter.status !== 'ready' && cutter.status !== 'empty')
       return { regions: { ...cutter, domain: 'regions' } };
+    if (
+      operator.params.emptyInput === 'passthrough' &&
+      cutter.status === 'empty'
+    )
+      return {
+        regions: {
+          ...clone(source),
+          dependencies: [...source.dependencies, ...cutter.dependencies],
+        },
+      };
     const scope = selected(source, operator.params.scope);
     if (scope.stage) return { regions: scope.stage };
     try {

@@ -1,4 +1,33 @@
 /** Derive region uses from actual branch inputs, never a parallel role table. */
+export function regionSourcePaths(document, ownerNodeId) {
+  const paths = new Map(),
+    visited = new Set();
+  const visit = (ref) => {
+    if (ref?.kind === 'sketch') {
+      const sketch = document.sketches[ref.sketchId];
+      for (const id of ref.pathIds || Object.keys(sketch?.paths || {}))
+        paths.set(JSON.stringify([ref.sketchId, id]), {
+          kind: 'path',
+          sketchId: ref.sketchId,
+          id,
+        });
+    } else if (ref?.kind === 'port') {
+      const key = JSON.stringify([ref.ownerNodeId, ref.operatorId]);
+      if (visited.has(key)) return;
+      visited.add(key);
+      const program =
+        document.programs[document.nodes[ref.ownerNodeId]?.programId];
+      const operator = program?.operators[ref.operatorId];
+      for (const input of Object.values(operator?.inputs || {}).flat())
+        visit(input);
+    }
+  };
+  visit(
+    document.programs[document.nodes[ownerNodeId]?.programId]?.outputs.regions,
+  );
+  return [...paths.values()];
+}
+
 export function regionPathUses(document, pathRef) {
   return regionPathMemberships(document, pathRef)
     .filter((use) => use.included)

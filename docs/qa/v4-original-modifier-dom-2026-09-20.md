@@ -344,3 +344,13 @@ basicProgram/ensureFill 现在识别恒等局部成员筛选。成员暂停或�
 test-v4-region-path-membership.mjs 的组合旅程与一次撤销通过；test-v4-boundary-drawing.mjs 中真实高级样例、保存续画与身份保留通过。check-all-membership-drawing-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 118 项单元、类型/lint/格式/Rust 检查和双端构建。original-membership-drawing-2026-09-20.log 为 PASS，原 Studio 的 Sandrone、样式、编辑、撤销、保存及工程打开继续通过；已目视检查原界面截图。
 
 上述结果补齐上一节列出的普通绘制组合行为；原 roles 按钮本身和其他默认入口待办仍未签收。
+
+## 2026-09-20 原线条用途写侧与按钮验收
+
+原 roles 通过 createCreationIntent/set-path-roles 编译成规范成员和区域构造命令。单元覆盖边界/参考往返、新边界加入普通 even-odd 来源、无区域时建立边界、新挖洞/分区、边界→挖洞→边界往返、暂停分区保存重开后恢复、预备命令与一次撤销，以及批量第二条失败时无部分写入。复杂派生来源不被误标为参考线，也不通过简单用途操作静默忽略实际构造。
+
+用途管理的 Difference/Partition 显式设置 emptyInput: passthrough，切割输入为空时保留上游结果，恢复输入后重新验证原 scope/契约；未指定策略的算子保持原语义，阻塞输入不会被忽略。原 select_paths API 同步创作选区，修复属性面板仍显示整个部件的问题；V4 不再把未判定的复杂用途套用闭合线默认轮廓。
+
+original-path-roles-final-2026-09-20.log 为 PASS：真实原按钮切为参考、恢复轮廓，各增加一次规范修订；一次撤销回到参考，再一次撤销精确恢复之前的完整 Document。Sandrone、样式、其他编辑、保存、V4/旧工程/示例打开继续通过。前面的浏览器失败先发现选区不同步，随后是测试使用异步 waitForFunction 谓词而提前执行撤销；已改为等待真实宿主修订号，最小浏览器复现确认提交序列正常。
+
+check-all-path-roles-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 119 项单元、类型/lint/格式/Rust 与双端构建；后补的文档编码回读单元及最终 lint/格式检查也通过。该结果签收原用途接线，不代表默认入口、工程宽度、ModelWorkspace 或完整原生验收已完成。

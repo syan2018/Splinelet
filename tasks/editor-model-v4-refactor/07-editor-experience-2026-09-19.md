@@ -365,3 +365,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 用途切换底层成员命令：新增 curve-filter 与 set-region-path-membership，在特定构面输入中排除/恢复 PathRef，保留原 Source/Fill 及 even-odd 内圈语义。regionPathMemberships 可读取暂停的成员关系；原只读 roles 只显示当前参与的成员。共享筛选复制后再改，同一 Fill 输入有多个区域用途时拒绝隐式联动；源定义、发布端口和下游赋值不重建。结构性筛选默认隐藏。此项仍是原 roles 接线的底层能力，尚未签收原按钮的完整边界/参考/分区/挖洞切换。
 
 2026-09-20 普通绘制延续已接通：basicProgram/ensureFill 识别恒等局部 Source → curve-filter → Fill，把成员筛选留在普通构面输入管理中；暂停/恢复用途后再画内圈仍形成原构面的孔洞。暂停的成员即使变为开放路径，也保留在筛选前的 Source 输入中，后续绘制和重新闭合均不丢失暂停状态。继续绘制仅更新输入，保留已有 Fill 的名称和参数。变换、停用或无效的筛选仍不当作普通构面。组合单元覆盖这些旅程及一次撤销；原 roles 按钮本身仍未接线。
+
+2026-09-20 原 roles 写侧已接线：createCreationIntent 将原 objectId/pathIds 解析为当前 PathRef，调用 set-path-roles；使用原 prepare→evaluate→commitPrepared 管线和一次撤销。覆盖已有用途往返、新边界/挖洞/分区及批量失败回滚。挖洞/分区暂停时显式设置空切割输入保留上游结果，恢复后仍校验原目标与契约。默认参考线现在有明确的只读 guide；复杂派生来源不显示猜测用途，也不允许用简单用途命令静默绕过实际构造。select_paths API 同步创作选区，修复画布已选路径而属性面板仍为整个部件的问题。原按钮验收结果见 QA；其余默认入口和高级业务待办保持未完成。

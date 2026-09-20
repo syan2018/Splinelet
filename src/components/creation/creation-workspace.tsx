@@ -2764,11 +2764,13 @@ export default function CreationWorkspace(p: Props) {
                                 .every(
                                   (id) =>
                                     (current.roles[id] ||
-                                      (p.project.paths.find(
-                                        (path) => path.id === id,
-                                      )?.closed
-                                        ? 'boundary'
-                                        : 'guide')) === role,
+                                      (scene?.modifierModel === 'program'
+                                        ? undefined
+                                        : p.project.paths.find(
+                                              (path) => path.id === id,
+                                            )?.closed
+                                          ? 'boundary'
+                                          : 'guide')) === role,
                                 )}
                               onClick={() => chooseRole(role)}
                             >

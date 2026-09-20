@@ -903,6 +903,68 @@ async function main() {
     const beforeSupport = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
+    await page.evaluate(
+      async ({ objectId, pathId }) => {
+        await window.traceStudio.call('creation_focus', { objectId });
+        return window.traceStudio.call('select_paths', { pathIds: [pathId] });
+      },
+      { objectId: boundaryOwner.id, pathId: exactBatch.pathIds[1] },
+    );
+    await page
+      .getByRole('button', { name: '当前选区属性', exact: true })
+      .click();
+    const roleControls = page.locator('.creation-role');
+    const beforeRolesRevision = (await evidence()).revision;
+    await roleControls
+      .getByRole('button', { name: '参考', exact: true })
+      .click();
+    await page.waitForFunction(
+      (revision) => window.originalStudioEvidence().revision === revision,
+      beforeRolesRevision + 1,
+    );
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('.creation-role button')]
+          .find((button) => button.textContent === '参考')
+          ?.getAttribute('aria-pressed') === 'true',
+    );
+    assert.equal(
+      (await evidence()).revision,
+      beforeRolesRevision + 1,
+      'guide button must commit exactly once',
+    );
+    const afterGuide = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.equal(
+      await roleControls
+        .getByRole('button', { name: '参考', exact: true })
+        .getAttribute('aria-pressed'),
+      'true',
+    );
+    await roleControls
+      .getByRole('button', { name: '轮廓', exact: true })
+      .click();
+    await page.waitForFunction(
+      (revision) => window.originalStudioEvidence().revision === revision,
+      beforeRolesRevision + 2,
+    );
+    assert.equal(
+      (await evidence()).revision,
+      beforeRolesRevision + 2,
+      'boundary button must commit exactly once',
+    );
+    await page.evaluate(() => window.traceStudio.call('undo'));
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      afterGuide,
+      'one undo restores guide membership',
+    );
+    await page.evaluate(() => window.traceStudio.call('undo'));
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeSupport,
+    );
     const supportSource = await page.evaluate((id) => {
       const document = window.originalStudioDocument();
       const path = Object.values(document.sketches).find((sketch) =>

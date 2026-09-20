@@ -26,6 +26,7 @@ pnpm desktop:check
 - `test-v4-spline-intents.mjs`：原精确样条整批提交的规范接线，覆盖新建/矩阵变换/辅助线与边界/洞、无变化提交 ID、跨部件拒绝、锁定导致整批回滚和一次撤销；原根浏览器检查真实 spline_apply、回读、重做与保存回读。
 - `test-v4-region-outline.mjs`：承托外形的规范派生算子，先合并分区再移除内部孔洞，验证断开外形、输入不变、输入顺序稳定、空/阻塞传播及真实构造图随源编辑重新求值。
 - `test-v4-region-path-uses.mjs`：线条用途读侧包含已发布 Fill 的普通边界、多个 Source 成员及省略 pathIds 的来源；区分洞的私有 Fill 与真正多用途，并保持未完成绘制识别不变。
+- `test-v4-path-roles.mjs`：原 roles 适配为规范成员/构造命令，覆盖边界、参考、挖洞、分区往返，新边界加入普通 even-odd 输入，无构面时建立边界，过期视图、批量失败回滚和预备命令；复杂派生来源不误报为参考线。
 - `test-v4-region-path-membership.mjs`：暂停/恢复构面输入成员时保留 even-odd 孔洞、源几何及区域身份；覆盖一次撤销/重做、共享输入隔离、多用途拒绝、空输入、复制重映射、缺失引用阻断及默认界面不展开内部筛选；用途往返后继续普通绘制、暂停成员改为开放路径并重新闭合仍保持原输入关系。
 - `test-v4-support-command.mjs`：承托命令保留原来源并引用外形、边距与厚度，检查顶面依附/新最底打印层、制造零件归属、原子拒绝、预备命令确认/失效和一次撤销。原根浏览器另检查实际预览、取消、确认、撤销重做及保存回读。
 - `test-curve-pipeline.mjs`：镜像、四向阵列、显式构面、中心留空、对称性、阶段顺序、失效隔离与恢复；`test-radial-array.mjs` 检查构面后的阵列、孔与实体。
@@ -64,7 +65,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 原组件浏览器脚本另含 `v4-sandrone-reference.mjs`：读取内置样例，在原节点面板编辑并撤销，通过隔离 context 所属临时 origin 的 OPFS 真正写入 V4 副本，再以浏览器文件句柄重开，验证图片解码、资源释放和文档等价。它不读写用户工程绑定，不替代默认工作区或 Tauri 原生文件验收。
 
-`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 在临时端口和全新浏览器 context 中，将 `StudioHost` 注入完整原 `StudioApp`，载入内置 Sandrone，检查原布局、真实节点拖动、撤销和原保存按钮写入 OPFS 副本；读取实际保存字节验证 V4 文档。它使用真实 `/trace-worker.js` 和原样式，不操作用户页面。默认入口尚未切换；新建、描绘、建模和完整 API 写入等未接线旅程不能据此签收。
+`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 在临时端口和全新浏览器 context 中，将 `StudioHost` 注入完整原 `StudioApp`，载入内置 Sandrone，检查原布局、源编辑、精确样条、分组/排序、用途按钮往返、承托预览、撤销和原保存按钮写入 OPFS 副本；读取实际保存字节验证 V4 文档，并覆盖新旧工程打开。它使用真实 Worker 和原样式，不操作用户页面。用途操作等待实际宿主修订号后再验证撤销，不能用异步 API 谓词充当提交屏障。默认入口尚未切换，工程宽度、ModelWorkspace 等剩余旅程不能据此签收。
 
 该脚本也通过原文件菜单打开实际 OPFS 中的 V4/旧版样例，验证换工程清空历史、V4 绑定保留、旧版只导入为副本；损坏字节不能替换当前工程。系统文件选择器以返回私有 origin 句柄的测试端口代替，之后走原页面真实读取与统一打开管线；不代表原生操作系统对话框验收。“载入示例工程”菜单共用同一 V4 打开入口。
 

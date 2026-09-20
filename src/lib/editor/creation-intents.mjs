@@ -1,11 +1,13 @@
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { outputIdentity } from '../relief/appearance.mjs';
+import { sourcePathId } from './source-view.mjs';
 import {
   compileModifierAdd,
   compileModifierUpdate,
 } from './modifier-intents.mjs';
 
 export const CREATION_INTENTS = Object.freeze([
+  'roles',
   'base',
   'paint',
   'height',
@@ -88,7 +90,32 @@ export function createCreationIntent(action, args, displayed) {
         ...new Map(refs.map((ref) => [outputIdentity(ref), ref])).values(),
       ];
     };
-    if (action === 'base') {
+    if (action === 'roles') {
+      if (
+        Object.keys(request).some(
+          (key) => !['objectId', 'pathIds', 'role'].includes(key),
+        ) ||
+        document.nodes[request.objectId]?.kind !== 'shape' ||
+        !Array.isArray(request.pathIds)
+      )
+        throw Error('请选择当前部件的线条');
+      const paths = new Map(
+        Object.values(document.sketches)
+          .filter((sketch) => sketch.ownerNodeId === request.objectId)
+          .flatMap((sketch) =>
+            Object.keys(sketch.paths).map((id) => [
+              sourcePathId(sketch.id, id),
+              { kind: 'path', sketchId: sketch.id, id },
+            ]),
+          ),
+      );
+      const pathRefs = request.pathIds.map((id) => {
+        const ref = paths.get(id);
+        if (!ref) throw Error('线条不属于当前部件或选区已失效');
+        return ref;
+      });
+      run({ kind: 'set-path-roles', pathRefs, role: request.role });
+    } else if (action === 'base') {
       const { objectIds, ...options } = request;
       run({ ...options, kind: 'create-support', nodeIds: objectIds });
     } else if (action === 'paint') {

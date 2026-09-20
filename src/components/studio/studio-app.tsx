@@ -3284,6 +3284,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         )
           throw Error('pathIds 必须为现有路径 ID');
         chooseGroup(a.pathIds, false);
+        creationApi.current?.select_paths(pathsRef.current);
         return { selectedPaths: pathsRef.current };
       },
       move_paths: (a: AgentMovePathsArgs) => {

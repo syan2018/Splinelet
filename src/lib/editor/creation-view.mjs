@@ -5,7 +5,10 @@ import { isExcluded } from '../manufacturing/parts.mjs';
 import { sourcePathId } from './source-view.mjs';
 import { orderedSourcePaths } from '../geometry/source-order.mjs';
 import { projectModifierControls } from './modifier-view.mjs';
-import { regionPathUses } from '../editing/region-drawing.mjs';
+import {
+  regionPathMemberships,
+  regionSourcePaths,
+} from '../editing/region-drawing.mjs';
 
 const clone = (value) => structuredClone(value);
 const absent = (domain) => ({
@@ -355,6 +358,11 @@ export function projectCreationView(document, snapshot) {
         id: path.id,
       };
     const program = document.programs[node.programId];
+    const regionSources = new Set(
+      regionSourcePaths(document, node.id).map((ref) =>
+        sourcePathId(ref.sketchId, ref.id),
+      ),
+    );
     for (const operator of Object.values(program?.operators || {}))
       identities.operators[operator.id] = {
         kind: 'operator',
@@ -396,18 +404,21 @@ export function projectCreationView(document, snapshot) {
       },
       roles: Object.fromEntries(
         ownedPaths.flatMap(({ sketch, path }) => {
+          const id = sourcePathId(sketch.id, path.id);
+          const memberships = regionPathMemberships(document, {
+            kind: 'path',
+            sketchId: sketch.id,
+            id: path.id,
+          });
           const roles = [
             ...new Set(
-              regionPathUses(document, {
-                kind: 'path',
-                sketchId: sketch.id,
-                id: path.id,
-              }).map((use) => use.role),
+              memberships.filter((use) => use.included).map((use) => use.role),
             ),
           ];
-          return roles.length === 1
-            ? [[sourcePathId(sketch.id, path.id), roles[0]]]
-            : [];
+          if (roles.length === 1) return [[id, roles[0]]];
+          if (!roles.length && (memberships.length || !regionSources.has(id)))
+            return [[id, 'guide']];
+          return [];
         }),
       ),
       visible: state.visible,
