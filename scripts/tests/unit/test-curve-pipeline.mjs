@@ -7,8 +7,8 @@ import {
   fillCurves,
   evaluateCurveProgram,
 } from '../../../src/lib/curve-modifiers.mjs';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
-import { moveCreationPaths } from '../../../src/lib/creation-path-transfer.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
+import { moveCreationPaths } from '../legacy/creation-path-transfer.mjs';
 import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
 import { readGeometry, describe } from '../../../src/lib/region-engine.mjs';
 import { liveSurfaces, surfaceObject } from '../fixtures/live-surfaces.mjs';

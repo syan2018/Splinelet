@@ -3,7 +3,7 @@ import {
   evaluateCreation,
   compileCreation,
 } from '../../../src/lib/creation-engine.mjs';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import { validateCreation } from '../../../src/lib/creation-schema.mjs';
 import { regionContext } from '../../../src/lib/region-engine.mjs';
 import { buildSolid, resolveHeights } from '../../../src/lib/solid-engine.mjs';

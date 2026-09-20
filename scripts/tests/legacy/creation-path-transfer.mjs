@@ -1,5 +1,8 @@
-import { acceptDividerGraph, regionSources } from './creation-schema.mjs';
-import { usesCurvePipeline } from './modifier-stages.mjs';
+import {
+  acceptDividerGraph,
+  regionSources,
+} from '../../../src/lib/creation-schema.mjs';
+import { usesCurvePipeline } from '../../../src/lib/modifier-stages.mjs';
 
 // A modifier or a paint record is not a lock on every path in a collection.
 // Only paths participating in the owner's surface construction need the

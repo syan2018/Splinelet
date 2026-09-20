@@ -11,7 +11,7 @@ import {
 } from '../../../src/lib/curve-transforms.mjs';
 import { translateNodes } from '../../../src/lib/source-editor/selection.mjs';
 import { editSplines } from '../../../src/lib/source-editor/spline-edit.mjs';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
 import { liveSurfaces, surfaceObject } from '../fixtures/live-surfaces.mjs';
 import { emblemSplines } from '../../examples/draw-cup-emblem.mjs';

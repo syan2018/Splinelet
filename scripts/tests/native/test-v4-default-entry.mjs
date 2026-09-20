@@ -197,6 +197,18 @@ try {
   for (const copied of copiedSources) {
     launch(copied.target);
     await waitForProject(copied.name);
+    await page
+      .getByRole('button', { name: '项目色卡 · 全局', exact: true })
+      .click();
+    await page
+      .getByLabel('项目色色值', { exact: true })
+      .waitFor({ timeout: 10000 });
+    await page
+      .getByRole('button', { name: '当前工具设置', exact: true })
+      .click();
+    checks.push(
+      `${copied.name}: palette opens in the native original workspace`,
+    );
     const before = await page.evaluate(() =>
       window.traceStudio.call('get_project'),
     );

@@ -147,8 +147,7 @@ function parseArguments(argv) {
       else options.timeoutMs = parsed;
     }
   }
-  if (!['legacy', 'v4'].includes(options.suite))
-    throw Error(`未知 suite：${options.suite}`);
+  if (options.suite !== 'legacy') throw Error(`未知 suite：${options.suite}`);
   if (!['web', 'desktop-frontend'].includes(options.target))
     throw Error(`未知 target：${options.target}`);
   if (options.port === options.inspectorPort)
@@ -161,7 +160,7 @@ function usage() {
     'Usage: pnpm test:browser --suite legacy --target web [options]',
     '',
     'Options:',
-    '  --suite legacy|v4              defaults to legacy',
+    '  --suite legacy              defaults to legacy',
     '  --target web|desktop-frontend  defaults to web',
     '  --case <legacy-case>           run one registered case',
     `  --port <1-65535>               defaults to ${DEFAULT_PORT}; fails if occupied`,
@@ -190,39 +189,8 @@ function verifyLegacyRegistry(directory = BROWSER_DIRECTORY) {
 }
 
 function selectCases(options, cases = legacyCases) {
-  if (options.suite === 'v4')
-    cases = [
-      {
-        name: 'advanced-tasks',
-        module: 'v4/test-advanced-tasks.cjs',
-        adapter: 'v4-page',
-      },
-      {
-        name: 'source-editing',
-        module: 'v4/test-source-editing.cjs',
-        adapter: 'v4-page',
-      },
-      {
-        name: 'region-authoring',
-        module: 'v4/test-region-authoring.cjs',
-        adapter: 'v4-page',
-      },
-      {
-        name: 'saving-recovery',
-        module: 'v4/test-saving-recovery.cjs',
-        adapter: 'v4-page',
-      },
-      {
-        name: 'basic-authoring',
-        module: 'v4/test-basic-authoring.cjs',
-        adapter: 'v4-page',
-      },
-      {
-        name: 'object-move',
-        module: 'v4/test-object-move.cjs',
-        adapter: 'v4-page',
-      },
-    ];
+  if (options.suite !== 'legacy')
+    throw Error('候选界面测试入口已移除；请运行原 Studio 回归');
   const selected = options.caseName
     ? cases.filter((entry) => entry.name === options.caseName)
     : cases;
@@ -692,13 +660,10 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
     page.once?.('crash', () => record('page-crashed'));
     page.setDefaultTimeout(timeoutMs);
     page.setDefaultNavigationTimeout(timeoutMs);
-    await page.goto(entry.adapter === 'v4-page' ? `${url}?editor=v4` : url, {
+    await page.goto(url, {
       waitUntil: 'domcontentloaded',
     });
-    if (entry.adapter === 'v4-page') {
-      await page.locator('[data-editor-model="v4"]').waitFor();
-      return await test(page, resolve(outputDirectory, entry.name));
-    }
+
     await page.waitForFunction(() => window.traceStudio);
     if (entry.adapter === 'page') return await test(page);
     if (entry.adapter === 'page-output')

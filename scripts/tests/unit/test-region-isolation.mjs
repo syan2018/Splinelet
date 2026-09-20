@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import {
   creationEditTargets,
   regionsForPaths,

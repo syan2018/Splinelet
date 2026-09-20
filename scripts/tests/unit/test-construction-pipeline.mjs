@@ -4,7 +4,7 @@ import {
   evaluateCreation,
   compileCreation,
 } from '../../../src/lib/creation-engine.mjs';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import { bindSurfaceGraphs } from '../../../src/lib/surface-lineage.mjs';
 import { validateCreation } from '../../../src/lib/creation-schema.mjs';
 import { translatePaths } from '../../../src/lib/source-editor/selection.mjs';

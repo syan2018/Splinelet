@@ -62,7 +62,7 @@ Rust 的 `lib.rs` 装配应用，`commands.rs` 定义 IPC，`files.rs` 管理路
 | `components/desktop-window-controls.tsx`                                     | `src/components/shell/desktop-window-controls.tsx`            |
 | `lib/desktop-runtime.mjs`                                                    | `src/lib/platform/{index,desktop,browser}.mjs`                |
 | `public/{canvas-gestures,connect,continuity,extend,node-edit,selection}.mjs` | `src/lib/source-editor/` 下同名文件                           |
-| `public/persistence.mjs`                                                     | `src/lib/persistence/workspace.mjs`                           |
+| `public/persistence.mjs`                                                     | `src/lib/persistence/file-writer.mjs`                         |
 | `public/creation-pick.mjs`                                                   | `src/lib/creation-pick.mjs`                                   |
 | `components/creation/model-worker.d.ts`                                      | `src/types/worker.d.ts`                                       |
 | `lib/vite-assets.d.ts`                                                       | `src/types/vite-assets.d.ts`                                  |

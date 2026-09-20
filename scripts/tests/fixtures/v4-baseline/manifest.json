@@ -5,9 +5,9 @@
     "worldCubicMM": 1e-9,
     "planarAreaMM2": 0,
     "planarBoundaryMM": 0,
-    "physicalMM": 1e-6,
+    "physicalMM": 0.000001,
     "volumeAbsoluteMM3": 0.001,
-    "volumeRelative": 1e-5
+    "volumeRelative": 0.00001
   },
   "thresholdBasis": {
     "worldCubicMM": "src/lib/modifier-engine.mjs uses equalsExact(..., 1e-9) for legacy curve identity.",
@@ -78,7 +78,7 @@
       },
       "reproductionTest": {
         "path": "scripts/tests/unit/test-v4-legacy-baseline.mjs",
-        "sha256": "520814094eeb62767c85a26a7034db809c06c9ed82a474cfff0c4955248e673e"
+        "sha256": "2f0a9c51ab72d5466f728cbb9892c57e9f8c5c23e62e0872789ea74c35f498ab"
       },
       "reproduction": "The minimal Node fixture translates the only source of a curve array. Legacy translation changes cubic points but leaves the modifier center in its old world position.",
       "v4RequiredSemantic": "The object pose and every evaluated world cubic must move together; a Fill may not silently use the pre-move center."
@@ -92,7 +92,7 @@
       },
       "reproductionTest": {
         "path": "scripts/tests/unit/test-v4-legacy-baseline.mjs",
-        "sha256": "520814094eeb62767c85a26a7034db809c06c9ed82a474cfff0c4955248e673e"
+        "sha256": "2f0a9c51ab72d5466f728cbb9892c57e9f8c5c23e62e0872789ea74c35f498ab"
       },
       "reproduction": "The minimal Node fixture invokes the legacy source-group move. It changes path.groupId but leaves creation.objects[].pathIds in the old owner, proving the two same-named moves write different authority.",
       "v4RequiredSemantic": "A source has one typed Program owner; failed evaluation must retain its source and diagnostic and must not reuse a prior output."

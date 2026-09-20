@@ -1,4 +1,4 @@
-import { targetForCell } from './modifier-schema.mjs';
+import { targetForCell } from '../../../src/lib/modifier-schema.mjs';
 
 export function modifierCommand(project, creation, action, args, scene) {
   const object = creation.objects.find((o) => o.id === args.objectId);

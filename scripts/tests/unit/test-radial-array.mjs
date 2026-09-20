@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
 import { bindSurfaceGraphs } from '../../../src/lib/surface-lineage.mjs';
 import { rectangle, liveSurfaces } from '../fixtures/live-surfaces.mjs';

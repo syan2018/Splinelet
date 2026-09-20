@@ -101,13 +101,35 @@ async function main() {
       .getByRole('button', { name: '项目色卡 · 全局', exact: true })
       .click();
     await page
-      .getByRole('textbox', { name: '重命名项目色', exact: true })
+      .getByLabel('项目色色值', { exact: true })
       .waitFor({ timeout: 10000 });
     assert.deepEqual(
       errors,
       [],
       'opening the palette must not crash the original Studio',
     );
+    if (process.argv.includes('--palette-only')) {
+      const beforePalette = await page.evaluate(() =>
+        window.originalStudioDocument(),
+      );
+      await page.locator('.creation-project-color .creation-name').dblclick();
+      await page
+        .getByRole('textbox', { name: '重命名项目色', exact: true })
+        .fill('色卡回归');
+      await page
+        .getByRole('textbox', { name: '重命名项目色', exact: true })
+        .press('Enter');
+      await waitForCondition(() =>
+        Object.values(
+          window.originalStudioDocument().appearances.swatches,
+        ).some((item) => item.name === '色卡回归'),
+      );
+      await page.getByRole('button', { name: '撤销', exact: true }).click();
+      assert.deepEqual(
+        await page.evaluate(() => window.originalStudioDocument()),
+        beforePalette,
+      );
+    }
     await page.getByRole('button', { name: '删除项目色', exact: true }).click();
     await page
       .getByRole('dialog')
@@ -118,6 +140,13 @@ async function main() {
       .getByRole('button', { name: '当前工具设置', exact: true })
       .first()
       .click();
+    if (process.argv.includes('--palette-only')) {
+      assert.deepEqual(errors, []);
+      console.log(
+        'PASS original palette opens, renames, undoes, and confirms referenced-colour deletion without legacy fields',
+      );
+      return;
+    }
     const advancedModelView = await page.evaluate(() =>
       window.originalStudioModelView(),
     );

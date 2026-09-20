@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { FileWriter } from '../../../src/lib/persistence/workspace.mjs';
+import { FileWriter } from '../../../src/lib/persistence/file-writer.mjs';
 import { createStudioFileWriter } from '../../../src/lib/platform/studio-file-writer.mjs';
 
 const deferred = () => {

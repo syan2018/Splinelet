@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { moveCreationPaths } from '../../../src/lib/creation-path-transfer.mjs';
+import { moveCreationPaths } from '../legacy/creation-path-transfer.mjs';
 import {
   movePaths,
   translatePaths,

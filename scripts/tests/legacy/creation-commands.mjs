@@ -1,21 +1,24 @@
-import { bindSurfaceGraphs } from './surface-lineage.mjs';
+import { bindSurfaceGraphs } from '../../../src/lib/surface-lineage.mjs';
 import {
   creationDocument,
   validateCreation,
   acceptDividerGraph,
-} from './creation-schema.mjs';
-import { emptyModel } from './model-schema.mjs';
+} from '../../../src/lib/creation-schema.mjs';
+import { emptyModel } from '../../../src/lib/model-schema.mjs';
 import { removeSwatch } from './creation-colors.mjs';
-import { regionClosureConnections, regionContext } from './region-engine.mjs';
+import {
+  regionClosureConnections,
+  regionContext,
+} from '../../../src/lib/region-engine.mjs';
 import { modifierCommand } from './modifier-commands.mjs';
-import { syncHoleModifiers } from './modifier-schema.mjs';
+import { syncHoleModifiers } from '../../../src/lib/modifier-schema.mjs';
 import { moveCreationPaths } from './creation-path-transfer.mjs';
 import {
   printCommand,
   requestedPrintCount,
   printMM,
   syncPrintDimensions,
-} from './print-stack.mjs';
+} from '../../../src/lib/print-stack.mjs';
 const uid = () => crypto.randomUUID();
 export function creationCommand(project, action, a = {}, scene) {
   const p = structuredClone(bindSurfaceGraphs(project, scene || {})),

@@ -1,4 +1,4 @@
-import { FileWriter } from '../persistence/workspace.mjs';
+import { FileWriter } from '../persistence/file-writer.mjs';
 import { desktopWriteProject } from './desktop.mjs';
 
 const permissionOptions = { mode: 'readwrite' };

@@ -62,11 +62,11 @@ P1 表示直接破坏编辑语义或阻碍对象模型成立；P2 表示必须�
 具体入口：
 
 - F01：[对象移动入口](../../src/components/studio/studio-app.tsx) `startObjectDrag`、`pointerMove`；[prepare_move 与作品树](../../src/components/creation/creation-workspace.tsx)；[translatePaths](../../src/lib/source-editor/selection.mjs)。
-- F02/F04：[源分组 API](../../src/components/studio/studio-app.tsx) `manageGroup` / `movePathBatch`；[创作命令](../../src/lib/creation-commands.mjs) `combine_objects` / `move_paths`；[所有权转移](../../src/lib/creation-path-transfer.mjs)。
+- F02/F04：[源分组 API](../../src/components/studio/studio-app.tsx) `manageGroup` / `movePathBatch`；[创作命令](../../scripts/tests/legacy/creation-commands.mjs) `combine_objects` / `move_paths`；[所有权转移](../../scripts/tests/legacy/creation-path-transfer.mjs)。
 - F05/F06：[节点索引与重建](../../src/lib/source-editor/node-edit.mjs)、[精确样条写入](../../src/lib/source-editor/spline-edit.mjs)、[吸附上下文](../../src/lib/source-editor/endpoint-snap.mjs)。
 - F07/F09：[创作求值](../../src/lib/creation-engine.mjs)、[修改器求值](../../src/lib/modifier-engine.mjs)、[来源身份](../../src/lib/surface-lineage.mjs)、[打印高度记录](../../src/lib/print-stack.mjs)。
 - F08/F10：[语义选择 hook](../../src/hooks/use-creation-selection.ts)、[工作区求值与 run](../../src/components/creation/creation-workspace.tsx)、[根编辑事务](../../src/components/studio/studio-app.tsx)。
-- F11：[工程编解码](../../src/lib/project-format.mjs)、[保存队列](../../src/lib/persistence/workspace.mjs)。
+- F11：[工程编解码](../../src/lib/project-format.mjs)、[保存队列](../../src/lib/persistence/file-writer.mjs)。
 
 ### 2.2 应保留的设计
 

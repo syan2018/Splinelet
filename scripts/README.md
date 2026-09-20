@@ -51,11 +51,15 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 `node scripts/tests/unit/test-v4-legacy-equivalence.mjs` 比较内置 Sandrone 的源 cubic、求值区域与逐区域属性，并检查修改来源后的动态结果；可选首个位置参数或 `SPLINELET_LEGACY_EQUIVALENCE_PROJECT` 环境变量指定额外 `.spl`。测试只读原件，额外文件不作为单元测试的隐式依赖。这是导入模块验证，不能替代原界面的文件打开、手势编辑和保存重开验收。
 
-具体分发和验收入口见 [V4 任务总控](../tasks/editor-model-v4-refactor/README.md)。[P01 验证工作包](../tasks/editor-model-v4-refactor/01-validation-2026-09-19.md)提供统一浏览器入口：先安装 `pnpm exec playwright install chromium` 并构建对应前端，再运行 `pnpm test:browser --suite legacy --target web` 或 `--target desktop`；可用 `--case <用例名>` 选择单项。runner 自建隔离服务、浏览器和 context，输出构建摘要、fixture 摘要及失败证据到 `outputs/v4-qa/`；不连接用户页面。原简化 V4 候选页面入口已撤销，`--suite v4` 的历史用例需要改为原工作区的接入验收，当前不能用来证明功能保持或完成重构。未登记的 case 明确失败，不算跳过通过。`check:all` 不包含浏览器或 Tauri 原生交互验收，桌面静态前端测试也不等于原生文件会话验收。
+具体分发和验收入口见 [V4 任务总控](../tasks/editor-model-v4-refactor/README.md)。[P01 验证工作包](../tasks/editor-model-v4-refactor/01-validation-2026-09-19.md)提供统一浏览器入口：先安装 `pnpm exec playwright install chromium` 并构建对应前端，再运行 `pnpm test:browser --suite legacy --target web` 或 `--target desktop`；可用 `--case <用例名>` 选择单项。runner 自建隔离服务、浏览器和 context，输出构建摘要、fixture 摘要及失败证据到 `outputs/v4-qa/`；不连接用户页面。原简化 V4 候选源码及专用测试已移入 `tests/legacy/retired-candidate/`，`--suite v4` 注册和导航分支已移除；原界面验收使用下述 smoke 脚本。未登记的 case 明确失败，不算跳过通过。`check:all` 不包含浏览器或 Tauri 原生交互验收，桌面静态前端测试也不等于原生文件会话验收。
 
 `scripts/tests/browser/smoke/test-sandrone-restored-ui.cjs` 用于原工作区的实际 Sandrone 回归，可传 `--target web` 或 `--target desktop-frontend`、独立 `--port` 和 `--output`。它需要内置样例及本地补充 gold 样例；具体本地范围、命令和证据见[恢复验收快照](../docs/qa/studio-ui-restoration-2026-09-19.md)，不作为通用 hermetic suite。
 
 `tests/browser/test-property-navigation.cjs` 接收隔离 `page` 和 `tests/fixtures/shoulder-region.json` 工程对象，检查顶栏主菜单、左右栏入口归属、竖排属性分组、全局分类不随选区跳转、工具与选区属性范围、高级构造编辑器及源曲线导出入口。`test-selection-scope-browser.cjs` 同样使用此 fixture，覆盖区域属性提交、切换选区时的输入草稿、源线选择与恢复后实体导出；选择工具拖动不修改几何。
+
+旧可写命令仅保留在 [tests/legacy](tests/legacy/README.md) 供历史基线使用，产品不得引用；旧 Worker、旧数据库与候选 UI 使用不可执行的 `.retired` 扩展名保存。
+
+色卡专项可运行 `node scripts/tests/browser/smoke/test-v4-original-studio.cjs --palette-only`，验证原页面打开、重命名、撤销、引用颜色删除确认与取消；默认完整回归也包含色卡打开和只读确认，避免将专项中的编辑混入初始保存状态断言。
 
 ## 目录
 
@@ -65,7 +69,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 原组件浏览器脚本另含 `v4-sandrone-reference.mjs`：读取内置样例，在原节点面板编辑并撤销，通过隔离 context 所属临时 origin 的 OPFS 真正写入 V4 副本，再以浏览器文件句柄重开，验证图片解码、资源释放和文档等价。它不读写用户工程绑定，不替代默认工作区或 Tauri 原生文件验收。
 
-`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 在临时端口和全新浏览器 context 中，将 `StudioHost` 注入完整原 `StudioApp`，载入内置 Sandrone，检查原布局、源编辑、精确样条、分组/排序、用途按钮往返、承托预览、撤销和原保存按钮写入 OPFS 副本；读取实际保存字节验证 V4 文档，并覆盖新旧工程打开。它使用真实 Worker 和原样式，不操作用户页面。用途操作等待实际宿主修订号后再验证撤销，不能用异步 API 谓词充当提交屏障。默认入口尚未切换，工程宽度、ModelWorkspace 等剩余旅程不能据此签收。
+`node scripts/tests/browser/smoke/test-v4-original-studio.cjs` 在临时端口和全新浏览器 context 中，将 `StudioHost` 注入完整原 `StudioApp`，载入内置 Sandrone，检查原布局、源编辑、精确样条、分组/排序、用途按钮往返、承托预览、撤销和原保存按钮写入 OPFS 副本；读取实际保存字节验证 V4 文档，并覆盖新旧工程打开。它使用真实 Worker 和原样式，不操作用户页面。用途操作等待实际宿主修订号后再验证撤销，不能用异步 API 谓词充当提交屏障。默认入口已使用 V4；脚本也检查色卡打开、重命名、撤销和删除确认，以及原高级建模面板。
 
 该脚本也通过原文件菜单打开实际 OPFS 中的 V4/旧版样例，验证换工程清空历史、V4 绑定保留、旧版只导入为副本；损坏字节不能替换当前工程。系统文件选择器以返回私有 origin 句柄的测试端口代替，之后走原页面真实读取与统一打开管线；不代表原生操作系统对话框验收。“载入示例工程”菜单共用同一 V4 打开入口。
 

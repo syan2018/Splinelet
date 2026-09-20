@@ -5,7 +5,7 @@ import {
   surfaceObject,
   liveSurfaces,
 } from '../fixtures/live-surfaces.mjs';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import {
   evaluateCreation,
   compileCreation,

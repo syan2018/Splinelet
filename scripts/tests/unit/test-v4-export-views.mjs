@@ -4,7 +4,7 @@ import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.mjs';
 import { exportSnapshot } from '../../../src/lib/export/snapshot.mjs';
-import { mountV4BrowserAPI } from '../../../src/lib/agent/v4-browser.mjs';
+import { mountV4BrowserAPI } from '../helpers/v4-browser.mjs';
 import { createV4AgentAPI } from '../../../src/lib/agent/v4-api.mjs';
 let serial = 0;
 const doc = createDocument();
