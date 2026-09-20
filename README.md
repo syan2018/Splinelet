@@ -175,7 +175,7 @@ tasks/               复杂工程任务、模块工作包与验收管理
 dist/                Web 构建输出
 ```
 
-Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-entry.tsx`，默认仍加载现有 `studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
+Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-entry.tsx`，默认创建 V4 工程宿主后加载现有 `studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
 
 部分核心回归检查：
 
@@ -213,8 +213,8 @@ node scripts/agent-server.mjs
 
 桥接监听 `127.0.0.1:4318`，浏览器连接限定为 `http://localhost:3000`。普通手工创作无需启动它；接口返回导出数据，不自动下载。
 
-V4 数据模型重构仍在进行中，Web 与桌面端保持现有工作区的布局、样式、工具和基本行为。简化候选界面的 URL 入口已撤销；后续从原界面的数据与命令边界接入，进度与真实工程验收见 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md)。
+Web 与桌面端已迁移到 V4 数据模型，保持现有工作区的布局、样式、工具和基本行为。简化候选界面的 URL 入口已撤销；双端默认入口统一使用 V4 文档、命令、求值及持久化，旧工作区写入和旧模型 Worker 不再作为回退路径，实施与真实工程验收见 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md)。
 
-V4 宿主中的原用途操作通过规范成员与构造命令处理边界、参考、分区和挖洞，暂停再恢复内轮廓时保留原孔洞关系。复杂派生来源通过对应构造编辑，内部连接不增加默认界面概念；默认入口切换仍以完整验收为前提。
+V4 宿主中的原用途操作通过规范成员与构造命令处理边界、参考、分区和挖洞，暂停再恢复内轮廓时保留原孔洞关系。复杂派生来源通过对应构造编辑，内部连接不增加默认界面概念；会破坏来源、构造引用或局部赋值的结构调整明确拒绝，不回退到旧模型。
 
-V4 宿主中的原“底图对应宽度”使用同一源比例命令更新轮廓、空间关系和参考图，偏移、厚度和接合容差仍按毫米解释。源画布比例随工程保存与撤销；视图缩放和平移不写入这个坐标框。默认入口仍待其余工作区及完整验收完成后切换。
+V4 宿主中的原“底图对应宽度”使用同一源比例命令更新轮廓、空间关系和参考图，偏移、厚度和接合容差仍按毫米解释。源画布比例随工程保存与撤销；视图缩放和平移不写入这个坐标框。默认入口切换与指定 Sandrone 工程的本机验收见[收尾快照](docs/qa/v4-default-cutover-2026-09-20.md)。

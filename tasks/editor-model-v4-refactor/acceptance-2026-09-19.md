@@ -1,6 +1,10 @@
 # V4 重构验收索引
 
-建档：2026-09-19。**实施中；合同门已签收，代码和用户旅程逐项验证。** 规范标准引用[架构方案第 10 节](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md#10-最终验收矩阵)，不在本页修改标准。
+建档：2026-09-19。**默认 V4 与原工作区接入已完成，最终结果见[2026-09-20 收尾快照](../../docs/qa/v4-default-cutover-2026-09-20.md)。** 规范设计标准引用[架构方案第 10 节](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md#10-最终验收矩阵)。用户明确指定以原界面内嵌 Sandrone 正常打开/编辑和 gold 补充工程验收，并允许本机原生验证；本次依据该范围、全库检查和专项回归签收，不冒称原 U/A 全矩阵的每条真实 UI 旅程都已经重跑。
+
+下方门槛、覆盖映射和逐日记录是实施历史；其中“未开始/未验收”保留表示原完整矩阵没有逐项独立签收，不代表仍在运行旧入口。当前事实与最新失败修复以收尾快照为准。
+
+2026-09-20 最终签收：`5c49d0c`，用户指定范围通过。129 单元测试与全量工程检查、原工作区完整浏览器回归、双端生产构建、原生 release 和两份真实 Sandrone 编辑/撤销/副本保存重开均通过。旧文件原件未改变；本轮实现与验证结束。
 
 ## 阶段签收
 
@@ -84,6 +88,17 @@
 
 任何未完成的必需项不能写成“通过，后续优化”。需要改范围时先更新方案、合同与受影响工作包，经明确评审后重新验收。
 
+## 当前原工作区增量证据 · 2026-09-20
+
+以下是本轮在原 `StudioApp` 与 V4 host 的实际浏览器证据。它更新实施事实，**不改变**上表的最终 U/A 签收状态；没有逐条 fixture、断言和最终切换提交的项目仍不能写成通过。
+
+- `outputs/v4-qa/original-model-panel-viewport-2026-09-20.log`：内置 Sandrone 的原高级建模面板读取规范工作区，确认 69 个区域和 69 个体块可见；禁用厚度后撤销恢复，并由 Worker 验证有效 Body。日志结论为 PASS。
+- 该面板的 V4 写回现只签收 `relief` 属性变化：稳定区域 OutputRef 上的启用、厚度、模式和放置，经 `model-workspace-view`、`model-panel-adapter` 与 `createModelIntent` 一次事务写入 `DocumentV4`。它不是旧 `Project.model` 的反向写入。
+- 尚未接入、因而仍阻断高级面板全旅程的操作：规范区域构造预览/确认与重绑、一个区域的多个独立浮雕贡献、区域名/显示/标记色、创建/重命名/删除制造零件与替换重绑、级联删除，以及旧模型几何精度和制造清理字段。这些旧写路径在带 V4 runtime 时不得绕过唯一 Document 权威。
+- 同目录的 `original-model-panel-2026-09-20.log` 记录了先前 checkbox 取消操作未改变状态的失败；它不是通过证据，后续回归必须以最新的 PASS 日志和独立断言为准。
+
+可直接复用的规范命令边界：区域分区/挖洞为 `createRegionCommand`，路径角色与精确成员切换为 `createPathRolesCommand` / `createRegionPathMembershipCommand`，独立区域追加走 `append-boundary` / `region-collect`；制造零件资源走 `createResourceCommand`，区域 Part 重绑走 `createAdvancedCommand({ kind: 'set-manufacturing-part' })`。这些模块本身不等于相应原 UI 操作已接线或验收。
+
 ## 实施检查记录 · 2026-09-19
 
 原工作区适配阶段后续复验：67 单元测试与 `check:all` 通过，两份 Sandrone 初始区域及容器往返通过；共享源、路径组、smooth 编辑语义及原 UI 后端接线仍未签收。具体边界见[阶段快照](../../docs/qa/v4-original-workspace-adapters-2026-09-19.md)，不能沿用候选简化界面的历史通过结果代替。
@@ -99,3 +114,13 @@
 方向校正：以下候选界面已撤出生产入口，其历史通过结果不作为原 UI 保持或 V4 默认切换的签收依据。当前进展与原界面复验见[原工作区恢复快照](../../docs/qa/studio-ui-restoration-2026-09-19.md)和 [P07 接入合同](07-editor-experience-2026-09-19.md#当前接入合同)。
 
 I00 已接通 `document-worker.ts?worker` 与 Manifold wasm、T12/T13 命令、T15 投影、独立恢复草稿和候选 API 5.0。Web/桌面前端四项真实浏览器旅程通过，见[带日期 QA 快照](../../docs/qa/v4-candidate-basic-journeys-2026-09-19.md)。这不是原生宿主验收，不签收全部 G2/G3/G4/G5；未完成项在快照中逐项列明。
+
+## 默认入口和旧路径切断 · 2026-09-20
+
+- 默认 Web/Tauri 均先建立 V4 host，再挂载原 Studio；初始化失败不回退旧工作区。旧可写 Project、旧持久化和旧 Model Worker 入口已移除。
+- 原工作区完整浏览器回归：`outputs/v4-qa/original-v4-only-final-2026-09-20.log` PASS，包含原样式、Sandrone 编辑、撤销、保存重开，以及真实高级面板的区域/浮雕/有效 BodySet。前两次运行被 Vite Optimize Dep 504 中断；独立缓存和显式 fixture 扫描后通过，不把中断记录作为验收证据。
+- 实际原生默认入口及两份真实工程：`outputs/v4-qa/native-default-entry-2026-09-20T02-11-40.105Z-62312/manifest.json` PASS。每份项目验证节点控制柄编辑、撤销、再次编辑、导出 V4 副本并通过原生打开事件重开。挤出设置检查是导出偏好，不冒充浮雕厚度验收。两个原件 byte-compare 均不变。
+- `outputs/v4-qa/check-all-v4-only-complete-2026-09-20.log` 的完整 `pnpm check:all` 退出码为 0：126 项隔离单元测试、类型/lint/格式、Rust format/check、Web 与桌面前端生产构建通过。`release-v4-only-final-2026-09-20.log` 原生 release 构建通过。后续行为恢复与局部审阅修复需各自记录验证，不能套用此快照。
+- 这签收“默认 V4、旧路径不可回退、指定真实工程可编辑”范围，不代表 U/A 表所有高级行为已经完成；未恢复项集中记录在总控当前状态中，goal 继续保持 active。
+
+后续行为恢复复验发现：旧 Sandrone 文件含 `manufacturingMM:0.02`，此前导入未保留，因此上面的 BodySet 证据不能代表带制造清理的等价结果。保留该设置后，`original-v4-restored-behaviors-2026-09-20.log` 在实体检查的 120 秒超时失败；该失败必须由制造清理修复和新的真实样例通过记录替代，不能沿用先前 PASS。
