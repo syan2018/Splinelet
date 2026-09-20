@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createDocument } from '../../../src/lib/document/schema.mjs';
+import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
+import { createAdvancedCommand } from '../../../src/lib/editing/commands/advanced.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 import { createV4CreationRuntime } from '../../../src/lib/editor/creation-runtime.mjs';
 import { createModelIntent } from '../../../src/lib/editor/model-intents.mjs';
@@ -182,6 +184,335 @@ const staleCommand = createModelIntent(
 );
 editor.undo({ expectedRevision: editor.state.revision });
 assert.throws(() => dispatch(staleCommand), /失效/);
+context = await read();
+const resourcesBefore = structuredClone(editor.state.document);
+runtime
+  .modelCommand(
+    'part',
+    { kind: 'create-part', id: 'extra-part', name: '第二零件' },
+    context,
+  )
+  .commit();
+context = await read();
+runtime
+  .modelCommand(
+    'assign-part',
+    { regionIds: [ids[0]], partId: 'extra-part' },
+    context,
+  )
+  .commit();
+context = await read();
+assert.equal(
+  context.view.regions.find((region) => region.id === ids[0]).part.id,
+  'extra-part',
+);
+runtime
+  .modelCommand(
+    'part',
+    { kind: 'rename-part', id: 'extra-part', name: '修改名称' },
+    context,
+  )
+  .commit();
+assert.equal(
+  editor.state.document.manufacturing.parts['extra-part'].name,
+  '修改名称',
+);
+for (let index = 0; index < 3; index++)
+  editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, resourcesBefore);
+context = await read();
+const diagnosticBase = context.view.regions[0];
+dispatch(
+  createAuthoringCommand({
+    kind: 'draw-path',
+    ownerNodeId: diagnosticBase.objectId,
+    name: '预览接边分割线',
+    closed: false,
+    points: [
+      [5, 0.1],
+      [5, 9.9],
+    ],
+  }),
+);
+context = await read();
+const diagnosticDivider = context.view.source.paths.find(
+  (path) => path.name === '预览接边分割线',
+);
+const diagnosticPreview = runtime.prepareModelConstruction(
+  {
+    kind: 'split',
+    baseId: context.view.regions[0].id,
+    pathIds: [diagnosticDivider.id],
+    joinMM: 0.15,
+  },
+  context,
+);
+assert.equal(
+  diagnosticPreview.connections.length,
+  2,
+  'runtime projects exact partition endpoint diagnostics for the original UI',
+);
+assert.ok(
+  diagnosticPreview.connections.every(
+    (connection) =>
+      connection.pathId === diagnosticDivider.id &&
+      Number.isFinite(connection.gapMM),
+  ),
+);
+const beforeConstruction = editor.state.document;
+const sourceId = context.view.source.paths.find((path) => !path.locked).id;
+const construction = runtime.prepareModelConstruction(
+  { kind: 'stroke', pathId: sourceId, widthMM: 1 },
+  context,
+);
+assert.deepEqual(
+  editor.state.document,
+  beforeConstruction,
+  'construction preview is readonly',
+);
+assert.ok(construction.candidates.length > 0);
+assert.throws(() => construction.commit([]), /至少保留/);
+const created = construction.commit(
+  construction.candidates.map((_, index) => index),
+);
+const constructedView = await runtime.evaluate(
+  'model_workspace',
+  {},
+  created.project,
+);
+for (const id of created.regionIds)
+  assert.ok(constructedView.regions.some((region) => region.id === id));
+assert.deepEqual(editor.state.document.sketches, beforeConstruction.sketches);
+assert.throws(() => construction.commit([0]), /已提交/);
+const afterConstruction = editor.state.document;
+context = await read();
+const reboundPreview = runtime.prepareModelConstruction(
+  { kind: 'stroke', pathId: sourceId, widthMM: 2 },
+  context,
+);
+const rebound = reboundPreview.commit([0], {
+  replaceId: created.regionIds[0],
+  name: '重新绑定的面',
+});
+context = await read();
+assert.equal(
+  context.view.regions.find((item) => item.id === rebound.regionIds[0]).name,
+  '重新绑定的面',
+);
+assert.deepEqual(editor.state.document.sketches, beforeConstruction.sketches);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, afterConstruction);
+context = await read();
+runtime
+  .modelCommand('delete-regions', { regionIds: created.regionIds }, context)
+  .commit();
+context = await read();
+assert.ok(
+  created.regionIds.every(
+    (id) => !context.view.regions.some((item) => item.id === id),
+  ),
+);
+assert.deepEqual(editor.state.document.sketches, beforeConstruction.sketches);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, afterConstruction);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, beforeConstruction);
+dispatch(
+  createAuthoringCommand({
+    kind: 'draw-path',
+    closed: true,
+    points: [
+      [50, 0],
+      [60, 0],
+      [60, 10],
+      [50, 10],
+    ],
+  }),
+);
+context = await read();
+const unpainted = context.view.regions.find((region) => !region.reliefDefined);
+assert.ok(unpainted);
+const beforeRelief = editor.state.document;
+runtime
+  .modelCommand('color', { regionId: unpainted.id, color: '#12ab34' }, context)
+  .commit();
+assert.deepEqual(
+  editor.state.document.reliefDefinitions,
+  beforeRelief.reliefDefinitions,
+  'marker color does not create or enable relief',
+);
+context = await read();
+assert.equal(
+  context.view.regions.find((region) => region.id === unpainted.id).color,
+  '#12ab34',
+);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, beforeRelief);
+context = await read();
+assert.throws(
+  () =>
+    runtime
+      .modelCommand(
+        'create-relief',
+        { regionIds: [unpainted.id], heightMM: 3, partId: 'missing' },
+        context,
+      )
+      .commit(),
+  /Part/,
+);
+assert.deepEqual(
+  editor.state.document,
+  beforeRelief,
+  'invalid part rolls back the relief definition',
+);
+runtime
+  .modelCommand(
+    'create-relief',
+    { regionIds: [unpainted.id], heightMM: 3 },
+    context,
+  )
+  .commit();
+context = await read();
+assert.equal(
+  context.view.regions.find((region) => region.id === unpainted.id)
+    .authoredRelief.value.thickness.value,
+  3,
+);
+const beforeAdditional = editor.state.document;
+const additional = runtime.modelCommand(
+  'create-relief',
+  { regionIds: [unpainted.id], heightMM: 5 },
+  context,
+);
+additional.commit();
+assert.equal(additional.regionIds.length, 1);
+assert.notEqual(additional.regionIds[0], unpainted.id);
+context = await read();
+const contribution = context.view.regions.find(
+  (region) => region.id === additional.regionIds[0],
+);
+assert.equal(contribution.authoredRelief.value.thickness.value, 5);
+assert.equal(
+  context.view.regions.find((region) => region.id === unpainted.id)
+    .authoredRelief.value.thickness.value,
+  3,
+);
+assert.deepEqual(editor.state.document.sketches, beforeAdditional.sketches);
+const reference = Object.values(
+  editor.state.document.programs[
+    editor.state.document.nodes[contribution.objectId].programId
+  ].operators,
+)[0];
+assert.equal(reference.type, 'region-reference');
+assert.equal(reference.inputs.input[0].space, 'world-result');
+assert.deepEqual(reference.params.scope.refs, [unpainted.outputRef]);
+const beforeContributionCopy = structuredClone(editor.state.document);
+const existingNodeIds = new Set(Object.keys(beforeContributionCopy.nodes));
+dispatch(
+  createAdvancedCommand({
+    kind: 'copy-nodes',
+    nodeIds: [unpainted.objectId, contribution.objectId],
+  }),
+);
+const copiedContribution = Object.values(editor.state.document.nodes).find(
+  (node) =>
+    node.kind === 'shape' &&
+    !existingNodeIds.has(node.id) &&
+    Object.values(
+      editor.state.document.programs[node.programId].operators,
+    ).some((operator) => operator.type === 'region-reference'),
+);
+assert.ok(copiedContribution, 'copy creates the independent region consumer');
+const copiedReference = Object.values(
+  editor.state.document.programs[copiedContribution.programId].operators,
+).find((operator) => operator.type === 'region-reference');
+assert.notEqual(
+  copiedReference.params.scope.refs[0].ownerNodeId,
+  unpainted.objectId,
+  'copied contribution scope follows the copied source owner',
+);
+assert.equal(
+  copiedReference.params.scope.refs[0].ownerNodeId,
+  copiedReference.inputs.input[0].ownerNodeId,
+  'copied contribution scope and input target the same copied source',
+);
+const copiedContributionRegions = evaluateProgram(
+  editor.state.document,
+  copiedContribution.id,
+).regions;
+assert.equal(
+  copiedContributionRegions.status,
+  'ready',
+  JSON.stringify(copiedContributionRegions.diagnostics),
+);
+assert.equal(copiedContributionRegions.value.regions.length, 1);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, beforeContributionCopy);
+context = await read();
+const reboundContribution = runtime.modelCommand(
+  'feature',
+  {
+    id: contribution.id,
+    changes: { regionId: ids[0], name: '重绑贡献', heightMM: 7 },
+  },
+  context,
+);
+reboundContribution.commit();
+context = await read();
+const reboundContributionRegion = context.view.regions.find(
+  (region) => region.id === reboundContribution.regionIds[0],
+);
+assert.equal(reboundContributionRegion.reliefName, '重绑贡献');
+assert.equal(reboundContributionRegion.authoredRelief.value.thickness.value, 7);
+assert.deepEqual(
+  editor.state.document.sketches,
+  beforeContributionCopy.sketches,
+);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, beforeContributionCopy);
+context = await read();
+runtime
+  .modelCommand(
+    'feature',
+    {
+      id: contribution.id,
+      changes: { name: '独立体块', heightMM: 5.5, color: '#abcdef' },
+    },
+    context,
+  )
+  .commit();
+context = await read();
+runtime
+  .modelCommand(
+    'relief',
+    {
+      regionIds: [contribution.id],
+      changes: { thickness: { kind: 'mm', value: 6 } },
+    },
+    context,
+  )
+  .commit();
+context = await read();
+assert.equal(
+  context.view.regions.find((region) => region.id === contribution.id)
+    .reliefName,
+  '独立体块',
+);
+runtime
+  .modelCommand('delete-relief', { regionIds: [contribution.id] }, context)
+  .commit();
+context = await read();
+const deleted = context.view.regions.find(
+  (region) => region.id === contribution.id,
+);
+assert.equal(deleted.reliefDefined, false);
+assert.equal(deleted.authoredRelief.value.enabled, false);
+assert.deepEqual(editor.state.document.sketches, beforeAdditional.sketches);
+for (let index = 0; index < 4; index++)
+  editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, beforeAdditional);
+editor.undo({ expectedRevision: editor.state.revision });
+assert.deepEqual(editor.state.document, beforeRelief);
 runtime.dispose();
 console.log(
   'PASS advanced relief intents preserve inherited settings, repair placement, reject stale/forged views and commit selections atomically',

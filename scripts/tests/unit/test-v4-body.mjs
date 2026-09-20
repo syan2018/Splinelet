@@ -96,6 +96,53 @@ assert.equal(
   false,
   'failure never falls back to an old mesh',
 );
+
+const notchedGeometry = {
+  type: 'Polygon',
+  coordinates: [
+    [
+      [0, 0],
+      [4, 0],
+      [4, 4],
+      [2.1, 4],
+      [2.1, 1],
+      [1.9, 1],
+      [1.9, 4],
+      [0, 4],
+      [0, 0],
+    ],
+  ],
+};
+const cleanupInput = {
+  ...placed,
+  value: {
+    reliefs: [relief('notched', notchedGeometry, 'add', '#FF0000', 0, 1)],
+    provenance: [],
+  },
+};
+const originalCleanupInput = structuredClone(cleanupInput);
+const uncleaned = await buildBodies(cleanupInput);
+const cleaned = await buildBodies(cleanupInput, undefined, 0.005, 0.2);
+assert.equal(cleaned.status, 'ready', JSON.stringify(cleaned.diagnostics));
+assert.ok(
+  cleaned.value.bodies[0].report.volumeMM3 >
+    uncleaned.value.bodies[0].report.volumeMM3,
+  'closing cleanup changes only the derived manufacturing cross-section',
+);
+assert.deepEqual(cleanupInput, originalCleanupInput);
+assert.ok(
+  Math.abs(
+    cleaned.value.bodies[0].materialParts.reduce(
+      (sum, item) => sum + item.volumeMM3,
+      0,
+    ) - cleaned.value.bodies[0].report.volumeMM3,
+  ) < 0.001,
+  'body CSG and material partition reuse the same cleaned cross-section',
+);
+assert.equal(
+  (await buildBodies(cleanupInput, undefined, 0.005, -1)).status,
+  'blocked',
+);
 console.log(
   'PASS: V4 BodySet uses placed world contours, per-Part CSG and material volumes.',
 );

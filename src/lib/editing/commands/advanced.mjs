@@ -168,6 +168,7 @@ const outputAssignmentsForOwner = (document, ownerNodeId) =>
     ...Object.values(document.appearances.overrides),
     ...Object.values(document.reliefDefinitions.overrides),
     ...Object.values(document.manufacturing.assignments),
+    ...Object.values(document.regionPresentations?.overrides || {}),
     ...document.manufacturing.excluded.map((target) => ({ target })),
   ].filter(
     (item) =>
@@ -735,6 +736,7 @@ const setManufacturingLayer = (document, request, allocate) => {
   if (matches.length > 1) throw Error('制造目标存在冲突 Relief 赋值');
   const id = matches[0]?.id || allocate();
   document.reliefDefinitions.overrides[id] = {
+    ...clone(matches[0] || {}),
     id,
     target: clone(request.target),
     value: {

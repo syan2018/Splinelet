@@ -144,3 +144,15 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 原宽度接线由 `test-v4-studio-session.mjs`、`test-v4-studio-host.mjs` 覆盖无图坐标框持久化、一次历史提交、预览/非法拒绝、参考图 URL 复用及早期 V4 回退；`test-v4-original-studio.cjs` 实际操作工程设置宽度、撤销/重做并导出重开。
 
 `test-v4-model-workspace-view.mjs` 验证高级建模规范读取：捕获身份、稳定区域/源身份、孔洞面积、关闭和放置失败时仍可读原浮雕定义、失效输出赋值保留，以及内置 Sandrone。`test-v4-model-intents.mjs` 验证高级体块属性按选区一次提交，保留其他继承字段、撤销、失效/伪造视图、非法厚度和后置锁定的整批回滚。它们不替代原 ModelWorkspace 面板事件接线验收。
+
+## 默认 V4 与原生回归
+
+双端默认入口使用 V4 宿主。`node scripts/tests/native/test-v4-default-entry.mjs` 驱动实际 Windows 发布程序的默认入口，验证原生保存、文件打开事件及两份 Sandrone 测试副本的编辑/撤销/保存重开；先执行 `pnpm desktop:release`，关闭其他 Splinelet 实例。脚本只对副本写入，逐字节核对原件未变。
+
+`test-v4-model-panel-adapter.mjs` 验证原高级面板的只读投影及稀疏属性意图；`test-v4-model-construction.mjs` 验证规范 Program 构造预览/提交；`test-v4-model-intents.mjs` 同时验证零件、首次浮雕、原子失败和撤销。原 Studio 浏览器测试独立配置 Vite 缓存及扫描入口，避免同时运行默认入口验收时依赖缓存互相失效。
+
+`test-v4-region-presentations.mjs` 验证单区域展示作者态的 schema、codec、复制与撤销，以及浮雕覆盖的名称/删除标记；`test-v4-model-properties.mjs` 验证区域颜色不创建浮雕、区域与部件范围分离和全局精度命令。
+
+`test-v4-program-modifiers.mjs` 验证唯一 Fill 前插入、线性同域链上下移/删除、能力投影及危险重接的原子拒绝。`test-v4-connection-intents.mjs` 验证分区补边范围、逐端点开关、当前世界坐标辅助线、源数据不变和撤销。
+
+高级构面回归还验证布尔与分区建立独立派生 Shape，保留输入面；候选子集复用预览 Program，区域重绑迁移明确引用，普通体块换来源保留旧区域的显示作者态。制造清理由文档/迁移/Body/full-pipeline 测试覆盖，真实样例必须保留原文件的清理设置后检查实体，不能用关闭清理的结果替代。

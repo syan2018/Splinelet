@@ -69,6 +69,7 @@ export function resolveReliefDefinition(document, shapeId, target) {
       ...defaultRelief(),
       ...document.reliefDefinitions?.defaults?.[shapeId],
       ...matches[0]?.value,
+      ...(matches[0]?.suppressed ? { enabled: false } : {}),
     }),
   };
 }

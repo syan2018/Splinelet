@@ -348,6 +348,7 @@ export function finishRegionBranch(
       document.appearances.overrides,
       document.reliefDefinitions.overrides,
       document.manufacturing.assignments,
+      document.regionPresentations?.overrides || {},
     ])
       for (const [id, assignment] of Object.entries(records))
         if (selectedIds.has(outputIdentity(assignment.target)))

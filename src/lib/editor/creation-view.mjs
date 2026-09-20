@@ -5,10 +5,15 @@ import { isExcluded } from '../manufacturing/parts.mjs';
 import { sourcePathId } from './source-view.mjs';
 import { orderedSourcePaths } from '../geometry/source-order.mjs';
 import { projectModifierControls } from './modifier-view.mjs';
+import { projectPartitionConnections } from './connection-intents.mjs';
 import {
   regionPathMemberships,
   regionSourcePaths,
 } from '../editing/region-drawing.mjs';
+import {
+  curveModifierAddCapability,
+  programModifierCapabilities,
+} from '../editing/commands/program-modifiers.mjs';
 
 const clone = (value) => structuredClone(value);
 const absent = (domain) => ({
@@ -123,10 +128,30 @@ const stageState = (curveStage, regionStage) => {
   return 'absent';
 };
 
+const orderedProgramOperators = (program) => {
+  const result = [];
+  const seen = new Set();
+  const visitReference = (reference) => {
+    if (reference?.kind === 'port')
+      visit(program.operators[reference.operatorId]);
+  };
+  const visit = (operator) => {
+    if (!operator || seen.has(operator.id)) return;
+    seen.add(operator.id);
+    for (const references of Object.values(operator.inputs || {}))
+      for (const reference of references) visitReference(reference);
+    result.push(operator);
+  };
+  visitReference(program.outputs.regions);
+  visitReference(program.outputs.curves);
+  for (const operator of Object.values(program.operators)) visit(operator);
+  return result;
+};
+
 const operatorStatus = (document, snapshot, node) => {
   const program = document.programs[node.programId];
   if (!program) return [];
-  return Object.values(program.operators)
+  return orderedProgramOperators(program)
     .filter(
       (operator) =>
         operator.authoring?.phase !== 'drawing' &&
@@ -151,6 +176,7 @@ const operatorStatus = (document, snapshot, node) => {
         name: operator.name,
         enabled: operator.enabled,
         controls: projectModifierControls(document, node.id, operator.id),
+        structure: programModifierCapabilities(document, node.id, operator.id),
         status: blocked
           ? 'blocked'
           : stages.some((stage) => stage.status === 'ready')
@@ -218,7 +244,8 @@ export function projectCreationView(document, snapshot) {
   if (!snapshot || typeof snapshot !== 'object')
     throw Error('creation view 需要当前 evaluateDocument snapshot');
 
-  const diagnostics = [];
+  const connectionView = projectPartitionConnections(document, snapshot);
+  const diagnostics = [...connectionView.diagnostics];
   const errors = [];
   const cells = [];
   const identities = { objects: {}, cells: {}, paths: {}, operators: {} };
@@ -374,12 +401,23 @@ export function projectCreationView(document, snapshot) {
     const placedCells = objectCells.filter(
       (cell) => cell.enabled && cell.heightMM !== null,
     );
+    const placements = objectCells
+      .map((cell) => cell.placement)
+      .filter((placement) => placement !== null);
+    if (
+      !placements.length &&
+      document.reliefDefinitions.defaults[node.id]?.placement
+    )
+      placements.push(
+        clone(document.reliefDefinitions.defaults[node.id].placement),
+      );
     const manufacturing = objectManufacturing(
       document,
       node,
       diagnostics,
       errors,
     );
+    const modifierAdd = curveModifierAddCapability(document, node.id);
     return {
       id: node.id,
       name: node.name,
@@ -387,20 +425,14 @@ export function projectCreationView(document, snapshot) {
       order: node.order,
       pose: clone(node.pose),
       pathIds,
+      joinMM: uniqueValue(
+        Object.values(document.programs[node.programId].operators)
+          .filter((operator) => operator.type === 'partition')
+          .map((operator) => operator.params.endpointJoin?.toleranceMM ?? 0),
+      ),
       modifierAdd: {
-        types:
-          !state.locked &&
-          !program?.outputs.regions &&
-          ['ready', 'empty'].includes(objectStages.get(node.id).curves)
-            ? ['curve_mirror', 'curve_array']
-            : [],
-        reason: state.locked
-          ? '部件已锁定'
-          : program?.outputs.regions
-            ? '已有区域的部件暂不支持从这里添加曲线修改器'
-            : !['ready', 'empty'].includes(objectStages.get(node.id).curves)
-              ? '请先建立可用的源线条'
-              : null,
+        types: modifierAdd.enabled ? ['curve_mirror', 'curve_array'] : [],
+        reason: modifierAdd.reason,
       },
       roles: Object.fromEntries(
         ownedPaths.flatMap(({ sketch, path }) => {
@@ -427,7 +459,25 @@ export function projectCreationView(document, snapshot) {
       heightMM: uniqueValue(placedCells.map((cell) => cell.heightMM)),
       zMM: placedCells.length
         ? Math.min(...placedCells.map((cell) => cell.bottomMM))
-        : null,
+        : placements.length === 1
+          ? placements[0].kind === 'free'
+            ? placements[0].zMM
+            : placements[0].offsetMM
+          : null,
+      attachId:
+        uniqueValue(
+          placements.map((placement) =>
+            placement.kind === 'attached' && placement.target.kind === 'node'
+              ? placement.target.id
+              : '',
+          ),
+        ) ?? '',
+      printLayerId:
+        uniqueValue(
+          placements.map((placement) =>
+            placement.kind === 'layer' ? placement.layerId : '',
+          ),
+        ) ?? '',
       printable: manufacturing.printable,
       partId: manufacturing.partId,
       evaluation: clone(objectStages.get(node.id)),
@@ -466,7 +516,7 @@ export function projectCreationView(document, snapshot) {
     diagnostics,
     modifierModel: 'program',
     modifierStatus,
-    connections: [],
+    connections: connectionView.connections,
     closures: [],
     printLevels: [],
     objectBottoms,

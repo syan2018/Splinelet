@@ -1781,6 +1781,9 @@ function metadata(context, document, allOwners) {
   context.swatches = new Map();
   context.parts = new Map();
   context.layers = new Map();
+  if (context.project.model?.manufacturingMM !== undefined)
+    document.manufacturing.cleanupRadiusMM =
+      context.project.model.manufacturingMM;
   for (const swatch of context.project.creation?.swatches || []) {
     const id = context.id('swatch', swatch.id);
     document.appearances.swatches[id] = {

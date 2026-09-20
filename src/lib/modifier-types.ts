@@ -29,6 +29,15 @@ export type ModifierControls = {
   diagnostics: readonly { field: string; message: string }[];
   locked: boolean;
 };
+export type ModifierCapability = {
+  enabled: boolean;
+  reason: string | null;
+};
+export type ModifierStructureCapabilities = {
+  moveUp: ModifierCapability;
+  moveDown: ModifierCapability;
+  remove: ModifierCapability;
+};
 export type ModifierInputRef = {
   kind: 'path' | 'region' | 'object';
   id: string;
@@ -91,6 +100,7 @@ export type ModifierScene = {
     modifierId: string;
     inputOptions: SurfaceOption[];
     controls?: ModifierControls;
+    structure?: ModifierStructureCapabilities;
     error?: string;
     note?: string;
   }[];

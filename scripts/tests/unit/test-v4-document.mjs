@@ -11,8 +11,14 @@ const document = createDocument({ idFactory: fresh });
 assert.equal(document.version, 4);
 assert.equal(document.units, 'mm');
 assert.equal(document.manufacturing.layerHeightMM, 0.2);
+assert.equal(document.manufacturing.cleanupRadiusMM, undefined);
 assert.equal(Object.keys(document.manufacturing.parts).length, 1);
 assert.equal(validateDocument(document), document);
+const cleanedDocument = structuredClone(document);
+cleanedDocument.manufacturing.cleanupRadiusMM = 0.03;
+assert.equal(validateDocument(cleanedDocument), cleanedDocument);
+cleanedDocument.manufacturing.cleanupRadiusMM = -0.01;
+assert.throws(() => validateDocument(cleanedDocument), /cleanupRadiusMM/);
 
 const complete = structuredClone(document);
 const partId = complete.manufacturing.defaultPartId;

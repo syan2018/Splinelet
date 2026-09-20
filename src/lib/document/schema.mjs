@@ -642,6 +642,27 @@ const validateAppearance = (value, seen) => {
     id(assignment.value.swatchId, 'AppearanceAssignment.value.swatchId');
   }
 };
+const validateRegionPresentations = (value, seen) => {
+  exactKeys(value, ['overrides'], 'regionPresentations');
+  for (const [presentationId, presentation] of Object.entries(
+    table(value.overrides, 'regionPresentations.overrides'),
+  )) {
+    recordId(presentationId, presentation, 'RegionPresentation', seen);
+    exactKeys(presentation, ['id', 'target'], 'RegionPresentation', [
+      'name',
+      'visible',
+    ]);
+    validateOutputRef(presentation.target, 'RegionPresentation.target');
+    if (presentation.name === undefined && presentation.visible === undefined)
+      fail('RegionPresentation 至少需要 name 或 visible');
+    if (presentation.name !== undefined) {
+      text(presentation.name, 'RegionPresentation.name');
+      if (!presentation.name.trim()) fail('RegionPresentation.name 不能为空');
+    }
+    if (presentation.visible !== undefined)
+      bool(presentation.visible, 'RegionPresentation.visible');
+  }
+};
 const validateRelief = (value, seen) => {
   exactKeys(value, ['defaults', 'overrides'], 'reliefDefinitions');
   for (const [shapeId, definition] of Object.entries(
@@ -654,9 +675,22 @@ const validateRelief = (value, seen) => {
     table(value.overrides, 'reliefDefinitions.overrides'),
   )) {
     recordId(overrideId, override, 'ReliefAssignment', seen);
-    exactKeys(override, ['id', 'target', 'value'], 'ReliefAssignment');
+    exactKeys(override, ['id', 'target', 'value'], 'ReliefAssignment', [
+      'suppressed',
+      'name',
+    ]);
     validateOutputRef(override.target, 'ReliefAssignment.target');
     validateReliefValue(override.value, 'ReliefAssignment.value', true);
+    if (override.name !== undefined) {
+      text(override.name, 'ReliefAssignment.name');
+      if (!override.name.trim()) fail('ReliefAssignment.name 不能为空');
+    }
+    if (override.suppressed !== undefined) {
+      if (override.suppressed !== true)
+        fail('ReliefAssignment.suppressed 只能为 true');
+      if (override.value.enabled !== false)
+        fail('ReliefAssignment.suppressed 需要显式 value.enabled: false');
+    }
   }
 };
 const validateManufacturing = (value, seen) => {
@@ -673,9 +707,15 @@ const validateManufacturing = (value, seen) => {
       'slicerTemplate',
     ],
     'manufacturing',
+    ['cleanupRadiusMM'],
   );
   if (!finite(value.layerHeightMM) || value.layerHeightMM <= 0)
     fail('manufacturing.layerHeightMM 无效');
+  if (
+    value.cleanupRadiusMM !== undefined &&
+    (!finite(value.cleanupRadiusMM) || value.cleanupRadiusMM < 0)
+  )
+    fail('manufacturing.cleanupRadiusMM 无效');
   for (const [layerId, layer] of Object.entries(
     table(value.layers, 'manufacturing.layers'),
   )) {
@@ -1056,7 +1096,10 @@ export function createDocument(options = {}) {
 
 export function validateDocument(value) {
   json(value, 'DocumentV4');
-  exactKeys(value, topLevelKeys, 'DocumentV4', ['sourceFrame']);
+  exactKeys(value, topLevelKeys, 'DocumentV4', [
+    'sourceFrame',
+    'regionPresentations',
+  ]);
   if (value.sourceFrame !== undefined) {
     exactKeys(value.sourceFrame, ['width', 'height', 'widthMM'], 'sourceFrame');
     if (
@@ -1099,6 +1142,8 @@ export function validateDocument(value) {
   for (const setting of Object.values(value.geometrySettings))
     if (!finite(setting) || setting <= 0) fail('geometrySettings 无效');
   validateAppearance(value.appearances, seen);
+  if (value.regionPresentations !== undefined)
+    validateRegionPresentations(value.regionPresentations, seen);
   validateRelief(value.reliefDefinitions, seen);
   validateManufacturing(value.manufacturing, seen);
   for (const [assetId, asset] of Object.entries(table(value.assets, 'assets')))
@@ -1326,6 +1371,15 @@ export function inspectDocumentReferences(document) {
         'appearance override swatch 不存在',
       );
   }
+  for (const presentation of Object.values(
+    document.regionPresentations?.overrides || {},
+  ))
+    inspectOutputRef(
+      document,
+      presentation.target,
+      'region presentation',
+      diagnostics,
+    );
   for (const shapeId of Object.keys(document.reliefDefinitions.defaults))
     if (!nodeIsShape(document, shapeId))
       softReference(

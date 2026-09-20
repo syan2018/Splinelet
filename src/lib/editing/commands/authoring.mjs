@@ -27,6 +27,7 @@ import {
   finishBoundaryBranch,
 } from './append-boundary.mjs';
 import { createAdvancedCommand, ADVANCED_ACTIONS } from './advanced.mjs';
+import { createProgramModifierCommand } from './program-modifiers.mjs';
 import { createSourceTransferCommand } from './source-transfer.mjs';
 import { createResourceCommand, RESOURCE_ACTIONS } from './resources.mjs';
 import { extendPath } from '../../geometry/extend-path.mjs';
@@ -354,16 +355,26 @@ function assign(record, target, value, idFactory) {
   if (matches.length > 1) throw Error('区域存在冲突赋值，需先解决');
   const id = matches[0]?.id || idFactory();
   record[id] = {
+    ...matches[0],
     id,
     target: structuredClone(target),
     value: { ...matches[0]?.value, ...value },
   };
+  if (value.enabled === true) delete record[id].suppressed;
 }
 /** Returns a synchronous T12 transaction. All UI/API entry points share it. */
 export function createAuthoringCommand(action) {
   const request = structuredClone(action);
   return (document, { idFactory }) => {
     const action = request;
+    if (
+      [
+        'add-program-modifier',
+        'remove-program-modifier',
+        'move-program-modifier',
+      ].includes(action.kind)
+    )
+      return createProgramModifierCommand(action)(document, { idFactory });
     if (action.kind === 'calibrate-source-scale')
       return createSourceScaleCommand(action)(document);
     if (action.kind === 'set-path-roles')

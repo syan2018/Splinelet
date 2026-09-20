@@ -305,7 +305,7 @@ function buildArtifactManifest() {
       entries: matchingEntryDigest(resolve(ROOT, 'dist'), [
         /^server\/(wrangler\.json|index\.js)$/,
         /^client\/index\.html$/,
-        /^client\/.*\/(studio-app|model-worker)-[^/]+\.js$/,
+        /^client\/.*\/(studio-app|document-worker)-[^/]+\.js$/,
       ]),
     },
     desktopFrontend: {
@@ -313,7 +313,7 @@ function buildArtifactManifest() {
       digest: directoryDigest(DESKTOP_ROOT),
       entries: matchingEntryDigest(DESKTOP_ROOT, [
         /^index\.html$/,
-        /^assets\/(index|model-worker)-[^/]+\.js$/,
+        /^assets\/(index|document-worker)-[^/]+\.js$/,
       ]),
     },
   };

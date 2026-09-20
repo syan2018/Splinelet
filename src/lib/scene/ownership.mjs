@@ -311,6 +311,23 @@ export function copyNodes(
       };
     }
   }
+  // Region presentation is an OutputRef-bound authoring record. Copy only
+  // records owned by copied Shapes and remap their complete output identity;
+  // records for external owners remain untouched on the original document.
+  if (document.regionPresentations?.overrides) {
+    next.regionPresentations ||= { overrides: {} };
+    for (const presentation of Object.values(
+      document.regionPresentations.overrides,
+    )) {
+      if (!owned.nodes.has(presentation.target.ownerNodeId)) continue;
+      const id = allocate(presentation.id);
+      next.regionPresentations.overrides[id] = {
+        ...structuredClone(presentation),
+        id,
+        target: ref(presentation.target),
+      };
+    }
+  }
   for (const target of document.manufacturing.excluded)
     if (
       owned.nodes.has(target.kind === 'node' ? target.id : target.ownerNodeId)

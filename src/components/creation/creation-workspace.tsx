@@ -16,19 +16,7 @@ import {
   GripVertical,
   Focus,
 } from 'lucide-react';
-import {
-  type Project,
-  download,
-  blender,
-  validateProject,
-} from '@/lib/project';
-import {
-  creationDocument,
-  acceptDividerGraph,
-} from '@/lib/creation-schema.mjs';
-import { creationCommand } from '@/lib/creation-commands.mjs';
-import { bindSurfaceGraphs } from '@/lib/surface-lineage.mjs';
-import { createWorkerClient } from '@/lib/evaluation/worker-client.mjs';
+import { type Project, download, blender } from '@/lib/project';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
@@ -58,7 +46,6 @@ import type {
   ModifierScene,
   SurfaceModifier,
 } from '@/lib/modifier-types';
-import * as modelWorkerModule from '../../lib/model-worker.ts?worker';
 import type {
   CreationRuntime,
   CreationRuntimeContext,
@@ -236,20 +223,16 @@ type EyeDropperWindow = Window &
   typeof globalThis & {
     EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> };
   };
-const ModelWorker = (
-  modelWorkerModule as unknown as { default: new () => Worker }
-).default;
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 type Props = {
   project: Project;
-  runtime?: CreationRuntime;
+  runtime: CreationRuntime;
   enabled: boolean;
   viewMode: string;
   tool: string;
   onTool: (t: string) => void;
   onView: (v: string) => void;
-  onProject: (p: Project, record?: boolean) => void;
   onStatus: (s: string) => void;
   onApi: (a: CreationApi) => void;
   layer: SVGGElement | null;
@@ -338,9 +321,7 @@ export default function CreationWorkspace(p: Props) {
     ref.current = p;
   });
   const readCreation = (project: Project, runtime = p.runtime) =>
-    (runtime
-      ? runtime.readCreationDocument(project)
-      : creationDocument(project)) as CreationDocument;
+    runtime.readCreationDocument(project) as CreationDocument;
   const doc = readCreation(p.project),
     [scene, setScene] = useState<CreationScene | null>(null),
     sceneRef = useRef<CreationScene | null>(null),
@@ -352,8 +333,7 @@ export default function CreationWorkspace(p: Props) {
     applyRolesRef = useRef<(args: RoleArgs) => Promise<unknown>>(async () => {
       throw Error('区域引擎尚未准备好');
     }),
-    pendingRoleResult = useRef<PendingRoleResult | null>(null),
-    engine = useRef<ReturnType<typeof createWorkerClient> | null>(null);
+    pendingRoleResult = useRef<PendingRoleResult | null>(null);
   const [boot, setBoot] = useState(false),
     [engineCalculating, setCalculating] = useState(false),
     [evaluatedProject, setEvaluatedProject] = useState<Project | null>(null),
@@ -364,15 +344,9 @@ export default function CreationWorkspace(p: Props) {
   const calculating = engineCalculating || evaluatedProject !== p.project;
   const evaluationFailed = !calculating && !scene;
   const [outputPart, setOutputPartId] = useState('');
-  const outputSettings = p.runtime?.readOutputSettings(p.project);
-  const slicerTemplate = outputSettings
-    ? outputSettings.slicerTemplate
-    : p.project.model?.slicerTemplate;
-  const outputParts =
-    outputSettings?.parts ??
-    (p.project.model?.parts.length
-      ? p.project.model.parts
-      : [{ id: 'main', name: '作品' }]);
+  const outputSettings = p.runtime.readOutputSettings(p.project);
+  const slicerTemplate = outputSettings.slicerTemplate;
+  const outputParts = outputSettings.parts;
   const outputPartId = outputParts.some((part) => part.id === outputPart)
     ? outputPart
     : (outputSettings?.defaultPartId ?? outputParts[0].id);
@@ -514,38 +488,10 @@ export default function CreationWorkspace(p: Props) {
     args: Record<string, unknown> = {},
     project = ref.current.project,
   ): Promise<ModelResult> =>
-    ref.current.runtime
-      ? (ref.current.runtime.evaluate(
-          action,
-          args,
-          project,
-        ) as Promise<ModelResult>)
-      : engine.current
-        ? (engine.current.request({
-            action,
-            args,
-            project: { ...project, image: '' },
-          }) as Promise<ModelResult>)
-        : Promise.reject(Error('几何引擎尚未准备好'));
+    ref.current.runtime.evaluate(action, args, project) as Promise<ModelResult>;
   useEffect(() => {
-    if (p.runtime) {
-      engine.current = null;
-      const timer = window.setTimeout(() => setBoot(true));
-      return () => {
-        window.clearTimeout(timer);
-        setBoot(false);
-      };
-    }
-    const client = createWorkerClient(new ModelWorker(), {
-      onError: () => setError('区域引擎加载失败，请刷新后重试'),
-    });
-    engine.current = client;
     const timer = window.setTimeout(() => setBoot(true));
-    return () => {
-      window.clearTimeout(timer);
-      engine.current = null;
-      client.close(Error('工作台已关闭'));
-    };
+    return () => window.clearTimeout(timer);
   }, [p.runtime]);
   useEffect(() => {
     if (!boot) return;
@@ -562,19 +508,11 @@ export default function CreationWorkspace(p: Props) {
       call('creation', {}, snapshot)
         .then((result) => {
           if (cancelled || ref.current.project !== snapshot) return;
-          const binding = ref.current.runtime
-            ? ref.current.runtime.bindEvaluation(snapshot, result)
-            : {
-                project: bindSurfaceGraphs(snapshot, result) as Project,
-                scene: result,
-              };
+          const binding = ref.current.runtime.bindEvaluation(snapshot, result);
           if (binding.project !== snapshot && !ref.current.busy) {
-            // Surface graph persistence belongs only to the legacy adapter.
-            // Injected runtimes bind their own evaluation and return identity.
-            if (ref.current.runtime)
-              throw Error('运行时 bindEvaluation 不能返回未提交的 Project');
-            ref.current.onProject(binding.project, false);
-            return;
+            // Evaluation only projects the committed V4 document; it cannot
+            // introduce another writable project behind the command boundary.
+            throw Error('运行时 bindEvaluation 不能返回未提交的 Project');
           }
           const nextScene = binding.scene as CreationScene;
           setScene(nextScene);
@@ -629,23 +567,7 @@ export default function CreationWorkspace(p: Props) {
       project: ref.current.project,
       scene: revision.current === ref.current.project ? sceneRef.current : null,
     };
-    const plan = ref.current.runtime
-      ? ref.current.runtime.command(action, args, context)
-      : (() => {
-          const project = creationCommand(
-            context.project,
-            action,
-            args,
-            sceneRef.current,
-          ) as CommandResult;
-          return {
-            project,
-            commit: () => {
-              ref.current.onProject(project);
-              return project;
-            },
-          };
-        })();
+    const plan = ref.current.runtime.command(action, args, context);
     const next = plan.commit() as CommandResult;
     clearConnectionPreview();
     notify(
@@ -1025,22 +947,11 @@ export default function CreationWorkspace(p: Props) {
         selectionState.commit({ kind: 'cell', ids: keys });
       },
       new_path: (path: { id: string }) => {
-        if (ref.current.runtime)
-          return ref.current.runtime.attachNewPath(path, {
-            project: ref.current.project,
-            scene:
-              revision.current === ref.current.project
-                ? sceneRef.current
-                : null,
-          }) as CreationDocument | undefined;
-        const c = readCreation(ref.current.project, ref.current.runtime),
-          o = c.objects.find((o) => o.id === objects.at(-1));
-        if (o) {
-          acceptDividerGraph(o);
-          o.pathIds.push(path.id);
-          o.roles[path.id] = nextRole.current;
-          return c;
-        }
+        return ref.current.runtime.attachNewPath(path, {
+          project: ref.current.project,
+          scene:
+            revision.current === ref.current.project ? sceneRef.current : null,
+        }) as CreationDocument | undefined;
       },
       trace_target: () => {
         const ownerNodeId = objects.at(-1);
@@ -1088,17 +999,8 @@ export default function CreationWorkspace(p: Props) {
     setRoleIssue(null);
     setRoleResult(null);
     try {
-      const prepared: PreparedCreationCommand = ref.current.runtime
-        ? await ref.current.runtime.prepare('roles', args, context)
-        : (() => {
-            const project = creationCommand(
-              snapshot,
-              'roles',
-              args,
-              sceneRef.current,
-            ) as Project;
-            return { project, token: project };
-          })();
+      const prepared: PreparedCreationCommand =
+        await ref.current.runtime.prepare('roles', args, context);
       const next = prepared.project;
       const result = await call('creation', {}, next);
       if (ref.current.project !== snapshot)
@@ -1112,12 +1014,7 @@ export default function CreationWorkspace(p: Props) {
         p.onStatus('本次用途切换未应用；原区域与颜色保留');
         return { applied: false, issue };
       }
-      const committed = ref.current.runtime
-        ? ref.current.runtime.commitPrepared(prepared, context)
-        : (() => {
-            ref.current.onProject(next);
-            return next;
-          })();
+      const committed = ref.current.runtime.commitPrepared(prepared, context);
       clearConnectionPreview();
       if (failure?.kind === 'pipeline') {
         notify('用途已更新 · 下游构造已暂停，请修复或重建分区输出');
@@ -1595,21 +1492,16 @@ export default function CreationWorkspace(p: Props) {
                     safely(() => {
                       if (basePreview.revision !== ref.current.project)
                         throw Error('来源已变化，请重新预览');
-                      if (ref.current.runtime)
-                        ref.current.runtime.commitPreparedDisplay(
-                          basePreview.project,
-                          {
-                            project: basePreview.revision,
-                            scene:
-                              revision.current === basePreview.revision
-                                ? sceneRef.current
-                                : null,
-                          },
-                        );
-                      else
-                        ref.current.onProject(
-                          validateProject(basePreview.project),
-                        );
+                      ref.current.runtime.commitPreparedDisplay(
+                        basePreview.project,
+                        {
+                          project: basePreview.revision,
+                          scene:
+                            revision.current === basePreview.revision
+                              ? sceneRef.current
+                              : null,
+                        },
+                      );
                       selectionState.commit({
                         kind: 'object',
                         ids: [basePreview.objectId],
@@ -2625,12 +2517,7 @@ export default function CreationWorkspace(p: Props) {
                                   throw Error('来源已变化，请重新预览');
                                 setBasePreview({
                                   ...result,
-                                  project: ref.current.runtime
-                                    ? result.project
-                                    : {
-                                        ...result.project,
-                                        image: snapshot.image,
-                                      },
+                                  project: result.project,
                                   revision: snapshot,
                                 });
                               })
@@ -2810,10 +2697,22 @@ export default function CreationWorkspace(p: Props) {
                           const snapshot = p.project,
                             id = current.id,
                             token = ++connectionRequest.current;
-                          const result = await call('creation', {
-                            objectId: id,
-                            joinMM,
-                          });
+                          const prepared = await ref.current.runtime.prepare(
+                            'join',
+                            { objectId: id, joinMM },
+                            {
+                              project: snapshot,
+                              scene:
+                                revision.current === snapshot
+                                  ? sceneRef.current
+                                  : null,
+                            },
+                          );
+                          const result = await call(
+                            'creation',
+                            {},
+                            prepared.project,
+                          );
                           if (
                             token !== connectionRequest.current ||
                             focusedObject.current !== id
@@ -2928,28 +2827,13 @@ export default function CreationWorkspace(p: Props) {
                     value={slicerTemplate}
                     disabled={exporting || calculating || evaluationFailed}
                     onChange={(slicerTemplate) => {
-                      if (ref.current.runtime)
-                        ref.current.runtime.setSlicerTemplate(slicerTemplate, {
-                          project: ref.current.project,
-                          scene:
-                            revision.current === ref.current.project
-                              ? sceneRef.current
-                              : null,
-                        });
-                      else
-                        ref.current.onProject({
-                          ...ref.current.project,
-                          model: {
-                            ...(ref.current.project.model || {
-                              version: 1,
-                              toleranceMM: 0.015,
-                              regions: [],
-                              features: [],
-                              parts: [{ id: 'main', name: '零件 1' }],
-                            }),
-                            slicerTemplate,
-                          },
-                        });
+                      ref.current.runtime.setSlicerTemplate(slicerTemplate, {
+                        project: ref.current.project,
+                        scene:
+                          revision.current === ref.current.project
+                            ? sceneRef.current
+                            : null,
+                      });
                     }}
                   />
                   <button onClick={() => p.onAdvanced('relief')}>

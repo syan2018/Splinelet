@@ -13,6 +13,13 @@ import { effectiveNodeState } from '../scene/hierarchy.mjs';
 import { creationOutput } from './creation-output.mjs';
 import { projectModelWorkspaceView } from './model-workspace-view.mjs';
 import { createModelIntent } from './model-intents.mjs';
+import {
+  previewModelConstruction,
+  finalizePreparedModelConstruction,
+} from './model-construction.mjs';
+import { readGeometry } from '../region-engine.mjs';
+import { creationCellKey } from './creation-view.mjs';
+import { worldMatrix, transformPoint } from '../scene/transforms.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -312,7 +319,11 @@ export function createV4CreationRuntime({
         throw Error('高级建模视图不属于当前展示工程');
       const command = createModelIntent(action, args, context.view);
       let consumed = false;
+      let regionIds = [];
       return {
+        get regionIds() {
+          return [...regionIds];
+        },
         commit() {
           if (consumed) throw Error('命令已提交');
           current(context.project);
@@ -320,7 +331,130 @@ export function createV4CreationRuntime({
             expectedRevision: entry.state.revision,
           });
           consumed = true;
+          regionIds = (next.lastChange?.selectionIntent?.entityRefs || [])
+            .filter((ref) => ref.kind === 'output')
+            .map(creationCellKey);
           return issue(next);
+        },
+      };
+    },
+    prepareModelConstruction(draft, context) {
+      const entry = current(context.project);
+      if (modelViews.get(context.view)?.project !== context.project)
+        throw Error('高级建模视图不属于当前展示工程');
+      const source = projectSourceView(entry.state.document, snapFrame);
+      const prepared = previewModelConstruction(
+        entry.state.document,
+        {
+          ...draft,
+          baseId: draft.baseId || draft.a,
+          operandId: draft.b,
+        },
+        {
+          paths: source.identities.paths,
+          regions: Object.fromEntries(
+            context.view.regions.map((region) => [region.id, region.outputRef]),
+          ),
+        },
+      );
+      const candidateDocument = structuredClone(prepared.document);
+      const diagnostics = prepared.diagnostics || [];
+      const displayPathIds = new Map(
+        Object.entries(source.identities.paths).map(([id, ref]) => [
+          ref.id,
+          id,
+        ]),
+      );
+      const projectedConnections = diagnostics.flatMap((item) => {
+        if (
+          item?.code !== 'partition-endpoint-connected' ||
+          !Array.isArray(item.from) ||
+          !Array.isArray(item.to) ||
+          !Number.isFinite(item.gapMM) ||
+          typeof item.pathId !== 'string'
+        )
+          return [];
+        const matrix = worldMatrix(candidateDocument, prepared.ownerNodeId);
+        return [
+          {
+            from: transformPoint(matrix, item.from),
+            to: transformPoint(matrix, item.to),
+            // The evaluator identifies the canonical Path. The original
+            // panel labels a source-view identity, so retain that exact
+            // projection where the prepared cutter is currently visible.
+            pathId: displayPathIds.get(item.pathId) || item.pathId,
+            gapMM: item.gapMM,
+          },
+        ];
+      });
+      const warnings = [
+        ...new Set(
+          diagnostics
+            .filter((item) => item?.code !== 'partition-endpoint-connected')
+            .map((item) => item?.message)
+            .filter((message) => typeof message === 'string' && message),
+        ),
+      ];
+      let consumed = false;
+      return {
+        candidates: prepared.candidates.map((item) => {
+          const matrix = worldMatrix(
+            candidateDocument,
+            item.outputRef.ownerNodeId,
+          );
+          const coordinates = (value) =>
+            typeof value[0] === 'number'
+              ? transformPoint(matrix, value)
+              : value.map(coordinates);
+          const displayedGeometry = {
+            ...item.geometry,
+            coordinates: coordinates(item.geometry.coordinates),
+          };
+          const geometry = readGeometry(displayedGeometry);
+          const point = geometry.getInteriorPoint().getCoordinate();
+          let holes = 0;
+          for (let index = 0; index < geometry.getNumGeometries(); index++)
+            holes += geometry.getGeometryN(index).getNumInteriorRing();
+          return {
+            geometry: displayedGeometry,
+            seed: [point.x, point.y],
+            areaMM2: geometry.getArea(),
+            holes,
+          };
+        }),
+        warnings,
+        connections: projectedConnections,
+        commit(indices, options = {}) {
+          if (consumed) throw Error('构造预览已提交');
+          current(context.project);
+          const replaceTarget =
+            options.replaceId === undefined
+              ? undefined
+              : context.view.regions.find(
+                  (region) => region.id === options.replaceId,
+                )?.outputRef;
+          if (options.replaceId !== undefined && !replaceTarget)
+            throw Error('待重绑区域已失效');
+          const next = editorSession.dispatch(
+            (_document, commandContext) =>
+              finalizePreparedModelConstruction(
+                prepared,
+                {
+                  indices,
+                  replaceTarget,
+                  name: options.name,
+                },
+                commandContext,
+              ),
+            { expectedRevision: entry.state.revision },
+          );
+          consumed = true;
+          return {
+            project: issue(next),
+            regionIds: (next.lastChange.selectionIntent?.entityRefs || []).map(
+              creationCellKey,
+            ),
+          };
         },
       };
     },

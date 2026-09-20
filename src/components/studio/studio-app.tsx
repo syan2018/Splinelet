@@ -42,27 +42,19 @@ import {
   SourceNodeHandles,
   SourcePathLayers,
 } from '@/components/source-editor/source-canvas-layers';
-import { splineEndpoint, extendSpline } from '@/lib/source-editor/extend.mjs';
+import { splineEndpoint } from '@/lib/source-editor/extend.mjs';
 import SplineEndpoints from '@/components/source-editor/spline-endpoints';
 import EndpointSnapOverlay, {
   type EndpointSnapFeedback,
 } from '@/components/source-editor/endpoint-snap-overlay';
 import {
-  endpointSnapContext,
-  snapEndpoint,
-} from '@/lib/source-editor/endpoint-snap.mjs';
-import {
   cloneTraceValue,
-  initialTraceProject,
   type TraceCandidate,
   type TraceSettings,
 } from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
 import { splineTools } from '@/lib/spline-api';
-import {
-  editSplines,
-  inspectSplines,
-} from '@/lib/source-editor/spline-edit.mjs';
+import { inspectSplines } from '@/lib/source-editor/spline-edit.mjs';
 import type {
   AgentCreationCommandArgs,
   AgentCreationExportArgs,
@@ -85,9 +77,6 @@ import type {
 } from '@/hooks/trace-agent-contract';
 import {
   pickSelection,
-  movePaths,
-  translatePaths,
-  translateNodes,
   inBox,
   pathHitsBox,
 } from '@/lib/source-editor/selection.mjs';
@@ -115,19 +104,13 @@ import {
   d,
   svg,
   blender,
-  validateProject,
 } from '@/lib/project';
-import {
-  decodeProject,
-  encodeProject,
-  SPL_MIME,
-} from '@/lib/project-format.mjs';
+import { SPL_MIME } from '@/lib/project-format.mjs';
 import {
   desktopPendingOpenPaths,
   desktopProjectOpenPath,
   desktopProjectSavePath,
   desktopReadFile,
-  desktopWriteProject,
   isDesktopRuntime,
   listenDesktopOpenFiles,
 } from '@/lib/platform/index.mjs';
@@ -136,19 +119,13 @@ import {
   pathNodes,
   nodeSelection,
   selectedNode,
-  removeNode,
 } from '@/lib/source-editor/node-edit.mjs';
 import {
   connectionSettings,
   straightCubic,
   mergeSplines,
 } from '@/lib/source-editor/connect.mjs';
-import { workspaceDB, FileWriter } from '@/lib/persistence/workspace.mjs';
-import { moveHandle } from '@/lib/source-editor/continuity.mjs';
-import {
-  createLegacyNodeActions,
-  createV4NodeActions,
-} from '@/lib/source-editor/node-actions.mjs';
+import { createV4NodeActions } from '@/lib/source-editor/node-actions.mjs';
 import { useStudioProject, type StudioHost } from '@/hooks/use-studio-project';
 import { useSourceDrag } from '@/hooks/use-source-drag';
 import { openProject } from '@/lib/persistence/open-project.mjs';
@@ -215,52 +192,29 @@ type TraceStudioWindow = Window &
       call: (action: string, args?: unknown) => Promise<unknown>;
     };
   };
-type DragBase = {
-  pointerId: number;
-  button: number;
-  x: number;
-  y: number;
-  base?: Project;
-  origin?: Point;
-  moved?: boolean;
-  collapseNode?: number;
-  path?: string | null;
-  curve?: number;
-  point?: number;
-  add?: boolean;
-  oldPaths?: string[];
-  oldNodes?: number[];
-  rect?: { x: number; y: number; width: number; height: number };
-};
-type DragGesture = DragBase &
-  (
-    | { kind: 'pan'; view: { x: number; y: number; s: number } }
-    | {
-        kind: 'objects';
-        ids: string[];
-        label: string;
-        base: Project;
-        origin: Point;
-      }
-    | {
-        kind: 'box';
-        origin: Point;
-        add: boolean;
-        oldPaths: string[];
-        oldNodes: number[];
-      }
-    | {
-        kind: 'nodes' | 'point';
-        ids: number[];
-        path: string | null;
-        curve: number;
-        point: number;
-        base: Project;
-        origin: Point;
-        snapContext?: ReturnType<typeof endpointSnapContext>;
-        snapTarget?: string;
-      }
-  );
+type DragGesture =
+  | {
+      kind: 'pan';
+      pointerId: number;
+      button: number;
+      x: number;
+      y: number;
+      view: { x: number; y: number; s: number };
+      moved?: boolean;
+    }
+  | {
+      kind: 'box';
+      pointerId: number;
+      button: number;
+      x: number;
+      y: number;
+      origin: Point;
+      add: boolean;
+      oldPaths: string[];
+      oldNodes: number[];
+      moved?: boolean;
+      rect?: { x: number; y: number; width: number; height: number };
+    };
 type GeometryReportItem = {
   name: string;
   gaps: number;
@@ -272,27 +226,8 @@ const errorMessage = (error: unknown) =>
 const currentTime = () => performance.now();
 const projectNameFromPath = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).at(-1) || '工程.spl';
-const dataUrl = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(Error('图片读取结果无效'));
-    reader.onerror = () => reject(reader.error || Error('图片读取失败'));
-    reader.readAsDataURL(blob);
-  });
-const encodeProjectBytes = async (project: Project) => {
-  if (project.image.startsWith('data:')) return encodeProject(project);
-  const response = await fetch(project.image);
-  if (!response.ok) throw Error('工程参考图读取失败');
-  return encodeProject({
-    ...project,
-    image: await dataUrl(await response.blob()),
-  });
-};
-
-export default function StudioApp({ host }: { host?: StudioHost } = {}) {
+export default function StudioApp({ host }: { host: StudioHost }) {
+  if (!host) throw Error('编辑器必须通过 V4 工程宿主启动');
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<ModelApi>(null);
   const creationApi = useRef<CreationApi>(null);
@@ -307,14 +242,10 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const highlightSourceSelection = creationSelectionKind !== 'cell';
   const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
-  const {
-    project,
-    setProject,
-    snapshot: studioSnapshot,
-  } = useStudioProject(host);
+  const { project, snapshot: studioSnapshot } = useStudioProject(host);
   const pr = useRef(project);
   useLayoutEffect(() => {
-    if (host) pr.current = project;
+    pr.current = project;
   }, [host, project]);
   const [active, setActive] = useState<string | null>(null),
     ar = useRef(active);
@@ -334,10 +265,13 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       snap: true,
     }),
     sr = useRef(settings);
-  const [ready, setReady] = useState(false),
+  const [readyImage, setReadyImage] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     busyRef = useRef(false),
     [status, setStatus] = useState('正在分析底图…');
+  // A newly opened document must never inherit the previous image worker's
+  // readiness while its initialization effect is still pending.
+  const ready = readyImage !== null && readyImage === project.image;
   const [preview, setPreview] = useState<Cubic[]>([]),
     [proposed, setProposed] = useState<TracePath | null>(null),
     [opacity, setOpacity] = useState(85),
@@ -388,25 +322,11 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         { resolve: (value: unknown) => void; reject: (error: Error) => void }
       >(),
     );
-  const history = useRef<Project[]>([]),
-    future = useRef<Project[]>([]),
-    [, setHistoryTick] = useState(0),
-    [legacyHistorySize, setHistorySize] = useState(0),
-    [legacyFutureSize, setFutureSize] = useState(0),
-    [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null),
-    [legacySaved, setSaved] = useState('正在恢复工程…'),
-    [initialized, setInitialized] = useState(!!host);
-  const historySize = studioSnapshot
-    ? Number(studioSnapshot.editorState.canUndo)
-    : legacyHistorySize;
-  const futureSize = studioSnapshot
-    ? Number(studioSnapshot.editorState.canRedo)
-    : legacyFutureSize;
-  const saved = studioSnapshot
-    ? studioSnapshot.storage.dirty
-      ? '有修改未保存'
-      : '已保存'
-    : legacySaved;
+  const [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null);
+  const initialized = true;
+  const historySize = Number(studioSnapshot.editorState.canUndo);
+  const futureSize = Number(studioSnapshot.editorState.canRedo);
+  const saved = studioSnapshot.storage.dirty ? '有修改未保存' : '已保存';
   const file = useRef<HTMLInputElement>(null),
     projectFile = useRef<HTMLInputElement>(null),
     space = useRef(false),
@@ -468,11 +388,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     [snapFeedback, setSnapFeedback] = useState<EndpointSnapFeedback | null>(
       null,
     );
-  const lastNodeTap = useRef<{
-    pathId: string;
-    index: number;
-    time: number;
-  } | null>(null);
   const selectNodesNow = (ids: number[]) => {
     nodesRef.current = ids;
     setSelectedNodes(ids);
@@ -555,7 +470,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   };
   const setVisible = (ids: string[], visible: boolean) => {
     if (busyRef.current || drag.current) return;
-    if (host) {
+    {
       const captured = host.getSnapshot();
       pr.current = captured.runtime
         .commandPath(
@@ -563,18 +478,12 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           { project: captured.project },
         )
         .commit();
-    } else
-      transact((p) =>
-        p.paths
-          .filter((p) => ids.includes(p.id))
-          .forEach((p) => (p.visible = visible)),
-      );
+    }
     if (!visible)
       selectPathsNow(pathsRef.current.filter((id) => !ids.includes(id)));
     setStatus(visible ? '已显示路径 · 可撤销' : '已隐藏路径 · 可撤销');
   };
   const commitGroup = (request: Record<string, unknown>) => {
-    if (!host) throw Error('分组命令需要 V4 会话');
     const captured = host.getSnapshot();
     const next = captured.runtime
       .commandGroup(request, { project: captured.project })
@@ -584,9 +493,8 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   };
   const groupSelection = () => {
     if (busyRef.current || drag.current) return;
-    const ids = pathsRef.current,
-      id = crypto.randomUUID();
-    if (host) {
+    const ids = pathsRef.current;
+    {
       try {
         commitGroup({
           kind: 'create-group',
@@ -597,16 +505,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         setStatus(errorMessage(error));
         return;
       }
-    } else
-      transact((p) => {
-        (p.groups ||= []).push({
-          id,
-          name: '分组 ' + ((p.groups?.length || 0) + 1),
-        });
-        p.paths
-          .filter((p) => ids.includes(p.id))
-          .forEach((p) => (p.groupId = id));
-      });
+    }
     setStatus(
       ids.length
         ? '已将 ' + ids.length + ' 条路径编组 · Ctrl+Z 撤销'
@@ -616,7 +515,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const deletePaths = () => {
     if (busyRef.current || drag.current || !pathsRef.current.length) return;
     const ids = pathsRef.current;
-    if (host) {
+    {
       const captured = host.getSnapshot();
       pr.current = captured.runtime
         .commandPath(
@@ -624,8 +523,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           { project: captured.project },
         )
         .commit();
-    } else
-      transact((p) => (p.paths = p.paths.filter((p) => !ids.includes(p.id))));
+    }
     clearSelection();
     setStatus('已删除 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
   };
@@ -653,69 +551,16 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
-  const fileHandle = useRef<ProjectFileHandle | null>(null);
-  const projectBinding = useRef<ProjectBinding | null>(null);
-  const writer = useRef(new FileWriter());
-  const backupQueue = useRef(Promise.resolve());
-  const backupSaved = useRef<Project | null>(null);
-  const backupBinding = useRef<ProjectFileHandle | null>(null);
-  const fileSaved = useRef<{
-    binding: ProjectBinding;
-    project: Project;
-  } | null>(null);
-  const [fileName, setFileName] = useState('');
-  const displayedFileName = studioSnapshot
-    ? studioSnapshot.storage.target?.kind === 'web'
+  const displayedFileName =
+    studioSnapshot.storage.target?.kind === 'web'
       ? studioSnapshot.storage.target.handle.name
       : studioSnapshot.storage.target?.kind === 'desktop'
         ? projectNameFromPath(studioSnapshot.storage.target.path)
-        : studioSnapshot.presentation.fileName || ''
-    : fileName;
+        : studioSnapshot.presentation.fileName || '';
   const [fileBusy, setFileBusy] = useState(false);
   const fileBusyRef = useRef(false);
-  const [bindingVersion, setBindingVersion] = useState(0);
-  const bindFile = (handle: ProjectFileHandle | null) => {
-    fileHandle.current = handle;
-    projectBinding.current = handle
-      ? { kind: 'web', handle, name: handle.name }
-      : null;
-    fileSaved.current = null;
-    setFileName(handle?.name || '');
-    setBindingVersion((v) => v + 1);
-  };
-  const bindDesktopFile = (path: string | null) => {
-    fileHandle.current = null;
-    projectBinding.current = path
-      ? { kind: 'desktop', path, name: projectNameFromPath(path) }
-      : null;
-    fileSaved.current = null;
-    setFileName(path ? projectNameFromPath(path) : '');
-    setBindingVersion((v) => v + 1);
-  };
-  const backupProject = (snapshot: Project, handle = fileHandle.current) => {
-    if (drag.current?.base && snapshot === pr.current)
-      snapshot = drag.current.base;
-    const task = backupQueue.current
-      .catch(() => {})
-      .then(() => workspaceDB('put', { project: snapshot, handle }));
-    backupQueue.current = task;
-    return task.then(() => {
-      backupSaved.current = snapshot;
-      backupBinding.current = handle;
-    });
-  };
-  const writeProjectFile = async (
-    snapshot: Project,
-    handle: ProjectFileHandle,
-  ) => {
-    await writer.current.write(handle, await encodeProjectBytes(snapshot));
-    const binding: ProjectBinding = { kind: 'web', handle, name: handle.name };
-    fileSaved.current = { binding, project: snapshot };
-    if (pr.current === snapshot && fileHandle.current === handle)
-      setSaved('已保存到 ' + handle.name);
-  };
   const saveProject = async (saveAs = false) => {
-    if (host) {
+    {
       if (fileBusyRef.current) return;
       const before = host.getSnapshot();
       if (before.editorState.previewId) {
@@ -769,140 +614,13 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       }
       return;
     }
-    if (fileBusyRef.current || drag.current) {
-      if (drag.current) setStatus('请先完成或取消拖动，再保存工程');
-      return;
-    }
-    fileBusyRef.current = true;
-    setFileBusy(true);
-    try {
-      const snapshot = pr.current;
-      if (isDesktopRuntime()) {
-        let path =
-          !saveAs && projectBinding.current?.kind === 'desktop'
-            ? projectBinding.current.path
-            : null;
-        if (!path)
-          path = await desktopProjectSavePath(fileName || 'Splinelet工程.spl');
-        if (!path) {
-          setStatus('已取消选择保存位置');
-          return;
-        }
-        setSaved('正在写入工程文件…');
-        await desktopWriteProject(path, await encodeProjectBytes(snapshot));
-        if (
-          projectBinding.current?.kind !== 'desktop' ||
-          projectBinding.current.path !== path
-        )
-          bindDesktopFile(path);
-        const binding = projectBinding.current!;
-        fileSaved.current = { binding, project: snapshot };
-        await backupProject(pr.current, null);
-        setSaved(
-          pr.current === snapshot
-            ? '已保存到 ' + binding.name
-            : '有修改未保存 · Ctrl+S 保存工程',
-        );
-        setStatus('已绑定 ' + binding.name + ' · 后续修改按 Ctrl+S 保存');
-        return;
-      }
-      let handle =
-        !saveAs && projectBinding.current?.kind === 'web'
-          ? projectBinding.current.handle
-          : null;
-      if (!handle) {
-        const pickerWindow = window as FilePickerWindow;
-        if (!pickerWindow.showSaveFilePicker) {
-          let backupError: unknown = null;
-          try {
-            await backupProject(snapshot);
-          } catch (error: unknown) {
-            backupError = error;
-          }
-          download(
-            await encodeProjectBytes(snapshot),
-            'Splinelet工程.spl',
-            SPL_MIME,
-          );
-          setSaved(
-            backupError
-              ? '已下载工程文件 · 浏览器草稿失败'
-              : pr.current === snapshot
-                ? '已下载工程文件 · 浏览器草稿已保存'
-                : '已下载工程文件 · 有新修改未保存',
-          );
-          setStatus(
-            backupError
-              ? '当前浏览器不支持直接写文件，已下载 .spl；浏览器草稿失败：' +
-                  errorMessage(backupError)
-              : '当前浏览器不支持直接写文件，已下载 .spl；浏览器草稿仍用于恢复',
-          );
-          return;
-        }
-        handle = await pickerWindow.showSaveFilePicker({
-          suggestedName: fileName.endsWith('.spl')
-            ? fileName
-            : 'Splinelet工程.spl',
-          types: [
-            {
-              description: 'Splinelet工程',
-              accept: { [SPL_MIME]: ['.spl'] },
-            },
-          ],
-        });
-      } else if (
-        (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
-      ) {
-        if (
-          (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted'
-        )
-          throw Error('未获得文件写入权限；请重新保存授权或另存为');
-      }
-      setSaved('正在写入工程文件…');
-      await writeProjectFile(snapshot, handle);
-      if (fileHandle.current !== handle) bindFile(handle);
-      fileSaved.current = {
-        binding: projectBinding.current!,
-        project: snapshot,
-      };
-      let backupError: unknown = null;
-      try {
-        await backupProject(pr.current, handle);
-      } catch (error: unknown) {
-        backupError = error;
-      }
-      setSaved(
-        pr.current === snapshot
-          ? '已保存到 ' + handle.name
-          : '有新修改未保存 · Ctrl+S 保存工程',
-      );
-      setStatus(
-        backupError
-          ? '已保存到 ' +
-              handle.name +
-              '，但浏览器草稿失败：' +
-              errorMessage(backupError)
-          : '已绑定 ' + handle.name + ' · 后续修改按 Ctrl+S 保存到此文件',
-      );
-      navigator.storage?.persist?.().catch(() => {});
-    } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        setStatus('已取消选择保存位置');
-        return;
-      }
-      setSaved('文件保存失败 · ' + errorMessage(error));
-      setStatus('文件未写入成功；浏览器备份仍独立保存。可重试保存或另存为。');
-    } finally {
-      fileBusyRef.current = false;
-      setFileBusy(false);
-    }
   };
   const loadProjectFile = async (
     bytes: Uint8Array | string,
     name: string,
     binding: ProjectBinding | null,
   ) => {
-    if (host) {
+    {
       if (
         busyRef.current ||
         fileBusyRef.current ||
@@ -942,25 +660,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       );
       return { paths: next.project.paths.length };
     }
-    const parsed = decodeProject(bytes) as Project;
-    await apiRef.current?.load_project({ project: parsed });
-    if (binding?.kind === 'desktop') bindDesktopFile(binding.path);
-    else if (binding?.kind === 'web') bindFile(binding.handle);
-    else if (isDesktopRuntime()) bindDesktopFile(null);
-    else bindFile(null);
-    if (binding)
-      fileSaved.current = { binding: projectBinding.current!, project: parsed };
-    await backupProject(
-      parsed,
-      binding?.kind === 'web' ? binding.handle : null,
-    );
-    setSaved(binding ? '已打开 ' + name : '已导入旧版工程');
-    setStatus(
-      binding
-        ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
-        : '旧版 JSON 已导入 · 保存时将创建 .spl 工程',
-    );
-    return { paths: parsed.paths.length };
   };
   const openProjectFile = async () => {
     if (busyRef.current || fileBusyRef.current) return;
@@ -1012,44 +711,14 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         setStatus('打开工程失败：' + errorMessage(error));
     }
   };
-  const setDoc = (p: Project, record = true) => {
-    if (host) {
-      if (p === host.getSnapshot().project) {
-        pr.current = p;
-        return;
-      }
-      throw Error('此操作尚未接入统一工程命令');
-    }
-    if (record) {
-      history.current.push(cloneTraceValue(pr.current));
-      if (history.current.length > 80) history.current.shift();
-      future.current = [];
-      setHistorySize(history.current.length);
-      setFutureSize(0);
-    }
-    pr.current = p;
-    setProject(p);
-    setHistoryTick((t) => t + 1);
-  };
-  const transact = (fn: (p: Project) => void) => {
-    if (host) throw Error('此操作尚未接入统一工程命令');
-    const p = cloneTraceValue(pr.current);
-    fn(p);
-    setDoc(p);
-  };
   const nodeActions = () =>
-    host
-      ? createV4NodeActions({
-          runtime: host.getSnapshot().runtime,
-          project: host.getSnapshot().project,
-          onCommit: (next: Project) => {
-            pr.current = next;
-          },
-        })
-      : createLegacyNodeActions({
-          getProject: () => pr.current,
-          transact,
-        });
+    createV4NodeActions({
+      runtime: host.getSnapshot().runtime,
+      project: host.getSnapshot().project,
+      onCommit: (next: Project) => {
+        pr.current = next;
+      },
+    });
   const setActiveNow = (id: string | null) => {
     if (ar.current !== id) {
       setSelection(null);
@@ -1108,143 +777,26 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       });
       worker.current.postMessage({ ...args, id });
     });
-  const restoreDocument = useEffectEvent(setDoc);
-  useEffect(() => {
-    let alive = true;
-    if (host) return;
-    const startingProject = pr.current;
-    workspaceDB('get')
-      .then(
-        async (
-          session:
-            | { project?: unknown; handle?: ProjectFileHandle }
-            | undefined,
-        ) => {
-          let v = session?.project;
-          if (!v) {
-            try {
-              const r = await fetch('/sandrone-example.spl');
-              if (r.ok) {
-                v = decodeProject(new Uint8Array(await r.arrayBuffer()));
-              }
-            } catch {}
-          }
-          // A late restore must never replace an import or edit made meanwhile.
-          if (v && alive && pr.current === startingProject) {
-            try {
-              restoreDocument(validateProject(v), false);
-              if (session?.handle) {
-                bindFile(session.handle);
-                fileSaved.current = null;
-              }
-              setStatus('已恢复本地工程');
-            } catch {
-              setStatus('本地工程不可用，已载入默认示例');
-            }
-          }
-        },
-      )
-      .catch(() => setSaved('浏览器草稿不可用，请保存工程'))
-      .finally(() => {
-        if (alive) setInitialized(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [host]);
   useEffect(() => {
     if (!initialized || gesturing) return;
-    if (host) {
-      if (studioSnapshot?.editorState.previewId) return;
-      const timer = setTimeout(() => {
-        host.autosave().catch((error) => setStatus(errorMessage(error)));
-      }, 200);
-      return () => clearTimeout(timer);
-    }
-    const handle = fileHandle.current;
-    const binding = projectBinding.current;
-    setSaved(
-      binding
-        ? fileSaved.current?.binding === binding &&
-          fileSaved.current?.project === project
-          ? '已保存到 ' + binding.name
-          : '有修改未保存 · 正在保存浏览器草稿…'
-        : '正在保存浏览器草稿…',
-    );
-    const backupTimer = setTimeout(() => {
-      backupProject(project, handle)
-        .then(() => {
-          if (pr.current !== project) return;
-          const currentBinding = projectBinding.current;
-          if (
-            currentBinding &&
-            fileSaved.current?.binding === currentBinding &&
-            fileSaved.current?.project === project
-          )
-            setSaved('已保存到 ' + currentBinding.name);
-          else if (currentBinding)
-            setSaved(
-              '有修改未保存 · 浏览器草稿已保存 · Ctrl+S 保存到 ' +
-                currentBinding.name,
-            );
-          else setSaved('浏览器草稿已保存 · 未保存工程文件');
-        })
-        .catch((error: unknown) => {
-          setSaved('浏览器备份失败');
-          setStatus(
-            '浏览器备份失败：' + errorMessage(error) + '；请保存到工程文件',
-          );
-        });
+    if (studioSnapshot.editorState.previewId) return;
+    const timer = setTimeout(() => {
+      host.autosave().catch((error) => setStatus(errorMessage(error)));
     }, 200);
-    return () => {
-      clearTimeout(backupTimer);
-    };
+    return () => clearTimeout(timer);
   }, [
     project,
     initialized,
-    bindingVersion,
     gesturing,
     host,
-    studioSnapshot?.editorState.previewId,
+    studioSnapshot.editorState.previewId,
   ]);
-  useEffect(() => {
-    if (host) return;
-    const flush = () => {
-      if (
-        initialized &&
-        (backupSaved.current !== pr.current ||
-          backupBinding.current !== fileHandle.current)
-      )
-        backupProject(pr.current).catch(() => {});
-    };
-    const visibility = () => {
-      if (document.visibilityState === 'hidden') flush();
-    };
-    const leave = (e: BeforeUnloadEvent) => {
-      if (
-        initialized &&
-        (backupSaved.current !== pr.current ||
-          backupBinding.current !== fileHandle.current)
-      ) {
-        flush();
-        e.preventDefault();
-      }
-    };
-    document.addEventListener('visibilitychange', visibility);
-    window.addEventListener('pagehide', flush);
-    window.addEventListener('beforeunload', leave);
-    return () => {
-      document.removeEventListener('visibilitychange', visibility);
-      window.removeEventListener('pagehide', flush);
-      window.removeEventListener('beforeunload', leave);
-    };
-  }, [initialized, host]);
   useEffect(() => {
     if (!initialized) return;
     let alive = true;
     queueMicrotask(() => {
       if (!alive) return;
-      setReady(false);
+      setReadyImage(null);
       setPreview([]);
       setCandidates([]);
       setShowCandidates(false);
@@ -1293,7 +845,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           x: p.x / s,
           y: p.y / s,
         }));
-        setReady(true);
+        setReadyImage(project.image);
         setStatus('底图就绪');
         fitViewForEffect();
       } catch (error: unknown) {
@@ -1322,13 +874,12 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     return () => observer.disconnect();
   }, []);
   const undo = () => {
-    if (host) {
+    {
       if (busyRef.current || drag.current) return;
       studioDrag.cancel();
       host.undo();
       const p = host.getSnapshot().project as Project;
       pr.current = p;
-      lastNodeTap.current = null;
       setPreview([]);
       setProposed(null);
       previewToken.current++;
@@ -1345,37 +896,14 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       setStatus('已撤销');
       return;
     }
-    if (busyRef.current || drag.current) return;
-    lastNodeTap.current = null;
-    const p = history.current.pop();
-    if (!p) return;
-    future.current.push(cloneTraceValue(pr.current));
-    setHistorySize(history.current.length);
-    setFutureSize(future.current.length);
-    setDoc(p, false);
-    setPreview([]);
-    setProposed(null);
-    previewToken.current++;
-    if (!p.paths.some((x) => x.id === ar.current)) {
-      setActiveNow(p.paths.at(-1)?.id || null);
-      setDrawing(false);
-    }
-    setSelection(null);
-    setMergeSource(null);
-    if (p.paths.find((x) => x.id === ar.current)?.closed) finish();
-    selectPathsNow(
-      pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
-    );
-    setStatus('已撤销');
   };
   const redo = () => {
-    if (host) {
+    {
       if (busyRef.current || drag.current) return;
       studioDrag.cancel();
       host.redo();
       const p = host.getSnapshot().project as Project;
       pr.current = p;
-      lastNodeTap.current = null;
       setSelection(null);
       setMergeSource(null);
       if (!p.paths.some((x) => x.id === ar.current && !x.closed)) finish();
@@ -1385,25 +913,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       setStatus('已重做');
       return;
     }
-    if (busyRef.current || drag.current) return;
-    lastNodeTap.current = null;
-    const p = future.current.pop();
-    if (!p) return;
-    history.current.push(cloneTraceValue(pr.current));
-    setHistorySize(history.current.length);
-    setFutureSize(future.current.length);
-    setDoc(p, false);
-    setSelection(null);
-    setMergeSource(null);
-    if (!p.paths.some((x) => x.id === ar.current && !x.closed)) finish();
-    selectPathsNow(
-      pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
-    );
-    setStatus('已重做');
   };
   const finish = () => {
     traceTarget.current = null;
-    lastNodeTap.current = null;
     setMergeSource(null);
     setDrawing(false);
     drawingRef.current = false;
@@ -1412,7 +924,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     setStatus('路径已结束 · 可编辑节点，或新建下一条路径');
   };
   const begin = () => {
-    const target = host ? creationApi.current?.trace_target() || null : null;
+    const target = creationApi.current?.trace_target() || null;
     finish();
     traceTarget.current = target;
     setTraceEnd('end');
@@ -1549,63 +1061,32 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       validPoint(p);
       const config = { ...sr.current, ...options };
       const current = pr.current.paths.find((p) => p.id === ar.current);
-      const captured = host?.getSnapshot();
+      const captured = host.getSnapshot();
       if (!drawingRef.current || !current || current.closed) {
         setTraceEnd('end');
-        const target = captured
-          ? traceTarget.current || creationApi.current?.trace_target()
-          : null;
+        const target =
+          traceTarget.current || creationApi.current?.trace_target();
         const start = await snapped(p, config);
-        if (captured) {
-          const beforeIds = new Set(
-            captured.project.paths.map((path: TracePath) => path.id),
-          );
-          const next = captured.runtime
-            .commandPath(
-              {
-                kind: 'start-path',
-                pixelPoint: start,
-                ...(target
-                  ? { role: target.role, targets: target.targets }
-                  : {}),
-                ...(target?.ownerNodeId
-                  ? { ownerNodeId: target.ownerNodeId }
-                  : {}),
-              },
-              { project: captured.project },
-            )
-            .commit() as Project;
-          const path = next.paths.find((path) => !beforeIds.has(path.id));
-          if (!path) throw Error('新线条未出现在源视图');
-          pr.current = next;
-          traceTarget.current = null;
-          setActiveNow(path.id);
-          setDrawing(true);
-          drawingRef.current = true;
-          setStatus('移动查看预览，点击落下下一锚点');
-          return start;
-        }
-        const path: TracePath = {
-          id: crypto.randomUUID(),
-          name: `路径 ${pr.current.paths.length + 1}`,
-          color: palette[pr.current.paths.length % palette.length],
-          start,
-          anchors: [start],
-          curves: [],
-          closed: false,
-          visible: true,
-          quality: 1,
-          fitError: 0,
-          fitting: 'single',
-        };
-        const creation = creationApi.current?.new_path(path);
-        transact((p) => {
-          p.paths.push(path);
-          if (creation) {
-            p.creation = creation;
-            p.version = 3;
-          }
-        });
+        const beforeIds = new Set(
+          captured.project.paths.map((path: TracePath) => path.id),
+        );
+        const next = captured.runtime
+          .commandPath(
+            {
+              kind: 'start-path',
+              pixelPoint: start,
+              ...(target ? { role: target.role, targets: target.targets } : {}),
+              ...(target?.ownerNodeId
+                ? { ownerNodeId: target.ownerNodeId }
+                : {}),
+            },
+            { project: captured.project },
+          )
+          .commit() as Project;
+        const path = next.paths.find((path) => !beforeIds.has(path.id));
+        if (!path) throw Error('新线条未出现在源视图');
+        pr.current = next;
+        traceTarget.current = null;
         setActiveNow(path.id);
         setDrawing(true);
         drawingRef.current = true;
@@ -1616,24 +1097,18 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       const a = splineEndpoint(current, end);
       if (dist(a, p) < 2) return a;
       const r = await traceSpan(a, p, config);
-      if (captured) {
-        if (r.curves.length !== 1) throw Error('续画需要单段拟合结果');
-        pr.current = captured.runtime
-          .commandPath(
-            {
-              kind: 'extend-path',
-              pathId: current.id,
-              end,
-              pixelCubic: r.curves[0],
-            },
-            { project: captured.project },
-          )
-          .commit() as Project;
-      } else
-        transact((p) => {
-          const index = p.paths.findIndex((v) => v.id === current.id);
-          p.paths[index] = extendSpline(p.paths[index], end, r);
-        });
+      if (r.curves.length !== 1) throw Error('续画需要单段拟合结果');
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'extend-path',
+            pathId: current.id,
+            end,
+            pixelCubic: r.curves[0],
+          },
+          { project: captured.project },
+        )
+        .commit() as Project;
       setStatus(
         config.mode === 'manual'
           ? '已直连 · 未吸附、未拟合 · 可拖动控制柄调整'
@@ -1651,31 +1126,25 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       if (!path || path.curves.length < 1) throw Error('至少先绘制一段曲线');
       if (path.closed) return;
       const end = drawingRef.current ? drawingEndRef.current : 'end';
-      const captured = host?.getSnapshot();
+      const captured = host.getSnapshot();
       const r = await traceSpan(
         splineEndpoint(path, end),
         splineEndpoint(path, end === 'start' ? 'end' : 'start'),
         options,
         false,
       );
-      if (captured) {
-        if (r.curves.length !== 1) throw Error('闭合需要单段拟合结果');
-        pr.current = captured.runtime
-          .commandPath(
-            {
-              kind: 'close-path',
-              pathId: path.id,
-              end,
-              pixelCubic: r.curves[0],
-            },
-            { project: captured.project },
-          )
-          .commit() as Project;
-      } else
-        transact((p) => {
-          const index = p.paths.findIndex((x) => x.id === path.id);
-          p.paths[index] = extendSpline(p.paths[index], end, r, true);
-        });
+      if (r.curves.length !== 1) throw Error('闭合需要单段拟合结果');
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'close-path',
+            pathId: path.id,
+            end,
+            pixelCubic: r.curves[0],
+          },
+          { project: captured.project },
+        )
+        .commit() as Project;
       finish();
       setStatus(
         r.fitError > sr.current.tolerance
@@ -1701,35 +1170,28 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
     const original = pr.current.paths.find((p) => p.id === pathId);
     if (!original) throw Error('路径不存在');
-    const result = removeNode(original, nodeIndex, sr.current.tolerance);
-    if (host)
-      nodeActions().deleteNodes(pathId, [nodeIndex], sr.current.tolerance);
-    else
-      transact((p) => {
-        const index = p.paths.findIndex((q) => q.id === pathId);
-        if (result.path) p.paths[index] = result.path;
-        else p.paths.splice(index, 1);
-      });
+    const result = nodeActions().deleteNodes(
+      pathId,
+      [nodeIndex],
+      sr.current.tolerance,
+    );
+    const next = host.getSnapshot().project as Project;
+    const path = next.paths.find((item) => item.id === pathId);
     finish();
-    setActiveNow(result.path ? pathId : null);
+    setActiveNow(path ? pathId : null);
     setTool('edit');
     setSelection(null);
     setStatus(
-      !result.path
+      result.removed
         ? '最后一个节点已删除 · 空路径已移除 · Ctrl+Z 撤销'
-        : result.merged
-          ? '节点已删除 · 相邻两段合成一段 · 形状变化约 ' +
-            result.fitError.toFixed(1) +
-            ' px · Ctrl+Z 撤销'
-          : '端点已删除 · 其余节点保持不变 · Ctrl+Z 撤销',
+        : '节点已删除 · 相邻节点直接连接 · Ctrl+Z 撤销',
     );
     return {
       pathId,
       removedNode: nodeIndex,
-      nodes: result.path ? pathNodes(result.path).length : 0,
-      segments: result.path?.curves.length || 0,
-      merged: result.merged,
-      shapeError: result.fitError,
+      nodes: path ? pathNodes(path).length : 0,
+      segments: path?.curves.length || 0,
+      removed: result.removed,
     };
   };
   const deleteSelection = () => {
@@ -1816,7 +1278,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     const a = pr.current.paths.find((p) => p.id === args.firstId),
       b = pr.current.paths.find((p) => p.id === args.secondId);
     const result = mergeSplines(a, args.firstEnd, b, args.secondEnd);
-    if (host) {
+    {
       const captured = host.getSnapshot();
       pr.current = captured.runtime
         .commandPath(
@@ -1830,12 +1292,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
           { project: captured.project },
         )
         .commit();
-    } else
-      transact((p) => {
-        p.paths = p.paths
-          .filter((p) => p.id !== args.secondId)
-          .map((p) => (p.id === args.firstId ? result.path : p));
-      });
+    }
     finish();
     setTool('edit');
     setActiveNow(result.path.id);
@@ -1861,7 +1318,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const inside = (p: Point) =>
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
   const studioDrag = useSourceDrag({
-    runtime: studioSnapshot?.runtime ?? null,
+    runtime: studioSnapshot.runtime,
     project,
     pathId: active ?? '',
     nodes: selectedNodes,
@@ -1883,10 +1340,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     studioDrag.cancel();
     const g = drag.current;
     if (!g) return;
-    if (g.base) {
-      pr.current = g.base;
-      setProject(g.base);
-    }
     if (g.kind === 'pan') setView(g.view);
     drag.current = null;
     if (stage.current?.hasPointerCapture(g.pointerId))
@@ -1954,31 +1407,8 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     stage.current?.focus({ preventScroll: true });
     const toggle = e.shiftKey || e.ctrlKey || e.metaKey;
     const selected = creationApi.current?.prepare_move({ ...target, toggle });
-    if (host) {
-      if (!selected?.nodeIds.length || toggle) return;
-      studioDrag.onObjectPointerDown(e, selected.nodeIds);
-      return;
-    }
-    if (!selected?.pathIds.length) {
-      setStatus('此选区没有可移动的源线 · 请选中有源线的部件');
-      return;
-    }
-    if (toggle) return;
-    drag.current = {
-      kind: 'objects',
-      ids: selected.pathIds,
-      label: selected.label,
-      pointerId: e.pointerId,
-      button: e.button,
-      x: e.clientX,
-      y: e.clientY,
-      origin: coordinate(e),
-      base: pr.current,
-      moved: false,
-    };
-    setGesturing(true);
-    stage.current?.setPointerCapture(e.pointerId);
-    setStatus('移动 ' + selected.label + ' · Shift 限制方向 · Esc 取消');
+    if (!selected?.nodeIds.length || toggle) return;
+    studioDrag.onObjectPointerDown(e, selected.nodeIds);
   };
   const pointerDown = (e: React.PointerEvent) => {
     if (drag.current) return;
@@ -2080,91 +1510,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         setMarquee(g.rect);
         return;
       }
-      const q: Project = {
-        ...g.base,
-        paths: g.base.paths.map((path: TracePath) =>
-          (g.kind === 'objects' ? g.ids.includes(path.id) : path.id === g.path)
-            ? cloneTraceValue(path)
-            : path,
-        ),
-      };
-      let dx = p.x - g.origin.x,
-        dy = p.y - g.origin.y;
-      if (e.shiftKey) {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-        else dx = 0;
-      }
-      if (g.kind === 'objects') {
-        translatePaths(q, g.ids, dx, dy);
-        pr.current = q;
-        setProject(q);
-        setStatus(
-          '移动 ' +
-            g.label +
-            ' · X ' +
-            dx.toFixed(1) +
-            ' / Y ' +
-            dy.toFixed(1) +
-            ' px · Esc 取消',
-        );
-        return;
-      }
-      const snapped =
-        g.kind === 'nodes' &&
-        g.snapContext &&
-        nodeSnap &&
-        !e.altKey &&
-        !e.shiftKey
-          ? snapEndpoint(
-              g.snapContext,
-              {
-                x: g.snapContext.origin.x + dx,
-                y: g.snapContext.origin.y + dy,
-              },
-              {
-                scale: vr.current.s,
-                preserveSeam: keepSeams,
-                previousId: g.snapTarget,
-              },
-            )
-          : null;
-      g.snapTarget = snapped?.id;
-      setSnapFeedback(snapped);
-      if (snapped && g.snapContext) {
-        dx = snapped.position.x - g.snapContext.origin.x;
-        dy = snapped.position.y - g.snapContext.origin.y;
-      }
-      {
-        const path = q.paths.find((p) => p.id === g.path);
-        if (!path) return;
-        if (g.kind === 'nodes') translateNodes(path, g.ids, dx, dy);
-        else {
-          const originalPath = g.base.paths.find(
-            (candidate: TracePath) => candidate.id === g.path,
-          );
-          const original = originalPath?.curves[g.curve]?.[g.point];
-          if (!original) return;
-          moveHandle(path, g.curve, g.point, {
-            x: original.x + dx,
-            y: original.y + dy,
-          });
-          path.anchors = pathNodes(path);
-          delete path.fitError;
-        }
-      }
-      pr.current = q;
-      setProject(q);
-      setStatus(
-        (snapped
-          ? `${snapped.locked ? '保持' : '吸附'} ${snapped.label} · Alt 解除 · `
-          : '') +
-          '移动 X ' +
-          dx.toFixed(1) +
-          ' / Y ' +
-          dy.toFixed(1) +
-          ' px · Shift 限制方向 · Esc 取消',
-      );
-      return;
     }
     if (
       tool !== 'trace' ||
@@ -2257,33 +1602,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       }
       return;
     }
-    if (!g.moved && g.collapseNode !== undefined) {
-      const path = pr.current.paths.find((p) => p.id === g.path);
-      if (path) setSelection(nodeSelection(path, g.collapseNode));
-    }
-    // Pointer capture retargets native click/dblclick to the stage. Recognize
-    // two completed, unmoved endpoint taps here, after releasing the gesture.
-    if (g.kind === 'nodes' && !g.moved) {
-      const path = pr.current.paths.find((p) => p.id === g.path);
-      const index = selectedNode(path, { curve: g.curve, point: g.point });
-      const previous = lastNodeTap.current;
-      lastNodeTap.current =
-        path && index !== null
-          ? { pathId: path.id, index, time: currentTime() }
-          : null;
-      if (
-        path &&
-        !path.closed &&
-        index !== null &&
-        [0, path.curves.length].includes(index) &&
-        previous?.pathId === path.id &&
-        previous.index === index &&
-        currentTime() - previous.time < 400
-      ) {
-        resumeSelected(index === 0 ? 'start' : 'end');
-        return;
-      }
-    } else lastNodeTap.current = null;
     if (g.kind === 'box') {
       if (tool === 'select') {
         const hits = g.moved
@@ -2320,85 +1638,13 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       }
       return;
     }
-    if (g.moved && g.base) {
-      if (JSON.stringify(pr.current.paths) !== JSON.stringify(g.base.paths)) {
-        history.current.push(g.base);
-        if (history.current.length > 80) history.current.shift();
-        future.current = [];
-        setHistorySize(history.current.length);
-        setFutureSize(0);
-        setHistoryTick((t) => t + 1);
-      }
-      setStatus(
-        (g.kind === 'objects'
-          ? g.label
-          : g.kind === 'nodes'
-            ? '节点'
-            : '控制柄') + '已移动 · Ctrl+Z 撤销',
-      );
-    }
   };
   const startPointDrag = (
     e: React.PointerEvent,
     curve: number,
     point: number,
   ) => {
-    if (host) {
-      if (tool === 'edit') studioDrag.onPointPointerDown(e, curve, point);
-      return;
-    }
-    if (drag.current) return;
-    if (space.current || e.button !== 0 || tool === 'pan') return;
-    e.stopPropagation();
-    if (tool !== 'edit' || busyRef.current || e.button !== 0 || mergeSource)
-      return;
-    e.preventDefault();
-    stage.current?.focus({ preventScroll: true });
-    const path = pr.current.paths.find((p) => p.id === ar.current);
-    if (!path) return;
-    const index = selectedNode(path, { curve, point });
-    let ids: number[] = [];
-    if (index !== null) {
-      const modified = e.shiftKey || e.ctrlKey || e.metaKey;
-      ids = modified
-        ? (pickSelection(nodesRef.current as never, index as never, [], {
-            toggle: true,
-          }) as unknown as number[])
-        : nodesRef.current.includes(index)
-          ? nodesRef.current
-          : [index];
-      setSelection(
-        ids.length
-          ? nodeSelection(path, ids.includes(index) ? index : ids.at(-1))
-          : null,
-      );
-      selectNodesNow(ids);
-      if (modified) {
-        lastNodeTap.current = null;
-        return;
-      }
-    } else setSelection({ curve, point });
-    drag.current = {
-      kind: index === null ? 'point' : 'nodes',
-      pointerId: e.pointerId,
-      button: e.button,
-      path: ar.current,
-      ids,
-      curve,
-      point,
-      x: e.clientX,
-      y: e.clientY,
-      origin: coordinate(e),
-      base: pr.current,
-      moved: false,
-      ...(index !== null && ids.length === 1
-        ? { snapContext: endpointSnapContext(pr.current, path.id, index) }
-        : {}),
-      ...(index !== null && ids.length > 1 ? { collapseNode: index } : {}),
-    };
-    setGesturing(true);
-    setSnapFeedback(null);
-    stage.current?.setPointerCapture(e.pointerId);
+    if (tool === 'edit') studioDrag.onPointPointerDown(e, curve, point);
   };
   const splitAt = (e: React.MouseEvent, pathId: string) => {
     e.stopPropagation();
@@ -2610,7 +1856,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     if (!/^image\/(png|jpeg|webp)$/.test(f.type))
       throw Error('请导入 PNG、JPG 或 WebP 图片');
     if (f.size > 30 * 1024 * 1024) throw Error('图片不能超过 30 MB');
-    const startingState = host?.getSnapshot().editorState;
+    const startingState = host.getSnapshot().editorState;
     if (startingState?.previewId) throw Error('请先完成或取消拖动，再新建工程');
     const data = await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
@@ -2637,7 +1883,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       c.getContext('2d')!.drawImage(img, 0, 0, w, h);
       src = c.toDataURL('image/png');
     }
-    if (host && startingState) {
+    {
       const image = await fetch(src);
       const bytes = new Uint8Array(await image.arrayBuffer());
       const current = host.getSnapshot().editorState;
@@ -2656,7 +1902,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       });
       const next = host.open(opened, {
         fileName: null,
-        blenderExtrusionMM: initialTraceProject.depthMM,
+        blenderExtrusionMM: host.getSnapshot().presentation.blenderExtrusionMM,
       });
       pr.current = next.project as Project;
       finish();
@@ -2667,26 +1913,11 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       setStatus('正在分析新底图…');
       return;
     }
-    finish();
-    setActiveNow(null);
-    bindFile(null);
-    setDoc({
-      ...initialTraceProject,
-      image: src,
-      imageName: f.name,
-      width: w,
-      height: h,
-    });
-    setStatus('正在分析新底图…');
   };
   const exportFile = async (format: 'svg' | 'blender' | 'json') => {
     const p = pr.current;
     if (format === 'json') {
-      download(
-        host ? host.exportBytes() : await encodeProjectBytes(p),
-        'Splinelet工程.spl',
-        SPL_MIME,
-      );
+      download(host.exportBytes(), 'Splinelet工程.spl', SPL_MIME);
       setStatus('.spl 工程已导出，包含底图和所有编辑数据');
       return;
     }
@@ -2749,7 +1980,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     args: import('@/hooks/trace-agent-contract').AgentCreatePathArgs,
   ) =>
     lock(async () => {
-      const captured = host?.getSnapshot();
+      const captured = host.getSnapshot();
       if (
         !Array.isArray(args.points) ||
         args.points.length < 2 ||
@@ -2812,7 +2043,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         a = r.end;
       }
       if (!path.curves.length) throw Error('锚点不能全部重合');
-      const plan = captured?.runtime.commandPath(
+      const plan = captured.runtime.commandPath(
         {
           kind: 'draw-path',
           pixelCubics: path.curves,
@@ -2822,7 +2053,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         { project: captured.project },
       );
       const commit = () => {
-        if (!captured || !plan) throw Error('候选路径缺少工程上下文');
         const beforeIds = new Set(
           captured.project.paths.map((item: TracePath) => item.id),
         );
@@ -2834,7 +2064,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       };
       let createdId = path.id;
       if (args.preview) {
-        proposedCommit.current = captured ? { id: path.id, commit } : null;
+        proposedCommit.current = { id: path.id, commit };
         setProposed(path);
         setStatus(
           `候选路径已生成 · ${path.curves.length} 段曲线` +
@@ -2843,8 +2073,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
               : '，检查后接受'),
         );
       } else {
-        if (captured) createdId = commit().id;
-        else transact((p) => p.paths.push(path));
+        createdId = commit().id;
         setActiveNow(createdId);
         finish();
         setStatus(
@@ -2899,7 +2128,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     after = false,
   ) {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
-    if (host) {
+    {
       commitGroup({
         kind: 'move-group-paths',
         pathIds: ids,
@@ -2914,15 +2143,6 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         groupId,
       };
     }
-    const next = cloneTraceValue(pr.current);
-    const moved = movePaths(next, ids, groupId, targetId, after);
-    if (
-      moved &&
-      JSON.stringify(next.paths) !== JSON.stringify(pr.current.paths)
-    )
-      setDoc(next);
-    setStatus('已移动 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
-    return { moved, pathIds: ids, groupId };
   }
   useEffect(() => {
     movePathBatchRef.current = movePathBatch;
@@ -2966,7 +2186,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     if (action === 'visibility' && typeof a.visible !== 'boolean')
       throw Error('visible 必须为布尔值');
     let id = action === 'create' ? crypto.randomUUID() : a.id;
-    if (host) {
+    {
       const next = commitGroup({
         kind: (
           {
@@ -2986,30 +2206,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         id = next.groups?.find(
           (item) => !groups.some((old) => old.id === item.id),
         )?.id;
-    } else
-      transact((p) => {
-        p.groups = p.groups || [];
-        if (action === 'create') p.groups.push({ id: id!, name: name.trim() });
-        if (action === 'rename')
-          p.groups.find((g) => g.id === id)!.name = name.trim();
-        if (action === 'assign')
-          p.paths
-            .filter((p) => pathIds.includes(p.id))
-            .forEach((p) => {
-              if (id) p.groupId = id;
-              else delete p.groupId;
-            });
-        if (action === 'visibility')
-          p.paths
-            .filter((p) => p.groupId === id)
-            .forEach((p) => (p.visible = visible));
-        if (action === 'delete') {
-          p.groups = p.groups.filter((g) => g.id !== id);
-          p.paths
-            .filter((p) => p.groupId === id)
-            .forEach((p) => delete p.groupId);
-        }
-      });
+    }
     setStatus(
       action === 'delete'
         ? '已解散分组，曲线已移至未分组 · 可撤销'
@@ -3025,29 +2222,18 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   };
   const refitPath = async (args: { id?: string } = {}) =>
     lock(async () => {
-      const captured = host?.getSnapshot();
-      const sourceProject: Project = captured?.project ?? pr.current;
+      const captured = host.getSnapshot();
+      const sourceProject = captured.project as Project;
       const original = sourceProject.paths.find(
         (p) => p.id === (args.id || ar.current),
       );
       if (!original) throw Error('请先选中路径');
-      // V4 refits current source spans without collapsing short edges or
-      // changing their identities. Legacy files retain their anchor workflow.
-      const points = captured
-        ? original.curves.map((curve) => curve[0])
-        : original.anchors.filter(
-            (p, i, all) => !i || dist(p, all[i - 1]) > 0.1,
-          );
-      if (captured && !original.closed && original.curves.length)
+      // Refit current source spans without collapsing short edges or changing
+      // their identities.
+      const points = original.curves.map((curve) => curve[0]);
+      if (!original.closed && original.curves.length)
         points.push(original.curves.at(-1)![3]);
-      if (
-        !captured &&
-        original.closed &&
-        points.length > 1 &&
-        dist(points[0], points.at(-1)) < 0.1
-      )
-        points.pop();
-      if (points.length < 2) throw Error('这条旧路径没有足够的原落点记录');
+      if (points.length < 2) throw Error('这条路径没有足够的原落点记录');
       const path = cloneTraceValue(original);
       path.curves = [];
       path.quality = 1;
@@ -3068,21 +2254,16 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         path.fitError = Math.max(path.fitError, r.fitError);
         a = b;
       }
-      if (captured)
-        pr.current = captured.runtime
-          .commandPath(
-            {
-              kind: 'refit-path',
-              pathId: original.id,
-              pixelCubics: path.curves,
-            },
-            { project: captured.project },
-          )
-          .commit();
-      else
-        transact((p) => {
-          p.paths[p.paths.findIndex((q) => q.id === original.id)] = path;
-        });
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'refit-path',
+            pathId: original.id,
+            pixelCubics: path.curves,
+          },
+          { project: captured.project },
+        )
+        .commit();
       finish();
       setTool('edit');
       setActiveNow(path.id);
@@ -3104,11 +2285,11 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
   const acceptPreview = () => {
     if (!proposed) throw Error('没有候选路径');
     let id = proposed.id;
-    if (host) {
+    {
       if (proposedCommit.current?.id !== proposed.id)
         throw Error('候选路径上下文已失效，请重新生成');
       id = proposedCommit.current.commit().id;
-    } else transact((p) => p.paths.push(proposed));
+    }
     setStatus('候选路径已接受');
     setActiveNow(id);
     setProposed(null);
@@ -3131,7 +2312,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         widthMM: pr.current.widthMM,
         depthMM: pr.current.depthMM,
         storage: {
-          fileName: fileHandle.current?.name || null,
+          fileName: displayedFileName || null,
           status: saved,
           fileSystemSupported:
             typeof window !== 'undefined' &&
@@ -3244,17 +2425,14 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       create_path: createPath,
       spline_inspect: (a: Parameters<typeof inspectSplines>[1]) =>
         inspectSplines(pr.current, a),
-      spline_apply: (a: Parameters<typeof editSplines>[1]) => {
+      spline_apply: (a: unknown) => {
         if (busyRef.current || fileBusyRef.current || drag.current)
           throw Error('请先完成当前描线、拖动或保存');
-        const captured = host?.getSnapshot();
-        const result = captured
-          ? captured.runtime
-              .commandSplines(a, { project: captured.project })
-              .commit()
-          : editSplines(pr.current, a);
-        if (captured) pr.current = result.project as Project;
-        else setDoc(result.project as Project);
+        const captured = host.getSnapshot();
+        const result = captured.runtime
+          .commandSplines(a, { project: captured.project })
+          .commit();
+        pr.current = result.project as Project;
         finish();
         setProposed(null);
         setStatus(`已提交 ${result.pathIds.length} 条精确样条 · Ctrl+Z 撤销`);
@@ -3370,15 +2548,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         if (busyRef.current || fileBusyRef.current)
           throw Error('请等待拟合或保存完成');
         const input = readAgentProjectInput(a);
-        if (host) return loadProjectFile(input.bytes, input.name, null);
-        const p = decodeProject(input.bytes) as Project;
-        bindFile(null);
-        finish();
-        setActiveNow(null);
-        setDoc(p);
-        creationApi.current?.clear();
-        fitView();
-        return { paths: p.paths.length };
+        return loadProjectFile(input.bytes, input.name, null);
       },
       set_candidates_visible: (a: AgentVisibilityArgs) => {
         setShowCandidates(!!a.visible);
@@ -3638,7 +2808,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                     set_point:
                       'Edit a cubic control handle by path, curve index, and handle index.',
                     export:
-                      'Return SVG, Blender Python, or a project copy without downloading. In V4, json returns the complete .spl ZIP as base64 with filename and mimeType, including assets; legacy sessions return JSON content.',
+                      'Return SVG, Blender Python, or a project copy without downloading. json returns the complete .spl ZIP as base64 with filename and mimeType, including assets.',
                   } as Record<string, string>
                 )[name],
               inputSchema: {
@@ -3770,13 +2940,10 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
     if (!nodeSnap || tool !== 'edit' || !current || selectedNodes.length !== 1)
       return [];
     return (
-      (studioSnapshot
-        ? studioSnapshot.runtime.readEndpointSnapContext(
-            project,
-            current.id,
-            selectedNodes[0],
-          )
-        : endpointSnapContext(project, current.id, selectedNodes[0])
+      studioSnapshot.runtime.readEndpointSnapContext(
+        project,
+        current.id,
+        selectedNodes[0],
       )?.lines || []
     );
   }, [project, current, tool, selectedNodes, nodeSnap, studioSnapshot]);
@@ -3800,11 +2967,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
             max={10000}
             onCommit={(widthMM) => {
               try {
-                if (host) host.setSourceWidth(widthMM);
-                else
-                  transact((p) => {
-                    p.widthMM = widthMM;
-                  });
+                host.setSourceWidth(widthMM);
               } catch (error) {
                 setStatus(errorMessage(error));
               }
@@ -4062,11 +3225,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
               fetch('/sandrone-example.spl').then(async (r) => {
                 if (!r.ok) throw Error('示例读取失败');
                 const bytes = new Uint8Array(await r.arrayBuffer());
-                if (host)
-                  return loadProjectFile(bytes, 'sandrone-example.spl', null);
-                return apiRef.current?.load_project({
-                  project: decodeProject(bytes),
-                });
+                return loadProjectFile(bytes, 'sandrone-example.spl', null);
               }),
             )
           }
@@ -4627,13 +3786,12 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
         <>
           <CreationWorkspace
             project={project}
-            runtime={studioSnapshot?.runtime}
+            runtime={studioSnapshot.runtime}
             enabled={true}
             viewMode={creationView}
             tool={tool}
             onTool={chooseTool}
             onView={setCreationView}
-            onProject={setDoc}
             onStatus={setStatus}
             onApi={(api) => {
               creationApi.current = api;
@@ -4692,14 +3850,9 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
       </div>
       <ModelWorkspace
         project={project}
+        runtime={studioSnapshot.runtime}
         mode={workspace}
         initialPaths={selectedPaths}
-        onModel={(model) =>
-          transact((p) => {
-            p.version = p.creation ? 3 : 2;
-            p.model = model;
-          })
-        }
         onEditSource={(id) => {
           setWorkspace('trace');
           setActiveNow(id);
@@ -4812,8 +3965,7 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
                     onChange={(e) => {
                       const v = +e.target.value;
                       if (v >= 0 && v <= 1000) {
-                        if (host) host.setBlenderExtrusion(v);
-                        else transact((p) => (p.depthMM = v));
+                        host.setBlenderExtrusion(v);
                       }
                     }}
                   />

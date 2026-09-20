@@ -71,6 +71,7 @@ assert.equal(
   'no manufactured height is invented for disabled relief',
 );
 assert.equal(region.id, region.key);
+assert.equal(view.cleanupRadiusMM, 0);
 assert.deepEqual(region.outputRef, view.creation.identities.cells[region.id]);
 assert.ok(Object.isFrozen(region.authoredRelief.value.placement));
 assert.throws(() => {
@@ -217,7 +218,11 @@ assert.equal(
   69,
 );
 assert.equal(sampleView.creation.errors.length, 0);
-assert.deepEqual(sampleView.unresolved, { appearance: [], relief: [] });
+assert.deepEqual(sampleView.unresolved, {
+  appearance: [],
+  relief: [],
+  presentation: [],
+});
 assert.deepEqual(sampleEditor.state.document, opened.document);
 console.log(
   'PASS advanced model view preserves stable outputs, disabled/failed authored relief and canonical evaluation identity',

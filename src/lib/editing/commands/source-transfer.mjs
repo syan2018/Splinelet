@@ -147,6 +147,7 @@ export function inspectSourceTransfer(document, action) {
     ...Object.values(document.appearances.overrides),
     ...Object.values(document.reliefDefinitions.overrides),
     ...Object.values(document.manufacturing.assignments),
+    ...Object.values(document.regionPresentations?.overrides || {}),
     ...document.manufacturing.excluded.map((target, index) => ({
       id: `exclusion-${index}`,
       target,
@@ -257,6 +258,7 @@ const allIds = (document) => {
     document.assets,
     document.references,
     document.collections,
+    document.regionPresentations?.overrides || {},
   ])
     Object.keys(table).forEach((id) => result.add(id));
   for (const sketch of Object.values(document.sketches))

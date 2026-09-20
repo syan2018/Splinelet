@@ -206,7 +206,7 @@ assert.throws(
       id: objectId,
       changes: { zMM: 2 },
     }),
-  /对应制造命令/,
+  /打印分层/,
 );
 assert.throws(
   () =>
@@ -214,7 +214,7 @@ assert.throws(
       id: objectId,
       changes: { attachId: cells[1].objectId },
     }),
-  /对应制造命令/,
+  /打印分层/,
 );
 assert.throws(
   () =>
@@ -231,12 +231,11 @@ assert.throws(
 );
 assert.throws(
   () =>
-    createCreationIntent(
-      'print_assign',
-      { objectIds: [objectId], layerId: secondLayerId },
-      view(),
-    ),
-  /尚未适配/,
+    intent('print_assign', {
+      objectIds: [objectId],
+      layerId: 'missing-layer',
+    }),
+  /堆叠层不存在/,
 );
 assert.deepEqual(editor.state, unsupported);
 for (const action of [
@@ -246,6 +245,14 @@ for (const action of [
   'print_layer_rename',
   'print_layer_move',
   'print_layer_remove',
+  'rename_path',
+  'move_paths',
+  'reorder',
+  'combine_objects',
+  'print_enable',
+  'print_assign',
+  'join',
+  'connection',
 ])
   assert.ok(CREATION_INTENTS.includes(action));
 

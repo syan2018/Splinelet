@@ -3,6 +3,7 @@ import { resolveReliefDefinition } from '../relief/resolve.mjs';
 import { unresolvedAssignments } from '../relief/assignments.mjs';
 import { partForRelief } from '../manufacturing/parts.mjs';
 import { readGeometry } from '../region-engine.mjs';
+import { sameOutputRef } from '../relief/appearance.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -22,6 +23,13 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
     ? editorState.preview.document
     : editorState.document;
   const regions = workspace.creation.cells.map((cell) => {
+    const presentation = Object.values(
+      document.regionPresentations?.overrides || {},
+    ).filter((item) => sameOutputRef(item.target, cell.outputRef));
+    if (presentation.length > 1) throw Error('同一区域存在冲突的展示属性');
+    const reliefOverrides = Object.values(
+      document.reliefDefinitions.overrides,
+    ).filter((assignment) => sameOutputRef(assignment.target, cell.outputRef));
     const geometry = readGeometry(cell.geometry);
     let holes = 0;
     for (let index = 0; index < geometry.getNumGeometries(); index++)
@@ -37,10 +45,18 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
     }
     return {
       ...cell,
+      name: presentation[0]?.name ?? cell.name,
+      objectName: cell.name,
+      reliefName: reliefOverrides[0]?.name ?? cell.name,
+      visible: presentation[0]?.visible ?? true,
       id: cell.key,
       areaMM2: geometry.getArea(),
       components: geometry.getNumGeometries(),
       holes,
+      reliefDefined:
+        !reliefOverrides.some((assignment) => assignment.suppressed) &&
+        (Object.hasOwn(document.reliefDefinitions.defaults, cell.objectId) ||
+          reliefOverrides.length > 0),
       authoredRelief: resolveReliefDefinition(
         document,
         cell.objectId,
@@ -61,6 +77,10 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
       published,
       Object.values(document.reliefDefinitions.overrides),
     ),
+    presentation: unresolvedAssignments(
+      published,
+      Object.values(document.regionPresentations?.overrides || {}),
+    ),
   };
   return freeze(
     structuredClone({
@@ -74,6 +94,7 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
         (id) => document.manufacturing.layers[id],
       ),
       layerHeightMM: document.manufacturing.layerHeightMM,
+      cleanupRadiusMM: document.manufacturing.cleanupRadiusMM ?? 0,
       slicerTemplate: document.manufacturing.slicerTemplate,
     }),
   );

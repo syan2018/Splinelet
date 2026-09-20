@@ -26,6 +26,7 @@ import type {
   ModifierCommand,
   SurfaceScope,
   ModifierControls,
+  ModifierStructureCapabilities,
 } from '@/lib/modifier-types';
 
 const operationNames: Record<string, string> = {
@@ -46,11 +47,13 @@ function ProgramModifierCard({
   controls,
   error,
   note,
+  structure,
   onCommand,
 }: {
   controls: ModifierControls;
   error?: string;
   note?: string;
+  structure?: ModifierStructureCapabilities;
   onCommand: ModifierCommand;
 }) {
   const [open, setOpen] = useState(false);
@@ -120,7 +123,12 @@ function ProgramModifierCard({
       data-modifier-id={controls.operatorId}
     >
       <div className="modifier-card-header">
-        <span className="modifier-grip" title="此步骤暂不支持调整顺序">
+        <span
+          className="modifier-grip"
+          title={
+            structure?.moveUp.reason || structure?.moveDown.reason || undefined
+          }
+        >
           <GripVertical size={14} />
         </span>
         <input
@@ -146,13 +154,42 @@ function ProgramModifierCard({
         <details className="modifier-menu">
           <summary aria-label={'操作 ' + values.name}>⋯</summary>
           <div>
-            <button disabled title="此步骤暂不支持调整顺序">
+            <button
+              disabled={!structure?.moveUp.enabled}
+              title={structure?.moveUp.reason || undefined}
+              onClick={() =>
+                onCommand('modifier_move', {
+                  objectId: controls.ownerNodeId,
+                  modifierId: controls.operatorId,
+                  direction: -1,
+                })
+              }
+            >
               上移
             </button>
-            <button disabled title="此步骤暂不支持调整顺序">
+            <button
+              disabled={!structure?.moveDown.enabled}
+              title={structure?.moveDown.reason || undefined}
+              onClick={() =>
+                onCommand('modifier_move', {
+                  objectId: controls.ownerNodeId,
+                  modifierId: controls.operatorId,
+                  direction: 1,
+                })
+              }
+            >
               下移
             </button>
-            <button disabled title="此步骤暂不支持删除">
+            <button
+              disabled={!structure?.remove.enabled}
+              title={structure?.remove.reason || undefined}
+              onClick={() =>
+                onCommand('modifier_remove', {
+                  objectId: controls.ownerNodeId,
+                  modifierId: controls.operatorId,
+                })
+              }
+            >
               删除修改器
             </button>
           </div>
@@ -686,6 +723,7 @@ export default function CreationModifiers({
               controls={status.controls!}
               error={status.error}
               note={status.note}
+              structure={status.structure}
               onCommand={onCommand}
             />
           ))}
@@ -695,7 +733,7 @@ export default function CreationModifiers({
         )}
         <ProgramModifierAdd object={object} onCommand={onCommand} />
         <p className="modifier-hint">
-          当前支持编辑已有步骤的名称、启用状态及参数，暂不支持删除和排序。
+          线性同域步骤可排序或删除；分叉、跨域和精确区域范围会明确禁用结构调整。
         </p>
         <p className="modifier-output">输出面 → 按“颜色与高低”中的厚度拉伸</p>
       </fieldset>

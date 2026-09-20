@@ -5,6 +5,7 @@ import {
   transformPoint,
   worldMatrix,
 } from '../scene/transforms.mjs';
+import { curveModifierAddCapability } from '../editing/commands/program-modifiers.mjs';
 
 const REQUEST_KEYS = new Set([
   'objectId',
@@ -191,7 +192,7 @@ export function compileModifierUpdate(document, request) {
   return action;
 }
 
-/** Append to the published curve stage without implicitly rewiring regions. */
+/** Insert in the unique published curve chain, immediately before Fill. */
 export function compileModifierAdd(document, request) {
   if (document?.version !== 4) throw Error('修改器写入需要 V4 Document');
   if (!record(request)) throw Error('modifier_add request 必须是 object');
@@ -219,8 +220,8 @@ export function compileModifierAdd(document, request) {
   const program = document.programs?.[owner.programId];
   if (!program || program.ownerNodeId !== owner.id)
     throw Error('Shape 的 Program 所有权无效');
-  if (program.outputs?.regions)
-    throw Error('已发布区域的部件需要明确调整构造接线，不能直接追加曲线修改器');
+  const capability = curveModifierAddCapability(document, owner.id);
+  if (!capability.enabled) throw Error(capability.reason);
   if (!record(request.targets) || request.targets.kind !== 'all')
     throw Error('曲线修改器 targets 必须是 all');
   exactKeys(request.targets, new Set(['kind']), 'targets');
@@ -233,29 +234,68 @@ export function compileModifierAdd(document, request) {
     360,
   );
   const action = {
-    kind: mirror ? 'mirror-curves' : 'repeat-curves',
+    kind: 'add-program-modifier',
     ownerNodeId: owner.id,
+    type: mirror ? 'curve-mirror' : 'curve-array',
     name:
       request.name === undefined
         ? mirror
           ? '曲线镜像'
           : '曲线阵列'
         : text(request.name, 'name'),
-    center: transformPoint(
-      inverseTransform(pose),
-      centerPoint(
-        request.centerMM === undefined ? { x: 0, y: 0 } : request.centerMM,
+    params: {
+      center: transformPoint(
+        inverseTransform(pose),
+        centerPoint(
+          request.centerMM === undefined ? { x: 0, y: 0 } : request.centerMM,
+        ),
       ),
-    ),
-    angleRad:
-      degreesToRadians(angle) - (mirror ? matrixPose(pose).rotationRad : 0),
+      angleRad:
+        degreesToRadians(angle) - (mirror ? matrixPose(pose).rotationRad : 0),
+    },
   };
   if (!mirror) {
     const count = request.count === undefined ? 4 : request.count;
     if (!Number.isInteger(count)) throw Error('count 必须是整数');
-    action.count = bounded(count, 'count', 1, 64);
+    action.params.count = bounded(count, 'count', 1, 64);
   }
-  // currentPort in the authoring command validates that curves are published
-  // and evaluable before allocating or connecting the new operator.
   return action;
+}
+
+export function compileModifierStructure(document, request) {
+  if (
+    !record(request) ||
+    !['modifier_move', 'modifier_remove'].includes(request.action)
+  )
+    throw Error('修改器结构动作无效');
+  exactKeys(
+    request,
+    new Set([
+      'action',
+      'objectId',
+      'modifierId',
+      'direction',
+      'sourceFeatureId',
+    ]),
+    '修改器结构动作',
+  );
+  const operator = ownedOperator(
+    document,
+    request.objectId,
+    request.modifierId,
+  );
+  if (operator.authoring) throw Error('请先完成绘制');
+  if (request.action === 'modifier_remove')
+    return {
+      kind: 'remove-program-modifier',
+      ownerNodeId: request.objectId,
+      operatorId: request.modifierId,
+    };
+  if (![1, -1].includes(request.direction)) throw Error('修改器移动方向无效');
+  return {
+    kind: 'move-program-modifier',
+    ownerNodeId: request.objectId,
+    operatorId: request.modifierId,
+    direction: request.direction,
+  };
 }

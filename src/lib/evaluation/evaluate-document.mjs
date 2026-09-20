@@ -62,6 +62,7 @@ export async function evaluateDocument(document, options = {}) {
         placedRelief,
         options.solidOptions,
         Math.min(document.geometrySettings.curveToleranceMM / 3, 0.005),
+        document.manufacturing.cleanupRadiusMM ?? 0,
       )
     : absent('bodies');
   return Object.freeze({

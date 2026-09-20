@@ -27,6 +27,24 @@ assert.equal(
   JSON.stringify(result.bodies.diagnostics),
 );
 assert(result.bodies.value.bodies[0].report.volumeMM3 > 0);
+const cleanupDocument = structuredClone(document);
+cleanupDocument.manufacturing.cleanupRadiusMM = 6;
+const cleanedResult = await evaluateDocument(cleanupDocument);
+assert.equal(
+  cleanedResult.bodies.status,
+  'ready',
+  JSON.stringify(cleanedResult.bodies.diagnostics),
+);
+assert.ok(
+  cleanedResult.bodies.value.bodies[0].report.volumeMM3 >
+    result.bodies.value.bodies[0].report.volumeMM3,
+  'evaluateDocument forwards manufacturing cleanup to the body cross-section',
+);
+assert.deepEqual(
+  cleanedResult.regions[0].value,
+  result.regions[0].value,
+  'manufacturing cleanup does not mutate planar regions',
+);
 const capture = {
   epoch: 'full',
   revision: 1,

@@ -161,6 +161,7 @@ assert.deepEqual(importedPathRegion.params, {
 assert.equal(Object.values(program.operators).at(-1).enabled, false);
 assert.equal(v3.document.geometrySettings.curveToleranceMM, 0.02);
 assert.equal(v3.document.manufacturing.layerHeightMM, 0.2);
+assert.equal(v3.document.manufacturing.cleanupRadiusMM, 0);
 assert.equal(Object.values(v3.document.manufacturing.parts)[0].name, '主零件');
 assert.equal(v3.document.manufacturing.slicerTemplate.kind, 'bambu');
 assert.ok(v3.idMap['feature-output:body']);

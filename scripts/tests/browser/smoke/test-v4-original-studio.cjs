@@ -14,9 +14,11 @@ async function main() {
   const server = await createServer({
     configFile: false,
     root,
+    cacheDir: resolve(output, 'vite-cache'),
     publicDir: resolve(root, 'public'),
     css: { postcss: { plugins: [tailwindcss()] } },
     optimizeDeps: {
+      entries: [resolve(root, 'scripts/tests/fixtures/v4-original-studio.mjs')],
       include: [
         '@tauri-apps/api/core',
         '@tauri-apps/api/event',
@@ -51,8 +53,19 @@ async function main() {
   });
   let browser;
   let page;
+  // Await API promises before deciding whether a condition has become true.
+  // Playwright waitForFunction otherwise treats the Promise itself as truthy.
+  const waitForCondition = async (predicate, arg, options = {}) => {
+    const deadline = Date.now() + (options.timeout || 120000);
+    while (Date.now() < deadline) {
+      if (await page.evaluate(predicate, arg)) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw Error('Original Studio condition timed out: ' + String(predicate));
+  };
   const errors = [];
   const consoleErrors = [];
+  const workerUrls = [];
   await mkdir(output, { recursive: true });
   try {
     await server.listen();
@@ -61,6 +74,7 @@ async function main() {
       viewport: { width: 1440, height: 1000 },
     });
     page = await context.newPage();
+    page.on('worker', (worker) => workerUrls.push(worker.url()));
     page.setDefaultTimeout(120000);
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => {
@@ -148,7 +162,7 @@ async function main() {
     await page
       .getByRole('spinbutton', { name: '挤出厚度', exact: true })
       .fill('7.5');
-    await page.waitForFunction(
+    await waitForCondition(
       async () => (await window.traceStudio.call('state')).depthMM === 7.5,
     );
     const blenderCopy = await page.evaluate(() =>
@@ -191,7 +205,7 @@ async function main() {
       window.originalStudioDocument(),
     );
     await page.mouse.dblclick(point.x, point.y);
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision > revision,
       beforeSplit.revision,
     );
@@ -219,7 +233,7 @@ async function main() {
       { steps: 5 },
     );
     await page.mouse.up();
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision > revision,
       before.revision,
     );
@@ -237,7 +251,7 @@ async function main() {
     await page.mouse.down();
     await page.mouse.move(point.x + 22, point.y + 14, { steps: 5 });
     await page.mouse.up();
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision > revision,
       beforeMove.revision,
     );
@@ -249,7 +263,7 @@ async function main() {
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).baselineRestored, true);
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
@@ -269,7 +283,7 @@ async function main() {
     assert.equal(savedState.canUndo, true);
     assert.equal(savedState.baselineRestored, false);
     await openFile('saved');
-    await page.waitForFunction(
+    await waitForCondition(
       (epoch) => window.originalStudioEvidence().epoch !== epoch,
       savedState.epoch,
     );
@@ -285,7 +299,7 @@ async function main() {
       .waitFor();
     assert.deepEqual(await evidence(), reopened);
     await openFile('legacy');
-    await page.waitForFunction(
+    await waitForCondition(
       (epoch) => window.originalStudioEvidence().epoch !== epoch,
       reopened.epoch,
     );
@@ -299,7 +313,7 @@ async function main() {
     await page
       .getByRole('menuitem', { name: '载入示例工程', exact: true })
       .click();
-    await page.waitForFunction(
+    await waitForCondition(
       (epoch) => window.originalStudioEvidence().epoch !== epoch,
       legacyOpened.epoch,
     );
@@ -313,7 +327,7 @@ async function main() {
     await page
       .locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]')
       .setInputFiles(resolve(root, 'public/reference.png'));
-    await page.waitForFunction(
+    await waitForCondition(
       (epoch) => window.originalStudioEvidence().epoch !== epoch,
       beforeImage.epoch,
     );
@@ -325,7 +339,7 @@ async function main() {
     assert.equal(newImage.canUndo, false);
     await page.getByText('底图就绪', { exact: true }).waitFor();
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
@@ -348,7 +362,7 @@ async function main() {
         imageBox.x + imageBox.width * x,
         imageBox.y + imageBox.height * y,
       );
-      await page.waitForFunction(
+      await waitForCondition(
         (revision) => window.originalStudioEvidence().revision > revision,
         previous.revision,
       );
@@ -361,7 +375,7 @@ async function main() {
     await page.keyboard.up('Alt');
     await page.getByRole('tab', { name: '手动', exact: true }).click();
     await page.keyboard.press('c');
-    await page.waitForFunction(
+    await waitForCondition(
       () => window.originalStudioEvidence().pathGeometry[0]?.closed === true,
     );
     const closed = await evidence();
@@ -390,7 +404,7 @@ async function main() {
         currentImageBox.x + currentImageBox.width * x,
         currentImageBox.y + currentImageBox.height * y,
       );
-      await page.waitForFunction(
+      await waitForCondition(
         (revision) => window.originalStudioEvidence().revision > revision,
         previous.revision,
       );
@@ -402,10 +416,10 @@ async function main() {
     assert.equal(await page.locator('[data-creation-cell]').count(), 1);
     await drawPoint(0.45, 0.46);
     await page.keyboard.press('Enter');
-    await page.waitForFunction(
+    await waitForCondition(
       () => window.originalStudioEvidence().pendingRegionDrawings === 0,
     );
-    await page.waitForFunction(
+    await waitForCondition(
       () => document.querySelectorAll('[data-creation-cell]').length === 2,
     );
     const divided = await evidence();
@@ -417,7 +431,7 @@ async function main() {
       return window.traceStudio.call('finish_path', {});
     }, divided.pathGeometry.at(-1).id);
     assert.deepEqual(apiFinished, { finished: true });
-    await page.waitForFunction(
+    await waitForCondition(
       () => window.originalStudioEvidence().pendingRegionDrawings === 0,
     );
     assert.equal((await evidence()).revision, divided.revision + 2);
@@ -441,11 +455,11 @@ async function main() {
     assert.equal((await evidence()).revision, unfinishedHole.revision);
     assert.equal((await evidence()).pendingRegionDrawings, 1);
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     const pendingSaved = await evidence();
     assert.equal(pendingSaved.pendingRegionDrawings, 1);
     await openFile('current');
-    await page.waitForFunction(
+    await waitForCondition(
       (epoch) => window.originalStudioEvidence().epoch !== epoch,
       pendingSaved.epoch,
     );
@@ -464,12 +478,12 @@ async function main() {
     await drawPoint(0.53, 0.38);
     assert.equal((await evidence()).pendingRegionDrawings, 1);
     await page.keyboard.press('c');
-    await page.waitForFunction(
+    await waitForCondition(
       () => window.originalStudioEvidence().pendingRegionDrawings === 0,
     );
     const cutHole = await evidence();
     assert.equal(cutHole.pathGeometry.at(-1).closed, true);
-    await page.waitForFunction(
+    await waitForCondition(
       () =>
         document.querySelectorAll('[data-creation-cell]').length === 2 &&
         !document
@@ -477,7 +491,7 @@ async function main() {
           ?.textContent.includes('需检查'),
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
@@ -490,7 +504,7 @@ async function main() {
     await drawPoint(0.38, 0.58);
     await drawPoint(0.3, 0.58);
     await page.keyboard.press('c');
-    await page.waitForFunction(
+    await waitForCondition(
       () =>
         window.originalStudioEvidence().pendingRegionDrawings === 0 &&
         document.querySelectorAll('[data-creation-cell]').length === 3,
@@ -501,7 +515,7 @@ async function main() {
     await page.getByRole('button', { name: '重做', exact: true }).click();
     assert.equal((await evidence()).pendingRegionDrawings, 0);
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
@@ -511,9 +525,7 @@ async function main() {
     await page
       .locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]')
       .setInputFiles(resolve(root, 'public/reference.png'));
-    await page.waitForFunction(
-      () => window.originalStudioEvidence().paths === 0,
-    );
+    await waitForCondition(() => window.originalStudioEvidence().paths === 0);
     await page.getByText('底图就绪', { exact: true }).waitFor();
     await page.getByRole('button', { name: '描线 (P)', exact: true }).click();
     await page.getByRole('tab', { name: '手动', exact: true }).click();
@@ -534,9 +546,7 @@ async function main() {
     await page.keyboard.press('m');
     const mergeTarget = page.locator('[data-merge-endpoint]');
     await mergeTarget.first().click();
-    await page.waitForFunction(
-      () => window.originalStudioEvidence().paths === 1,
-    );
+    await waitForCondition(() => window.originalStudioEvidence().paths === 1);
     const mergedPaths = await evidence();
     assert.equal(mergedPaths.pathGeometry[0].segments, 3);
     await page.getByRole('button', { name: '撤销', exact: true }).click();
@@ -547,9 +557,7 @@ async function main() {
     await page.locator('[data-tree-path]').first().click();
     await page.getByText('路径操作', { exact: true }).click();
     await page.getByRole('button', { name: /删除当前路径/ }).click();
-    await page.waitForFunction(
-      () => window.originalStudioEvidence().paths === 0,
-    );
+    await waitForCondition(() => window.originalStudioEvidence().paths === 0);
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).paths, 1);
     await page.locator('[data-tree-path]').first().click();
@@ -572,7 +580,7 @@ async function main() {
       { steps: 4 },
     );
     await page.mouse.up();
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision > revision,
       beforeHandle.revision,
     );
@@ -645,7 +653,7 @@ async function main() {
     await page
       .getByRole('button', { name: '确认替换并重拟合', exact: true })
       .click();
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision > revision,
       refitRevision,
     );
@@ -705,9 +713,7 @@ async function main() {
     );
     const candidate = await batch(true);
     await page.getByRole('button', { name: '接受', exact: true }).click();
-    await page.waitForFunction(
-      () => window.originalStudioEvidence().paths === 2,
-    );
+    await waitForCondition(() => window.originalStudioEvidence().paths === 2);
     const acceptedCandidate = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
@@ -735,7 +741,7 @@ async function main() {
     const direct = await batch(false);
     assert.equal((await evidence()).pathGeometry.at(-1).id, direct.id);
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     assert.deepEqual(
       await page.evaluate(() => window.originalStudioSavedEvidence()),
       { kind: 'v4', matchesCurrent: true },
@@ -838,7 +844,7 @@ async function main() {
       secondGroup.id,
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     const beforeSplines = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
@@ -913,7 +919,7 @@ async function main() {
       exactState,
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     const beforeSupport = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
@@ -932,11 +938,11 @@ async function main() {
     await roleControls
       .getByRole('button', { name: '参考', exact: true })
       .click();
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision === revision,
       beforeRolesRevision + 1,
     );
-    await page.waitForFunction(
+    await waitForCondition(
       () =>
         [...document.querySelectorAll('.creation-role button')]
           .find((button) => button.textContent === '参考')
@@ -959,7 +965,7 @@ async function main() {
     await roleControls
       .getByRole('button', { name: '轮廓', exact: true })
       .click();
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision === revision,
       beforeRolesRevision + 2,
     );
@@ -1030,7 +1036,7 @@ async function main() {
       afterSupport,
     );
     await page.getByRole('button', { name: '保存工程', exact: true }).click();
-    await page.waitForFunction(() => !window.originalStudioEvidence().dirty);
+    await waitForCondition(() => !window.originalStudioEvidence().dirty);
     const beforeApiLoad = await evidence();
     const beforeApiDocument = await page.evaluate(() =>
       window.originalStudioDocument(),
@@ -1094,6 +1100,166 @@ async function main() {
     assert.equal((await evidence()).paths, 77);
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).paths, 76);
+    const beforeAdvanced = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    await page.evaluate(() =>
+      window.traceStudio.call('set_workspace', { mode: 'faces' }),
+    );
+    const advancedDialog = page.getByRole('dialog', {
+      name: '高级构造编辑器',
+      exact: true,
+    });
+    await advancedDialog.waitFor();
+    await waitForCondition(
+      () => document.querySelectorAll('[data-region-row]').length === 69,
+    );
+    const inspectedModel = await page.evaluate(() =>
+      window.traceStudio.call('inspect_model'),
+    );
+    assert.equal(inspectedModel.regions.length, 69);
+    assert.equal(inspectedModel.model.features.length, 69);
+    assert.ok(
+      inspectedModel.model.regions.every((region) => region.kind === 'output'),
+    );
+    await advancedDialog
+      .getByRole('button', { name: '体块与零件', exact: true })
+      .click();
+    await waitForCondition(
+      () => document.querySelectorAll('[data-feature-row]').length === 69,
+    );
+    let advancedState;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      advancedState = await page.evaluate(() =>
+        window.traceStudio.call('state'),
+      );
+      if (!advancedState.model.calculating && advancedState.model.report?.valid)
+        break;
+      await page.waitForTimeout(250);
+    }
+    assert.equal(
+      advancedState.model.report?.valid,
+      true,
+      advancedState.model.error ||
+        'advanced viewport must receive the canonical solid',
+    );
+    await advancedDialog.screenshot({
+      path: resolve(output, 'advanced-model-panel.png'),
+    });
+    await advancedDialog.locator('[data-feature-row]').first().click();
+    let advancedThickness = advancedDialog.getByRole('spinbutton', {
+      name: '体块厚度打印层数',
+      exact: true,
+    });
+    if (!(await advancedThickness.count()))
+      advancedThickness = advancedDialog.getByRole('spinbutton', {
+        name: '体块厚度',
+        exact: true,
+      });
+    const oldThickness = Number(await advancedThickness.inputValue());
+    const beforeAdvancedRevision = (await evidence()).revision;
+    await advancedThickness.fill(String(oldThickness + 1));
+    await advancedThickness.press('Enter');
+    await waitForCondition(
+      (revision) => window.originalStudioEvidence().revision === revision,
+      beforeAdvancedRevision + 1,
+    );
+    const afterAdvanced = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.notDeepEqual(
+      afterAdvanced.reliefDefinitions,
+      beforeAdvanced.reliefDefinitions,
+    );
+    assert.deepEqual(afterAdvanced.programs, beforeAdvanced.programs);
+    assert.deepEqual(afterAdvanced.sketches, beforeAdvanced.sketches);
+    await advancedDialog
+      .getByRole('button', { name: '撤销模型操作', exact: true })
+      .click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeAdvanced,
+    );
+    const advancedProperties = await page.evaluate(() =>
+      window.traceStudio.call('inspect_model'),
+    );
+    const renamedFeatureId = advancedProperties.model.features[0].id;
+    await page.evaluate(
+      (id) =>
+        window.traceStudio.call('set_relief', {
+          id,
+          changes: { name: '原面板独立体块名称', color: '#abcdef' },
+        }),
+      renamedFeatureId,
+    );
+    const renamedProperties = await page.evaluate(() =>
+      window.traceStudio.call('inspect_model'),
+    );
+    const renamedFeature = renamedProperties.model.features.find(
+      (item) => item.id === renamedFeatureId,
+    );
+    assert.equal(renamedFeature.name, '原面板独立体块名称');
+    assert.equal(renamedFeature.color, '#abcdef');
+    assert.deepEqual(
+      (await page.evaluate(() => window.originalStudioDocument())).sketches,
+      beforeAdvanced.sketches,
+    );
+    await advancedDialog
+      .getByRole('button', { name: '撤销模型操作', exact: true })
+      .click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeAdvanced,
+    );
+    await page.evaluate(() => window.traceStudio.call('inspect_model'));
+    await page.evaluate(() =>
+      window.traceStudio.call('set_model_options', {
+        toleranceMM: 0.02,
+        manufacturingMM: 0.02,
+      }),
+    );
+    const cleanedProperties = await page.evaluate(() =>
+      window.traceStudio.call('inspect_model'),
+    );
+    assert.equal(cleanedProperties.model.toleranceMM, 0.02);
+    assert.equal(cleanedProperties.model.manufacturingMM, 0.02);
+    await advancedDialog
+      .getByRole('button', { name: '撤销模型操作', exact: true })
+      .click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeAdvanced,
+    );
+    await page.evaluate(() => window.traceStudio.call('inspect_model'));
+    const beforeDisableRevision = (await evidence()).revision;
+    await advancedDialog
+      .locator('[data-feature-row]')
+      .first()
+      .getByRole('checkbox')
+      .click();
+    await waitForCondition(
+      (revision) => window.originalStudioEvidence().revision === revision,
+      beforeDisableRevision + 1,
+    );
+    await waitForCondition(
+      () =>
+        !document.querySelector('[data-feature-row] input[type="checkbox"]')
+          .checked,
+    );
+    await advancedDialog
+      .getByRole('button', { name: '撤销模型操作', exact: true })
+      .click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeAdvanced,
+    );
+    await advancedDialog
+      .getByRole('button', { name: '完成，返回创作', exact: true })
+      .click();
+    assert.ok(
+      !workerUrls.some((url) => /\/model-worker\.ts(?:\?|$)/.test(url)),
+      'canonical Model panel must not launch a legacy model worker',
+    );
     const beforeWidth = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
@@ -1108,7 +1274,7 @@ async function main() {
     const nextWidth = beforeWidth.sourceFrame.widthMM * 1.01;
     await widthInput.fill(String(nextWidth));
     await widthInput.press('Enter');
-    await page.waitForFunction(
+    await waitForCondition(
       (revision) => window.originalStudioEvidence().revision === revision,
       widthRevision + 1,
     );

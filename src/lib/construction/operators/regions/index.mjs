@@ -234,12 +234,19 @@ export const regionReferenceOperator = {
   inputPorts: { input: { domain: 'regions', min: 1, max: 1 } },
   outputPorts: { regions: { domain: 'regions' } },
   validateParams: (params) =>
-    Object.keys(params || {}).length === 0 || 'region-reference 不接受 params',
+    (Object.keys(params || {}).every((key) => key === 'scope') &&
+      (params?.scope === undefined ||
+        (params.scope.kind === 'selected' &&
+          Array.isArray(params.scope.refs) &&
+          params.scope.refs.length > 0))) ||
+    'region-reference 只接受明确的区域选区',
   evaluate: ({ ownerNodeId, operator, inputs }) => {
     const source = input(inputs);
     if (source.status !== 'ready' && source.status !== 'empty')
       return { regions: source };
-    const regions = source.value.regions.map((region) =>
+    const scoped = selected(source, operator.params.scope || { kind: 'all' });
+    if (scoped.stage) return { regions: scoped.stage };
+    const regions = scoped.selected.map((region) =>
       cloneRegion(region, ownerNodeId, operator.id, 'region-reference', [
         { operatorId: operator.id, index: 0 },
       ]),
@@ -254,7 +261,6 @@ export const regionReferenceOperator = {
     };
   },
   rebase: (operator) => clone(operator),
-  copy: (operator) => clone(operator),
 };
 
 /** Combine before removing holes: partitions can jointly enclose a hole. */

@@ -120,9 +120,9 @@ assert.match(
 );
 assert(
   manifestWithArtifacts.buildArtifacts.web.entries.some((entry) =>
-    entry.path.includes('model-worker-'),
+    entry.path.includes('document-worker-'),
   ),
-  'manifest identifies the built web model worker',
+  'manifest identifies the built web canonical document worker',
 );
 assert(
   manifestWithArtifacts.buildArtifacts.desktopFrontend.entries.some(

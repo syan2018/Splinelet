@@ -48,8 +48,10 @@ const request = {
 const before = editor.state.document;
 const pristineRequest = structuredClone(request);
 const action = compileModifierAdd(before, request);
-assert.deepEqual(action.center, [4, 2]);
-assert.ok(Math.abs(action.angleRad - Math.PI / 6) < 1e-10);
+assert.equal(action.kind, 'add-program-modifier');
+assert.equal(action.type, 'curve-mirror');
+assert.deepEqual(action.params.center, [4, 2]);
+assert.ok(Math.abs(action.params.angleRad - Math.PI / 6) < 1e-10);
 assert.deepEqual(request, pristineRequest);
 const initialPort = before.programs[owner.programId].outputs.curves;
 const project = runtime.project();
@@ -137,7 +139,7 @@ dispatch(createAuthoringCommand({ kind: 'create-shape', name: '无来源' }));
 const emptyOwner = Object.values(editor.state.document.nodes).find(
   (node) => node.id !== owner.id,
 );
-reject({ ...request, objectId: emptyOwner.id }, /没有已发布 curves/);
+reject({ ...request, objectId: emptyOwner.id }, /没有已发布曲线输出/);
 dispatch((document) => {
   document.nodes[owner.id].locked = true;
   return { document };
@@ -182,18 +184,70 @@ dispatch((document) => {
   ].inputs.paths[0].sketchId = 'missing';
   return { document };
 });
-reject(request, /当前 curves 输出不可用/);
+reject(request, /当前已发布构造结果不可用/);
 editor.undo({ expectedRevision: editor.state.revision });
 dispatch(
   createAuthoringCommand({ kind: 'fill-curves', ownerNodeId: owner.id }),
 );
-reject(request, /已发布区域/);
+reject(request, /当前已发布构造结果不可用/);
 const regionsView = await runtime.evaluate('creation', {}, runtime.project());
 const regionsCapability = regionsView.creation.objects.find(
   (item) => item.id === owner.id,
 ).modifierAdd;
 assert.deepEqual(regionsCapability.types, []);
-assert.match(regionsCapability.reason, /已有区域/);
+assert.match(regionsCapability.reason, /构造结果不可用/);
+
+const filledEditor = createEditorSession(createDocument({ idFactory }), {
+  idFactory,
+});
+filledEditor.dispatch(
+  createAuthoringCommand({
+    kind: 'draw-path',
+    closed: true,
+    points: [
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+    ],
+  }),
+  { expectedRevision: filledEditor.state.revision },
+);
+const filledOwner = Object.values(filledEditor.state.document.nodes)[0];
+const beforeFilledAdd = filledEditor.state.document;
+const filledProgram = beforeFilledAdd.programs[filledOwner.programId];
+const fill = filledProgram.operators[filledProgram.outputs.regions.operatorId];
+const fillInput = structuredClone(fill.inputs.input[0]);
+filledEditor.dispatch(
+  createAuthoringCommand(
+    compileModifierAdd(beforeFilledAdd, {
+      ...request,
+      objectId: filledOwner.id,
+    }),
+  ),
+  { expectedRevision: filledEditor.state.revision },
+);
+program = filledEditor.state.document.programs[filledOwner.programId];
+const filledMirror = Object.values(program.operators).find(
+  (operator) => operator.type === 'curve-mirror',
+);
+assert.ok(filledMirror, 'a modifier is inserted into the filled curve chain');
+assert.deepEqual(filledMirror.inputs.input[0], fillInput);
+assert.equal(
+  program.operators[fill.id].inputs.input[0].operatorId,
+  filledMirror.id,
+);
+assert.deepEqual(
+  program.outputs.curves,
+  filledProgram.outputs.curves,
+  'the separately published raw curve port remains authoritative',
+);
+assert.equal(
+  evaluateProgram(filledEditor.state.document, filledOwner.id).regions.status,
+  'ready',
+);
+filledEditor.undo({ expectedRevision: filledEditor.state.revision });
+assert.deepEqual(filledEditor.state.document, beforeFilledAdd);
 console.log(
-  'PASS modifier_add appends explicit curve stages with world/local conversion, preserves raw sources, undoes once, and rejects unsupported or unsafe requests atomically',
+  'PASS modifier_add inserts explicit curve stages before the unique Fill with world/local conversion, preserves raw sources, undoes once, and rejects unsafe requests atomically',
 );

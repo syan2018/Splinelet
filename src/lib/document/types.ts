@@ -199,11 +199,29 @@ export type ReliefDefinitions = {
   defaults: Record<Id, ReliefValue>;
   overrides: Record<
     Id,
-    { id: Id; target: OutputRef; value: Partial<ReliefValue> }
+    {
+      id: Id;
+      target: OutputRef;
+      value: Partial<ReliefValue>;
+      /** Per-output relief definition label; never a Shape name. */
+      name?: string;
+      /** Explicitly hides an inherited owner default for this output. */
+      suppressed?: true;
+    }
   >;
+};
+export type RegionPresentation = {
+  id: Id;
+  target: OutputRef;
+  name?: string;
+  visible?: boolean;
+};
+export type RegionPresentations = {
+  overrides: Record<Id, RegionPresentation>;
 };
 export type Manufacturing = {
   layerHeightMM: number;
+  cleanupRadiusMM?: number;
   layers: Record<Id, { id: Id; name: string }>;
   layerOrder: Id[];
   parts: Record<Id, { id: Id; name: string }>;
@@ -252,6 +270,7 @@ export type DocumentV4 = {
     numericTolerance: number;
   };
   appearances: Appearances;
+  regionPresentations?: RegionPresentations;
   reliefDefinitions: ReliefDefinitions;
   manufacturing: Manufacturing;
   assets: Record<Id, Asset>;

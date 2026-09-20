@@ -14,7 +14,10 @@ const DocumentWorker = (
 export function createBrowserStudioHost(options: Record<string, unknown>) {
   const worker = new DocumentWorker();
   const client = createWorkerClient(worker);
+  let closed = false;
   const close = () => {
+    if (closed) return;
+    closed = true;
     client.close();
     worker.terminate();
   };

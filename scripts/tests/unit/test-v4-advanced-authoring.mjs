@@ -633,6 +633,16 @@ author(manufacturingSession, {
   target: manufacturingTarget,
   thickness: { kind: 'mm', value: 2 },
 });
+dispatch(manufacturingSession, (document) => {
+  const next = structuredClone(document);
+  const manufacturingOverride = Object.values(
+    next.reliefDefinitions.overrides,
+  )[0];
+  manufacturingOverride.name = '保留的浮雕名称';
+  manufacturingOverride.suppressed = true;
+  manufacturingOverride.value.enabled = false;
+  return { document: next, changedRefs: [manufacturingTarget] };
+});
 advanced(manufacturingSession, {
   kind: 'set-manufacturing-part',
   target: manufacturingTarget,
@@ -654,6 +664,20 @@ assert.equal(
     manufacturingSession.state.document.reliefDefinitions.overrides,
   )[0].value.placement.layerId,
   layerId,
+);
+assert.equal(
+  Object.values(
+    manufacturingSession.state.document.reliefDefinitions.overrides,
+  )[0].name,
+  '保留的浮雕名称',
+  '逐区域打印层变更必须保留浮雕名称',
+);
+assert.equal(
+  Object.values(
+    manufacturingSession.state.document.reliefDefinitions.overrides,
+  )[0].suppressed,
+  true,
+  '逐区域打印层变更必须保留显式删除标记',
 );
 const beforeStale = structuredClone(manufacturingSession.state.document);
 const staleRevision = manufacturingSession.state.revision;

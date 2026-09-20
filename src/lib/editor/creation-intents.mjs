@@ -4,7 +4,14 @@ import { sourcePathId } from './source-view.mjs';
 import {
   compileModifierAdd,
   compileModifierUpdate,
+  compileModifierStructure,
 } from './modifier-intents.mjs';
+import {
+  CREATION_BASIC_INTENTS,
+  createCreationBasicIntent,
+  createObjectPlacementIntent,
+} from './creation-basic-intents.mjs';
+import { createConnectionIntent } from './connection-intents.mjs';
 
 export const CREATION_INTENTS = Object.freeze([
   'roles',
@@ -18,6 +25,11 @@ export const CREATION_INTENTS = Object.freeze([
   'new_object',
   'modifier_update',
   'modifier_add',
+  'modifier_move',
+  'modifier_remove',
+  ...CREATION_BASIC_INTENTS,
+  'join',
+  'connection',
   'print_settings',
   'print_layer_add',
   'print_layer_rename',
@@ -40,6 +52,10 @@ export function createCreationIntent(action, args, displayed) {
     throw Error('创作视图必须携带 epoch 和 revision');
   if (view.previewId !== undefined && view.previewId !== null)
     throw Error('预览视图不能用于提交正式创作命令');
+  if (CREATION_BASIC_INTENTS.includes(action))
+    return createCreationBasicIntent(action, request, view);
+  if (action === 'join' || action === 'connection')
+    return createConnectionIntent(action, request, view);
   return (initialDocument, context) => {
     if (context.epoch !== view.epoch || context.revision !== view.revision)
       throw Error('创作视图已失效，请等待当前工程求值');
@@ -182,12 +198,15 @@ export function createCreationIntent(action, args, displayed) {
         'swatchId',
         'printable',
         'partId',
+        'zMM',
+        'attachId',
       ];
       if (
         Object.keys(request.changes || {}).some((key) => !allowed.includes(key))
       )
         throw Error('此部件属性尚需通过对应制造命令适配');
-      const { swatchId, printable, partId, ...value } = request.changes || {};
+      const { swatchId, printable, partId, zMM, attachId, ...value } =
+        request.changes || {};
       if (Object.keys(value).length)
         run({ kind: 'set-node', nodeId: request.id, value });
       if (swatchId !== undefined)
@@ -207,10 +226,26 @@ export function createCreationIntent(action, args, displayed) {
           target: { kind: 'node', id: request.id },
           partId,
         });
+      if (zMM !== undefined || attachId !== undefined) {
+        const placement = createObjectPlacementIntent(
+          {
+            id: request.id,
+            changes: {
+              ...(zMM !== undefined ? { zMM } : {}),
+              ...(attachId !== undefined ? { attachId } : {}),
+            },
+          },
+          view,
+        )(document, context);
+        document = placement.document;
+        changes.push(...(placement.changedRefs || []));
+      }
     } else if (action === 'modifier_update') {
       run(compileModifierUpdate(document, request));
     } else if (action === 'modifier_add') {
       run(compileModifierAdd(document, request));
+    } else if (action === 'modifier_move' || action === 'modifier_remove') {
+      run(compileModifierStructure(document, { ...request, action }));
     } else if (action === 'print_settings') {
       requirePrintStack();
       run({ kind: 'set-print-settings', layerHeightMM: request.layerHeightMM });
