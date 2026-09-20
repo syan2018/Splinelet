@@ -119,6 +119,18 @@ run({
 
 snapshot = await evaluate();
 view = projectCreationView(session.state.document, snapshot);
+assert.deepEqual(view.creation.swatchOwners[redId], [
+  { id: shapeId, name: session.state.document.nodes[shapeId].name },
+]);
+const usageDocument = structuredClone(session.state.document);
+usageDocument.appearances.defaults[shapeId] = { swatchId: redId };
+for (const item of Object.values(usageDocument.appearances.overrides))
+  item.target.key = 'unresolved-colour-reference';
+assert.deepEqual(
+  projectCreationView(usageDocument, snapshot).creation.swatchOwners[redId],
+  view.creation.swatchOwners[redId],
+  'palette usage deduplicates defaults and unresolved authored overrides',
+);
 assert.equal(view.cells.length, 1);
 const enabled = view.cells[0];
 assert.equal(enabled.painted, true, 'enabled relief participates in product');

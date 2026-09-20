@@ -53,10 +53,7 @@ module.exports = async (page) => {
   await page.waitForFunction(
     () => document.querySelectorAll('[data-candidate]').length === 2,
   );
-  assert.equal(
-    await page.getByLabel('部件', { exact: true }).getByRole('button').count(),
-    1,
-  );
+  assert.equal(await page.locator('[data-node-id]').count(), 1);
   const snapshot = await page.evaluate(() =>
     window.traceStudioV4.call('document.get'),
   );

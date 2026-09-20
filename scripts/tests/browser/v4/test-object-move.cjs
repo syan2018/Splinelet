@@ -28,10 +28,7 @@ module.exports = async (page) => {
       value,
     before,
   );
-  assert.equal(
-    await page.getByLabel('部件', { exact: true }).getByRole('button').count(),
-    1,
-  );
+  assert.equal(await page.locator('[data-node-id]').count(), 1);
   return {
     passed: true,
     checks: [

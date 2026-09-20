@@ -97,6 +97,27 @@ async function main() {
     );
     await page.getByRole('button', { name: '适合画布', exact: true }).click();
     await page.getByText('底图就绪', { exact: true }).waitFor();
+    await page
+      .getByRole('button', { name: '项目色卡 · 全局', exact: true })
+      .click();
+    await page
+      .getByRole('textbox', { name: '重命名项目色', exact: true })
+      .waitFor({ timeout: 10000 });
+    assert.deepEqual(
+      errors,
+      [],
+      'opening the palette must not crash the original Studio',
+    );
+    await page.getByRole('button', { name: '删除项目色', exact: true }).click();
+    await page
+      .getByRole('dialog')
+      .filter({ hasText: '替换并删除' })
+      .waitFor({ timeout: 10000 });
+    await page.getByRole('button', { name: '取消', exact: true }).click();
+    await page
+      .getByRole('button', { name: '当前工具设置', exact: true })
+      .first()
+      .click();
     const advancedModelView = await page.evaluate(() =>
       window.originalStudioModelView(),
     );

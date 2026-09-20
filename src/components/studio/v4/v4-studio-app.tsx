@@ -18,11 +18,25 @@ import {
   isDesktopRuntime,
   desktopProjectSavePath,
   desktopWriteProject,
+  desktopProjectOpenPath,
+  desktopReadFile,
+  desktopPendingOpenPaths,
+  listenDesktopOpenFiles,
 } from '@/lib/platform/index.mjs';
 import * as documentWorkerModule from '@/lib/evaluation/document-worker.ts?worker';
 import { V4Canvas } from '@/components/source-editor/v4/v4-canvas';
 import type { V4CanvasAction } from '@/hooks/use-v4-canvas-gestures';
 import { createV4AgentAPI } from '@/lib/agent/v4-api.mjs';
+import {
+  mountV4BrowserAPI,
+  connectV4Companion,
+} from '@/lib/agent/v4-browser.mjs';
+import { sameOutputRef } from '@/lib/relief/appearance.mjs';
+import { V4ObjectTree } from './v4-object-tree';
+import { V4SourceInspector } from './v4-source-inspector';
+import { V4ManufacturingTasks } from './v4-manufacturing-tasks';
+import { V4ConstructionTasks } from './v4-construction-tasks';
+import { DesktopWindowControls } from '@/components/shell/desktop-window-controls';
 import { V4BodyPreview, type BodyPreview } from './v4-body-preview';
 
 const emptySelection = () => ({
@@ -47,8 +61,10 @@ export default function V4StudioApp() {
   const [editor] = useState(() => createEditorSession(newDocument()));
   const [state, setState] = useState(editor.state);
   const [selection, setSelection] = useState(emptySelection);
-  const [tool, setTool] = useState<'select' | 'move' | 'pen'>('pen');
+  const [tool, setTool] = useState<'select' | 'move' | 'pen' | 'anchor'>('pen');
   const [details, setDetails] = useState(false);
+  const [companion, setCompanion] = useState(false);
+  const apiRef = useRef<ReturnType<typeof createV4AgentAPI> | null>(null);
   const [drawIntent, setDrawIntent] = useState<'partition' | 'hole' | null>(
     null,
   );
@@ -60,6 +76,7 @@ export default function V4StudioApp() {
   );
   const [busy, setBusy] = useState(false);
   const [bodyPreview, setBodyPreview] = useState<BodyPreview | null>(null);
+  const [exportFormat, setExportFormat] = useState('stl');
   const evaluation = useRef<ReturnType<typeof createEvaluationSession> | null>(
     null,
   );
@@ -78,14 +95,18 @@ export default function V4StudioApp() {
     }),
   );
   const opening = useRef(false);
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
   const document = (state.preview?.document || state.document) as DocumentV4;
   const active = selection.activeRef;
   const target = active?.kind === 'output' ? (active as OutputRef) : null;
   const regionDefinition = target
     ? {
         ...document.reliefDefinitions.defaults[target.ownerNodeId],
-        ...Object.values(document.reliefDefinitions.overrides).find(
-          (item) => JSON.stringify(item.target) === JSON.stringify(target),
+        ...Object.values(document.reliefDefinitions.overrides).find((item) =>
+          sameOutputRef(item.target, target),
         )?.value,
       }
     : null;
@@ -96,7 +117,10 @@ export default function V4StudioApp() {
   const ownerNodeId =
     nodeIds.length === 1 && document.nodes[nodeIds[0]]?.kind === 'shape'
       ? nodeIds[0]
-      : undefined;
+      : target?.ownerNodeId ||
+        (active && 'sketchId' in active
+          ? document.sketches[active.sketchId]?.ownerNodeId
+          : undefined);
   const run = (action: V4CanvasAction | Record<string, unknown>) => {
     if (action.kind === 'select-candidate') {
       const ref = action.target as OutputRef;
@@ -143,6 +167,7 @@ export default function V4StudioApp() {
     evaluation.current = session;
     const api = createV4AgentAPI({
       editorSession: editor,
+      getSelection: () => selectionRef.current,
       evaluationSession: session,
       evaluationCapabilities: [
         'curves',
@@ -154,10 +179,17 @@ export default function V4StudioApp() {
       exportFormats: [
         { format: 'stl', stage: 'bodies' },
         { format: '3mf', stage: 'bodies' },
+        { format: 'svg-source', stage: 'curves' },
+        { format: 'svg-colored', stage: 'regions' },
+        { format: 'blender-source', stage: 'curves' },
+        { format: 'blender-bodies', stage: 'bodies' },
+        { format: '3mf-bambu', stage: 'bodies' },
       ],
     });
-    const host = window as unknown as { traceStudioV4?: typeof api };
-    host.traceStudioV4 = api;
+    apiRef.current = api;
+    const unmountAPI = mountV4BrowserAPI(api, {
+      onError: (reason: unknown) => setError(message(reason)),
+    });
     let alive = true,
       generation = 0;
     let draftTimer: ReturnType<typeof setTimeout> | undefined;
@@ -235,9 +267,16 @@ export default function V4StudioApp() {
       client.close();
       worker.terminate();
       evaluation.current = null;
-      if (host.traceStudioV4 === api) delete host.traceStudioV4;
+      unmountAPI();
+      apiRef.current = null;
     };
   }, [editor, files]);
+  useEffect(() => {
+    if (!companion || !apiRef.current) return;
+    return connectV4Companion(apiRef.current, {
+      onError: (reason: unknown) => setError(message(reason)),
+    });
+  }, [companion]);
   const preview = {
     onPreviewStart: () =>
       editor.beginPreview({ expectedRevision: editor.state.revision }),
@@ -266,11 +305,15 @@ export default function V4StudioApp() {
         });
     },
   };
-  const open = async (file: File) => {
-    const before = editor.state;
+  const open = async (
+    file: File,
+    target: string | null = null,
+    before = editor.state,
+  ) => {
     try {
       const opened = openProject({
         bytes: new Uint8Array(await file.arrayBuffer()),
+        target,
       });
       if (
         editor.state.epoch !== before.epoch ||
@@ -296,6 +339,44 @@ export default function V4StudioApp() {
       setError(message(reason));
     }
   };
+  const openDesktopPath = async (path: string) => {
+    const before = editor.state;
+    try {
+      const bytes = await desktopReadFile(path);
+      await open(new File([bytes], path), path, before);
+    } catch (reason) {
+      setError(message(reason));
+    }
+  };
+  const desktopOpenRef = useRef(openDesktopPath);
+  useEffect(() => {
+    desktopOpenRef.current = openDesktopPath;
+  });
+  const [pendingPaths, setPendingPaths] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let alive = true;
+    let stop: (() => void) | undefined;
+    const receive = (paths: string[]) => {
+      if (alive)
+        setPendingPaths((current) => [...new Set([...current, ...paths])]);
+    };
+    void (async () => {
+      const off = await listenDesktopOpenFiles(receive);
+      if (!alive) {
+        off();
+        return;
+      }
+      stop = off;
+      receive(await desktopPendingOpenPaths());
+    })().catch((reason) => {
+      if (alive) setError(message(reason));
+    });
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, []);
   const restore = async () => {
     const current = editor.state;
     try {
@@ -329,7 +410,7 @@ export default function V4StudioApp() {
     try {
       const current = editor.state;
       const target = isDesktopRuntime()
-        ? await desktopProjectSavePath('作品-v4.spl')
+        ? files.state.target || (await desktopProjectSavePath('作品-v4.spl'))
         : '作品-v4.spl';
       if (typeof target !== 'string' || !target) return;
       await files.save({
@@ -349,18 +430,37 @@ export default function V4StudioApp() {
     if (!session) return;
     try {
       const current = editor.state;
-      await session.request({ domains: ['bodies'] });
+      const stage =
+        exportFormat === 'svg-source' || exportFormat === 'blender-source'
+          ? 'curves'
+          : exportFormat === 'svg-colored'
+            ? 'regions'
+            : 'bodies';
+      await session.request({ domains: [stage] });
       const captured = session.capture({
         epoch: current.epoch,
         revision: current.revision,
-        domains: ['bodies'],
+        domains: [stage],
       });
       const result = await exportSnapshot(captured, {
-        format: 'stl',
-        stage: 'bodies',
+        format: exportFormat,
+        stage,
+        script: exportFormat.startsWith('blender'),
+        slicerTemplate: current.document.manufacturing.slicerTemplate,
       });
-      await saveThroughRuntime(result.data, '作品.stl', result.mimeType);
-      setNotice('实体已导出');
+      const extension = exportFormat.startsWith('svg')
+        ? 'svg'
+        : exportFormat.startsWith('blender')
+          ? 'py'
+          : exportFormat.startsWith('3mf')
+            ? '3mf'
+            : 'stl';
+      await saveThroughRuntime(
+        result.data,
+        `作品.${extension}`,
+        result.mimeType,
+      );
+      setNotice('已导出当前工程结果');
       setError('');
     } catch (reason) {
       setError(message(reason));
@@ -382,6 +482,35 @@ export default function V4StudioApp() {
       setError(message(reason));
     }
   };
+  const keyboardActions = useRef({ run, save, nodeIds });
+  useEffect(() => {
+    keyboardActions.current = { run, save, nodeIds };
+  });
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      const { run, save, nodeIds } = keyboardActions.current;
+      if (event.defaultPrevented) return;
+      const element = event.target as HTMLElement;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void save();
+        return;
+      }
+      if (element.matches('input,textarea,select') || element.isContentEditable)
+        return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        editor[event.shiftKey ? 'redo' : 'undo']({
+          expectedRevision: editor.state.revision,
+        });
+      } else if (event.key === 'Delete' && nodeIds.length) {
+        event.preventDefault();
+        run({ kind: 'delete-nodes', nodeIds });
+      }
+    };
+    window.addEventListener('keydown', handle);
+    return () => window.removeEventListener('keydown', handle);
+  }, [editor]);
   return (
     <main
       style={{
@@ -394,9 +523,39 @@ export default function V4StudioApp() {
       data-editor-model="v4"
     >
       <header
+        data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
         style={{ display: 'flex', gap: 8, padding: 12, alignItems: 'center' }}
       >
-        <strong>Splinelet</strong>
+        <strong data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}>
+          Splinelet
+        </strong>
+        {isDesktopRuntime() && (
+          <button
+            onClick={() =>
+              void desktopProjectOpenPath()
+                .then((path) => {
+                  if (typeof path === 'string')
+                    return desktopOpenRef.current(path);
+                })
+                .catch((reason) => setError(message(reason)))
+            }
+          >
+            打开文件
+          </button>
+        )}
+        {pendingPaths.map((path) => (
+          <button
+            key={path}
+            onClick={() => {
+              setPendingPaths((current) =>
+                current.filter((value) => value !== path),
+              );
+              void desktopOpenRef.current(path);
+            }}
+          >
+            打开 {path.split(/[\\/]/).at(-1)}
+          </button>
+        ))}
         <button onClick={() => void restore()}>恢复草稿</button>
         <button onClick={() => void showBody()}>预览成品</button>
         <button
@@ -439,7 +598,23 @@ export default function V4StudioApp() {
         >
           重做
         </button>
-        <button onClick={() => void exportBody()}>导出 STL</button>
+        <select
+          aria-label="导出格式"
+          value={exportFormat}
+          onChange={(event) => setExportFormat(event.target.value)}
+        >
+          <option value="stl">STL</option>
+          <option value="3mf">3MF</option>
+          <option value="3mf-bambu">Bambu 3MF</option>
+          <option value="svg-source">原始线条 SVG</option>
+          <option value="svg-colored">着色区域 SVG</option>
+          <option value="blender-source">Blender 曲线</option>
+          <option value="blender-bodies">Blender 实体</option>
+        </select>
+        <button onClick={() => void exportBody()}>
+          导出 {exportFormat === 'stl' ? 'STL' : '文件'}
+        </button>
+        <DesktopWindowControls />
       </header>
       <div
         style={{
@@ -449,28 +624,18 @@ export default function V4StudioApp() {
         }}
       >
         <aside aria-label="部件" style={{ padding: 12, overflow: 'auto' }}>
-          <h2>部件</h2>
-          {Object.values(document.nodes)
-            .sort((a, b) => a.order - b.order)
-            .map((node) => (
-              <button
-                key={node.id}
-                style={{ display: 'block', marginTop: 8 }}
-                aria-pressed={nodeIds.includes(node.id)}
-                onClick={() =>
-                  setSelection({
-                    scope: 'objects',
-                    entityRefs: [{ kind: 'node', id: node.id }],
-                    activeRef: { kind: 'node', id: node.id },
-                  })
-                }
-              >
-                {node.name}
-              </button>
-            ))}
-          {!Object.keys(document.nodes).length && (
-            <p>在画布上画线，开始一个部件。</p>
-          )}
+          <V4ObjectTree
+            document={document}
+            selectedIds={nodeIds}
+            onAction={run}
+            onSelect={(refs) =>
+              setSelection({
+                scope: 'objects',
+                entityRefs: refs,
+                activeRef: refs.at(-1) || null,
+              })
+            }
+          />
         </aside>
         <section
           style={{
@@ -488,6 +653,7 @@ export default function V4StudioApp() {
                 ['pen', '画线'],
                 ['select', '选择'],
                 ['move', '移动'],
+                ['anchor', '编辑线条'],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -528,11 +694,26 @@ export default function V4StudioApp() {
             nodeIds={nodeIds}
             ownerNodeId={ownerNodeId}
             onAction={run}
+            onSelectionChange={(value: unknown) => {
+              const ref = value as EntityRef | null;
+              setSelection({
+                scope: ref?.kind === 'output' ? 'regions' : 'objects',
+                entityRefs: ref ? [ref] : [],
+                activeRef: ref,
+              });
+            }}
             {...preview}
           />
           {bodyPreview && <V4BodyPreview stage={bodyPreview} />}
         </section>
         <aside style={{ padding: 12, overflow: 'auto' }}>
+          {tool === 'anchor' && (
+            <V4SourceInspector
+              document={document}
+              active={active}
+              onAction={run}
+            />
+          )}
           <h2>颜色</h2>
           <p>{target ? '给当前区域上色' : '点击画布中的区域后上色'}</p>
           {Object.values(document.appearances.swatches).map((swatch) => (
@@ -586,9 +767,28 @@ export default function V4StudioApp() {
           >
             高级详情
           </button>
+          <V4ManufacturingTasks
+            document={document}
+            target={target}
+            onAction={run}
+          />
+          <V4ConstructionTasks
+            document={document}
+            ownerNodeId={ownerNodeId}
+            target={target}
+            onAction={run}
+          />
           {details && (
             <div>
               <p>构造与制造信息</p>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={companion}
+                  onChange={(event) => setCompanion(event.target.checked)}
+                />
+                连接本地 Agent
+              </label>
               {Object.values(document.programs).map((program) => (
                 <p key={program.id}>
                   {document.nodes[program.ownerNodeId].name}：

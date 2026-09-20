@@ -10,10 +10,7 @@ module.exports = async (page, outputDirectory) => {
   await canvas.click({ position: { x: 100, y: 250 } });
   await canvas.click({ position: { x: 100, y: 100 } });
   await page.locator('[data-candidate="0"]').waitFor();
-  assert.equal(
-    await page.getByLabel('部件', { exact: true }).getByRole('button').count(),
-    1,
-  );
+  assert.equal(await page.locator('[data-node-id]').count(), 1);
   await page.getByRole('button', { name: '选择', exact: true }).click();
   await canvas.click({ position: { x: 170, y: 170 } });
   const color = page.getByRole('button', { name: /^颜色 / }).first();

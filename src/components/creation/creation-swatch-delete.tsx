@@ -7,7 +7,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { swatchOwners } from '@/lib/creation-colors.mjs';
 
 type Swatch = { id: string; name: string; color: string };
 type CreationDocument = { swatches: Swatch[] };
@@ -16,11 +15,13 @@ const errorMessage = (error: unknown) =>
 
 export default function CreationSwatchDelete({
   creation,
+  owners,
   swatch,
   disabled,
   onDelete,
 }: {
   creation: CreationDocument;
+  owners: readonly { id: string; name: string }[];
   swatch: Swatch;
   disabled: boolean;
   onDelete: (replacementId?: string) => void;
@@ -28,7 +29,6 @@ export default function CreationSwatchDelete({
   const alternatives = creation.swatches.filter(
     (candidate) => candidate.id !== swatch.id,
   );
-  const owners = swatchOwners(creation, swatch.id) as { name: string }[];
   const [open, setOpen] = useState(false);
   const [replacement, setReplacement] = useState(alternatives[0]?.id || '');
   const [error, setError] = useState('');

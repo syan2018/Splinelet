@@ -72,6 +72,7 @@ type CreationObject = ModifierObject & {
 type CreationDocument = {
   objects: CreationObject[];
   swatches: Swatch[];
+  swatchOwners: Record<string, { id: string; name: string }[]>;
   printStack?: {
     layerHeightMM: number;
     layers: { id: string; name: string }[];
@@ -2044,6 +2045,7 @@ export default function CreationWorkspace(p: Props) {
                         <CreationSwatchDelete
                           key={swatch.id}
                           creation={doc}
+                          owners={doc.swatchOwners[swatch.id]}
                           swatch={swatch}
                           disabled={p.busy || calculating}
                           onDelete={(replacementId) => {

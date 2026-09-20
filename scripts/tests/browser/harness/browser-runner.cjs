@@ -193,6 +193,16 @@ function selectCases(options, cases = legacyCases) {
   if (options.suite === 'v4')
     cases = [
       {
+        name: 'advanced-tasks',
+        module: 'v4/test-advanced-tasks.cjs',
+        adapter: 'v4-page',
+      },
+      {
+        name: 'source-editing',
+        module: 'v4/test-source-editing.cjs',
+        adapter: 'v4-page',
+      },
+      {
         name: 'region-authoring',
         module: 'v4/test-region-authoring.cjs',
         adapter: 'v4-page',

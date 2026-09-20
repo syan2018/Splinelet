@@ -499,6 +499,27 @@ export function projectCreationView(document, snapshot) {
   return freeze({
     creation: {
       objects,
+      // Use authored references, including currently unresolved outputs, so
+      // the delete dialog agrees with the canonical resource command.
+      swatchOwners: Object.fromEntries(
+        Object.keys(document.appearances.swatches).map((id) => {
+          const ownerIds = new Set([
+            ...Object.entries(document.appearances.defaults)
+              .filter(([, value]) => value.swatchId === id)
+              .map(([ownerId]) => ownerId),
+            ...Object.values(document.appearances.overrides)
+              .filter((item) => item.value.swatchId === id)
+              .map((item) => item.target.ownerNodeId),
+          ]);
+          return [
+            id,
+            [...ownerIds].map((ownerId) => ({
+              id: ownerId,
+              name: document.nodes[ownerId]?.name || '已失效部件',
+            })),
+          ];
+        }),
+      ),
       swatches: Object.values(document.appearances.swatches)
         .map(clone)
         .sort((left, right) => left.id.localeCompare(right.id)),
