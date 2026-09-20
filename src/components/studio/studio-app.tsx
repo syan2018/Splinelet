@@ -383,6 +383,11 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     height: number;
   } | null>(null);
   const [gesturing, setGesturing] = useState(false);
+  const [objectMoveCommit, setObjectMoveCommit] = useState<{
+    project: Project;
+    nodeIds: string[];
+    delta: Point;
+  } | null>(null);
   const [nodeSnap, setNodeSnap] = useState(true),
     [keepSeams, setKeepSeams] = useState(true),
     [snapFeedback, setSnapFeedback] = useState<EndpointSnapFeedback | null>(
@@ -1331,6 +1336,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       setPointSelection(selection);
     },
     onError: (error) => setStatus(errorMessage(error)),
+    onActiveChange: setGesturing,
+    onObjectCommit: setObjectMoveCommit,
     snapEnabled: settings.snap,
     scale: view.s,
     onSnapFeedback: (feedback) =>
@@ -1353,7 +1360,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     event.preventDefault();
     // Capture targets the stage, including drags begun on portal-rendered faces.
     // Some browsers dispatch contextmenu before the right pointer is released.
-    if (drag.current && drag.current.button !== 2) cancelGesture();
+    if (studioDrag.isActive() || (drag.current && drag.current.button !== 2))
+      cancelGesture();
   });
   useEffect(() => {
     if (!stageElement) return;
@@ -1408,10 +1416,14 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     const toggle = e.shiftKey || e.ctrlKey || e.metaKey;
     const selected = creationApi.current?.prepare_move({ ...target, toggle });
     if (!selected?.nodeIds.length || toggle) return;
-    studioDrag.onObjectPointerDown(e, selected.nodeIds);
+    if (!selected.canDrag) {
+      setStatus('已选中 ' + selected.label + ' · 再次按住拖动可整体移动');
+      return;
+    }
+    studioDrag.onObjectPointerDown(e, selected.nodeIds, selected.pathIds);
   };
   const pointerDown = (e: React.PointerEvent) => {
-    if (drag.current) return;
+    if (drag.current || studioDrag.isActive()) return;
     if (
       (e.target as HTMLElement).closest?.('button,input,select') &&
       (e.button === 0 || !(e.target as HTMLElement).closest('.drawing-canvas'))
@@ -2325,7 +2337,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         model: modelApi.current?.state(),
         creation: creationApi.current?.state(),
         selectedNodes: nodesRef.current,
-        gesturing: !!drag.current,
+        gesturing: !!drag.current || studioDrag.isActive(),
         nodeSnapping: { enabled: nodeSnap, keepSeams, target: snapFeedback },
         view: vr.current,
         modifiers: modifierRef.current,
@@ -3372,8 +3384,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           aria-label="编辑画布"
           className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
           onPointerMove={(e) => {
-            studioDrag.onPointerMove(e);
-            pointerMove(e);
+            if (studioDrag.isActive()) studioDrag.onPointerMove(e);
+            else pointerMove(e);
           }}
           onPointerUp={(e) => {
             studioDrag.onPointerUp(e);
@@ -3791,7 +3803,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             viewMode={creationView}
             tool={tool}
             onTool={chooseTool}
-            onView={setCreationView}
+            onView={(view) => {
+              cancelGesture();
+              setCreationView(view);
+            }}
             onStatus={setStatus}
             onApi={(api) => {
               creationApi.current = api;
@@ -3806,6 +3821,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             onFramePaths={framePaths}
             onCanvasPointerDown={pointerDown}
             onMoveObject={startObjectDrag}
+            objectMoveCommit={objectMoveCommit}
+            objectMoving={studioDrag.isObjectActive()}
             sourceInspector={sourceInspector}
             onSourceExport={() => {
               setDialog('export');

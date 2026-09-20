@@ -112,7 +112,7 @@ module.exports = async (page) => {
   );
   assert.deepEqual((await call('state')).creation.selection, {
     kind: 'path',
-    ids: ['pointer-rectangle'],
+    ids: [before[0].id],
   });
   checks.push(
     'path click with one-pixel jitter ends cleanly and later hover cannot move geometry',

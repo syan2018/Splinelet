@@ -207,7 +207,12 @@ type CreationApi = {
     pathId?: string;
     objectId?: string;
     toggle?: boolean;
-  }) => { pathIds: string[]; nodeIds: string[]; label: string };
+  }) => {
+    pathIds: string[];
+    nodeIds: string[];
+    canDrag: boolean;
+    label: string;
+  };
   new_path: (path: { id: string }) => CreationDocument | undefined;
   trace_target: () => {
     ownerNodeId?: string;
@@ -244,6 +249,12 @@ type Props = {
   onSelectPaths: (ids: string[]) => void;
   onSelectionKind: (kind: 'object' | 'path' | 'cell') => void;
   onCanvasPointerDown: (e: React.PointerEvent) => void;
+  objectMoving: boolean;
+  objectMoveCommit: {
+    project: Project;
+    nodeIds: string[];
+    delta: { x: number; y: number };
+  } | null;
   onMoveObject: (
     e: React.PointerEvent,
     target: { pathId?: string; objectId?: string },
@@ -495,7 +506,7 @@ export default function CreationWorkspace(p: Props) {
     return () => window.clearTimeout(timer);
   }, [p.runtime]);
   useEffect(() => {
-    if (!boot) return;
+    if (!boot || p.objectMoving) return;
     let cancelled = false;
     const snapshot = p.project;
     const timer = setTimeout(() => {
@@ -544,7 +555,7 @@ export default function CreationWorkspace(p: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [p.project, p.busy, boot]);
+  }, [p.project, p.busy, p.objectMoving, boot]);
   const notify = (message: string) => {
     setError('');
     p.onStatus(message);
@@ -915,6 +926,12 @@ export default function CreationWorkspace(p: Props) {
           (target?.pathId
             ? doc.objects.find((o) => o.pathIds.includes(target.pathId!))?.id
             : undefined);
+        const canDrag =
+          !!hit &&
+          selection.kind === 'object' &&
+          revision.current === ref.current.project &&
+          objects.includes(hit) &&
+          !target?.toggle;
         const ids = hit
           ? target?.toggle
             ? objects.includes(hit)
@@ -936,6 +953,7 @@ export default function CreationWorkspace(p: Props) {
         return {
           pathIds: [...new Set(selected.flatMap((o) => o.pathIds))],
           nodeIds: selected.map((o) => o.id),
+          canDrag,
           label:
             selected.length === 1
               ? selected[0].name
@@ -1147,6 +1165,13 @@ export default function CreationWorkspace(p: Props) {
                     'creation-cell ' +
                     (candidate ? 'candidate ' : '') +
                     (active ? 'active ' : '')
+                  }
+                  transform={
+                    p.objectMoveCommit?.project === p.project &&
+                    evaluatedProject !== p.project &&
+                    p.objectMoveCommit.nodeIds.includes(o.id)
+                      ? `translate(${p.objectMoveCommit.delta.x} ${p.objectMoveCommit.delta.y})`
+                      : undefined
                   }
                   d={regionSVGPath(c.geometry, p.project)}
                   fill={painting ? swatch?.color : c.color}
@@ -2088,7 +2113,7 @@ export default function CreationWorkspace(p: Props) {
                           : p.tool === 'height'
                             ? '选择区域后使用高度柄，或在选区属性中输入厚度。'
                             : p.tool === 'move'
-                              ? '拖动选中部件的面或线，整体移动其所有源线；Shift 限制方向。右键、空格或中键拖动只平移视图。'
+                              ? '先点击选中部件，再按住其面或线整体移动；Shift 限制方向。右键、空格或中键拖动只平移视图。'
                               : '右键、空格或中键拖动画布移动视图。'}
                     </p>
                   </div>

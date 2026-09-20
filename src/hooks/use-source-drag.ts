@@ -10,6 +10,9 @@ import { beginV4PathGesture } from '@/lib/source-editor/path-gesture.mjs';
 import { nodeSelection, selectedNode } from '@/lib/source-editor/node-edit.mjs';
 import { snapEndpoint } from '@/lib/source-editor/endpoint-snap.mjs';
 
+import { objectMovePreview } from '@/lib/source-editor/object-move-preview';
+import type { Project } from '@/lib/project';
+
 type Point = { x: number; y: number };
 type Selection = { curve: number; point: number } | null;
 type SourceInput = Parameters<typeof beginV4PointGesture>[0];
@@ -25,6 +28,11 @@ type Active = {
   moved: boolean;
   snapContext?: ReturnType<SourceInput['runtime']['readEndpointSnapContext']>;
   snapId?: string;
+  object?: {
+    nodeIds: string[];
+    delta: Point;
+    preview: ReturnType<typeof objectMovePreview>;
+  };
 };
 
 /** Original source-drag interactions with a V4 source-command backend. Camera,
@@ -41,6 +49,8 @@ export function useSourceDrag({
   getCaptureTarget,
   onSelectionChange,
   onError,
+  onActiveChange,
+  onObjectCommit,
   snapEnabled = false,
   scale = 1,
   onSnapFeedback = () => {},
@@ -53,6 +63,12 @@ export function useSourceDrag({
   getCaptureTarget: () => HTMLElement | SVGElement | null;
   onSelectionChange: (nodes: number[], selection: Selection) => void;
   onError: (error: unknown) => void;
+  onActiveChange: (active: boolean) => void;
+  onObjectCommit: (value: {
+    project: Project;
+    nodeIds: string[];
+    delta: Point;
+  }) => void;
   snapEnabled?: boolean;
   scale?: number;
   onSnapFeedback?: (feedback: ReturnType<typeof snapEndpoint>) => void;
@@ -64,11 +80,26 @@ export function useSourceDrag({
     active.current = null;
     onSnapFeedback(null);
     try {
-      if (commit && current.moved) current.gesture.commit();
-      else current.gesture.cancel();
+      if (commit && current.moved) {
+        if (current.object) current.gesture.update(current.object.delta);
+        const result = current.gesture.commit();
+        if (current.object)
+          onObjectCommit({
+            project: result as Project,
+            nodeIds: current.object.nodeIds,
+            delta: current.object.delta,
+          });
+      } else current.gesture.cancel();
     } catch (error) {
+      try {
+        current.gesture.cancel();
+      } catch {
+        /* The runtime may already have invalidated this preview. */
+      }
       onError(error);
     } finally {
+      current.object?.preview.clear();
+      onActiveChange(false);
       if (current.target.hasPointerCapture(current.pointerId))
         current.target.releasePointerCapture(current.pointerId);
     }
@@ -78,6 +109,7 @@ export function useSourceDrag({
       const current = active.current;
       active.current = null;
       if (!current) return;
+      current.object?.preview.clear();
       try {
         current.gesture.cancel();
       } catch {
@@ -94,6 +126,7 @@ export function useSourceDrag({
     origin: Point,
     gesture: Active['gesture'],
     snapContext?: Active['snapContext'],
+    object?: Active['object'],
   ) => {
     active.current = {
       gesture,
@@ -103,11 +136,17 @@ export function useSourceDrag({
       client: { x: event.clientX, y: event.clientY },
       moved: false,
       snapContext,
+      object,
     };
     target.setPointerCapture(event.pointerId);
+    onActiveChange(true);
   };
   return {
-    onObjectPointerDown(event: PointerEvent, nodeIds: string[]) {
+    onObjectPointerDown(
+      event: PointerEvent,
+      nodeIds: string[],
+      pathIds: string[],
+    ) {
       if (!runtime) return;
       if (active.current || disabled || isPanning() || event.button !== 0)
         return;
@@ -123,6 +162,12 @@ export function useSourceDrag({
           target,
           origin,
           runtime.beginObjectGesture(project, nodeIds),
+          undefined,
+          {
+            nodeIds,
+            delta: { x: 0, y: 0 },
+            preview: objectMovePreview(target, nodeIds, pathIds),
+          },
         );
       } catch (error) {
         finish(false);
@@ -231,6 +276,11 @@ export function useSourceDrag({
         if (Math.abs(x) > Math.abs(y)) y = 0;
         else x = 0;
       }
+      if (current.object) {
+        current.object.delta = { x, y };
+        current.object.preview.update({ x, y });
+        return;
+      }
       try {
         const snap =
           snapEnabled && !event.altKey && !event.shiftKey && current.snapContext
@@ -256,8 +306,21 @@ export function useSourceDrag({
       }
     },
     onPointerUp(event: PointerEvent) {
-      if (event.button === 0 && active.current?.pointerId === event.pointerId)
-        finish(true);
+      const current = active.current;
+      if (event.button !== 0 || current?.pointerId !== event.pointerId) return;
+      if (current.object && current.moved) {
+        const point = toPoint(event);
+        if (point) {
+          let x = point.x - current.origin.x,
+            y = point.y - current.origin.y;
+          if (event.shiftKey) {
+            if (Math.abs(x) > Math.abs(y)) y = 0;
+            else x = 0;
+          }
+          current.object.delta = { x, y };
+        }
+      }
+      finish(true);
     },
     onPointerCancel(event: PointerEvent) {
       if (active.current?.pointerId === event.pointerId) finish(false);
@@ -274,6 +337,8 @@ export function useSourceDrag({
         finish(false);
       }
     },
+    isActive: () => !!active.current,
+    isObjectActive: () => !!active.current?.object,
     cancel: () => finish(false),
   };
 }
