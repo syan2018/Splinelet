@@ -45,7 +45,9 @@ function normalizeResults(regionResults) {
   return [];
 }
 
-function effectiveRelief(document, shapeId, target) {
+/** Authored defaults and overrides, including disabled regions. This read does
+ * not depend on successful thickness/placement/body evaluation. */
+export function resolveReliefDefinition(document, shapeId, target) {
   const matches = assignmentsForTarget(
     Object.values(document.reliefDefinitions?.overrides || {}),
     target,
@@ -63,11 +65,11 @@ function effectiveRelief(document, shapeId, target) {
     };
   return {
     status: 'ready',
-    value: {
+    value: clone({
       ...defaultRelief(),
       ...document.reliefDefinitions?.defaults?.[shapeId],
       ...matches[0]?.value,
-    },
+    }),
   };
 }
 
@@ -178,7 +180,7 @@ export function resolveRelief(document, regionResults) {
     const appearance = resolveAppearance(document, shape.id, region.ref);
     if (appearance.status !== 'ready')
       return blocked([...diagnostics, ...appearance.diagnostics], dependencies);
-    const definition = effectiveRelief(document, shape.id, region.ref);
+    const definition = resolveReliefDefinition(document, shape.id, region.ref);
     if (definition.status !== 'ready')
       return blocked([...diagnostics, ...definition.diagnostics], dependencies);
     // A default swatch is presentation only. It cannot turn an unpainted

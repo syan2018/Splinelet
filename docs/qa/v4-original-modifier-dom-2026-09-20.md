@@ -370,3 +370,12 @@ check-all-path-roles-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 119 
 - 原工程设置 NumberEdit 接线，拒绝反馈走已有状态栏。原界面浏览器实际改宽度，核对一次 revision、Program 保留、完整容器、撤销/重做和 load_project 重开；成功日志 `outputs/v4-qa/original-source-width-2026-09-20.log`。
 - `pnpm check:all` exit 0，120 hermetic 单元、双端构建及 Rust 检查通过；最终类型/lint 补查通过。日志 `outputs/v4-qa/check-all-source-width-2026-09-20.log`。单元覆盖无图文档旧框回退、持久框优先、参考图仿射与 URL 生命周期、无变化/非法/预览拒绝。
 - 这证明原控件与存储/历史接线，不证明上一节真实复杂样例在任意比例下求值完全等价；那项差异仍需解释。ModelWorkspace 与默认入口未签收。
+
+## 高级建模规范读写边界（2026-09-20）
+
+- 新增 `model-workspace-view.mjs`，复用版本化工作区捕获，提供区域稳定 OutputRef、世界几何、面积/孔洞、原浮雕定义、制造归属及未解析赋值。关闭或放置求值失败时不丢失原定义；此 DTO 不伪造旧 ModelRegion 配方。
+- `resolveReliefDefinition` 由浮雕求值与面板读取共用，返回独立副本。高级属性 intent 只写明确请求的 enabled/thickness/mode/placement，保留其余继承字段；选区批量一次提交，失败无部分写入。
+- 现有 runtime 增加 `model_workspace` 规范求值及持有签发视图的 `modelCommand`。单元覆盖捕获失效、伪造视图、未解析放置修复、非法厚度、后置锁定回滚、一次撤销与原来源保留。
+- `pnpm check:all` exit 0，122 hermetic 单元及双端构建/Rust 检查通过；补查 lint 通过。日志：`outputs/v4-qa/check-all-model-boundary-2026-09-20.log`。
+- 隔离原界面 fixture 只读调用实际宿主/Worker 的新读取边界，内置样例读得 76 条源线、69 个启用浮雕区域及零求值错误；原编辑、文件、宽度与样式回归同时通过。日志：`outputs/v4-qa/original-model-boundary-2026-09-20.log`。
+- 这不是高级 ModelWorkspace UI 验收：原面板事件、构面预览、重绑定、多体块、删除和输出适配尚未消费完整新边界，默认入口保持未签收。后续缺口列于工作包 07。

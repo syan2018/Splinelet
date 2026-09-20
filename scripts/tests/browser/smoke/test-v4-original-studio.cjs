@@ -83,6 +83,20 @@ async function main() {
     );
     await page.getByRole('button', { name: '适合画布', exact: true }).click();
     await page.getByText('底图就绪', { exact: true }).waitFor();
+    const advancedModelView = await page.evaluate(() =>
+      window.originalStudioModelView(),
+    );
+    assert.equal(advancedModelView.regions.length, 69);
+    assert.equal(advancedModelView.source.paths.length, 76);
+    assert.equal(advancedModelView.creation.errors.length, 0);
+    assert.ok(
+      advancedModelView.regions.every(
+        (region) =>
+          region.authoredRelief.value.enabled &&
+          region.areaMM2 > 0 &&
+          region.outputRef.kind === 'output',
+      ),
+    );
     console.log('Checking canonical Sandrone body through worker');
     const solidReport = await page.evaluate(() =>
       Promise.race([

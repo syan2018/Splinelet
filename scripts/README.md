@@ -142,3 +142,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 `test-v4-source-scale.mjs` 验证源空间标定保持构造参数的物理毫米含义，包含嵌套 pose、关系驱动点/柄、参考图仿射、文件往返与原子撤销；不代替原宽度控件及显示坐标框持久化验收。
 
 原宽度接线由 `test-v4-studio-session.mjs`、`test-v4-studio-host.mjs` 覆盖无图坐标框持久化、一次历史提交、预览/非法拒绝、参考图 URL 复用及早期 V4 回退；`test-v4-original-studio.cjs` 实际操作工程设置宽度、撤销/重做并导出重开。
+
+`test-v4-model-workspace-view.mjs` 验证高级建模规范读取：捕获身份、稳定区域/源身份、孔洞面积、关闭和放置失败时仍可读原浮雕定义、失效输出赋值保留，以及内置 Sandrone。`test-v4-model-intents.mjs` 验证高级体块属性按选区一次提交，保留其他继承字段、撤销、失效/伪造视图、非法厚度和后置锁定的整批回滚。它们不替代原 ModelWorkspace 面板事件接线验收。

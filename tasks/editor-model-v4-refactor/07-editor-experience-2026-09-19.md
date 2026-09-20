@@ -371,3 +371,7 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 源比例命令基础：新增 calibrate-source-scale，原子标定自由源点/柄、节点平移、空间 Datum/Relation 和参考图仿射；关系所用 Scalar 显式乘比例，共享 Parameter 本身及 Program 参数/InputRef、制造厚度和容差不变。隐藏/锁定状态保留，明确全局标定包含锁定来源，避免混合单位。120 项单元及 check:all 通过。原宽度控件尚未接线；无参考图 frame 的持久归属、运行时随标定/撤销更新和真实样例结果对照仍待完成，不能按此命令签收宽度旅程。
 
 2026-09-20 原宽度与坐标框接线：Document 可选 sourceFrame 保存像素尺寸和物理宽度，兼容无字段的早期 V4；旧工程迁移和新底图工程明确写入。setSourceWidth 与源比例命令一次提交，显示框变化替换 source runtime，使旧显示句柄失效；撤销/重做同步框及参考仿射，参考图 URL 复用。无底图保存重开以文档比例为准，早期有底图工程直接调用标定 API 也从参考图读取比例。原工程设置 NumberEdit 已接入，拒绝原因走原状态栏。单元与原界面输入/撤销/重做/导出/重开通过，check:all 120 项通过。此项解决显示及持久化缺口，不代表任意比例下真实复杂构造求值等价已签收；上一轮样例差异仍需审阅。ModelWorkspace、默认装配和原生验收继续待办。
+
+2026-09-20 高级建模读写边界基础：model-workspace-view 在带 epoch/revision/previewVersion 的工作区捕获上扩展稳定区域 ID/OutputRef、世界几何面积/孔洞、可编辑 authoredRelief 与制造归属。复用 resolveReliefDefinition，关闭或放置失败时仍保留原厚度/模式/放置定义；未解析赋值单独保留修复身份，不生成旧 ModelRegion 配方。现有 runtime 的 model_workspace 动作经规范 evaluate/Worker 读取，modelCommand 只接受本运行时签发的视图。首个 relief intent 以选中区域编译多条 set-relief，整批一次提交，仅写请求字段，保留默认继承，拒绝过期、预览、伪造、非法厚度与锁定目标。122 项单元/check:all 通过。原 ModelWorkspace JSX 尚未消费此边界，不能当成高级工作区完成。
+
+后续原高级面板接线须逐项替换：project.model/modelFor、commit/mutate、regions/preview/solid/3mf legacy Worker RPC、构面候选确认与重绑定、体块新建/属性/依附、级联删除、区域名/显示/标记色、零件名/新建、几何精度/制造清理和 SVG/STL/Blender 输出。旧“同一面建立多个体块”需要真实的下游区域消费者/独立浮雕定义，不可将一个 OutputRef 的单个 override 假装为多个独立 feature；旧“重新绑定面”需保留已有消费者身份。保留既有 JSX/操作入口；不可用只读投影的 kind 伪造旧 path/split 配方，或将旧 model 修改后反向导入。

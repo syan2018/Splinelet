@@ -11,6 +11,8 @@ import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
 import { effectiveNodeState } from '../scene/hierarchy.mjs';
 import { creationOutput } from './creation-output.mjs';
+import { projectModelWorkspaceView } from './model-workspace-view.mjs';
+import { createModelIntent } from './model-intents.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -53,6 +55,7 @@ export function createV4CreationRuntime({
   const snapFrame = structuredClone(sourceFrame);
   let snapCache = null;
   const scenes = new WeakMap();
+  const modelViews = new WeakMap();
   const prepared = new WeakMap();
   const preparedDisplays = new WeakMap();
   let currentDisplay = null;
@@ -271,7 +274,8 @@ export function createV4CreationRuntime({
         current(project);
         return creationOutput(entry.state.document, snapshot, action, request);
       }
-      if (action !== 'creation') throw Error(`V4 创作求值尚未适配：${action}`);
+      if (!['creation', 'model_workspace'].includes(action))
+        throw Error(`V4 创作求值尚未适配：${action}`);
       if (Object.keys(args || {}).length)
         throw Error('预览参数须先通过明确的预备命令编译');
       const snapshot = await evaluate(documentOf(entry.state), {
@@ -281,10 +285,44 @@ export function createV4CreationRuntime({
       assertAlive();
       if (!sameState(entry.state, editorSession.state))
         throw Error('求值期间工程已变化');
-      const view = projectCreationView(documentOf(entry.state), snapshot);
+      const modelView =
+        action === 'model_workspace'
+          ? projectModelWorkspaceView(
+              entry.state,
+              {
+                ...identity(entry.state),
+                previewVersion: entry.state.preview?.version ?? null,
+                domains: ['curves', 'regions', 'relief', 'placed-relief'],
+                snapshot,
+              },
+              snapFrame,
+            )
+          : null;
+      const view =
+        modelView?.creation ||
+        projectCreationView(documentOf(entry.state), snapshot);
       scenes.set(view, { project, snapshot });
       entry.view = view;
-      return view;
+      if (modelView) modelViews.set(modelView, { project });
+      return modelView || view;
+    },
+    modelCommand(action, args, context) {
+      const entry = current(context.project);
+      if (modelViews.get(context.view)?.project !== context.project)
+        throw Error('高级建模视图不属于当前展示工程');
+      const command = createModelIntent(action, args, context.view);
+      let consumed = false;
+      return {
+        commit() {
+          if (consumed) throw Error('命令已提交');
+          current(context.project);
+          const next = editorSession.dispatch(command, {
+            expectedRevision: entry.state.revision,
+          });
+          consumed = true;
+          return issue(next);
+        },
+      };
     },
     bindEvaluation(project, scene) {
       const entry = metadata(project);

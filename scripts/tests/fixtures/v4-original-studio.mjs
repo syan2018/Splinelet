@@ -59,6 +59,10 @@ window.showSaveFilePicker = async () =>
 // Read-only instrumentation: all edits below must originate in original UI.
 window.originalStudioDocument = () =>
   structuredClone(host.getSnapshot().editorState.document);
+window.originalStudioModelView = async () => {
+  const { runtime, project } = host.getSnapshot();
+  return runtime.evaluate('model_workspace', {}, project);
+};
 window.originalStudioEvidence = () => {
   const { editorState, project, storage } = host.getSnapshot();
   return {
