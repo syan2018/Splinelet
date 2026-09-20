@@ -334,6 +334,54 @@ preferenceGesture.cancel();
 preferences.dispose();
 assert.throws(() => preferences.setBlenderExtrusion(3), /关闭/);
 
+const calibration = makeSession();
+const uncalibrated = calibration.getSnapshot();
+calibration.setSourceWidth(200);
+const calibrated = calibration.getSnapshot();
+assert.equal(calibrated.project.widthMM, 200);
+assert.equal(
+  calibrated.editorState.revision,
+  uncalibrated.editorState.revision + 1,
+);
+assert.equal(calibrated.storage.dirty, true);
+assert.deepEqual(calibrated.project.paths, uncalibrated.project.paths);
+assert.notEqual(calibrated.runtime, uncalibrated.runtime);
+assert.throws(() => uncalibrated.runtime.project(), /关闭/);
+const persistedScale = decodeDocument(calibration.exportBytes());
+assert.equal(persistedScale.document.sourceFrame.widthMM, 200);
+calibration.setSourceWidth(200);
+assert.equal(calibration.getSnapshot(), calibrated);
+for (const invalid of [0, -1, 10001, NaN, Infinity])
+  assert.throws(() => calibration.setSourceWidth(invalid), /宽度/);
+assert.equal(calibration.getSnapshot(), calibrated);
+calibration.undo();
+assert.deepEqual(
+  calibration.getSnapshot().editorState.document,
+  uncalibrated.editorState.document,
+);
+assert.equal(calibration.getSnapshot().project.widthMM, 100);
+calibration.redo();
+assert.deepEqual(
+  calibration.getSnapshot().editorState.document,
+  persistedScale.document,
+);
+const scaleGesture = calibration
+  .getSnapshot()
+  .runtime.beginSourceGesture(calibration.getSnapshot().project);
+assert.throws(() => calibration.setSourceWidth(150), /拖动/);
+scaleGesture.cancel();
+calibration.open({ kind: 'v4', ...persistedScale }, presentation());
+assert.equal(
+  calibration.getSnapshot().project.widthMM,
+  200,
+  'document frame overrides a stale caller frame',
+);
+assert.deepEqual(
+  calibration.getSnapshot().project.paths,
+  uncalibrated.project.paths,
+);
+calibration.dispose();
+
 console.log(
   'PASS: Studio session owns real V4 editor/runtime snapshots, storage lifecycle, replacement and persistence races.',
 );

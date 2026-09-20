@@ -184,6 +184,7 @@ DocumentV4 = {
   version: 4,
   id: DocumentId,
   units: 'mm',
+  sourceFrame?: { width: number, height: number, widthMM: number },
   nodes: Record<NodeId, GroupNode | ShapeNode>,
   sketches: Record<SketchId, Sketch>,
   datums: Record<DatumId, Datum>,
@@ -199,6 +200,9 @@ DocumentV4 = {
   collections: Record<CollectionId, ReferenceCollection>,
 };
 
+// sourceFrame 记录源画布的像素尺寸和物理宽度，不存视图缩放/平移。
+// 新建底图工程和旧工程导入明确写入；没有此字段的早期 V4 文档仍可读取。
+// 校准比例时，它与源几何、空间关系和 Reference 同一事务更新。
 SceneNode = {
   id,
   kind,

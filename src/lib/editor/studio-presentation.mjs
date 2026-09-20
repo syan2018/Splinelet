@@ -12,7 +12,8 @@ const near = (a, b) =>
   Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 
 /** Owns one reference image URL for the original, centered pixel canvas.
- * No URL or presentation field is written into Document or asset bytes.
+ * Reads persisted source calibration; no URL or transient display preferences
+ * are written into Document or asset bytes.
  */
 export function createStudioPresentation(opened, options, urls = URL) {
   const {
@@ -40,7 +41,8 @@ export function createStudioPresentation(opened, options, urls = URL) {
     }
   }
   const frame = structuredClone(
-    suppliedFrame ||
+    opened.document.sourceFrame ||
+      suppliedFrame ||
       (reference && {
         width: reference.pixelWidth,
         height: reference.pixelHeight,

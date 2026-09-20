@@ -369,3 +369,5 @@ pnpm test:browser --suite v4 --case reference-space --target web
 2026-09-20 原 roles 写侧已接线：createCreationIntent 将原 objectId/pathIds 解析为当前 PathRef，调用 set-path-roles；使用原 prepare→evaluate→commitPrepared 管线和一次撤销。覆盖已有用途往返、新边界/挖洞/分区及批量失败回滚。挖洞/分区暂停时显式设置空切割输入保留上游结果，恢复后仍校验原目标与契约。默认参考线现在有明确的只读 guide；复杂派生来源不显示猜测用途，也不允许用简单用途命令静默绕过实际构造。select_paths API 同步创作选区，修复画布已选路径而属性面板仍为整个部件的问题。原按钮验收结果见 QA；其余默认入口和高级业务待办保持未完成。
 
 2026-09-20 源比例命令基础：新增 calibrate-source-scale，原子标定自由源点/柄、节点平移、空间 Datum/Relation 和参考图仿射；关系所用 Scalar 显式乘比例，共享 Parameter 本身及 Program 参数/InputRef、制造厚度和容差不变。隐藏/锁定状态保留，明确全局标定包含锁定来源，避免混合单位。120 项单元及 check:all 通过。原宽度控件尚未接线；无参考图 frame 的持久归属、运行时随标定/撤销更新和真实样例结果对照仍待完成，不能按此命令签收宽度旅程。
+
+2026-09-20 原宽度与坐标框接线：Document 可选 sourceFrame 保存像素尺寸和物理宽度，兼容无字段的早期 V4；旧工程迁移和新底图工程明确写入。setSourceWidth 与源比例命令一次提交，显示框变化替换 source runtime，使旧显示句柄失效；撤销/重做同步框及参考仿射，参考图 URL 复用。无底图保存重开以文档比例为准，早期有底图工程直接调用标定 API 也从参考图读取比例。原工程设置 NumberEdit 已接入，拒绝原因走原状态栏。单元与原界面输入/撤销/重做/导出/重开通过，check:all 120 项通过。此项解决显示及持久化缺口，不代表任意比例下真实复杂构造求值等价已签收；上一轮样例差异仍需审阅。ModelWorkspace、默认装配和原生验收继续待办。

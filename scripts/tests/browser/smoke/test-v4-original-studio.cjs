@@ -1080,6 +1080,59 @@ async function main() {
     assert.equal((await evidence()).paths, 77);
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).paths, 76);
+    const beforeWidth = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    const widthRevision = (await evidence()).revision;
+    await page
+      .getByRole('button', { name: '工程设置 · 全局', exact: true })
+      .click();
+    const widthInput = page.getByRole('spinbutton', {
+      name: '底图对应宽度',
+      exact: true,
+    });
+    const nextWidth = beforeWidth.sourceFrame.widthMM * 1.01;
+    await widthInput.fill(String(nextWidth));
+    await widthInput.press('Enter');
+    await page.waitForFunction(
+      (revision) => window.originalStudioEvidence().revision === revision,
+      widthRevision + 1,
+    );
+    const afterWidth = await page.evaluate(() =>
+      window.originalStudioDocument(),
+    );
+    assert.ok(Math.abs(afterWidth.sourceFrame.widthMM - nextWidth) < 1e-9);
+    assert.deepEqual(afterWidth.programs, beforeWidth.programs);
+    const widthCopy = await page.evaluate(() =>
+      window.traceStudio.call('export', { format: 'json' }),
+    );
+    assert.deepEqual(
+      decodeDocument(Buffer.from(widthCopy.base64, 'base64')).document,
+      afterWidth,
+    );
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      beforeWidth,
+    );
+    assert.equal(
+      Number(await widthInput.inputValue()),
+      beforeWidth.sourceFrame.widthMM,
+    );
+    await page.getByRole('button', { name: '重做', exact: true }).click();
+    assert.deepEqual(
+      await page.evaluate(() => window.originalStudioDocument()),
+      afterWidth,
+    );
+    await page.evaluate(
+      (base64) => window.traceStudio.call('load_project', { base64 }),
+      widthCopy.base64,
+    );
+    assert.equal(
+      (await page.evaluate(() => window.originalStudioDocument())).sourceFrame
+        .widthMM,
+      afterWidth.sourceFrame.widthMM,
+    );
     assert.deepEqual(errors, []);
     assert.deepEqual(consoleErrors, []);
     await page.screenshot({

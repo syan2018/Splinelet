@@ -34,6 +34,7 @@ export function createSourceScaleCommand(request) {
     if (factor === 1) return { document, changedRefs: [] };
     const next = clone(document),
       changedRefs = [];
+    if (next.sourceFrame) next.sourceFrame.widthMM *= factor;
     const vector = (value) => value.map((n) => n * factor);
     const scalarVector = (value) => value.map((n) => scaleScalar(n, factor));
     for (const node of Object.values(next.nodes)) {

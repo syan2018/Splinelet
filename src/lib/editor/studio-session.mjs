@@ -5,6 +5,7 @@ import { createV4CreationRuntime } from './creation-runtime.mjs';
 import { projectCreationView } from './creation-view.mjs';
 import { projectSourceView } from './source-view.mjs';
 import { projectStudioDisplay } from './studio-display.mjs';
+import { createSourceScaleCommand } from '../editing/commands/source-scale.mjs';
 
 const freeze = (value) => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -35,6 +36,7 @@ export function createStudioSession({
   let snapshot;
   let runtime;
   let layout;
+  let openedLayout;
   let storage;
   const alive = () => {
     if (disposed) throw Error('Studio 会话已关闭');
@@ -67,7 +69,12 @@ export function createStudioSession({
     if (next.dirty !== undefined && typeof next.dirty !== 'boolean')
       throw Error('dirty 必须为布尔值');
     validateDocument(next.document);
-    const nextLayout = freeze(structuredClone(nextPresentation));
+    const nextLayout = freeze(
+      structuredClone({
+        ...nextPresentation,
+        frame: next.document.sourceFrame || nextPresentation.frame,
+      }),
+    );
     project(
       {
         epoch: 'validate-open',
@@ -84,6 +91,7 @@ export function createStudioSession({
   };
   const initial = prepareOpen(opened, presentation);
   layout = initial.nextLayout;
+  openedLayout = layout;
   const editor = createEditorSession(initial.next.document, { idFactory });
   const openStorage = (input, state) =>
     files.open({
@@ -126,6 +134,29 @@ export function createStudioSession({
   // undo retains the same committed identity and must preserve a clean file.
   const detach = editor.subscribe((state) => {
     if (replacing || disposed) return;
+    const document = documentOf(state);
+    const reference =
+      layout.reference && document.references[layout.reference.id];
+    const frame =
+      document.sourceFrame ||
+      (reference
+        ? {
+            width: reference.pixelWidth,
+            height: reference.pixelHeight,
+            widthMM: reference.pixelWidth * reference.pixelToWorld[0],
+          }
+        : openedLayout.frame);
+    if (JSON.stringify(frame) !== JSON.stringify(layout.frame)) {
+      layout = freeze({
+        ...layout,
+        frame: structuredClone(frame),
+        reference: reference
+          ? { ...structuredClone(reference), url: layout.reference.url }
+          : layout.reference,
+      });
+      runtime.dispose();
+      runtime = makeRuntime();
+    }
     if (!state.previewId && state.revision !== storage.revision)
       storage = files.update(state);
     publish(state);
@@ -142,6 +173,7 @@ export function createStudioSession({
       });
       storage = openStorage(prepared.next, state);
       layout = prepared.nextLayout;
+      openedLayout = layout;
       runtime.dispose();
       runtime = makeRuntime();
     } finally {
@@ -179,6 +211,42 @@ export function createStudioSession({
       return () => listeners.delete(listener);
     },
     open,
+    setSourceWidth(widthMM) {
+      alive();
+      if (!Number.isFinite(widthMM) || widthMM < 0.1 || widthMM > 10000)
+        throw Error('底图对应宽度必须为 0.1–10000 mm');
+      if (editor.state.previewId) throw Error('请先完成当前拖动');
+      if (widthMM === layout.frame.widthMM) return snapshot;
+      const frame = structuredClone(layout.frame);
+      editor.dispatch(
+        (document) => {
+          const initialized = structuredClone(document);
+          initialized.sourceFrame ||= frame;
+          const result = createSourceScaleCommand({
+            kind: 'calibrate-source-scale',
+            factor: widthMM / frame.widthMM,
+          })(initialized);
+          // Reject an invalid display before committing geometry/history/storage.
+          project(
+            { ...editor.state, document: result.document },
+            projectCreationView(result.document, {}),
+            {
+              ...layout,
+              frame: result.document.sourceFrame,
+              reference: layout.reference
+                ? {
+                    ...result.document.references[layout.reference.id],
+                    url: layout.reference.url,
+                  }
+                : null,
+            },
+          );
+          return result;
+        },
+        { expectedRevision: editor.state.revision },
+      );
+      return snapshot;
+    },
     setBlenderExtrusion(depthMM) {
       alive();
       if (!Number.isFinite(depthMM) || depthMM < 0 || depthMM > 1000)

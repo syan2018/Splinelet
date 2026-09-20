@@ -2634,6 +2634,11 @@ function compile(context) {
     idFactory: () => context.id('generated', 'default-part'),
   });
   context.document = document;
+  document.sourceFrame = {
+    width: p.width,
+    height: p.height,
+    widthMM: p.widthMM,
+  };
   document.geometrySettings.curveToleranceMM = p.model?.toleranceMM || 0.015;
   document.geometrySettings.joinToleranceMM = Math.max(
     document.geometrySettings.joinToleranceMM,

@@ -1056,7 +1056,16 @@ export function createDocument(options = {}) {
 
 export function validateDocument(value) {
   json(value, 'DocumentV4');
-  exactKeys(value, topLevelKeys, 'DocumentV4');
+  exactKeys(value, topLevelKeys, 'DocumentV4', ['sourceFrame']);
+  if (value.sourceFrame !== undefined) {
+    exactKeys(value.sourceFrame, ['width', 'height', 'widthMM'], 'sourceFrame');
+    if (
+      Object.values(value.sourceFrame).some(
+        (number) => !finite(number) || number <= 0,
+      )
+    )
+      fail('sourceFrame 必须是正有限尺寸');
+  }
   if (value.version !== 4 || value.units !== 'mm')
     fail('DocumentV4 版本或单位无效');
   const seen = new Set();

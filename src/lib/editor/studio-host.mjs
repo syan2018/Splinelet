@@ -65,6 +65,10 @@ export function createStudioHost({ opened, presentation, urls, ...options }) {
       alive();
       return session.setBlenderExtrusion(depthMM);
     },
+    setSourceWidth(widthMM) {
+      alive();
+      return session.setSourceWidth(widthMM);
+    },
     undo() {
       alive();
       return session.undo();

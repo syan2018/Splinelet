@@ -140,3 +140,5 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 新增 test-v4-group-intents.mjs 覆盖原源线编组/排序到规范集合命令的原子适配、旧移动顺序对照、重叠展示与失效拒绝；test-v4-source-organization.mjs 增加显式移入/移出及混合集合保护。原根浏览器覆盖 Ctrl+G、撤销重做、组 API 的成员/显隐/重命名/解散、排序和保存重开。
 
 `test-v4-source-scale.mjs` 验证源空间标定保持构造参数的物理毫米含义，包含嵌套 pose、关系驱动点/柄、参考图仿射、文件往返与原子撤销；不代替原宽度控件及显示坐标框持久化验收。
+
+原宽度接线由 `test-v4-studio-session.mjs`、`test-v4-studio-host.mjs` 覆盖无图坐标框持久化、一次历史提交、预览/非法拒绝、参考图 URL 复用及早期 V4 回退；`test-v4-original-studio.cjs` 实际操作工程设置宽度、撤销/重做并导出重开。

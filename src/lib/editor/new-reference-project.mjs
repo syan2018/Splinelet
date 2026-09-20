@@ -25,6 +25,7 @@ export function createReferenceProject({
     throw Error('新工程需要 PNG、JPG 或 WebP 图片字节');
   const frame = createSourceViewFrame({ width, height, widthMM });
   const document = createDocument();
+  document.sourceFrame = { width, height, widthMM };
   const assetId = crypto.randomUUID();
   const referenceId = crypto.randomUUID();
   const ownedBytes = bytes.slice();

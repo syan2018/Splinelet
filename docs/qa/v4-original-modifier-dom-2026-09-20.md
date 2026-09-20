@@ -362,3 +362,11 @@ check-all-path-roles-2026-09-20.log 记录 pnpm check:all 退出 0，覆盖 119 
 - `pnpm check:all` exit 0，120 hermetic 单元通过，含 Web/桌面前端构建及 Rust 检查。日志：`outputs/v4-qa/check-all-source-scale-2026-09-20.log`。
 - 本地只读探针不能作为样例等价验收：原 Sandrone 宽度乘 1.5 时出现接合容差及输出关系失效；乘 1.01 时内置样例旧引擎有 9 条错误，V4 relief ready；gold 旧引擎有 10 条错误，V4 有一个 blocked 区域、relief blocked。日志：`outputs/v4-qa/source-scale-samples-diagnostic-2026-09-20.log`。需继续区分旧输出身份缺陷、固定毫米参数及原接合语义；不应为了得到成功结果擅自缩放容差或清空输出约定。
 - 尚欠无参考图 frame 的持久归属、标定/撤销后的 runtime/frame 同步、原输入事件与真实样例交互验收。默认入口仍未切换。
+
+## 原宽度与坐标框接线（2026-09-20）
+
+- 可选 `Document.sourceFrame` 保存源画布像素尺寸和物理宽度，不包含相机视图；迁移/新底图工程明确写入，早期 V4 保持可读。源标定一起更新此框。
+- 会话 `setSourceWidth` 原子校验/提交，变更框后替换源 runtime；旧句柄失效，撤销/重做从同一 Document 恢复比例。底图 URL 和资源字节不因标定重建。旧无框有底图文档直接调用标定命令时从参考仿射恢复框；首次从原控件标定明确写入框。
+- 原工程设置 NumberEdit 接线，拒绝反馈走已有状态栏。原界面浏览器实际改宽度，核对一次 revision、Program 保留、完整容器、撤销/重做和 load_project 重开；成功日志 `outputs/v4-qa/original-source-width-2026-09-20.log`。
+- `pnpm check:all` exit 0，120 hermetic 单元、双端构建及 Rust 检查通过；最终类型/lint 补查通过。日志 `outputs/v4-qa/check-all-source-width-2026-09-20.log`。单元覆盖无图文档旧框回退、持久框优先、参考图仿射与 URL 生命周期、无变化/非法/预览拒绝。
+- 这证明原控件与存储/历史接线，不证明上一节真实复杂样例在任意比例下求值完全等价；那项差异仍需解释。ModelWorkspace 与默认入口未签收。

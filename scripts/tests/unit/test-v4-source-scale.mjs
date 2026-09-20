@@ -35,6 +35,17 @@ dispatch(
   }),
 );
 const initial = structuredClone(editor.state.document);
+initial.sourceFrame = { width: 100, height: 100, widthMM: 20 };
+for (const invalidFrame of [
+  null,
+  {},
+  { width: 100, height: 100, widthMM: 0 },
+  { width: Infinity, height: 100, widthMM: 20 },
+  { ...initial.sourceFrame, zoom: 1 },
+])
+  assert.throws(() =>
+    validateDocument({ ...initial, sourceFrame: invalidFrame }),
+  );
 const owner = Object.values(initial.sketches)[0].ownerNodeId;
 const program = initial.programs[initial.nodes[owner].programId];
 program.operators.offset = {
@@ -73,6 +84,7 @@ const scaled = createSourceScaleCommand({
   kind: 'calibrate-source-scale',
   factor: 2,
 })(initial).document;
+assert.deepEqual(scaled.sourceFrame, { width: 100, height: 100, widthMM: 40 });
 assert.deepEqual(
   bounds(scaled),
   [-2, 22, -2, 22],

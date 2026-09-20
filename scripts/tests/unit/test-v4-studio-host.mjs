@@ -7,6 +7,7 @@ import { createStudioPresentation } from '../../../src/lib/editor/studio-present
 import { openProject } from '../../../src/lib/persistence/open-project.mjs';
 import { sha256 } from '../../../src/lib/project-container.mjs';
 import { decodeProject } from '../../../src/lib/project-format.mjs';
+import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 
 const fixtureBytes = new Uint8Array(
   fs.readFileSync(
@@ -322,6 +323,62 @@ assert.deepEqual(failedConstructionUrls.events, [
   ['create', 'blob:studio-host-1'],
   ['revoke', 'blob:studio-host-1'],
 ]);
+
+const scaleUrls = fakeUrls();
+const scaleHost = createStudioHost({
+  opened: sourceDocument(),
+  presentation: presentation(),
+  urls: scaleUrls,
+  persistence: {
+    writeFile: async () => {},
+    drafts: { read: async () => null, write: async () => {} },
+  },
+});
+const scaleInitial = scaleHost.getSnapshot();
+scaleHost.dispatch(
+  createAuthoringCommand({ kind: 'calibrate-source-scale', factor: 2 }),
+);
+assert.equal(
+  scaleHost.getSnapshot().project.widthMM,
+  4,
+  'early V4 without sourceFrame derives API calibration from its reference',
+);
+scaleHost.undo();
+assert.deepEqual(
+  scaleHost.getSnapshot().presentation,
+  scaleInitial.presentation,
+);
+scaleHost.setSourceWidth(4);
+assert.equal(scaleHost.getSnapshot().project.widthMM, 4);
+assert.equal(scaleHost.getSnapshot().project.image, scaleInitial.project.image);
+assert.deepEqual(
+  scaleHost.getSnapshot().presentation.reference.pixelToWorld,
+  [1, 0, 0, -1, -2, 1],
+);
+assert.equal(
+  scaleUrls.events.length,
+  1,
+  'calibration reuses owned image bytes and URL',
+);
+const scaleBytes = scaleHost.exportBytes();
+scaleHost.undo();
+assert.deepEqual(
+  scaleHost.getSnapshot().presentation,
+  scaleInitial.presentation,
+);
+assert.deepEqual(
+  scaleHost.getSnapshot().editorState.document,
+  scaleInitial.editorState.document,
+);
+scaleHost.redo();
+scaleHost.openBytes(
+  { bytes: scaleBytes },
+  presentation('scaled.spl', { frame }),
+);
+assert.equal(scaleHost.getSnapshot().project.widthMM, 4);
+assert.equal(scaleUrls.events.length, 3, 'reopening replaces URL exactly once');
+scaleHost.dispose();
+assert.equal(scaleUrls.events.length, 4);
 
 console.log(
   'PASS: Studio host owns immutable V4 presentation resources, replacement rollback, and asset-preserving persistence.',

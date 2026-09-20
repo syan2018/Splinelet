@@ -3798,11 +3798,17 @@ export default function StudioApp({ host }: { host?: StudioHost } = {}) {
             value={project.widthMM}
             min={0.1}
             max={10000}
-            onCommit={(widthMM) =>
-              transact((p) => {
-                p.widthMM = widthMM;
-              })
-            }
+            onCommit={(widthMM) => {
+              try {
+                if (host) host.setSourceWidth(widthMM);
+                else
+                  transact((p) => {
+                    p.widthMM = widthMM;
+                  });
+              } catch (error) {
+                setStatus(errorMessage(error));
+              }
+            }}
           />
           <p>按整张底图宽度设置物理比例，影响整个作品。</p>
         </section>
