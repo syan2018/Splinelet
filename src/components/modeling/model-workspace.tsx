@@ -213,11 +213,13 @@ function Rename({
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(value),
     done = useRef(false),
-    input = useRef<HTMLInputElement>(null);
+    input = useRef<HTMLInputElement>(null),
+    selectOnEdit = useRef(false);
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || !selectOnEdit.current) return;
     input.current?.focus();
     input.current?.select();
+    selectOnEdit.current = false;
   }, [editing]);
   const commit = () => {
     if (done.current) return;
@@ -251,6 +253,7 @@ function Rename({
       onDoubleClick={(e) => {
         e.stopPropagation();
         done.current = false;
+        selectOnEdit.current = true;
         setDraft(value);
         setEditing(true);
       }}

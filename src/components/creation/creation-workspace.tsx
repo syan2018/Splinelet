@@ -307,11 +307,13 @@ function Name({
 }) {
   const input = useRef<HTMLInputElement>(null),
     [draft, setDraft] = useState<string | null>(null),
-    done = useRef(false);
+    done = useRef(false),
+    selectOnEdit = useRef(false);
   useEffect(() => {
-    if (draft !== null) {
+    if (draft !== null && selectOnEdit.current) {
       input.current?.focus();
       input.current?.select();
+      selectOnEdit.current = false;
     }
   }, [draft]);
   const commit = () => {
@@ -327,6 +329,7 @@ function Name({
       onDoubleClick={(e) => {
         e.stopPropagation();
         done.current = false;
+        selectOnEdit.current = true;
         setDraft(value);
       }}
     >
@@ -338,7 +341,6 @@ function Name({
       aria-label={label}
       value={draft}
       maxLength={120}
-      onFocus={(e) => e.target.select()}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
