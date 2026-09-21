@@ -1,3 +1,4 @@
+import { createVectorImportCommand } from '../editing/commands/vector-import.mjs';
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
 import { projectSourceView, sourcePathId } from './source-view.mjs';
 import { createSourceIntent } from './source-intents.mjs';
@@ -78,6 +79,23 @@ export function createSourceRuntime({
     },
     commandGroup(request, context) {
       return plan(createGroupIntent, request, context);
+    },
+    commandVectorImport(request, context) {
+      return plan(
+        (args, captured) => {
+          const command = createVectorImportCommand(args);
+          return (document, ctx) => {
+            if (
+              ctx.epoch !== captured.epoch ||
+              ctx.revision !== captured.revision
+            )
+              throw Error('导入目标工程已变化');
+            return command(document, ctx);
+          };
+        },
+        request,
+        context,
+      );
     },
     commandSplines(request, context) {
       const entry = current(context.project);

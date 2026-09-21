@@ -1,4 +1,6 @@
 'use client';
+import { parseSvgImport, type SvgImportResult } from '@/lib/import/svg-import';
+import VectorImportDialog from './vector-import-dialog';
 import type { ObjectTransformMode } from '@/components/creation/object-transform-controls';
 import type { ObjectTransformDelta } from '@/lib/source-editor/object-transform-preview';
 import {
@@ -336,6 +338,25 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const historySize = Number(studioSnapshot.editorState.canUndo);
   const futureSize = Number(studioSnapshot.editorState.canRedo);
   const saved = studioSnapshot.storage.dirty ? '有修改未保存' : '已保存';
+  const vectorFile = useRef<HTMLInputElement>(null);
+  const pendingVectorFocus = useRef<string | null>(null);
+  const [vectorInput, setVectorInput] = useState<
+    (SvgImportResult & { name: string; project: Project }) | null
+  >(null);
+  const importVector = async (file: File) => {
+    if (busyRef.current || fileBusyRef.current || studioDrag.isActive())
+      throw Error('请先完成当前操作');
+    if (file.size > 5 * 1024 * 1024) throw Error('SVG 文件不能超过 5 MB');
+    const captured = host.getSnapshot().project;
+    const parsed = parseSvgImport(await file.text());
+    if (host.getSnapshot().project !== captured)
+      throw Error('工程已变化，请重新导入');
+    setVectorInput({
+      ...parsed,
+      name: file.name.replace(/\.svg$/i, ''),
+      project: captured as Project,
+    });
+  };
   const file = useRef<HTMLInputElement>(null),
     projectFile = useRef<HTMLInputElement>(null),
     space = useRef(false),
@@ -3039,7 +3060,11 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       onDropCapture={(e) => {
         e.preventDefault();
         if (e.dataTransfer.files[0])
-          report(importImage(e.dataTransfer.files[0]));
+          report(
+            /\.svg$/i.test(e.dataTransfer.files[0].name)
+              ? importVector(e.dataTransfer.files[0])
+              : importImage(e.dataTransfer.files[0]),
+          );
       }}
     >
       <header data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}>
@@ -3048,6 +3073,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           busy={busy}
           onOpen={() => void openProjectFile()}
           onNewFromImage={() => file.current?.click()}
+          onImportVector={() => vectorFile.current?.click()}
           onSave={() => void saveProject()}
           onSaveAs={() => void saveProject(true)}
           onHelp={() => setDialog('help')}
@@ -3092,6 +3118,17 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           </button>
         </div>
         <DesktopWindowControls />
+        <input
+          ref={vectorFile}
+          type="file"
+          accept=".svg,image/svg+xml"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) report(importVector(file));
+            e.target.value = '';
+          }}
+        />
         <input
           ref={file}
           type="file"
@@ -3630,6 +3667,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             onStatus={setStatus}
             onApi={(api) => {
               creationApi.current = api;
+              if (pendingVectorFocus.current) {
+                const id = pendingVectorFocus.current;
+                pendingVectorFocus.current = null;
+                api.focus(id);
+                api.show_tool();
+              }
             }}
             layer={creationLayer}
             stage={stageElement}
@@ -3732,6 +3775,48 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           · 滚轮缩放 · 右键/空格平移
         </span>
       </footer>
+      {vectorInput && (
+        <VectorImportDialog
+          input={vectorInput}
+          widthMM={project.widthMM}
+          objects={project.creation?.objects || []}
+          onClose={() => setVectorInput(null)}
+          onImport={(options) => {
+            try {
+              if (
+                busyRef.current ||
+                fileBusyRef.current ||
+                studioDrag.isActive()
+              )
+                throw Error('请先完成当前操作');
+              const captured = host.getSnapshot();
+              if (captured.project !== vectorInput.project)
+                throw Error('工程已变化，请重新导入');
+              const imported = captured.runtime
+                .commandVectorImport(
+                  {
+                    name: vectorInput.name,
+                    splines: vectorInput.splines,
+                    bounds: vectorInput.bounds,
+                    ...options,
+                  },
+                  { project: captured.project },
+                )
+                .commit();
+              pr.current = imported as Project;
+              pendingVectorFocus.current =
+                captured.runtime.readCreationDocument(imported).tree.at(-1)
+                  ?.id || null;
+              setVectorInput(null);
+              setCreationView('flat');
+              chooseTool('move');
+              setStatus('已导入可编辑 SVG 对象组 · Ctrl+Z 撤销');
+            } catch (error) {
+              setStatus(errorMessage(error));
+            }
+          }}
+        />
+      )}
       <Dialog
         open={!!pendingRefit}
         onOpenChange={(open) => {

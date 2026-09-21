@@ -8,6 +8,7 @@ export default function StudioFileMenu({
   busy,
   onOpen,
   onNewFromImage,
+  onImportVector,
   onSave,
   onSaveAs,
   onHelp,
@@ -18,6 +19,7 @@ export default function StudioFileMenu({
   busy: boolean;
   onOpen: () => void;
   onNewFromImage: () => void;
+  onImportVector: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onHelp: () => void;
@@ -32,6 +34,11 @@ export default function StudioFileMenu({
         {
           label: '从图片新建工程…',
           action: onNewFromImage,
+          disabled: busy || fileBusy,
+        },
+        {
+          label: '导入 SVG／笔迹…',
+          action: onImportVector,
           disabled: busy || fileBusy,
         },
         {
