@@ -39,17 +39,20 @@ export async function evaluateDocument(document, options = {}) {
     'placed-relief',
     'bodies',
   );
-  const planar = evaluatePlanar(document, {
-    registry: options.registry,
-    requestedDomains: [
-      ...(wants(requested, 'curves') ? ['curves'] : []),
-      ...(needRegions ? ['regions'] : []),
-    ],
-    resolveSketch: options.resolveSketch,
-    resolveScalar: options.resolveScalar,
-    resolveDatum: options.resolveDatum,
-    resolveRelation: options.resolveRelation,
-  });
+  const planar = (options.planarStageCache?.evaluate || evaluatePlanar)(
+    document,
+    {
+      registry: options.registry,
+      requestedDomains: [
+        ...(wants(requested, 'curves') ? ['curves'] : []),
+        ...(needRegions ? ['regions'] : []),
+      ],
+      resolveSketch: options.resolveSketch,
+      resolveScalar: options.resolveScalar,
+      resolveDatum: options.resolveDatum,
+      resolveRelation: options.resolveRelation,
+    },
+  );
   const curves = wants(requested, 'curves') ? published(planar, 'curves') : [];
   const regions = needRegions ? published(planar, 'regions') : [];
   const relief = wants(requested, 'relief', 'placed-relief', 'bodies')

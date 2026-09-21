@@ -1,4 +1,5 @@
 import { evaluateDocument } from './evaluate-document.mjs';
+import { createPlanarStageCache } from './planar-stage-cache.mjs';
 import { assertEvaluationIdentity, canonicalDomains } from './worker-protocol';
 import type {
   WorkerEvaluationRequest,
@@ -6,13 +7,21 @@ import type {
 } from './worker-protocol';
 import wasmURL from 'manifold-3d/manifold.wasm?url';
 
+let cacheEpoch: string | null = null;
+let planarStageCache = createPlanarStageCache();
+
 self.onmessage = async ({ data }: MessageEvent<WorkerEvaluationRequest>) => {
   try {
     assertEvaluationIdentity(data);
     const domains = canonicalDomains(data.domains);
     if (data.kind !== 'evaluate' || !data.requestId)
       throw Error('无效求值请求');
+    if (cacheEpoch !== data.epoch) {
+      cacheEpoch = data.epoch;
+      planarStageCache = createPlanarStageCache();
+    }
     const snapshot = await evaluateDocument(data.document, {
+      planarStageCache,
       requestedDomains: domains,
       solidOptions: { locateFile: () => wasmURL },
     });
