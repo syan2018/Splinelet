@@ -33,6 +33,11 @@ module.exports = async (page) => {
   await page
     .getByLabel('导入贴附表面', { exact: true })
     .selectOption({ label: '杯子' });
+  await page.getByLabel('导入中心 X', { exact: true }).fill('500');
+  await page.getByRole('button', { name: '导入为对象组', exact: true }).click();
+  await page.getByRole('dialog').getByRole('alert').waitFor();
+  assert.deepEqual(await call('document.get'), original);
+  await page.getByLabel('导入中心 X', { exact: true }).fill('8');
   await page.getByRole('button', { name: '导入为对象组', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await settled();

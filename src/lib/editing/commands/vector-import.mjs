@@ -3,10 +3,16 @@ import { validateDocument } from '../../document/schema.mjs';
 import { evaluateProgram } from '../../construction/document-evaluation.mjs';
 import { createAuthoringCommand } from './authoring.mjs';
 import { createCommandIdAllocator } from '../command-ids.mjs';
+import {
+  inverseTransform,
+  transformPoint,
+  worldMatrix,
+} from '../../scene/transforms.mjs';
+import { readGeometry } from '../../region-engine.mjs';
+import { resolveReliefDefinition } from '../../relief/resolve.mjs';
 
 const finitePoint = (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y);
 const positive = (n) => Number.isFinite(n) && n > 0;
-const nodeRef = (id) => ({ kind: 'node', id });
 const normalizeColor = (value) => {
   if (
     typeof value !== 'string' ||
@@ -77,6 +83,37 @@ export function createVectorImportCommand(request) {
       throw Error('SVG 路径数量无效');
     if (attachId !== undefined && original.nodes[attachId]?.kind !== 'shape')
       throw Error('附着目标必须是现有部件');
+    let attachment;
+    if (attachId !== undefined) {
+      const regions = evaluateProgram(original, attachId).regions;
+      if (regions.status !== 'ready') throw Error('贴附部件没有可用区域');
+      const point = readGeometry({
+        type: 'Point',
+        coordinates: transformPoint(
+          inverseTransform(worldMatrix(original, attachId)),
+          centerMM,
+        ),
+      });
+      const candidates = regions.value.regions.filter((region) =>
+        readGeometry(region.geometry).covers(point),
+      );
+      if (candidates.length !== 1)
+        throw Error(
+          '请将导入中心放在贴附部件的一个区域内部，避开孔洞或区域边界',
+        );
+      attachment = candidates[0].ref;
+      const definition = resolveReliefDefinition(
+        original,
+        attachId,
+        attachment,
+      );
+      if (
+        definition.status !== 'ready' ||
+        !definition.value.enabled ||
+        definition.value.mode !== 'add'
+      )
+        throw Error('贴附区域必须是已启用的实体表面');
+    }
     const groups = new Map();
     let nodeCount = 0;
     for (const spline of splines) {
@@ -219,7 +256,11 @@ export function createVectorImportCommand(request) {
         mode: 'add',
         thickness: { kind: 'mm', value: thicknessMM },
         placement: attachId
-          ? { kind: 'attached', target: nodeRef(attachId), offsetMM: 0 }
+          ? {
+              kind: 'attached',
+              target: structuredClone(attachment),
+              offsetMM: 0,
+            }
           : { kind: 'free', zMM: 0 },
       };
     }

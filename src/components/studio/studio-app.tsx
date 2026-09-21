@@ -3811,8 +3811,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               setCreationView('flat');
               chooseTool('move');
               setStatus('已导入可编辑 SVG 对象组 · Ctrl+Z 撤销');
+              return null;
             } catch (error) {
               setStatus(errorMessage(error));
+              return errorMessage(error);
             }
           }}
         />

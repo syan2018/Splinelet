@@ -9,13 +9,19 @@ Windows，独立 Vite 端口和新建 Chromium context，1600 × 1100；未操�
 - 预览：`output/agent-emblem/sandrone-gold-emblem-signature-v4-preview.png`。
 - 已提交 SVG：[手写签名](../../scripts/tests/fixtures/sandrone-signature.svg)。字样为手工设计的 Sandrone，并非官方签名字样。
 
-签名宽度 23 mm，中心 `[8, -29.5]` mm，厚度 0.6 mm，贴附「杯子」。新场景组含正文与下划线两个笔画部件；保留原有部件、构造及参考资源。
+签名宽度 23 mm，中心 `[8, -29.5]` mm，厚度 0.6 mm，贴附「杯子」中心所在的面板区域，底面 3.6 mm；不取 4 mm 高的杯沿。新场景组含正文与下划线两个笔画部件；保留原有部件、构造及参考资源。
 
 ```sh
 node scripts/examples/add-sandrone-signature.mjs output/agent-emblem/sandrone-gold-emblem-v4.spl output/agent-emblem/sandrone-gold-emblem-signature-v4.spl
 ```
 
 脚本自行启动隔离服务和浏览器，输出路径必须不同于输入。上述私有输入不是测试门禁依赖。
+
+## 验证结果
+
+137 项单元测试通过；类型、lint、Web 构建、桌面前端构建、Rust 格式和编译检查通过。全库格式检查在相同提交的隔离 LF 检出通过；原工作区已有的 CRLF 文件会触发格式报告，未批量重写无关文件。
+
+带签名工程保存重开后保留全部旧节点、草图、构造和资源。实体检查为单个连通体，23980 个三角形，零无效边、零零面积三角形；签名未增加悬空体。此为本次样例结果，不是打印工艺承诺。
 
 ## 回归范围
 

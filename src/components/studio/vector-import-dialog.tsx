@@ -24,8 +24,9 @@ export default function VectorImportDialog({
     centerMM: number[];
     thicknessMM: number;
     attachId?: string;
-  }) => void;
+  }) => string | null;
 }) {
+  const [error, setError] = useState('');
   const [width, setWidth] = useState(String(Math.min(40, widthMM / 3)));
   const [x, setX] = useState('0'),
     [y, setY] = useState('0');
@@ -42,17 +43,19 @@ export default function VectorImportDialog({
         <DialogTitle>导入 SVG／笔迹</DialogTitle>
         <DialogDescription>
           {input.name} · {input.splines.length}{' '}
-          条可编辑曲线。填色生成面，描边生成有宽度的笔迹；整组支持变换与撤销。
+          条可编辑曲线。填色生成面，描边生成有宽度的笔迹；整组支持变换与撤销。贴附使用中心所在区域的表面，中心应放在目标区域内部。
         </DialogDescription>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onImport({
-              widthMM: Number(width),
-              centerMM: [Number(x), Number(y)],
-              thicknessMM: Number(depth),
-              ...(attach ? { attachId: attach } : {}),
-            });
+            setError(
+              onImport({
+                widthMM: Number(width),
+                centerMM: [Number(x), Number(y)],
+                thicknessMM: Number(depth),
+                ...(attach ? { attachId: attach } : {}),
+              }) || '',
+            );
           }}
         >
           <label>
@@ -121,6 +124,7 @@ export default function VectorImportDialog({
           {input.warnings.map((warning) => (
             <output key={warning}>{warning}</output>
           ))}
+          {error && <p role="alert">{error}</p>}
           <div className="confirm-actions">
             <button type="button" onClick={onClose}>
               取消

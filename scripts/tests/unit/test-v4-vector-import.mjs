@@ -6,6 +6,8 @@ import {
 import { createVectorImportCommand } from '../../../src/lib/editing/commands/vector-import.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
+import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
+import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.mjs';
 
 let serial = 0;
 const idFactory = () => `vector-import-${++serial}`;
@@ -121,10 +123,11 @@ assert.deepEqual(
 assert.deepEqual(edge.startHandle.vector, [10, 12.5]);
 assert.deepEqual(edge.endHandle.vector, [-15, -12.5]);
 
-const attached = createVectorImportCommand({ ...input, attachId: ring.id })(
-  result.document,
-  { idFactory },
-);
+const attached = createVectorImportCommand({
+  ...input,
+  centerMM: [-12, 15],
+  attachId: ring.id,
+})(result.document, { idFactory });
 assert.deepEqual(
   attached.document.nodes[ring.id],
   result.document.nodes[ring.id],
@@ -133,9 +136,81 @@ assert.ok(
   Object.values(attached.document.reliefDefinitions.defaults).some(
     (value) =>
       value.placement.kind === 'attached' &&
-      value.placement.target.id === ring.id,
+      value.placement.target.kind === 'output' &&
+      value.placement.target.ownerNodeId === ring.id,
   ),
 );
+assert.throws(
+  () =>
+    createVectorImportCommand({ ...input, attachId: ring.id })(
+      result.document,
+      { idFactory },
+    ),
+  /区域内部/,
+  'a center in a hole cannot silently attach to the highest surface',
+);
+// A multi-height support attaches at the chosen panel, never the object's rim.
+let support = createAuthoringCommand({
+  kind: 'draw-path',
+  closed: true,
+  points: [
+    [0, 0],
+    [10, 0],
+    [10, 10],
+    [0, 10],
+  ],
+})(structuredClone(original), { idFactory }).document;
+const supportId = Object.keys(support.nodes)[0];
+support = createAuthoringCommand({
+  kind: 'draw-path',
+  ownerNodeId: supportId,
+  closed: true,
+  points: [
+    [20, 0],
+    [30, 0],
+    [30, 10],
+    [20, 10],
+  ],
+})(support, { idFactory }).document;
+support.appearances.defaults[supportId] = { swatchId: 'gold' };
+support.reliefDefinitions.defaults[supportId] = {
+  enabled: true,
+  mode: 'add',
+  thickness: { kind: 'mm', value: 1 },
+  placement: { kind: 'free', zMM: 0 },
+};
+const supportRegions = evaluateProgram(support, supportId).regions.value
+  .regions;
+const rim = supportRegions.find((region) =>
+  region.geometry.coordinates[0].some((point) => point[0] > 15),
+);
+const overrideId = idFactory();
+support.reliefDefinitions.overrides[overrideId] = {
+  id: overrideId,
+  target: rim.ref,
+  value: { thickness: { kind: 'mm', value: 3 } },
+};
+const onPanel = createVectorImportCommand({
+  ...input,
+  splines: [stroke],
+  widthMM: 4,
+  centerMM: [5, 5],
+  attachId: supportId,
+})(support, { idFactory }).document;
+const placed = await evaluateDocument(onPanel, {
+  requestedDomains: ['placed-relief'],
+});
+assert.equal(placed.placedRelief.status, 'ready');
+const newReliefs = placed.placedRelief.value.reliefs.filter(
+  (item) => item.ref.ownerNodeId !== supportId,
+);
+assert(newReliefs.length);
+for (const relief of newReliefs)
+  assert.equal(
+    relief.zBase,
+    1,
+    'panel is 1 mm, while the other region is 3 mm',
+  );
 const session = createEditorSession(original, { idFactory });
 session.dispatch(createVectorImportCommand(input), {
   expectedRevision: session.state.revision,
