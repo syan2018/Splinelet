@@ -24,6 +24,8 @@ pnpm desktop:check
 - `pnpm test:browser:studio`：Studio 子门禁。它为每个已注册的 Vite fixture 建立临时 localhost 端口与全新 Playwright browser/context，并把 manifest、截图和结果写入独立的 `outputs/v4-qa/<run>/`。当前覆盖默认最终面，以及完整原 Studio 的 Sandrone 打开、编辑、保存和重开旅程；最终面用例还通过原 GUI 覆盖 Mirror/Array、Join/Fill 与嵌套场景组交互。
 - `pnpm test:browser --suite studio --case outliner-delete`：大纲 Delete / Backspace 的多选、场景组后代、锁定整批拒绝、源线删除及撤销/重做回归。
 - `pnpm test:browser -- --suite studio --case final-preview`：只运行默认最终面、Join/Fill 和 Group 交互；`--case original-studio` 只运行完整原 Studio 旅程。两个原 smoke 文件仍可直接运行，并会委托给同一注册 runner。
+- `pnpm test:browser --suite legacy --case vector-transform --target desktop-frontend --port 52189`：SVG 签名导入、大纲连续输入与取消、整组数值旋转／缩放、三种拖动模式取消和单步撤销；使用已提交的签名 SVG 与公开样例。先执行 `pnpm desktop:build`。
+- `test-svg-import.mjs`、`test-v4-vector-import.mjs`：精确曲线、填充孔洞、笔画宽度、毫米定位、颜色／浮雕／贴附与整批失败回滚。
 - `test-v4-object-transform.mjs`：父组旋转、组内空间尺寸等比缩放、锁定和跨选区引用拒绝、撤销与保存往返。
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
 - `test-spline-edit.mjs`：精确双柄样条、坐标往返、矩阵变换、来源保留与整批失败；共用提案解析器在冻结的几何/归属视图上工作，不分配 ID 或修改展示数据。
@@ -173,3 +175,5 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 `tests/browser/test-object-move-pipeline.cjs` 默认载入已提交的 Sandrone 示例并通过 `examples/draw-cup-emblem.mjs` 创建图样，覆盖进入页面时无选区也显示完整轮廓、按下及拖动不发布模型 preview、松手只提交一次、杯身和源定义不变，以及一步撤销。可用 `pnpm test:browser --suite legacy --case object-move-pipeline --target web` 在隔离环境运行。模块第三参数可指定本地待验证文件，以未绑定副本加载；不得把私有文件路径写成固定 fixture。阶段计时只作为带日期的 QA 记录，不将运行机器的耗时当作产品保证。
 
 `tests/unit/test-v4-planar-stage-cache.mjs` 用最小构造工程逐项对照冷求值，覆盖局部平面结果复用及世界坐标引用、祖先变换、请求域和设置的失效边界，随 `pnpm test` 执行。
+
+`node scripts/examples/add-sandrone-signature.mjs <input.spl> <output.spl>` 在独立服务和隔离浏览器中给 Sandrone 杯身导入已提交的手写签名，另存工程和 PNG 预览。输入工程需包含「杯子」；输出必须另命名。参数和本次产物见 [签名验收](../docs/qa/vector-objects-2026-09-22.md)。

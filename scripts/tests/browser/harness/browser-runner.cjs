@@ -28,6 +28,11 @@ const fixture = (kind, path, exportName) => ({ kind, path, exportName });
 // a new module an explicit runner decision instead of an unreported skip.
 const legacyCases = [
   {
+    name: 'vector-transform',
+    module: 'test-vector-transform.cjs',
+    adapter: 'page',
+  },
+  {
     name: 'agent-spline-authoring',
     module: 'test-agent-spline-authoring.cjs',
     adapter: 'page-output',

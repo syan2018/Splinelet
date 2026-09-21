@@ -79,7 +79,7 @@ assert.throws(
 assert.throws(() => harness.parseArguments(['--unknown']), /未知参数/);
 
 const registered = harness.verifyLegacyRegistry();
-assert.equal(registered.length, 15);
+assert.equal(registered.length, 16);
 assert.deepEqual(
   registered.map((entry) => entry.module).sort(),
   harness.discoverLegacyModules().sort(),
