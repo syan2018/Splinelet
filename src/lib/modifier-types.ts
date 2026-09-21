@@ -12,6 +12,7 @@ export type JoinEndpointOption = {
   cubic: number[][];
 };
 export type CurvePreview = {
+  defaultPreview?: boolean;
   objectId: string;
   stageId: string;
   name: string;

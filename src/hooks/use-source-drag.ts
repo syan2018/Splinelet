@@ -161,7 +161,7 @@ export function useSourceDrag({
           event,
           target,
           origin,
-          runtime.beginObjectGesture(project, nodeIds),
+          runtime.beginObjectGesture(project, nodeIds, { displayOnly: true }),
           undefined,
           {
             nodeIds,

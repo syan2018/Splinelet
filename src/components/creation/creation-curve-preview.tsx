@@ -6,40 +6,75 @@ import type { Project } from '@/lib/project';
 import type { CurvePreview } from '@/lib/modifier-types';
 import type { CreationRuntime } from './creation-runtime';
 
+function selectPreviews(
+  all: CurvePreview[],
+  enabled: boolean,
+  focusedId: string | undefined,
+  stageId: string,
+) {
+  if (!enabled) return [];
+  const latest = new Map<string, CurvePreview>();
+  for (const stage of all) latest.set(stage.objectId, stage);
+  for (const stage of all)
+    if (stage.defaultPreview) latest.set(stage.objectId, stage);
+  const chosen = all.find(
+    (s) => s.objectId === focusedId && s.stageId === stageId,
+  );
+  if (chosen) latest.set(chosen.objectId, chosen);
+  return [...latest.values()].filter(
+    (stage) =>
+      !(
+        stage.stageId === 'final' &&
+        !stage.curves.length &&
+        stage.diagnostic === '未发布曲线输出'
+      ),
+  );
+}
+
 export function useCurvePreview(
   project: Project,
   objectId?: string,
-  runtime?: Pick<CreationRuntime, 'readCurvePreviews'>,
+  runtime?: Pick<
+    CreationRuntime,
+    'readCurvePreviews' | 'readEvaluatedCurvePreviews'
+  >,
+  evaluatedProject?: Project | null,
+  live = true,
 ) {
   const [enabled, setEnabled] = useState(true);
   const [choice, setChoice] = useState({ objectId: '', stageId: 'final' });
-  // This cheap, exact program stays live during a drag; it never waits for the
-  // debounced surface worker and uses the very same curve evaluator as fill.
+  // Browsing and rigid moves reuse the worker's evaluated scene. Only source
+  // editing needs synchronous curve previews before the surface result arrives.
   const all = useMemo(() => {
-    if (runtime) return runtime.readCurvePreviews(project);
+    if (runtime) {
+      if (!live && runtime.readEvaluatedCurvePreviews)
+        return (
+          runtime.readEvaluatedCurvePreviews(evaluatedProject || project) || []
+        );
+      return runtime.readCurvePreviews(project);
+    }
     const doc = creationDocument(project) as NonNullable<Project['creation']>;
     return doc.objects
       .filter((o) => o.visible)
       .flatMap(
         (o) => evaluateCurveProgram(project, o).stages,
       ) as CurvePreview[];
-  }, [project, runtime]);
-  const focusedId = objectId || all[0]?.objectId;
+  }, [project, runtime, evaluatedProject, live]);
+  const focusedId =
+    objectId ||
+    all.find((stage) => stage.defaultPreview)?.objectId ||
+    all.find((stage) => stage.stageId === 'final' && stage.curves.length)
+      ?.objectId ||
+    all[0]?.objectId;
   const stages = all.filter((s) => s.objectId === focusedId);
-  const requested = choice.objectId === focusedId ? choice.stageId : 'final';
+  const defaultStage =
+    stages.find((stage) => stage.defaultPreview)?.stageId || 'final';
+  const requested =
+    choice.objectId === focusedId ? choice.stageId : defaultStage;
   const stageId = stages.some((s) => s.stageId === requested)
     ? requested
-    : 'final';
-  const previews = useMemo(() => {
-    if (!enabled) return [];
-    const latest = new Map<string, CurvePreview>();
-    for (const stage of all) latest.set(stage.objectId, stage);
-    const chosen = all.find(
-      (s) => s.objectId === focusedId && s.stageId === stageId,
-    );
-    if (chosen) latest.set(chosen.objectId, chosen);
-    return [...latest.values()];
-  }, [all, enabled, focusedId, stageId]);
+    : defaultStage;
+  const previews = selectPreviews(all, enabled, focusedId, stageId);
   return {
     previews,
     controls: all.length > 0 && (
@@ -97,10 +132,12 @@ export function CurvePreviewOverlay({
   previews,
   project,
   scale,
+  move,
 }: {
   previews: CurvePreview[];
   project: Project;
   scale: number;
+  move?: { nodeIds: string[]; delta: { x: number; y: number } };
 }) {
   const mm = project.width / project.widthMM;
   const xy = ({ x, y }: { x: number; y: number }) =>
@@ -116,6 +153,11 @@ export function CurvePreviewOverlay({
           key={s.objectId}
           data-curve-preview-object={s.objectId}
           data-curve-preview-stage={s.stageId}
+          transform={
+            move?.nodeIds.includes(s.objectId)
+              ? `translate(${move.delta.x} ${move.delta.y})`
+              : undefined
+          }
         >
           <path
             data-derived-curves={s.curves.length}

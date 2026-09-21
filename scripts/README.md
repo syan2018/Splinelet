@@ -167,3 +167,5 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 `test-v4-review-repairs.mjs` 覆盖独立分支预览、附着/层依赖、隐藏与排除、继承放置的 Z 编辑、两级 Group、keepWorld 换父级、撤销和文件往返。原 Studio 浏览器脚本的兼容写入显式携带读取到的 expectedRevision。
 
 兼容 GUI 浏览器用例通过 [harness/legacy-call.cjs](tests/browser/harness/legacy-call.cjs) 在每次调用前读取 `document.get` 并传入 `expectedRevision`；显式传入的修订不被替换。Agent 协议验收直接调用公开 API，单独验证缺失和过期修订被拒绝。
+
+`tests/browser/test-object-move-pipeline.cjs` 默认载入已提交的 Sandrone 示例并通过 `examples/draw-cup-emblem.mjs` 创建图样，覆盖进入页面时无选区也显示完整轮廓、按下及拖动不发布模型 preview、松手只提交一次、杯身和源定义不变，以及一步撤销。可用 `pnpm test:browser --suite legacy --case object-move-pipeline --target web` 在隔离环境运行。模块第三参数可指定本地待验证文件，以未绑定副本加载；不得把私有文件路径写成固定 fixture。阶段计时只作为带日期的 QA 记录，不将运行机器的耗时当作产品保证。

@@ -353,3 +353,33 @@ await worker.terminate();
 console.log(
   'PASS: V4 worker protocol rejects stale identities, isolates domains, preserves valid stages, and transports a pure evaluator snapshot through worker_threads',
 );
+
+// Plain immutable result DTOs are shared; mutable buffers remain isolated.
+for (const typed of [false, true]) {
+  const broker = createEvaluationSession({
+    capabilities: ['curves'],
+    evaluate: async () => ({
+      values: typed ? new Float32Array([1, 2]) : [1, 2],
+    }),
+  });
+  broker.update(editorState('sharing', 0));
+  const request = {
+    epoch: 'sharing',
+    revision: 0,
+    previewId: null,
+    domains: ['curves'],
+  };
+  const first = await broker.evaluate(request);
+  const second = await broker.evaluate(request);
+  if (typed) {
+    first.values[0] = 99;
+    assert.equal(second.values[0], 1);
+    assert.equal((await broker.evaluate(request)).values[0], 1);
+  } else {
+    assert.equal(first, second);
+    assert.throws(() => {
+      first.values[0] = 99;
+    }, TypeError);
+  }
+  broker.dispose();
+}

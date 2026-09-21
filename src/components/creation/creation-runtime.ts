@@ -38,6 +38,7 @@ export type CreationRuntime = {
     slicerTemplate: BambuSlicerTemplate | null;
   };
   readCurvePreviews: (project: Project) => CurvePreview[];
+  readEvaluatedCurvePreviews?: (project: Project) => CurvePreview[] | null;
   readCreationDocument: (project: Project) => unknown;
   evaluate: (
     action: string,

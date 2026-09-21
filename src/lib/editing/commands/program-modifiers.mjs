@@ -259,7 +259,7 @@ const ancestorOperators = (program, reference, result = new Set()) => {
   return result;
 };
 
-const analyzeCurveInsertion = (document, ownerNodeId) => {
+const analyzeCurveInsertion = (document, ownerNodeId, evaluation) => {
   const owned = ownerProgram(document, ownerNodeId);
   if (owned.error) return { enabled: false, reason: owned.error };
   const { program } = owned;
@@ -317,7 +317,13 @@ const analyzeCurveInsertion = (document, ownerNodeId) => {
       return { enabled: false, reason: '曲线链存在分叉' };
     reference = prior;
   }
-  const stage = evaluateProgram(document, ownerNodeId);
+  const stage =
+    evaluation === undefined
+      ? evaluateProgram(document, ownerNodeId)
+      : {
+          components: evaluation.components || {},
+          curves: evaluation.published?.[`${ownerNodeId}:curves`],
+        };
   const published = fill
     ? stage.components[`operator:${insertion.operatorId}`]?.ports?.curves
     : stage.curves;
@@ -333,8 +339,12 @@ const analyzeCurveInsertion = (document, ownerNodeId) => {
   };
 };
 
-export const curveModifierAddCapability = (document, ownerNodeId) => {
-  const analysis = analyzeCurveInsertion(document, ownerNodeId);
+export const curveModifierAddCapability = (
+  document,
+  ownerNodeId,
+  evaluation,
+) => {
+  const analysis = analyzeCurveInsertion(document, ownerNodeId, evaluation);
   return { enabled: analysis.enabled, reason: analysis.reason };
 };
 

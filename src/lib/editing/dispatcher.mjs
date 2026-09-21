@@ -39,23 +39,29 @@ export function createEditorSession(document, options = {}) {
   let notifying = false;
   let notificationPending = false;
 
+  // State is deeply immutable. Reuse it until authority changes instead of
+  // cloning the entire document for each reader and subscriber.
+  let cachedSnapshot = null;
   const snapshot = () =>
-    readonly({
+    (cachedSnapshot ||= Object.freeze({
       epoch,
       revision,
       previewId: preview?.id || null,
-      document: history.current(),
-      preview: preview && {
-        id: preview.id,
-        version: preview.version,
-        baseRevision: preview.baseRevision,
-        document: clone(preview.document),
-      },
+      document: history.readonlyCurrent(),
+      preview:
+        preview &&
+        Object.freeze({
+          id: preview.id,
+          version: preview.version,
+          baseRevision: preview.baseRevision,
+          document: readonly(preview.document),
+        }),
       canUndo: history.canUndo(),
       canRedo: history.canRedo(),
-      lastChange,
-    });
+      lastChange: lastChange && readonly(lastChange),
+    }));
   const notify = () => {
+    cachedSnapshot = null;
     if (notifying) {
       notificationPending = true;
       return;

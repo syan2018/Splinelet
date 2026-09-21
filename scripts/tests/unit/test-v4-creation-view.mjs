@@ -45,6 +45,16 @@ let snapshot = await evaluate();
 let view = projectCreationView(session.state.document, snapshot);
 assert.equal(view.creation.objects[0].id, shapeId, 'object ID is the NodeID');
 assert.equal(view.cells.length, 1);
+assert.equal(
+  projectCreationView(session.state.document, {}).creation.objects[0]
+    .modifierAdd.types.length,
+  0,
+  'unevaluated display never runs geometry to guess modifier capability',
+);
+assert.ok(
+  view.creation.objects[0].modifierAdd.types.length > 0,
+  'worker results supply the capability',
+);
 assert.equal(view.cells[0].painted, false);
 assert.equal(view.cells[0].enabled, false);
 assert.equal(view.cells[0].heightMM, null, 'candidate has no guessed height');

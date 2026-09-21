@@ -99,6 +99,60 @@ for (const ids of [[owner.id], [group.id, owner.id, group.id]]) {
     original.editorState.document,
   );
 }
+// UI-only movement reserves no model preview and publishes only the final command.
+const displayBase = snapshot();
+let publications = 0;
+const detach = session.subscribe(() => publications++);
+const displayMove = displayBase.runtime.beginObjectGesture(
+  displayBase.project,
+  [owner.id],
+  { displayOnly: true },
+);
+displayMove.update({ x: 4, y: 3 });
+displayMove.update({ x: 12, y: 8 });
+assert.equal(snapshot(), displayBase);
+assert.equal(publications, 0);
+displayMove.commit();
+assert.equal(publications, 1);
+assert.equal(
+  snapshot().editorState.revision,
+  displayBase.editorState.revision + 1,
+);
+assert.deepEqual(
+  snapshot().editorState.document.sketches,
+  displayBase.editorState.document.sketches,
+);
+session.undo();
+assert.deepEqual(
+  snapshot().editorState.document,
+  displayBase.editorState.document,
+);
+const cancelBase = snapshot();
+const displayCancel = cancelBase.runtime.beginObjectGesture(
+  cancelBase.project,
+  [owner.id],
+  { displayOnly: true },
+);
+displayCancel.update({ x: 20, y: 30 });
+displayCancel.cancel();
+assert.equal(snapshot(), cancelBase);
+assert.throws(() => displayCancel.commit(), /失效/);
+const invalidated = cancelBase.runtime.beginObjectGesture(
+  cancelBase.project,
+  [owner.id],
+  { displayOnly: true },
+);
+session.dispatch(
+  createAuthoringCommand({
+    kind: 'move-nodes',
+    nodeIds: [owner.id],
+    deltaMM: [1, 0],
+  }),
+);
+assert.throws(() => invalidated.commit(), /过期|提交/);
+invalidated.cancel();
+session.undo();
+detach();
 const begin = (ids) =>
   snapshot().runtime.beginObjectGesture(snapshot().project, ids);
 assert.throws(() => begin([]), /非空/);

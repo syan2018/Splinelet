@@ -167,3 +167,5 @@ pnpm build
 ### V4 后端接线进度（2026-09-20）
 
 原界面注入 V4 host 时，批量 `create_path` 已通过捕获版本的 `draw-path` 意图保存原始贝塞尔。`preview:true` 不写工程；返回 id 是临时候选标识，`commit_preview` 返回实际已提交路径 id。直接创建返回实际路径 id。候选过期不能接受，重新拟合使用原确认框并保持源拓扑身份。此项为后端接线说明，默认入口与全部 API 的 V4 切换尚未完成；当前验收见[原界面 QA](qa/v4-original-modifier-dom-2026-09-20.md)。
+
+修改器后的完整轮廓默认可见，不依赖选择。对于只发布 Fill 区域的部件，预览菜单默认使用“构面输入 · 完整轮廓”；“最终曲线”仍只代表显式曲线输出。H 的显示预览不创建模型 preview，松手才发布一次工程修改；A 的节点编辑仍保留实时源预览。详见 [编辑管线](architecture/editor-interaction-pipeline-2026-09-21.md)。

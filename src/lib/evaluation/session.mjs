@@ -8,15 +8,29 @@ const domains = new Set([
   'bodies',
 ]);
 const clone = (value) => structuredClone(value);
+// Only plain, deeply frozen DTOs can be shared. Typed buffers still cross a
+// copy boundary, since Object.freeze cannot protect their contents.
+const immutable = new WeakSet();
 const freeze = (value) => {
-  if (ArrayBuffer.isView(value)) return value;
-  if (value && typeof value === 'object') {
-    Object.freeze(value);
-    for (const child of Object.values(value)) freeze(child);
-  }
+  if (!value || typeof value !== 'object' || immutable.has(value)) return value;
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return value;
+  const children = Object.values(value);
+  children.forEach(freeze);
+  Object.freeze(value);
+  if (
+    (Array.isArray(value) ||
+      Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null) &&
+    children.every(
+      (child) => !child || typeof child !== 'object' || immutable.has(child),
+    )
+  )
+    immutable.add(value);
   return value;
 };
-const readonly = (value) => freeze(clone(value));
+const readonly = (value) =>
+  immutable.has(value) ? value : freeze(clone(value));
+const ownedSnapshot = (value) => readonly(freeze(value));
 const sort = (a, b) => a.localeCompare(b);
 const errorMessage = (error) =>
   error instanceof Error ? error.message : String(error);
@@ -176,6 +190,7 @@ export function createEvaluationSession(options = {}) {
   const pending = new Map();
   const listeners = new Set();
   const notify = () => {
+    if (!listeners.size) return;
     const snapshot = state();
     for (const listener of listeners)
       try {
@@ -183,7 +198,7 @@ export function createEvaluationSession(options = {}) {
       } catch {}
   };
   const state = () =>
-    readonly({
+    ownedSnapshot({
       current: current && {
         epoch: current.epoch,
         revision: current.revision,
@@ -238,7 +253,7 @@ export function createEvaluationSession(options = {}) {
     if (!responseMatches(request, response))
       throw Error('Worker response 的身份、requestId 或 domains 不匹配');
     if (response.kind === 'error') throw Error(response.error);
-    return clone(response.snapshot);
+    return readonly(response.snapshot);
   };
   const accept = (request, snapshot) => {
     const key = keyFor(request, request.domains);
@@ -246,7 +261,7 @@ export function createEvaluationSession(options = {}) {
       throw Error('求值结果已过期，不能覆盖当前阶段');
     results.set(
       key,
-      readonly({
+      ownedSnapshot({
         status: 'ready',
         epoch: request.epoch,
         revision: request.revision,

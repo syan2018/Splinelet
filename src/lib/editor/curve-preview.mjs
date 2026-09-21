@@ -1,5 +1,10 @@
 import { childrenOf, effectiveNodeState } from '../scene/hierarchy.mjs';
-import { transformPoint, worldMatrix } from '../scene/transforms.mjs';
+import {
+  transformPoint,
+  worldMatrix,
+  inputFrameTransform,
+  multiplyTransforms,
+} from '../scene/transforms.mjs';
 import { componentId } from '../construction/dependencies.mjs';
 
 const freeze = (value) => {
@@ -70,7 +75,7 @@ function topologyJunctions(value, toWorld) {
     }));
 }
 
-function preview(document, objectId, stageId, name, stage) {
+function preview(document, objectId, stageId, name, stage, placement) {
   const result = { objectId, stageId, name, curves: [], junctions: [] };
   const diagnostics = (stage?.diagnostics || []).map(
     (item) => item.message || item.code || item.kind,
@@ -79,7 +84,8 @@ function preview(document, objectId, stageId, name, stage) {
     try {
       const value = stage.value;
       if (value?.frame?.kind !== 'local') throw Error('曲线预览缺少局部坐标系');
-      const matrix = worldMatrix(document, value.frame.ownerNodeId);
+      const matrix =
+        placement || worldMatrix(document, value.frame.ownerNodeId);
       const toWorld = (point) => {
         const [x, y] = transformPoint(matrix, point);
         return { x, y };
@@ -153,6 +159,40 @@ export function projectCurvePreviews(document, snapshot) {
           stage,
         ),
       );
+    }
+    // Region-only Fill programs still need their completed outline on the
+    // canvas. This is an explicitly named input view, never a fabricated
+    // published curves port or an arbitrary last successful stage.
+    const regionOutput = program?.outputs?.regions;
+    const fill =
+      regionOutput?.kind === 'port' && regionOutput.ownerNodeId === node.id
+        ? program.operators[regionOutput.operatorId]
+        : null;
+    const input = fill?.inputs?.input?.[0];
+    if (
+      !program?.outputs?.curves &&
+      fill?.type === 'fill' &&
+      fill.enabled !== false &&
+      fill.inputs.input.length === 1 &&
+      input?.kind === 'port' &&
+      input.domain === 'curves'
+    ) {
+      const stage =
+        planar.components[componentId(input.operatorId)]?.ports?.[input.port];
+      result.push({
+        ...preview(
+          document,
+          node.id,
+          'fill-input:' + fill.id,
+          '构面输入 · 完整轮廓',
+          stage,
+          multiplyTransforms(
+            worldMatrix(document, node.id),
+            inputFrameTransform(document, node.id, input),
+          ),
+        ),
+        defaultPreview: true,
+      });
     }
     result.push(
       preview(

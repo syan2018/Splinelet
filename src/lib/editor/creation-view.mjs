@@ -468,7 +468,11 @@ export function projectCreationView(document, snapshot) {
       diagnostics,
       errors,
     );
-    const modifierAdd = curveModifierAddCapability(document, node.id);
+    const modifierAdd = curveModifierAddCapability(
+      document,
+      node.id,
+      snapshot?.planar || snapshot || {},
+    );
     return {
       id: node.id,
       name: node.name,

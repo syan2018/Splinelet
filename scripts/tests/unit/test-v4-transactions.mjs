@@ -53,6 +53,13 @@ assert.throws(() => {
   session.state.document.geometrySettings.curveToleranceMM = 2;
 }, /read only|Cannot assign/);
 
+const capturedState = session.state;
+assert.equal(
+  session.state,
+  capturedState,
+  'unchanged reads reuse one immutable snapshot',
+);
+assert.equal(session.state.document, capturedState.document);
 const notices = [];
 const unsubscribe = session.subscribe((state) =>
   notices.push([state.epoch, state.revision, state.previewId]),
@@ -70,6 +77,12 @@ escapedDraft.geometrySettings.curveToleranceMM = 0.2;
 assert.equal(original.geometrySettings.curveToleranceMM, 0.015);
 assert.equal(session.state.document.geometrySettings.curveToleranceMM, 0.02);
 assert.equal(session.state.revision, 1);
+assert.notEqual(session.state, capturedState);
+assert.equal(
+  capturedState.document.geometrySettings.curveToleranceMM,
+  0.015,
+  'old snapshots cannot follow later edits',
+);
 assert.throws(
   () => session.dispatch(changeTolerance(0.03), { expectedRevision: 0 }),
   /陈旧 revision/,

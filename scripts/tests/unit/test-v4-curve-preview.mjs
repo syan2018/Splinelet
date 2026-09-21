@@ -224,3 +224,46 @@ collector.inputs.input[0].transform[4] = 2;
 assert.ok(
   projectCurvePreviews(guideDocument, evaluatePlanar(guideDocument)).length > 0,
 );
+
+// A regions-only Fill has a named default input view; final publication stays absent.
+const filled = structuredClone(document);
+const displayFillProgram = filled.programs[owner.programId];
+const displayCurveOutput = structuredClone(displayFillProgram.outputs.curves);
+displayFillProgram.operators['display-fill'] = {
+  id: 'display-fill',
+  name: 'Display Fill',
+  type: 'fill',
+  enabled: true,
+  params: { rule: 'even-odd' },
+  inputs: {
+    input: [
+      {
+        ...displayCurveOutput,
+        space: 'local-result',
+        transform: [1, 0, 0, 1, 2, 3],
+      },
+    ],
+  },
+};
+displayFillProgram.outputs = {
+  regions: {
+    kind: 'port',
+    ownerNodeId: owner.id,
+    operatorId: 'display-fill',
+    port: 'regions',
+    domain: 'regions',
+  },
+};
+const fillViews = projectCurvePreviews(
+  filled,
+  evaluatePlanar(filled, { requestedDomains: ['curves'] }),
+);
+const inputView = fillViews.find((v) => v.defaultPreview);
+assert.equal(inputView.stageId, 'fill-input:display-fill');
+assert.equal(inputView.curves.length, 6);
+assert.equal(fillViews.find((v) => v.stageId === 'final').curves.length, 0);
+assert.deepEqual(
+  inputView.curves[0][0],
+  { x: 17, y: 33 },
+  'Fill input transform and owner pose both apply',
+);

@@ -1,4 +1,11 @@
 const clone = (value) => structuredClone(value);
+const freeze = (value) => {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  return value;
+};
 
 export function sameDocument(a, b) {
   if (Object.is(a, b)) return true;
@@ -21,17 +28,18 @@ export function sameDocument(a, b) {
 }
 
 export function createHistory(document) {
-  let current = clone(document);
+  let current = freeze(clone(document));
   const past = [];
   let future = [];
   return {
     current: () => clone(current),
+    readonlyCurrent: () => current,
     canUndo: () => past.length > 0,
     canRedo: () => future.length > 0,
     commit(next) {
       if (sameDocument(current, next)) return false;
       past.push(current);
-      current = clone(next);
+      current = freeze(clone(next));
       future = [];
       return true;
     },

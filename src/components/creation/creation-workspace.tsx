@@ -1186,7 +1186,13 @@ export default function CreationWorkspace(p: Props) {
           ) as unknown as Partial<CreationScene>),
         }
       : editedDraft;
-  const curvePreview = useCurvePreview(p.project, current?.id, p.runtime);
+  const curvePreview = useCurvePreview(
+    p.project,
+    current?.id,
+    p.runtime,
+    evaluatedProject,
+    p.tool === 'edit' || p.tool === 'trace',
+  );
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.
@@ -1336,6 +1342,12 @@ export default function CreationWorkspace(p: Props) {
               ))}
             <CurvePreviewOverlay
               previews={curvePreview.previews}
+              move={
+                p.objectMoveCommit?.project === p.project &&
+                evaluatedProject !== p.project
+                  ? p.objectMoveCommit
+                  : undefined
+              }
               project={p.project}
               scale={p.scale}
             />

@@ -170,7 +170,7 @@ export function createV4CreationRuntime({
         }),
       );
     },
-    beginObjectGesture(project, nodeIds) {
+    beginObjectGesture(project, nodeIds, { displayOnly = false } = {}) {
       const entry = current(project);
       if (!Array.isArray(nodeIds) || !nodeIds.length)
         throw Error('移动部件需要非空选区');
@@ -186,21 +186,54 @@ export function createV4CreationRuntime({
       }
       const frame = sourceRuntime.readSourceView(project).source.frame;
       const [a, b, c, d] = frame.pixelToWorld;
+      const compile = (delta) => {
+        if (!Number.isFinite(delta?.x) || !Number.isFinite(delta?.y))
+          throw Error('拖动位移必须是有限像素坐标');
+        return createAuthoringCommand({
+          kind: 'move-nodes',
+          nodeIds: ids,
+          deltaMM: [a * delta.x + c * delta.y, b * delta.x + d * delta.y],
+        });
+      };
+      if (displayOnly) {
+        let finished = false;
+        let command = null;
+        const assertActive = () => {
+          if (finished) throw Error('编辑手势已结束或失效');
+          current(project);
+        };
+        // A display transform needs neither a document preview nor an
+        // intermediate publication. Validate the captured revision on release.
+        return Object.freeze({
+          update(delta) {
+            assertActive();
+            command = compile(delta);
+            return project;
+          },
+          commit() {
+            assertActive();
+            const state = command
+              ? editorSession.dispatch(command, {
+                  expectedRevision: entry.state.revision,
+                })
+              : entry.state;
+            finished = true;
+            return issue(state);
+          },
+          cancel() {
+            finished = true;
+            command = null;
+            return project;
+          },
+        });
+      }
       return beginRuntimeGesture({
         editorSession,
         project,
         getEntry: metadata,
         issueProject: issue,
         captured: entry.state,
-        compile(delta) {
-          if (!Number.isFinite(delta?.x) || !Number.isFinite(delta?.y))
-            throw Error('拖动位移必须是有限像素坐标');
-          return createAuthoringCommand({
-            kind: 'move-nodes',
-            nodeIds: ids,
-            deltaMM: [a * delta.x + c * delta.y, b * delta.x + d * delta.y],
-          });
-        },
+        compile,
       });
     },
     readEndpointSnapContext(project, pathId, nodeIndex) {
@@ -230,6 +263,13 @@ export function createV4CreationRuntime({
       );
       snapCache.values.set(key, context);
       return context;
+    },
+    readEvaluatedCurvePreviews(project) {
+      assertAlive();
+      const entry = projects.get(project);
+      if (!entry || entry.state.epoch !== editorSession.state.epoch)
+        return null;
+      return entry.evaluatedCurvePreviews || null;
     },
     readCurvePreviews(project) {
       const entry = metadata(project);
@@ -291,6 +331,10 @@ export function createV4CreationRuntime({
       assertAlive();
       if (!sameState(entry.baseline || entry.state, editorSession.state))
         throw Error('求值期间工程已变化');
+      entry.evaluatedCurvePreviews = projectCurvePreviews(
+        documentOf(entry.state),
+        snapshot,
+      );
       const modelView =
         action === 'model_workspace'
           ? projectModelWorkspaceView(

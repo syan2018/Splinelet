@@ -62,6 +62,11 @@ const legacyCases = [
     fixture: fixture('file', 'public/sandrone-example.spl'),
   },
   {
+    name: 'object-move-pipeline',
+    module: 'test-object-move-pipeline.cjs',
+    adapter: 'page-output',
+  },
+  {
     name: 'object-move',
     module: 'test-object-move-browser.cjs',
     adapter: 'page',
