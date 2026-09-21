@@ -1,0 +1,557 @@
+import { createCreationIntent } from './creation-intents.mjs';
+import { projectCreationView } from './creation-view.mjs';
+import { evaluateDocument } from '../evaluation/evaluate-document.mjs';
+import { createDocumentEvaluationSession } from '../evaluation/document-session.mjs';
+import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
+import { sameDocument } from '../editing/history.mjs';
+import { evaluatePlanar } from '../construction/document-evaluation.mjs';
+import { projectCurvePreviews } from './curve-preview.mjs';
+import { createSourceRuntime } from './source-runtime.mjs';
+import { projectSourceView } from './source-view.mjs';
+import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
+import { beginRuntimeGesture } from './runtime-gesture.mjs';
+import { effectiveNodeState } from '../scene/hierarchy.mjs';
+import { creationOutput } from './creation-output.mjs';
+import { projectModelWorkspaceView } from './model-workspace-view.mjs';
+import { createModelIntent } from './model-intents.mjs';
+import {
+  previewModelConstruction,
+  finalizePreparedModelConstruction,
+} from './model-construction.mjs';
+import { readGeometry } from '../region-engine.mjs';
+import { creationCellKey } from './creation-view.mjs';
+import { worldMatrix, transformPoint } from '../scene/transforms.mjs';
+
+const freeze = (value) => {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value))
+    return value;
+  for (const child of Object.values(value)) freeze(child);
+  return Object.freeze(value);
+};
+const sameIdentity = (a, b) =>
+  a.epoch === b.epoch &&
+  a.revision === b.revision &&
+  (a.previewId ?? null) === (b.previewId ?? null);
+const identity = (state) => ({
+  epoch: state.epoch,
+  revision: state.revision,
+  previewId: state.previewId ?? null,
+});
+const documentOf = (state) =>
+  state.previewId ? state.preview.document : state.document;
+const sameState = (a, b) =>
+  sameIdentity(a, b) &&
+  (!a.previewId ||
+    (a.preview.version === b.preview.version &&
+      sameDocument(documentOf(a), documentOf(b))));
+
+/**
+ * Backend for the established CreationWorkspace. Display projects are opaque
+ * readonly handles: only those issued here can be evaluated or committed.
+ * toDisplayProject is a presentation projector, never a document decoder.
+ */
+export function createV4CreationRuntime({
+  editorSession,
+  toDisplayProject,
+  evaluate = evaluateDocument,
+  evaluationService,
+  intent = createCreationIntent,
+  sourceFrame,
+}) {
+  if (!editorSession?.dispatch || typeof toDisplayProject !== 'function')
+    throw Error('创作运行时需要编辑会话和只读展示投影');
+  const evaluation =
+    evaluationService ||
+    createDocumentEvaluationSession({ editorSession, evaluate });
+  const projects = new WeakMap();
+  const snapFrame = structuredClone(sourceFrame);
+  let snapCache = null;
+  const scenes = new WeakMap();
+  const modelViews = new WeakMap();
+  const prepared = new WeakMap();
+  const preparedDisplays = new WeakMap();
+  let currentDisplay = null;
+  let disposed = false;
+  const assertAlive = () => {
+    if (disposed) throw Error('创作运行时已关闭');
+  };
+  const issue = (state, creation = null, token = null) => {
+    assertAlive();
+    if (
+      !token &&
+      currentDisplay &&
+      sameState(projects.get(currentDisplay).state, state)
+    )
+      return currentDisplay;
+    const view = creation || projectCreationView(documentOf(state), {});
+    const project = freeze(structuredClone(toDisplayProject(state, view)));
+    if (!project || typeof project !== 'object')
+      throw Error('展示投影必须返回对象');
+    projects.set(project, { state, view, token });
+    if (!token) currentDisplay = project;
+    return project;
+  };
+  const metadata = (project) => {
+    assertAlive();
+    const entry = projects.get(project);
+    if (!entry) throw Error('不接受外部或可写的展示工程');
+    return entry;
+  };
+  const current = (project) => {
+    const entry = metadata(project);
+    if (entry.token || !sameState(entry.state, editorSession.state))
+      throw Error('展示工程已过期或尚未提交');
+    if (entry.state.previewId) throw Error('请先完成当前拖动');
+    return entry;
+  };
+  const displayed = (context) => {
+    const entry = current(context.project);
+    if (context.scene) {
+      const scene = scenes.get(context.scene);
+      if (!scene || scene.project !== context.project)
+        throw Error('区域结果不属于当前展示工程');
+    }
+    return { ...identity(entry.state), ...(context.scene || entry.view) };
+  };
+  const commitToken = (handle, context) => {
+    current(context.project);
+    const item = prepared.get(handle);
+    if (!item || item.baseProject !== context.project)
+      throw Error('预备命令已失效或不属于当前工程');
+    const state = editorSession.dispatch(item.token, {
+      expectedRevision: item.token.revision,
+    });
+    prepared.delete(handle);
+    return issue(state);
+  };
+  const sourceRuntime = createSourceRuntime({
+    editorSession,
+    sourceFrame,
+    getEntry: metadata,
+    issueProject: issue,
+    sameState,
+  });
+  const prepareCommand = async (action, args, context) => {
+    const command = intent(action, args, displayed(context));
+    const base = metadata(context.project).state;
+    const token = await editorSession.prepare(command, {
+      expectedRevision: base.revision,
+    });
+    current(context.project);
+    const prospective = { ...base, document: token.result.document };
+    const handle = Object.freeze({
+      project: issue(prospective, null, token),
+      token,
+    });
+    projects.get(handle.project).baseline = base;
+    prepared.set(handle, { token, baseProject: context.project });
+    return handle;
+  };
+  return Object.freeze({
+    ...sourceRuntime,
+    project() {
+      return issue(editorSession.state);
+    },
+    refreshDisplay() {
+      assertAlive();
+      currentDisplay = null;
+      return issue(editorSession.state);
+    },
+    readCreationDocument(project) {
+      return metadata(project).view.creation;
+    },
+    readOutputSettings(project) {
+      const document = metadata(project).state.document;
+      return freeze(
+        structuredClone({
+          parts: Object.values(document.manufacturing.parts),
+          defaultPartId: document.manufacturing.defaultPartId,
+          slicerTemplate: document.manufacturing.slicerTemplate,
+        }),
+      );
+    },
+    beginObjectGesture(project, nodeIds, { displayOnly = false } = {}) {
+      const entry = current(project);
+      if (!Array.isArray(nodeIds) || !nodeIds.length)
+        throw Error('移动部件需要非空选区');
+      const ids = [...new Set(nodeIds)];
+      for (const id of ids) {
+        if (
+          typeof id !== 'string' ||
+          !Object.hasOwn(entry.state.document.nodes, id)
+        )
+          throw Error('移动部件不存在');
+        const state = effectiveNodeState(entry.state.document, id);
+        if (!state.visible || state.locked) throw Error('移动部件已隐藏或锁定');
+      }
+      const frame = sourceRuntime.readSourceView(project).source.frame;
+      const [a, b, c, d] = frame.pixelToWorld;
+      const compile = (delta) => {
+        if (!Number.isFinite(delta?.x) || !Number.isFinite(delta?.y))
+          throw Error('拖动位移必须是有限像素坐标');
+        return createAuthoringCommand({
+          kind: 'move-nodes',
+          nodeIds: ids,
+          deltaMM: [a * delta.x + c * delta.y, b * delta.x + d * delta.y],
+        });
+      };
+      if (displayOnly) {
+        let finished = false;
+        let command = null;
+        const assertActive = () => {
+          if (finished) throw Error('编辑手势已结束或失效');
+          current(project);
+        };
+        // A display transform needs neither a document preview nor an
+        // intermediate publication. Validate the captured revision on release.
+        return Object.freeze({
+          update(delta) {
+            assertActive();
+            command = compile(delta);
+            return project;
+          },
+          commit() {
+            assertActive();
+            const state = command
+              ? editorSession.dispatch(command, {
+                  expectedRevision: entry.state.revision,
+                })
+              : entry.state;
+            finished = true;
+            return issue(state);
+          },
+          cancel() {
+            finished = true;
+            command = null;
+            return project;
+          },
+        });
+      }
+      return beginRuntimeGesture({
+        editorSession,
+        project,
+        getEntry: metadata,
+        issueProject: issue,
+        captured: entry.state,
+        compile,
+      });
+    },
+    readEndpointSnapContext(project, pathId, nodeIndex) {
+      const entry = metadata(project);
+      if (entry.token || !sameState(entry.state, editorSession.state))
+        throw Error('吸附展示工程已过期或尚未提交');
+      if (
+        snapCache?.epoch !== entry.state.epoch ||
+        snapCache?.revision !== entry.state.revision
+      )
+        snapCache = {
+          epoch: entry.state.epoch,
+          revision: entry.state.revision,
+          values: new Map(),
+        };
+      const key = JSON.stringify([pathId, nodeIndex]);
+      if (snapCache.values.has(key)) return snapCache.values.get(key);
+      // Guides remain anchored to the committed source throughout a preview;
+      // moving copies must never become their own evolving snap targets.
+      const context = projectEndpointSnapContext(
+        entry.state.document,
+        entry.state.previewId
+          ? projectSourceView(entry.state.document, snapFrame)
+          : sourceRuntime.readSourceView(project).source,
+        pathId,
+        nodeIndex,
+      );
+      snapCache.values.set(key, context);
+      return context;
+    },
+    readEvaluatedCurvePreviews(project) {
+      assertAlive();
+      const entry = projects.get(project);
+      if (!entry || entry.state.epoch !== editorSession.state.epoch)
+        return null;
+      return entry.evaluatedCurvePreviews || null;
+    },
+    readCurvePreviews(project) {
+      const entry = metadata(project);
+      if (!sameState(entry.state, editorSession.state))
+        throw Error('样条预览工程已过期');
+      if (!entry.curvePreviews) {
+        const document = documentOf(entry.state);
+        entry.curvePreviews = projectCurvePreviews(
+          document,
+          evaluatePlanar(document, { requestedDomains: ['curves'] }),
+        );
+      }
+      return entry.curvePreviews;
+    },
+    async evaluate(action, args, project) {
+      const entry = metadata(project);
+      if (action === 'creation_base') {
+        current(project);
+        const handle = await prepareCommand('base', args, {
+          project,
+          scene: null,
+        });
+        const prospective = metadata(handle.project);
+        const snapshot = await evaluation.candidate(
+          prospective.state.document,
+          entry.state,
+          ['curves', 'regions', 'relief', 'placed-relief'],
+        );
+        current(project);
+        const scene = projectCreationView(prospective.state.document, snapshot);
+        prospective.view = scene;
+        scenes.set(scene, { project: handle.project, snapshot });
+        preparedDisplays.set(handle.project, handle);
+        return {
+          project: handle.project,
+          scene,
+          objectId: handle.token.result.selectionIntent.activeRef.id,
+        };
+      }
+      if (action === 'solid' || action === '3mf') {
+        current(project);
+        const request = structuredClone(args || {});
+        const snapshot = await evaluation.snapshot(entry.state, ['bodies']);
+        current(project);
+        return creationOutput(entry.state.document, snapshot, action, request);
+      }
+      if (!['creation', 'model_workspace'].includes(action))
+        throw Error(`V4 创作求值尚未适配：${action}`);
+      if (Object.keys(args || {}).length)
+        throw Error('预览参数须先通过明确的预备命令编译');
+      const requested = ['curves', 'regions', 'relief', 'placed-relief'];
+      const snapshot = entry.token
+        ? await evaluation.candidate(
+            documentOf(entry.state),
+            entry.baseline,
+            requested,
+          )
+        : await evaluation.snapshot(entry.state, requested);
+      assertAlive();
+      if (!sameState(entry.baseline || entry.state, editorSession.state))
+        throw Error('求值期间工程已变化');
+      entry.evaluatedCurvePreviews = projectCurvePreviews(
+        documentOf(entry.state),
+        snapshot,
+      );
+      const modelView =
+        action === 'model_workspace'
+          ? projectModelWorkspaceView(
+              entry.state,
+              {
+                ...identity(entry.state),
+                previewVersion: entry.state.preview?.version ?? null,
+                domains: ['curves', 'regions', 'relief', 'placed-relief'],
+                snapshot,
+              },
+              snapFrame,
+            )
+          : null;
+      const view =
+        modelView?.creation ||
+        projectCreationView(documentOf(entry.state), snapshot);
+      scenes.set(view, { project, snapshot });
+      entry.view = view;
+      if (modelView) modelViews.set(modelView, { project });
+      return modelView || view;
+    },
+    modelCommand(action, args, context) {
+      const entry = current(context.project);
+      if (modelViews.get(context.view)?.project !== context.project)
+        throw Error('高级建模视图不属于当前展示工程');
+      const command = createModelIntent(action, args, context.view);
+      let consumed = false;
+      let regionIds = [];
+      return {
+        get regionIds() {
+          return [...regionIds];
+        },
+        commit() {
+          if (consumed) throw Error('命令已提交');
+          current(context.project);
+          const next = editorSession.dispatch(command, {
+            expectedRevision: entry.state.revision,
+          });
+          consumed = true;
+          regionIds = (next.lastChange?.selectionIntent?.entityRefs || [])
+            .filter((ref) => ref.kind === 'output')
+            .map(creationCellKey);
+          return issue(next);
+        },
+      };
+    },
+    prepareModelConstruction(draft, context) {
+      const entry = current(context.project);
+      if (modelViews.get(context.view)?.project !== context.project)
+        throw Error('高级建模视图不属于当前展示工程');
+      const source = projectSourceView(entry.state.document, snapFrame);
+      const prepared = previewModelConstruction(
+        entry.state.document,
+        {
+          ...draft,
+          baseId: draft.baseId || draft.a,
+          operandId: draft.b,
+        },
+        {
+          paths: source.identities.paths,
+          regions: Object.fromEntries(
+            context.view.regions.map((region) => [region.id, region.outputRef]),
+          ),
+        },
+      );
+      const candidateDocument = structuredClone(prepared.document);
+      const diagnostics = prepared.diagnostics || [];
+      const displayPathIds = new Map(
+        Object.entries(source.identities.paths).map(([id, ref]) => [
+          ref.id,
+          id,
+        ]),
+      );
+      const projectedConnections = diagnostics.flatMap((item) => {
+        if (
+          item?.code !== 'partition-endpoint-connected' ||
+          !Array.isArray(item.from) ||
+          !Array.isArray(item.to) ||
+          !Number.isFinite(item.gapMM) ||
+          typeof item.pathId !== 'string'
+        )
+          return [];
+        const matrix = worldMatrix(candidateDocument, prepared.ownerNodeId);
+        return [
+          {
+            from: transformPoint(matrix, item.from),
+            to: transformPoint(matrix, item.to),
+            // The evaluator identifies the canonical Path. The original
+            // panel labels a source-view identity, so retain that exact
+            // projection where the prepared cutter is currently visible.
+            pathId: displayPathIds.get(item.pathId) || item.pathId,
+            gapMM: item.gapMM,
+          },
+        ];
+      });
+      const warnings = [
+        ...new Set(
+          diagnostics
+            .filter((item) => item?.code !== 'partition-endpoint-connected')
+            .map((item) => item?.message)
+            .filter((message) => typeof message === 'string' && message),
+        ),
+      ];
+      let consumed = false;
+      return {
+        candidates: prepared.candidates.map((item) => {
+          const matrix = worldMatrix(
+            candidateDocument,
+            item.outputRef.ownerNodeId,
+          );
+          const coordinates = (value) =>
+            typeof value[0] === 'number'
+              ? transformPoint(matrix, value)
+              : value.map(coordinates);
+          const displayedGeometry = {
+            ...item.geometry,
+            coordinates: coordinates(item.geometry.coordinates),
+          };
+          const geometry = readGeometry(displayedGeometry);
+          const point = geometry.getInteriorPoint().getCoordinate();
+          let holes = 0;
+          for (let index = 0; index < geometry.getNumGeometries(); index++)
+            holes += geometry.getGeometryN(index).getNumInteriorRing();
+          return {
+            geometry: displayedGeometry,
+            seed: [point.x, point.y],
+            areaMM2: geometry.getArea(),
+            holes,
+          };
+        }),
+        warnings,
+        connections: projectedConnections,
+        commit(indices, options = {}) {
+          if (consumed) throw Error('构造预览已提交');
+          current(context.project);
+          const replaceTarget =
+            options.replaceId === undefined
+              ? undefined
+              : context.view.regions.find(
+                  (region) => region.id === options.replaceId,
+                )?.outputRef;
+          if (options.replaceId !== undefined && !replaceTarget)
+            throw Error('待重绑区域已失效');
+          const next = editorSession.dispatch(
+            (_document, commandContext) =>
+              finalizePreparedModelConstruction(
+                prepared,
+                {
+                  indices,
+                  replaceTarget,
+                  name: options.name,
+                },
+                commandContext,
+              ),
+            { expectedRevision: entry.state.revision },
+          );
+          consumed = true;
+          return {
+            project: issue(next),
+            regionIds: (next.lastChange.selectionIntent?.entityRefs || []).map(
+              creationCellKey,
+            ),
+          };
+        },
+      };
+    },
+    bindEvaluation(project, scene) {
+      const entry = metadata(project);
+      const evaluated = scenes.get(scene);
+      if (
+        !evaluated ||
+        evaluated.project !== project ||
+        !sameState(entry.state, editorSession.state)
+      )
+        throw Error('求值结果不能绑定到其他工程');
+      return { project, scene };
+    },
+    command(action, args, context) {
+      const command = intent(action, args, displayed(context));
+      const state = metadata(context.project).state;
+      let consumed = false;
+      return {
+        project: context.project,
+        commit() {
+          if (consumed) throw Error('命令已提交');
+          current(context.project);
+          const next = editorSession.dispatch(command, {
+            expectedRevision: state.revision,
+          });
+          consumed = true;
+          return issue(next);
+        },
+      };
+    },
+    prepare: prepareCommand,
+    commitPrepared: commitToken,
+    commitPreparedDisplay(project, context) {
+      const handle = preparedDisplays.get(project);
+      if (!handle) throw Error('此展示工程不含已准备的底板命令');
+      const result = commitToken(handle, context);
+      preparedDisplays.delete(project);
+      return result;
+    },
+    setSlicerTemplate(template, context) {
+      const entry = current(context.project);
+      const next = editorSession.dispatch(
+        createAuthoringCommand({ kind: 'set-slicer-template', template }),
+        { expectedRevision: entry.state.revision },
+      );
+      return issue(next);
+    },
+    attachNewPath() {
+      throw Error('V4 新线条必须通过源编辑命令建立稳定身份');
+    },
+    dispose() {
+      if (!evaluationService) evaluation.dispose();
+      disposed = true;
+    },
+  });
+}

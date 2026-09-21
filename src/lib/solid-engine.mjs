@@ -48,13 +48,40 @@ export function resolveHeights(model) {
   }
   return { get };
 }
-export function cleanMesh(raw) {
+export function cleanMesh(raw, preserveTopology = false) {
   const positions = [],
     map = new Map(),
     remap = [];
+  const parents = Array.from(
+    { length: raw.vertProperties.length / raw.numProp },
+    (_, i) => i,
+  );
+  const ranks = new Uint8Array(parents.length);
+  const root = (i) => {
+    let representative = i;
+    while (parents[representative] !== representative)
+      representative = parents[representative];
+    while (parents[i] !== i) {
+      const parent = parents[i];
+      parents[i] = representative;
+      i = parent;
+    }
+    return representative;
+  };
+  const merge = (a, b) => {
+    a = root(a);
+    b = root(b);
+    if (a === b) return;
+    if (ranks[a] < ranks[b]) [a, b] = [b, a];
+    parents[b] = a;
+    if (ranks[a] === ranks[b]) ranks[a]++;
+  };
+  if (preserveTopology)
+    for (let i = 0; i < (raw.mergeFromVert?.length || 0); i++)
+      merge(raw.mergeFromVert[i], raw.mergeToVert[i]);
   for (let i = 0; i < raw.vertProperties.length; i += raw.numProp) {
     const p = [0, 1, 2].map((k) => Math.fround(raw.vertProperties[i + k])),
-      key = p.join(',');
+      key = preserveTopology ? root(i / raw.numProp) : p.join(',');
     if (!map.has(key)) {
       map.set(key, positions.length / 3);
       positions.push(...p);
@@ -82,37 +109,71 @@ export function removeFlatTriangles(mesh) {
     faces = [];
   for (let i = 0; i < mesh.triangles.length; i += 3)
     faces.push(mesh.triangles.slice(i, i + 3));
-  const point = (id) => v.slice(id * 3, id * 3 + 3),
-    distance = (a, b) => Math.hypot(...point(a).map((n, k) => n - point(b)[k]));
-  const area = (ids) => {
-    const p = ids.map(point),
-      a = p[1].map((n, k) => n - p[0][k]),
-      b = p[2].map((n, k) => n - p[0][k]);
+  const edgeKey = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`),
+    topologyEdges = new Map(),
+    keysFor = (face) => [
+      edgeKey(face[0], face[1]),
+      edgeKey(face[1], face[2]),
+      edgeKey(face[2], face[0]),
+    ],
+    addEdges = (index, face) => {
+      for (const key of keysFor(face)) {
+        if (!topologyEdges.has(key)) topologyEdges.set(key, new Set());
+        topologyEdges.get(key).add(index);
+      }
+    },
+    removeEdges = (index, face) => {
+      for (const key of keysFor(face)) {
+        const adjacent = topologyEdges.get(key);
+        adjacent.delete(index);
+        if (!adjacent.size) topologyEdges.delete(key);
+      }
+    };
+  for (let i = 0; i < faces.length; i++) addEdges(i, faces[i]);
+  const distance = (a, b) => {
+    const offsetA = a * 3,
+      offsetB = b * 3;
     return Math.hypot(
-      a[1] * b[2] - a[2] * b[1],
-      a[2] * b[0] - a[0] * b[2],
-      a[0] * b[1] - a[1] * b[0],
+      v[offsetA] - v[offsetB],
+      v[offsetA + 1] - v[offsetB + 1],
+      v[offsetA + 2] - v[offsetB + 2],
     );
+  };
+  const area = (ids) => {
+    const offsetA = ids[0] * 3,
+      offsetB = ids[1] * 3,
+      offsetC = ids[2] * 3,
+      ax = v[offsetB] - v[offsetA],
+      ay = v[offsetB + 1] - v[offsetA + 1],
+      az = v[offsetB + 2] - v[offsetA + 2],
+      bx = v[offsetC] - v[offsetA],
+      by = v[offsetC + 1] - v[offsetA + 1],
+      bz = v[offsetC + 2] - v[offsetA + 2];
+    return Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx);
   };
   for (let pass = 0; pass < 100; pass++) {
     let changed = false;
-    for (let i = 0; i < faces.length; i++) {
+    const faceCount = faces.length;
+    for (let i = 0; i < faceCount; i++) {
       const f = faces[i];
       if (!f || area(f) >= 1e-14) continue;
-      const edges = [
+      const candidateEdges = [
         [f[0], f[1], f[2]],
         [f[1], f[2], f[0]],
         [f[2], f[0], f[1]],
       ].sort((a, b) => distance(b[0], b[1]) - distance(a[0], a[1]));
-      const [a, b, middle] = edges[0];
-      const j = faces.findIndex(
-        (n, k) =>
-          k !== i &&
-          n?.includes(a) &&
-          n.includes(b) &&
-          !n.includes(middle) &&
-          area(n) > 1e-14,
-      );
+      const [a, b, middle] = candidateEdges[0];
+      let j = -1;
+      for (const candidate of topologyEdges.get(edgeKey(a, b)) || []) {
+        const neighbour = faces[candidate];
+        if (
+          candidate !== i &&
+          !neighbour.includes(middle) &&
+          area(neighbour) > 1e-14 &&
+          (j < 0 || candidate < j)
+        )
+          j = candidate;
+      }
       if (j < 0) continue;
       const neighbour = faces[j];
       const k = neighbour.findIndex(
@@ -121,15 +182,40 @@ export function removeFlatTriangles(mesh) {
       const start = neighbour[k],
         end = neighbour[(k + 1) % 3],
         third = neighbour[(k + 2) % 3];
+      removeEdges(i, f);
+      removeEdges(j, neighbour);
       faces[i] = null;
       faces[j] = [start, middle, third];
+      addEdges(j, faces[j]);
       faces.push([middle, end, third]);
+      addEdges(faces.length - 1, faces.at(-1));
       changed = true;
     }
     if (!changed) break;
   }
   return { ...mesh, triangles: faces.filter(Boolean).flat() };
 }
+/** Serialize canonical bodies at STL precision using Manifold's explicit
+ * topology merges, never welding coincident but distinct topological vertices. */
+export function solidMesh(solid, own, toleranceMM = 0.005) {
+  let body = own(own(solid.asOriginal()).setTolerance(toleranceMM));
+  let mesh = cleanMesh(body.getMesh(), true),
+    report = inspectMesh(mesh);
+  let precisionRepaired = false;
+  if (!report.valid && (report.invalidEdges || report.zeroArea)) {
+    body = own(
+      body.warp((v) => {
+        for (let k = 0; k < 3; k++) v[k] = Math.fround(v[k]);
+      }),
+    );
+    body = own(body.simplify(toleranceMM));
+    mesh = cleanMesh(body.getMesh(), true);
+    report = inspectMesh(mesh);
+    precisionRepaired = true;
+  }
+  return { mesh, report, precisionRepaired };
+}
+
 export async function buildSolid(
   project,
   partId = 'main',

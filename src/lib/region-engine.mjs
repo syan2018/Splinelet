@@ -15,6 +15,7 @@ import { emptyModel } from './model-schema.mjs';
 const reader = new GeoJSONReader(),
   writer = new GeoJSONWriter();
 export const readGeometry = (g) => reader.read(g);
+export const MIN_REGION_AREA_MM2 = 1e-7;
 const line = (q) => reader.read({ type: 'LineString', coordinates: q });
 const point = (q) => reader.read({ type: 'Point', coordinates: q });
 const round = (v) => Math.round(v * 1e6) / 1e6;
@@ -172,7 +173,7 @@ export function robustPolygonize(lines) {
     out.push(it.next());
   return out;
 }
-function validateArea(g, repair = false, warnings = []) {
+export function validateArea(g, repair = false, warnings = []) {
   if (!g.isValid()) {
     if (!repair)
       throw Error('边界存在自交或零宽相接，请检查来源，或启用“预览修复自交”');
@@ -202,7 +203,8 @@ function validateArea(g, repair = false, warnings = []) {
       `派生区域已修复自交（面积变化 ${Math.abs(g.getArea() - before).toFixed(4)} mm²），源样条保持原样`,
     );
   }
-  if (g.isEmpty() || g.getArea() < 1e-7) throw Error('操作没有留下有效面积');
+  if (g.isEmpty() || g.getArea() < MIN_REGION_AREA_MM2)
+    throw Error('操作没有留下有效面积');
   return union(polygonParts(g));
 }
 export function describe(g) {

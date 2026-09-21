@@ -223,6 +223,7 @@
 }
 .creation-stage .view-controls {
   bottom: 87px;
+  left: auto;
   right: 17px;
 }
 .creation-stage .preview-actions {
@@ -248,6 +249,49 @@
   border: 1px solid #41505899;
   background: #202c32dd;
   font-size: 13px;
+}
+.curve-preview-controls {
+  position: absolute;
+  bottom: 88px;
+  left: 20px;
+  z-index: 5;
+  max-width: calc(100% - 40px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid #41505899;
+  border-radius: 8px;
+  background: #202c32ed;
+  font-size: 12px;
+}
+.curve-preview-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.curve-preview-controls select {
+  max-width: 240px;
+  padding: 3px 6px;
+  border: 1px solid #52666c;
+  border-radius: 4px;
+  background: #18262c;
+}
+.curve-preview-controls small {
+  color: #b9d8df;
+}
+.inspector .endpoint-snap-settings label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: flex-start;
+  margin: 8px 0;
+}
+.creation-stage:not(.creation-is-3d).tool-edit .curve-preview-controls,
+.creation-stage:not(.creation-is-3d).tool-trace .curve-preview-controls {
+  bottom: 132px;
 }
 .creation-canvas-bar > span {
   flex: 1;
@@ -312,6 +356,10 @@
 }
 .creation-stage.tool-select .creation-cell:hover {
   cursor: pointer;
+}
+.creation-stage.tool-move .creation-cell:hover,
+.creation-stage.tool-move .source-path-layer {
+  cursor: move;
 }
 .creation-object-row.contains-selection {
   box-shadow: inset 2px 0 #abc68c;

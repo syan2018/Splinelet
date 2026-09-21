@@ -13,7 +13,12 @@ export type CreationSelection = {
   ids: string[];
 };
 type Modifiers = { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
-type CreationObject = { id: string; pathIds: string[] };
+type CreationObject = {
+  id: string;
+  pathIds: string[];
+  kind?: string;
+  ancestors?: string[];
+};
 type CreationDocument = { objects: CreationObject[] };
 type CreationCell = { key: string; objectId: string };
 type CreationScene = { cells: CreationCell[] };
@@ -62,7 +67,9 @@ export function useCreationSelection(p: {
                   ? s.ids
                       .map(
                         (id) =>
-                          doc.objects.find((o) => o.pathIds.includes(id))?.id,
+                          doc.objects.find(
+                            (o) => o.kind !== 'group' && o.pathIds.includes(id),
+                          )?.id,
                       )
                       .filter((id): id is string => id !== undefined)
                   : cells.map((c) => c.objectId),
@@ -98,6 +105,15 @@ export function useCreationSelection(p: {
       onSelectPaths(d.paths);
       if (next.ids.length) onTab(next.kind === 'path' ? 'lines' : 'object');
       if (revealInTree && next.ids.length) {
+        setExpanded((ids) => [
+          ...new Set([
+            ...ids,
+            ...d.objects.flatMap(
+              (id) =>
+                doc.objects.find((object) => object.id === id)?.ancestors || [],
+            ),
+          ]),
+        ]);
         if (next.kind !== 'object')
           setExpanded((ids) => [...new Set([...ids, ...d.objects])]);
         if (next.kind === 'cell')
@@ -106,7 +122,7 @@ export function useCreationSelection(p: {
       }
       return d;
     },
-    [derive, onChoose, onSelectPaths, onTab],
+    [derive, doc, onChoose, onSelectPaths, onTab],
   );
   const choose = useCallback(
     (kind: CreationSelection['kind'], id: string, e: Modifiers = {}) => {
@@ -114,7 +130,9 @@ export function useCreationSelection(p: {
         kind === 'object'
           ? doc.objects.map((o) => o.id)
           : kind === 'path'
-            ? doc.objects.flatMap((o) => o.pathIds)
+            ? doc.objects
+                .filter((o) => o.kind !== 'group')
+                .flatMap((o) => o.pathIds)
             : (scene?.cells || []).map((c) => c.key);
       const ids = pickSelection(
         latest.current.kind === kind ? latest.current.ids : [],

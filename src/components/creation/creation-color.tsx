@@ -8,14 +8,15 @@ export default function CreationColor({
   disabled,
   onPaint,
 }: {
-  colors: string[];
+  colors: (string | null)[];
   swatches: { id: string; name: string; color: string }[];
   label: string;
   disabled: boolean;
   onPaint: (args: { color?: string; swatchId?: string }) => void;
 }) {
-  const unique = [...new Set(colors.map((c) => c.toLowerCase()))];
+  const unique = [...new Set(colors.map((c) => c?.toLowerCase() ?? ''))];
   const color = unique.length === 1 ? unique[0] : '';
+  const emptyLabel = unique.length > 1 ? '多种颜色' : '未上色';
   const [draftState, setDraftState] = useState({ source: color, value: color });
   const draft = draftState.source === color ? draftState.value : color;
   const setDraft = (value: string) => setDraftState({ source: color, value });
@@ -28,7 +29,7 @@ export default function CreationColor({
     <div className="creation-property-block creation-local-color">
       <label htmlFor="selection-project-color">
         {label}
-        <span>{color ? color.toUpperCase() : '多种颜色'}</span>
+        <span>{color ? color.toUpperCase() : emptyLabel}</span>
       </label>
       <select
         id="selection-project-color"
@@ -38,7 +39,7 @@ export default function CreationColor({
         onChange={(e) => onPaint({ swatchId: e.target.value })}
       >
         <option value="" disabled>
-          {color || '多种颜色'}
+          {color || emptyLabel}
         </option>
         {swatches.map((s) => (
           <option key={s.id} value={s.id}>

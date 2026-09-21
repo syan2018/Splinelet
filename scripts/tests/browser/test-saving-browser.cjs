@@ -1,11 +1,7 @@
 module.exports = async (page) => {
   const assert = require('node:assert/strict');
   const { decodeProject } = await import('../../../src/lib/project-format.mjs');
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const readSaved = async () =>
     decodeProject(
       new Uint8Array(

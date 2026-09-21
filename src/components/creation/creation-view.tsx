@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { pickVisibleIntersection } from '@/lib/creation-pick.mjs';
+import { curvePreviewGroup, disposeCurvePreview } from './curve-preview-3d';
+import type { CurvePreview } from '@/lib/modifier-types';
 
 type Coordinate = [number, number];
 type CreationCell = {
@@ -23,7 +25,15 @@ type CreationCell = {
 };
 type CreationScene = {
   cells: CreationCell[];
-  creation: { objects: { id: string; visible: boolean }[] };
+  creation: {
+    objects: {
+      id: string;
+      visible: boolean;
+      zMM?: number;
+      heightMM?: number;
+    }[];
+  };
+  objectBottoms?: Record<string, number>;
 };
 type PointerStart = {
   pointerId: number;
@@ -53,6 +63,7 @@ export default function CreationView({
   selected,
   onSelect,
   tool,
+  curvePreviews,
 }: {
   scene: CreationScene | null;
   selected: string[];
@@ -61,6 +72,7 @@ export default function CreationView({
     modifiers: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
   ) => void;
   tool: string;
+  curvePreviews: CurvePreview[];
 }) {
   const host = useRef<HTMLDivElement>(null),
     state = useRef<ViewState | null>(null),
@@ -377,6 +389,26 @@ export default function CreationView({
       s.framed = true;
     }
   }, [frameView, scene, selected]);
+  useEffect(() => {
+    const s = state.current;
+    if (!s) return;
+    const group = curvePreviewGroup(curvePreviews, (id) => {
+      const cells = scene?.cells.filter((c) => c.objectId === id) || [];
+      const object = scene?.creation.objects.find((o) => o.id === id);
+      return cells.length
+        ? Math.max(
+            ...cells.map((c) => (c.bottomMM ?? c.zMM ?? 0) + c.heightMM),
+          ) + 0.01
+        : (scene?.objectBottoms?.[id] ?? object?.zMM ?? 0) +
+            (object?.heightMM ?? 0);
+    });
+    s.content.add(group);
+    if (!s.framed && group.children.length) {
+      frameView('iso');
+      s.framed = true;
+    }
+    return () => disposeCurvePreview(group);
+  }, [curvePreviews, scene, frameView]);
   // OrbitControls receives captured drag and release events on document.
   // Only isolate pointer-down; movement and pointer-up must keep bubbling.
   return (
@@ -396,7 +428,7 @@ export default function CreationView({
         <span>分色预览 · 导出时合并并检查实体</span>
       </div>
       {error && <p className="model-empty">{error}</p>}
-      {!scene?.cells.some((cell) => cell.painted) && (
+      {!scene?.cells.some((cell) => cell.painted) && !curvePreviews.length && (
         <p className="model-empty">先给轮廓填色，就能看到它的厚度</p>
       )}
     </div>

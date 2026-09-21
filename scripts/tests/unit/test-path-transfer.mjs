@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { creationCommand } from '../../../src/lib/creation-commands.mjs';
+import { creationCommand } from '../legacy/creation-commands.mjs';
 import { creationDocument } from '../../../src/lib/creation-schema.mjs';
 import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
 import {

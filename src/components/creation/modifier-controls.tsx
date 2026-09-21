@@ -201,6 +201,9 @@ export function ModifierNumber({
   step = 0.1,
   min = -20,
   max = 20,
+  unit = 'mm',
+  disabled = false,
+  note,
 }: {
   value?: number;
   onChange: (value: number) => void;
@@ -208,11 +211,15 @@ export function ModifierNumber({
   step?: number;
   min?: number;
   max?: number;
+  unit?: string;
+  disabled?: boolean;
+  note?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const cancelled = useRef(false);
   const commit = () => {
     if (
+      !disabled &&
       !cancelled.current &&
       draft !== null &&
       draft.trim() &&
@@ -230,7 +237,10 @@ export function ModifierNumber({
         <input
           aria-label={label}
           type="number"
-          value={draft ?? value}
+          value={disabled ? (value ?? '') : (draft ?? value ?? '')}
+          disabled={disabled}
+          title={note}
+          placeholder={value === undefined ? '未解析' : undefined}
           step={step}
           min={min}
           max={max}
@@ -245,8 +255,9 @@ export function ModifierNumber({
             }
           }}
         />
-        <span>mm</span>
+        <span>{unit}</span>
       </div>
+      {note && <small className="modifier-hint">{note}</small>}
     </label>
   );
 }
@@ -254,17 +265,20 @@ export function ModifierNumber({
 export function ModifierName({
   value,
   onChange,
+  disabled = false,
 }: {
   value: string;
   onChange: (name: string) => void;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  return draft === null ? (
+  return draft === null || disabled ? (
     <span
       className="modifier-name"
-      title="双击重命名"
+      title={disabled ? '名称不可编辑' : '双击重命名'}
       onDoubleClick={(e) => {
         e.stopPropagation();
+        if (disabled) return;
         setDraft(value);
       }}
     >
@@ -278,7 +292,7 @@ export function ModifierName({
       onChange={(e) => setDraft(e.target.value)}
       onClick={(e) => e.stopPropagation()}
       onBlur={() => {
-        if (draft.trim()) onChange(draft.trim());
+        if (!disabled && draft.trim()) onChange(draft.trim());
         setDraft(null);
       }}
       onKeyDown={(e) => {

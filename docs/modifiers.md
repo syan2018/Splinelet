@@ -1,44 +1,67 @@
-# 面修改器
+# 曲线与面修改器
 
-日常流程仍为描线 → 颜色与高低 → 立体预览。选中部件后，右侧独立的「修改器」页提供可选的组合操作。卡片默认只展示名称、启用开关、作用范围和操作摘要；参数与基础面来源折叠。支持双击改名、拖动排序、菜单上下移动/删除，所有更改参与同一撤销与自动保存流程。
+日常流程仍为描线 → 颜色与高低 → 立体预览。选中部件后，右侧「构造」页提供按需展开的修改器卡片；修改名称、启用状态和参数参与同一撤销与保存。默认工作区不要求用户装配节点或选择数据端口。
 
 ## 数据和计算
 
-- `object.modifiers` 从上到下作用于该对象的面：布尔差/并/交、开放线分区、轮廓偏移。
-- `object.sources[featureId]` 是旧工程中各基础面的来源程序：一个基础区域引用和可编辑的布尔步骤。先计算来源程序，再分区，再执行对象修改器，最后按面的颜色/厚度拉伸。
-- 对象操作数引用对方的最终面结果，可多层嵌套。引用循环、丢失来源、无效边界或失效目标会报告错误，失败对象没有可导出几何，不回退到旧快照。
-- 源贝塞尔节点、旧模型定义保持不变。迁移后，已提取步骤由 `sources` 管理；原模型配方保留供基础引用及兼容使用，不再是该面完整构造的第二份编辑入口。
-- `roles: hole` 是创建受管差集修改器的快捷操作。迁移合并相同路径的重复减法；停用可恢复完整面，删除会将路径用途改为参考，避免隐藏减法重现。
-- 面范围使用 feature/region ID、闭合边界 ID 或生成修改器输出 ID。旧分区引用附拓扑签名。丢失或歧义引用要求重新选范围，不能悄悄改到另一个面。
-- 分区输出用相对有向分区线的左/右标识，颜色和厚度保存在生成修改器的 `styles` 中。下游步骤可只选其中一区。分区线必须一次贯穿单个连通面；复杂多次贯穿拆为多步。
-- 引用和参数是持久数据；计算出的面、三角网格、诊断信息仅存在运行时。预览、SVG、Blender 和实体导出使用同一个实时计算结果。
-- 新建底板通过引用对象外轮廓并偏移构造。其轮廓随来源更新；垂直叠放关系与二维几何引用分别求值。
+V4 的 Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保存构造算子和显式输入、输出。求值依次产生 CurveSet、RegionSet、ReliefSet、PlacedReliefSet 和 BodySet；这些结果都是只读数据。颜色、厚度、制造归属分别写入作者定义，不存在可写的 `object.modifiers`、`object.sources` 或旧 `Project.model` 第二条运行管线。旧文件只在打开时单向导入。
 
-本版是 **拉伸前的面修改器**，并非 Blender 任意三维网格修改器。合并不同颜色/高度的多个面会要求先统一属性或缩小范围，避免隐式丢掉材质/高度。带修改器对象保留独立来源归属，用对象引用组合；不支持直接合并来源所有权。
+镜像和阵列变换精确三次贝塞尔，仅构面时按工程精度采样，不增加源节点。曲线和区域的引用明确记录来源；循环、缺失来源、断口和失效选区会报告当前错误，不回退到上一次成功几何。
 
-## Agent API
+| 步骤       | 输入 → 输出           | 主要参数               |
+| ---------- | --------------------- | ---------------------- |
+| 曲线镜像   | 曲线 → 曲线           | 轴角度、中心           |
+| 曲线阵列   | 曲线 → 曲线           | 数量、旋转角度、中心   |
+| 连接边界   | 曲线 → 曲线           | 源边端、实例与重复对应 |
+| 构面       | 曲线 → 区域           | 填充规则与闭合边界     |
+| 区域偏移   | 区域 → 区域           | 偏移距离               |
+| 区域阵列   | 区域 → 区域           | 数量、旋转角度、中心   |
+| 布尔、分区 | 区域及工具输入 → 区域 | 运算、明确作用范围     |
 
-`window.traceStudio.call('creation_inspect')` 返回 `creation.objects[].modifiers`、`sources`、`cells` 和 `modifierStatus`。后者提供每步输入的 `inputOptions[].ref`、面积前后值、影响数和错误。先读取当前结果，再提交一个可撤销命令：
+现有算子的参数由卡片显示；参数或表达式驱动的字段不会被普通数字输入框覆盖。曲线参数的中心在界面中使用世界毫米坐标，命令转换到部件局部坐标，整体移动不改写局部来源。
+
+## 添加、排序与删除
+
+当前「添加修改器」提供曲线镜像、曲线阵列、连接边界和闭合构面：存在明确曲线插入点时追加；存在唯一 Fill 时将曲线步骤插入其前。源曲线汇集可作为插入边界，不展开或隐式改接它的输入。区域布尔、分区、孔洞与承托使用对应任务入口，不通过不完整的通用添加表单猜测接线。
+
+连接边界表单选择源边端和派生实例，支持每份、下一份、上一份的循环对应；连接记录和填充规则可在卡片继续编辑。Fill 只在尚无区域输出时新建，未闭合时保留诊断以便修复。标准 Fill 卡片可见，源汇集等内部节点保持在源结构中。
+
+端点选项显示路径、段号、源边身份和实例链。表单中的局部预览用金色 A / 青色 B 高亮当前连接的边和端点，和 Join 求值共用实例对应算法。A 指定单个实例或“每份”，B 可相对 A 选择“下一份/上一份”；切线由源曲线保留。非法端点、实例或字段在文档写入时拒绝；合法但尚未闭合的构造仍可保存和继续编辑。
+
+上下移动和删除按 Program 的真实拓扑判断。可旁路的同域线性步骤可以重接；分叉、跨域、精确区域选区或会使已有作者态输出引用失效的改动会拒绝。菜单显示每个动作的可用性与原因。一次命令失败不会留下半条构造链；结构变化只需一次撤销。
+
+普通分区、挖洞和追加轮廓继续使用原绘制入口。底板通过引用外轮廓与偏移构造，预览仅准备命令，确认后一次提交。垂直依附与二维几何引用分别求值；打印分层和多零件只在相关业务中展开。
+
+## 派生样条预览
+
+画布下方「派生样条」显示只读曲线阶段；源节点和控制柄仍是编辑入口。未接合端点与分叉保留诊断，构面失败也能看到当前有效曲线。关闭辅助预览不改变工程、撤销或导出。
+
+节点工具的[端点吸附与对称接缝](source-editor.md#端点吸附与对称接缝)继续作用于来源几何。镜像和阵列使用同一变换定义；修复端点无需扩大构面容差。
+
+## Agent 兼容调用
+
+先调用 `creation_inspect` 获取当前修订和 `modifierStatus`。其中 `controls` 提供可编辑参数，`structure` 提供上下移、删除的能力和原因；不能把投影修改后提交为工程。
 
 ```js
+const observed = await traceStudio.call('document.get');
 await traceStudio.call('creation_command', {
+  expectedRevision: observed.revision,
   action: 'modifier_add',
   args: {
     objectId,
-    type: 'boolean', // 或 split / offset
-    operation: 'difference', // union / intersection
-    input: { kind: 'object', id: toolObjectId }, // 或 path / region
-    targets: { kind: 'selected', refs: [inputOptions[0].ref] },
-    name: '局部凹槽',
+    type: 'curve_array',
+    targets: { kind: 'all' },
+    count: 4,
+    angleDeg: 90,
+    centerMM: { x: 0, y: 0 },
   },
 });
 ```
 
-- `modifier_add`: type/name/input/operation；offset 用 `distanceMM`，split 可用 `joinMM`。默认 targets 为 all；可传当前 `cellKeys` 自动转换为稳定引用。
-- `modifier_update`: objectId/modifierId 和 `changes`（name/enabled/operation/input/targets/distanceMM/joinMM）；也可顶层传 targets/cellKeys。
-- `modifier_move`: objectId/modifierId，direction 为 -1/+1，或 beforeId（null 放最后）。
-- `modifier_remove`: objectId/modifierId。
-- 上述命令可加 `sourceFeatureId` 编辑基础来源的布尔栈。
-- 对象 input 可加 `projection:'outline'`，只引用外轮廓、填平内孔；默认 surface 保留孔洞。
-- 局部 paint/height 仍用 `cellKeys` 和 inspect 返回的 revision，作用于生成该区的样式记录。
-- 保存后重新打开，栈和引用完整恢复；源曲线调整后重新计算。错误卡片可停用或删除以恢复有效输出。
+- `modifier_add`：镜像/阵列使用 `curve_mirror` / `curve_array`，`objectId`、`targets:{kind:'all'}`、`name?`、`angleDeg?`、`centerMM?`，阵列另有 `count?`。
+- `modifier_add` 还支持 `join` + `connections`（端点选项来自 `modifierAdd.endpoints`），以及 `fill` + `rule`。API 5 的 `repeat-pattern` 可一次建立整条重复构造，见 [Agent API 5](agent-api-2026-09-20.md)。
+- `modifier_update`：`objectId`、`modifierId`、`changes`；按类型支持名称、启用、角度、中心、数量、偏移距离、布尔运算、接合 connections 或构面 rule。`input`、`targets`、`joinMM` 不作为普通参数写入。
+- `modifier_move`：`objectId`、`modifierId`、`direction:-1|1`；不支持旧 `beforeId` 语义。
+- `modifier_remove`：`objectId`、`modifierId`。
+
+以上动作经同一 V4 会话、版本检查与事务执行。旧名称仅作为调用兼容，不恢复旧模型写回。高级构面及体块操作见[构面与浮雕](modeling-2026-09-19.md)。

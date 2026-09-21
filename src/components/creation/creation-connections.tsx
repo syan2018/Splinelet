@@ -4,6 +4,7 @@ import type { Project } from '@/lib/project';
 
 type Connection = {
   objectId: string;
+  operatorId?: string;
   pathId: string;
   endpoint: number;
   status?: string;
@@ -182,7 +183,7 @@ export default function CreationConnections(p: ConnectionProps) {
             [...connections, ...disabled].map((c) => (
               <div
                 className="creation-connection-row"
-                key={c.pathId + ':' + c.endpoint}
+                key={(c.operatorId || '') + ':' + c.pathId + ':' + c.endpoint}
               >
                 <button
                   title="定位这条线及其端点"
@@ -194,6 +195,7 @@ export default function CreationConnections(p: ConnectionProps) {
                   onClick={() =>
                     p.onCommand('connection', {
                       objectId: o.id,
+                      ...(c.operatorId ? { operatorId: c.operatorId } : {}),
                       pathId: c.pathId,
                       endpoint: c.endpoint,
                       disabled: c.status !== 'disabled',

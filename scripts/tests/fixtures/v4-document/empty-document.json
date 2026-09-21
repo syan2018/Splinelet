@@ -1,0 +1,31 @@
+{
+  "appearances": { "defaults": {}, "overrides": {}, "swatches": {} },
+  "assets": {},
+  "collections": {},
+  "datums": {},
+  "geometrySettings": {
+    "curveToleranceMM": 0.015,
+    "joinToleranceMM": 0.001,
+    "numericTolerance": 1e-9
+  },
+  "id": "fixture-document",
+  "manufacturing": {
+    "assignments": {},
+    "defaultPartId": "fixture-part",
+    "excluded": [],
+    "layerHeightMM": 0.2,
+    "layerOrder": [],
+    "layers": {},
+    "parts": { "fixture-part": { "id": "fixture-part", "name": "默认零件" } },
+    "slicerTemplate": null
+  },
+  "nodes": {},
+  "parameters": {},
+  "programs": {},
+  "references": {},
+  "relations": {},
+  "reliefDefinitions": { "defaults": {}, "overrides": {} },
+  "sketches": {},
+  "units": "mm",
+  "version": 4
+}

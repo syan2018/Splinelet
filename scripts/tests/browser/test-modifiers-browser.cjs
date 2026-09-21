@@ -1,10 +1,12 @@
 module.exports = async (page, fixture) => {
+  await page.setViewportSize({ width: 1280, height: 1100 });
   const assert = require('node:assert/strict');
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const { readFileSync } = require('node:fs');
+  const { decodeProject } = await import('../../../src/lib/project-format.mjs');
+  const expected = decodeProject(readFileSync(fixture)).creation.objects.find(
+    (object) => object.name === '头饰',
+  );
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const checks = [];
   const check = (value, label) => {
     assert(value, label);
@@ -34,20 +36,18 @@ module.exports = async (page, fixture) => {
   await page
     .locator('input[accept=".spl,.bezier.json,.json"]')
     .setInputFiles(fixture);
-  await page.waitForFunction(async () => {
+  await page.waitForFunction(async (expectedModifiers) => {
     try {
       const s = await window.traceStudio.call('creation_inspect');
-      return s.creation.objects
-        .find((o) => o.name === '头饰')
-        ?.modifiers.some(
-          (m) =>
-            m.rolePathId === 'be92b11d-9617-4008-b6c1-be9f1d842c45' &&
-            m.targets.kind === 'all',
-        );
+      return (
+        JSON.stringify(
+          s.creation.objects.find((o) => o.name === '头饰')?.modifiers,
+        ) === expectedModifiers
+      );
     } catch {
       return false;
     }
-  });
+  }, JSON.stringify(expected.modifiers));
   await page
     .locator('.creation-object-row .creation-name')
     .getByText('头饰', { exact: true })
@@ -65,6 +65,14 @@ module.exports = async (page, fixture) => {
   const scope = card.getByRole('combobox', { name: '作用范围 ' + h.name });
   const face = async (id) =>
     (await call('creation_inspect')).cells.find((c) => c.featureId === id);
+  // Establish the state this undo test needs; the saved sample may already
+  // select a narrower scope. Never race the startup project during file load.
+  await scope.selectOption('all');
+  await wait();
+  check(
+    (await face('body-8')).holes === 1,
+    'all-surface baseline cuts the crown',
+  );
   await scope.selectOption('feature:body-band-64');
   await wait();
   check(
@@ -115,14 +123,32 @@ module.exports = async (page, fixture) => {
     .getByRole('combobox', { name: '运算 菱形凹槽' })
     .selectOption('intersection');
   await wait();
+  const intersection = await call('creation_inspect');
   check(
-    (await face('body-band-64')).areaMM2 < 20,
-    'intersection uses the same modular Boolean control',
+    intersection.creation.objects
+      .find((item) => item.id === o.id)
+      .modifiers.find((item) => item.id === h.id).operation ===
+      'intersection' &&
+      intersection.modifierStatus.some(
+        (item) =>
+          item.modifierId === h.id &&
+          item.error?.includes('输出轮廓关系已变化'),
+      ) &&
+      !intersection.cells.some((cell) => cell.objectId === o.id),
+    'intersection commits but changed topology blocks old output identities',
+  );
+  check(
+    await card.locator('.modifier-error').isVisible(),
+    'topology change has a visible diagnostic',
   );
   await card
     .getByRole('combobox', { name: '运算 菱形凹槽' })
     .selectOption('difference');
   await wait();
+  check(
+    (await face('body-band-64')).holes === 1,
+    'restoring the operation repairs the existing output contract',
+  );
   await card.getByRole('button', { name: '参数 菱形凹槽' }).click();
   await page.getByRole('button', { name: '添加修改器', exact: true }).click();
   await page
@@ -149,7 +175,10 @@ module.exports = async (page, fixture) => {
       .modifiers.at(-1).distanceMM === 0.2,
     'Escape cancels numeric edit without an accidental blur commit',
   );
-  await offset.locator('.modifier-grip').dragTo(card);
+  // Drop onto the card header, not the native scope <select> at its center.
+  // Collapse the editor so both handles fit inside the scrolling property panel.
+  await offset.getByRole('button', { name: '参数 轮廓偏移' }).click();
+  await offset.locator('.modifier-grip').dragTo(card.locator('.modifier-name'));
   await wait();
   check(
     (await call('get_project')).creation.objects.find((x) => x.id === o.id)
@@ -186,7 +215,7 @@ module.exports = async (page, fixture) => {
   await page.locator('.modifier-sources > summary').click();
   await page
     .locator('footer')
-    .getByText('已保存到此浏览器 · 可绑定工程文件', { exact: true })
+    .getByText('浏览器草稿已保存 · 未保存工程文件', { exact: true })
     .waitFor();
   const before = await call('get_project');
   await page.reload();

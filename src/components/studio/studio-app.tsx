@@ -3,14 +3,16 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   useCallback,
+  useMemo,
   useEffectEvent,
   type ComponentProps,
 } from 'react';
 import {
   PenTool,
   MousePointer2,
-  Hand,
+  Move,
   Download,
   Spline,
   Plus,
@@ -36,15 +38,25 @@ import {
   SplineNodeInspector,
   SplineTraceControls,
 } from '@/components/source-editor/spline-inspector';
-import { splineEndpoint, extendSpline } from '@/lib/source-editor/extend.mjs';
+import {
+  SourceNodeHandles,
+  SourcePathLayers,
+} from '@/components/source-editor/source-canvas-layers';
+import { splineEndpoint } from '@/lib/source-editor/extend.mjs';
 import SplineEndpoints from '@/components/source-editor/spline-endpoints';
+import EndpointSnapOverlay, {
+  type EndpointSnapFeedback,
+} from '@/components/source-editor/endpoint-snap-overlay';
 import {
   cloneTraceValue,
-  initialTraceProject,
   type TraceCandidate,
   type TraceSettings,
 } from '@/components/source-editor/trace-editor-state';
 import { creationTools } from '@/lib/creation-api';
+import { splineTools } from '@/lib/spline-api';
+import { createStudioAgentTools } from '@/lib/agent/tool-catalog';
+import { agentJSONValue } from '@/lib/agent/transport.mjs';
+import { inspectSplines } from '@/lib/source-editor/spline-edit.mjs';
 import type {
   AgentCreationCommandArgs,
   AgentCreationExportArgs,
@@ -67,9 +79,6 @@ import type {
 } from '@/hooks/trace-agent-contract';
 import {
   pickSelection,
-  movePaths,
-  translateNodes,
-  deleteNodes,
   inBox,
   pathHitsBox,
 } from '@/lib/source-editor/selection.mjs';
@@ -97,46 +106,34 @@ import {
   d,
   svg,
   blender,
-  validateProject,
 } from '@/lib/project';
-import {
-  decodeProject,
-  encodeProject,
-  SPL_MIME,
-} from '@/lib/project-format.mjs';
+import { SPL_MIME } from '@/lib/project-format.mjs';
 import {
   desktopPendingOpenPaths,
   desktopProjectOpenPath,
   desktopProjectSavePath,
   desktopReadFile,
-  desktopWriteProject,
   isDesktopRuntime,
   listenDesktopOpenFiles,
 } from '@/lib/platform/index.mjs';
-import {
-  splitCubic,
-  evaluate,
-  dist,
-  inspectGeometry,
-} from '../../../public/geometry.mjs';
+import { evaluate, dist, inspectGeometry } from '../../../public/geometry.mjs';
 import {
   pathNodes,
   nodeSelection,
   selectedNode,
-  removeNode,
 } from '@/lib/source-editor/node-edit.mjs';
 import {
   connectionSettings,
   straightCubic,
   mergeSplines,
 } from '@/lib/source-editor/connect.mjs';
-import { workspaceDB, FileWriter } from '@/lib/persistence/workspace.mjs';
-import {
-  nodeModes,
-  setContinuity,
-  moveHandle,
-  enforceContinuity,
-} from '@/lib/source-editor/continuity.mjs';
+import { createV4NodeActions } from '@/lib/source-editor/node-actions.mjs';
+import { useStudioProject, type StudioHost } from '@/hooks/use-studio-project';
+import { useSourceDrag } from '@/hooks/use-source-drag';
+import { openProject } from '@/lib/persistence/open-project.mjs';
+import { readAgentProjectInput } from '@/lib/persistence/agent-project-input.mjs';
+import { encodeDocument } from '@/lib/document/codec.mjs';
+import { createReferenceProject } from '@/lib/editor/new-reference-project.mjs';
 
 type ModelApi = {
   state: (input?: unknown) => unknown;
@@ -190,6 +187,11 @@ type FilePickerWindow = Window &
   };
 type AgentHandler = { invoke(args?: unknown): unknown }['invoke'];
 type TraceApi = Record<string, AgentHandler>;
+const studioAgentTools = createStudioAgentTools({
+  modelTools,
+  creationTools,
+  splineTools,
+});
 type TraceStudioWindow = Window &
   typeof globalThis & {
     traceStudio?: {
@@ -197,43 +199,29 @@ type TraceStudioWindow = Window &
       call: (action: string, args?: unknown) => Promise<unknown>;
     };
   };
-type DragBase = {
-  pointerId: number;
-  button: number;
-  x: number;
-  y: number;
-  base?: Project;
-  origin?: Point;
-  moved?: boolean;
-  collapseNode?: number;
-  path?: string | null;
-  curve?: number;
-  point?: number;
-  add?: boolean;
-  oldPaths?: string[];
-  oldNodes?: number[];
-  rect?: { x: number; y: number; width: number; height: number };
-};
-type DragGesture = DragBase &
-  (
-    | { kind: 'pan'; view: { x: number; y: number; s: number } }
-    | {
-        kind: 'box';
-        origin: Point;
-        add: boolean;
-        oldPaths: string[];
-        oldNodes: number[];
-      }
-    | {
-        kind: 'nodes' | 'point';
-        ids: number[];
-        path: string | null;
-        curve: number;
-        point: number;
-        base: Project;
-        origin: Point;
-      }
-  );
+type DragGesture =
+  | {
+      kind: 'pan';
+      pointerId: number;
+      button: number;
+      x: number;
+      y: number;
+      view: { x: number; y: number; s: number };
+      moved?: boolean;
+    }
+  | {
+      kind: 'box';
+      pointerId: number;
+      button: number;
+      x: number;
+      y: number;
+      origin: Point;
+      add: boolean;
+      oldPaths: string[];
+      oldNodes: number[];
+      moved?: boolean;
+      rect?: { x: number; y: number; width: number; height: number };
+    };
 type GeometryReportItem = {
   name: string;
   gaps: number;
@@ -245,30 +233,14 @@ const errorMessage = (error: unknown) =>
 const currentTime = () => performance.now();
 const projectNameFromPath = (path: string) =>
   path.split(/[\\/]/).filter(Boolean).at(-1) || '工程.spl';
-const dataUrl = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(Error('图片读取结果无效'));
-    reader.onerror = () => reject(reader.error || Error('图片读取失败'));
-    reader.readAsDataURL(blob);
-  });
-const encodeProjectBytes = async (project: Project) => {
-  if (project.image.startsWith('data:')) return encodeProject(project);
-  const response = await fetch(project.image);
-  if (!response.ok) throw Error('工程参考图读取失败');
-  return encodeProject({
-    ...project,
-    image: await dataUrl(await response.blob()),
-  });
-};
-
-export default function StudioApp() {
+export default function StudioApp({ host }: { host: StudioHost }) {
+  if (!host) throw Error('编辑器必须通过 V4 工程宿主启动');
   const [workspace, setWorkspace] = useState('trace');
   const modelApi = useRef<ModelApi>(null);
   const creationApi = useRef<CreationApi>(null);
+  const traceTarget = useRef<ReturnType<
+    NonNullable<CreationApi>['trace_target']
+  > | null>(null);
 
   const [creationView, setCreationView] = useState('flat');
   const [creationSelectionKind, setCreationSelectionKind] = useState<
@@ -277,8 +249,11 @@ export default function StudioApp() {
   const highlightSourceSelection = creationSelectionKind !== 'cell';
   const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
-  const [project, setProject] = useState<Project>(initialTraceProject),
-    pr = useRef(project);
+  const { project, snapshot: studioSnapshot } = useStudioProject(host);
+  const pr = useRef(project);
+  useLayoutEffect(() => {
+    pr.current = project;
+  }, [host, project]);
   const [active, setActive] = useState<string | null>(null),
     ar = useRef(active);
   const [tool, setTool] = useState('select'),
@@ -297,15 +272,24 @@ export default function StudioApp() {
       snap: true,
     }),
     sr = useRef(settings);
-  const [ready, setReady] = useState(false),
+  const [readyImage, setReadyImage] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     busyRef = useRef(false),
     [status, setStatus] = useState('正在分析底图…');
+  // A newly opened document must never inherit the previous image worker's
+  // readiness while its initialization effect is still pending.
+  const ready = readyImage !== null && readyImage === project.image;
   const [preview, setPreview] = useState<Cubic[]>([]),
     [proposed, setProposed] = useState<TracePath | null>(null),
     [opacity, setOpacity] = useState(85),
     [vectorsOnly, setVectorsOnly] = useState(false),
     [fill, setFill] = useState(false);
+  const proposedCommit = useRef<{ id: string; commit: () => TracePath } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!proposed) proposedCommit.current = null;
+  }, [proposed]);
   const [candidates, setCandidates] = useState<TraceCandidate[]>([]),
     cr = useRef(candidates);
   const allCandidates = useRef<CandidatePoint[]>([]);
@@ -345,14 +329,11 @@ export default function StudioApp() {
         { resolve: (value: unknown) => void; reject: (error: Error) => void }
       >(),
     );
-  const history = useRef<Project[]>([]),
-    future = useRef<Project[]>([]),
-    [, setHistoryTick] = useState(0),
-    [historySize, setHistorySize] = useState(0),
-    [futureSize, setFutureSize] = useState(0),
-    [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null),
-    [saved, setSaved] = useState('正在恢复工程…'),
-    [initialized, setInitialized] = useState(false);
+  const [dialog, setDialog] = useState<'export' | 'help' | 'api' | null>(null);
+  const initialized = true;
+  const historySize = Number(studioSnapshot.editorState.canUndo);
+  const futureSize = Number(studioSnapshot.editorState.canRedo);
+  const saved = studioSnapshot.storage.dirty ? '有修改未保存' : '已保存';
   const file = useRef<HTMLInputElement>(null),
     projectFile = useRef<HTMLInputElement>(null),
     space = useRef(false),
@@ -409,11 +390,16 @@ export default function StudioApp() {
     height: number;
   } | null>(null);
   const [gesturing, setGesturing] = useState(false);
-  const lastNodeTap = useRef<{
-    pathId: string;
-    index: number;
-    time: number;
+  const [objectMoveCommit, setObjectMoveCommit] = useState<{
+    project: Project;
+    nodeIds: string[];
+    delta: Point;
   } | null>(null);
+  const [nodeSnap, setNodeSnap] = useState(true),
+    [keepSeams, setKeepSeams] = useState(true),
+    [snapFeedback, setSnapFeedback] = useState<EndpointSnapFeedback | null>(
+      null,
+    );
   const selectNodesNow = (ids: number[]) => {
     nodesRef.current = ids;
     setSelectedNodes(ids);
@@ -435,7 +421,8 @@ export default function StudioApp() {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
-    if (['trace', 'edit'].includes(next)) setCreationView('flat');
+    studioDrag.cancel();
+    if (['trace', 'edit', 'move'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
     if (next !== 'trace') finish();
     setTool(next);
@@ -445,6 +432,9 @@ export default function StudioApp() {
       creationApi.current?.select_paths(ar.current ? [ar.current] : []);
     }
     if (next === 'select') {
+      setSelection(null);
+    }
+    if (next === 'move') {
       setSelection(null);
     }
     if (['trace', 'edit'].includes(next)) creationApi.current?.show_tool();
@@ -460,7 +450,9 @@ export default function StudioApp() {
               ? '点击上色 · 平面中按住扫过多个区域 · 一笔一次撤销'
               : next === 'height'
                 ? '选择局部或整个部件 · 拖动高度柄或输入毫米数值'
-                : '拖动画布平移',
+                : next === 'move'
+                  ? '移动对象 · 拖动部件整体移动 · 右键拖动只平移视图'
+                  : '右键、空格或中键拖动平移视图',
     );
   };
   const clearSelection = () => {
@@ -490,28 +482,42 @@ export default function StudioApp() {
   };
   const setVisible = (ids: string[], visible: boolean) => {
     if (busyRef.current || drag.current) return;
-    transact((p) =>
-      p.paths
-        .filter((p) => ids.includes(p.id))
-        .forEach((p) => (p.visible = visible)),
-    );
+    {
+      const captured = host.getSnapshot();
+      pr.current = captured.runtime
+        .commandPath(
+          { kind: 'set-paths', pathIds: ids, value: { visible } },
+          { project: captured.project },
+        )
+        .commit();
+    }
     if (!visible)
       selectPathsNow(pathsRef.current.filter((id) => !ids.includes(id)));
     setStatus(visible ? '已显示路径 · 可撤销' : '已隐藏路径 · 可撤销');
   };
+  const commitGroup = (request: Record<string, unknown>) => {
+    const captured = host.getSnapshot();
+    const next = captured.runtime
+      .commandGroup(request, { project: captured.project })
+      .commit() as Project;
+    pr.current = next;
+    return next;
+  };
   const groupSelection = () => {
     if (busyRef.current || drag.current) return;
-    const ids = pathsRef.current,
-      id = crypto.randomUUID();
-    transact((p) => {
-      (p.groups ||= []).push({
-        id,
-        name: '分组 ' + ((p.groups?.length || 0) + 1),
-      });
-      p.paths
-        .filter((p) => ids.includes(p.id))
-        .forEach((p) => (p.groupId = id));
-    });
+    const ids = pathsRef.current;
+    {
+      try {
+        commitGroup({
+          kind: 'create-group',
+          name: '分组 ' + ((pr.current.groups?.length || 0) + 1),
+          pathIds: ids,
+        });
+      } catch (error) {
+        setStatus(errorMessage(error));
+        return;
+      }
+    }
     setStatus(
       ids.length
         ? '已将 ' + ids.length + ' 条路径编组 · Ctrl+Z 撤销'
@@ -521,7 +527,15 @@ export default function StudioApp() {
   const deletePaths = () => {
     if (busyRef.current || drag.current || !pathsRef.current.length) return;
     const ids = pathsRef.current;
-    transact((p) => (p.paths = p.paths.filter((p) => !ids.includes(p.id))));
+    {
+      const captured = host.getSnapshot();
+      pr.current = captured.runtime
+        .commandPath(
+          { kind: 'delete-paths', pathIds: ids },
+          { project: captured.project },
+        )
+        .commit();
+    }
     clearSelection();
     setStatus('已删除 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
   };
@@ -549,187 +563,68 @@ export default function StudioApp() {
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
-  const fileHandle = useRef<ProjectFileHandle | null>(null);
-  const projectBinding = useRef<ProjectBinding | null>(null);
-  const writer = useRef(new FileWriter());
-  const backupQueue = useRef(Promise.resolve());
-  const backupSaved = useRef<Project | null>(null);
-  const backupBinding = useRef<ProjectFileHandle | null>(null);
-  const fileSaved = useRef<{
-    binding: ProjectBinding;
-    project: Project;
-  } | null>(null);
-  const [fileName, setFileName] = useState('');
+  const displayedFileName =
+    studioSnapshot.storage.target?.kind === 'web'
+      ? studioSnapshot.storage.target.handle.name
+      : studioSnapshot.storage.target?.kind === 'desktop'
+        ? projectNameFromPath(studioSnapshot.storage.target.path)
+        : studioSnapshot.presentation.fileName || '';
   const [fileBusy, setFileBusy] = useState(false);
   const fileBusyRef = useRef(false);
-  const [bindingVersion, setBindingVersion] = useState(0);
-  const bindFile = (handle: ProjectFileHandle | null) => {
-    fileHandle.current = handle;
-    projectBinding.current = handle
-      ? { kind: 'web', handle, name: handle.name }
-      : null;
-    fileSaved.current = null;
-    setFileName(handle?.name || '');
-    setBindingVersion((v) => v + 1);
-  };
-  const bindDesktopFile = (path: string | null) => {
-    fileHandle.current = null;
-    projectBinding.current = path
-      ? { kind: 'desktop', path, name: projectNameFromPath(path) }
-      : null;
-    fileSaved.current = null;
-    setFileName(path ? projectNameFromPath(path) : '');
-    setBindingVersion((v) => v + 1);
-  };
-  const backupProject = (snapshot: Project, handle = fileHandle.current) => {
-    if (drag.current?.base && snapshot === pr.current)
-      snapshot = drag.current.base;
-    const task = backupQueue.current
-      .catch(() => {})
-      .then(() => workspaceDB('put', { project: snapshot, handle }));
-    backupQueue.current = task;
-    return task.then(() => {
-      backupSaved.current = snapshot;
-      backupBinding.current = handle;
-    });
-  };
-  const writeProjectFile = async (
-    snapshot: Project,
-    handle: ProjectFileHandle,
-  ) => {
-    await writer.current.write(handle, await encodeProjectBytes(snapshot));
-    const binding: ProjectBinding = { kind: 'web', handle, name: handle.name };
-    fileSaved.current = { binding, project: snapshot };
-    if (pr.current === snapshot && fileHandle.current === handle)
-      setSaved('已保存到 ' + handle.name);
-  };
   const saveProject = async (saveAs = false) => {
-    if (fileBusyRef.current || drag.current) {
-      if (drag.current) setStatus('请先完成或取消拖动，再保存工程');
-      return;
-    }
-    fileBusyRef.current = true;
-    setFileBusy(true);
-    try {
-      const snapshot = pr.current;
-      if (isDesktopRuntime()) {
-        let path =
-          !saveAs && projectBinding.current?.kind === 'desktop'
-            ? projectBinding.current.path
-            : null;
-        if (!path)
-          path = await desktopProjectSavePath(fileName || 'Splinelet工程.spl');
-        if (!path) {
-          setStatus('已取消选择保存位置');
-          return;
-        }
-        setSaved('正在写入工程文件…');
-        await desktopWriteProject(path, await encodeProjectBytes(snapshot));
-        if (
-          projectBinding.current?.kind !== 'desktop' ||
-          projectBinding.current.path !== path
-        )
-          bindDesktopFile(path);
-        const binding = projectBinding.current!;
-        fileSaved.current = { binding, project: snapshot };
-        await backupProject(pr.current, null);
-        setSaved(
-          pr.current === snapshot
-            ? '已保存到 ' + binding.name
-            : '有修改未保存 · Ctrl+S 保存工程',
-        );
-        setStatus('已绑定 ' + binding.name + ' · 后续修改按 Ctrl+S 保存');
+    {
+      if (fileBusyRef.current) return;
+      const before = host.getSnapshot();
+      if (before.editorState.previewId) {
+        setStatus('请先完成或取消拖动，再保存工程');
         return;
       }
-      let handle =
-        !saveAs && projectBinding.current?.kind === 'web'
-          ? projectBinding.current.handle
-          : null;
-      if (!handle) {
-        const pickerWindow = window as FilePickerWindow;
-        if (!pickerWindow.showSaveFilePicker) {
-          let backupError: unknown = null;
-          try {
-            await backupProject(snapshot);
-          } catch (error: unknown) {
-            backupError = error;
-          }
-          download(
-            await encodeProjectBytes(snapshot),
-            'Splinelet工程.spl',
-            SPL_MIME,
-          );
-          setSaved(
-            backupError
-              ? '已下载工程文件 · 浏览器草稿失败'
-              : pr.current === snapshot
-                ? '已下载工程文件 · 浏览器草稿已保存'
-                : '已下载工程文件 · 有新修改未保存',
-          );
-          setStatus(
-            backupError
-              ? '当前浏览器不支持直接写文件，已下载 .spl；浏览器草稿失败：' +
-                  errorMessage(backupError)
-              : '当前浏览器不支持直接写文件，已下载 .spl；浏览器草稿仍用于恢复',
-          );
-          return;
-        }
-        handle = await pickerWindow.showSaveFilePicker({
-          suggestedName: fileName.endsWith('.spl')
-            ? fileName
-            : 'Splinelet工程.spl',
-          types: [
-            {
-              description: 'Splinelet工程',
-              accept: { [SPL_MIME]: ['.spl'] },
-            },
-          ],
-        });
-      } else if (
-        (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
-      ) {
-        if (
-          (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted'
-        )
-          throw Error('未获得文件写入权限；请重新保存授权或另存为');
-      }
-      setSaved('正在写入工程文件…');
-      await writeProjectFile(snapshot, handle);
-      if (fileHandle.current !== handle) bindFile(handle);
-      fileSaved.current = {
-        binding: projectBinding.current!,
-        project: snapshot,
-      };
-      let backupError: unknown = null;
+      fileBusyRef.current = true;
+      setFileBusy(true);
       try {
-        await backupProject(pr.current, handle);
-      } catch (error: unknown) {
-        backupError = error;
+        let target = saveAs ? null : before.storage.target;
+        const suggestedName =
+          before.presentation.fileName || 'Splinelet工程.spl';
+        if (!target && isDesktopRuntime()) {
+          const path = await desktopProjectSavePath(suggestedName);
+          if (!path) return;
+          target = { kind: 'desktop', path };
+        } else if (!target) {
+          const pickerWindow = window as FilePickerWindow;
+          if (!pickerWindow.showSaveFilePicker) {
+            download(
+              encodeDocument(before.storage.document, {
+                assets: before.storage.assets,
+              }),
+              suggestedName,
+              SPL_MIME,
+            );
+            setStatus('已下载工程副本 · 浏览器草稿仍用于恢复');
+            return;
+          }
+          const handle = await pickerWindow.showSaveFilePicker({
+            suggestedName,
+            types: [
+              {
+                description: 'Splinelet工程',
+                accept: { [SPL_MIME]: ['.spl'] },
+              },
+            ],
+          });
+          target = { kind: 'web', handle };
+        }
+        if (host.getSnapshot().editorState.epoch !== before.editorState.epoch)
+          throw Error('选择保存位置期间工程已切换，请重新保存');
+        await host.save(target);
+        setStatus('工程已保存');
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError'))
+          setStatus(errorMessage(error));
+      } finally {
+        fileBusyRef.current = false;
+        setFileBusy(false);
       }
-      setSaved(
-        pr.current === snapshot
-          ? '已保存到 ' + handle.name
-          : '有新修改未保存 · Ctrl+S 保存工程',
-      );
-      setStatus(
-        backupError
-          ? '已保存到 ' +
-              handle.name +
-              '，但浏览器草稿失败：' +
-              errorMessage(backupError)
-          : '已绑定 ' + handle.name + ' · 后续修改按 Ctrl+S 保存到此文件',
-      );
-      navigator.storage?.persist?.().catch(() => {});
-    } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        setStatus('已取消选择保存位置');
-        return;
-      }
-      setSaved('文件保存失败 · ' + errorMessage(error));
-      setStatus('文件未写入成功；浏览器备份仍独立保存。可重试保存或另存为。');
-    } finally {
-      fileBusyRef.current = false;
-      setFileBusy(false);
+      return;
     }
   };
   const loadProjectFile = async (
@@ -737,24 +632,46 @@ export default function StudioApp() {
     name: string,
     binding: ProjectBinding | null,
   ) => {
-    const parsed = decodeProject(bytes) as Project;
-    apiRef.current?.load_project({ project: parsed });
-    if (binding?.kind === 'desktop') bindDesktopFile(binding.path);
-    else if (binding?.kind === 'web') bindFile(binding.handle);
-    else if (isDesktopRuntime()) bindDesktopFile(null);
-    else bindFile(null);
-    if (binding)
-      fileSaved.current = { binding: projectBinding.current!, project: parsed };
-    await backupProject(
-      parsed,
-      binding?.kind === 'web' ? binding.handle : null,
-    );
-    setSaved(binding ? '已打开 ' + name : '已导入旧版工程');
-    setStatus(
-      binding
-        ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
-        : '旧版 JSON 已导入 · 保存时将创建 .spl 工程',
-    );
+    {
+      if (
+        busyRef.current ||
+        fileBusyRef.current ||
+        host.getSnapshot().editorState.previewId
+      )
+        throw Error('请先完成当前编辑或保存，再打开工程');
+      const opened = openProject({
+        bytes,
+        target:
+          binding?.kind === 'desktop'
+            ? { kind: 'desktop', path: binding.path }
+            : binding?.kind === 'web'
+              ? { kind: 'web', handle: binding.handle }
+              : null,
+      });
+      const next = host.open(opened, {
+        fileName: name,
+        blenderExtrusionMM: host.getSnapshot().presentation.blenderExtrusionMM,
+        ...(Object.keys(opened.document.references).length === 0
+          ? { frame: host.getSnapshot().presentation.frame }
+          : {}),
+      });
+      pr.current = next.project as Project;
+      finish();
+      setProposed(null);
+      setPendingRefit(null);
+      setActiveNow(null);
+      creationApi.current?.clear();
+      setSelection(null);
+      fitView();
+      setStatus(
+        opened.kind === 'legacy'
+          ? '旧工程已导入 · 保存时将创建 V4 工程副本'
+          : binding
+            ? '已打开原文件 · 修改后 Ctrl+S 保存到同一文件'
+            : '已打开工程副本 · Ctrl+S 选择保存位置',
+      );
+      return { paths: next.project.paths.length };
+    }
   };
   const openProjectFile = async () => {
     if (busyRef.current || fileBusyRef.current) return;
@@ -806,23 +723,14 @@ export default function StudioApp() {
         setStatus('打开工程失败：' + errorMessage(error));
     }
   };
-  const setDoc = (p: Project, record = true) => {
-    if (record) {
-      history.current.push(cloneTraceValue(pr.current));
-      if (history.current.length > 80) history.current.shift();
-      future.current = [];
-      setHistorySize(history.current.length);
-      setFutureSize(0);
-    }
-    pr.current = p;
-    setProject(p);
-    setHistoryTick((t) => t + 1);
-  };
-  const transact = (fn: (p: Project) => void) => {
-    const p = cloneTraceValue(pr.current);
-    fn(p);
-    setDoc(p);
-  };
+  const nodeActions = () =>
+    createV4NodeActions({
+      runtime: host.getSnapshot().runtime,
+      project: host.getSnapshot().project,
+      onCommit: (next: Project) => {
+        pr.current = next;
+      },
+    });
   const setActiveNow = (id: string | null) => {
     if (ar.current !== id) {
       setSelection(null);
@@ -882,125 +790,25 @@ export default function StudioApp() {
       worker.current.postMessage({ ...args, id });
     });
   useEffect(() => {
-    let alive = true;
-    const startingProject = pr.current;
-    workspaceDB('get')
-      .then(
-        async (
-          session:
-            | { project?: unknown; handle?: ProjectFileHandle }
-            | undefined,
-        ) => {
-          let v = session?.project;
-          if (!v) {
-            try {
-              const r = await fetch('/sandrone-example.spl');
-              if (r.ok) {
-                v = decodeProject(new Uint8Array(await r.arrayBuffer()));
-              }
-            } catch {}
-          }
-          // A late restore must never replace an import or edit made meanwhile.
-          if (v && alive && pr.current === startingProject) {
-            try {
-              setDoc(validateProject(v), false);
-              if (session?.handle) {
-                bindFile(session.handle);
-                fileSaved.current = null;
-              }
-              setStatus('已恢复本地工程');
-            } catch {
-              setStatus('本地工程不可用，已载入默认示例');
-            }
-          }
-        },
-      )
-      .catch(() => setSaved('浏览器草稿不可用，请保存工程'))
-      .finally(() => {
-        if (alive) setInitialized(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  useEffect(() => {
     if (!initialized || gesturing) return;
-    const handle = fileHandle.current;
-    const binding = projectBinding.current;
-    setSaved(
-      binding
-        ? fileSaved.current?.binding === binding &&
-          fileSaved.current?.project === project
-          ? '已保存到 ' + binding.name
-          : '有修改未保存 · 正在保存浏览器草稿…'
-        : '正在保存浏览器草稿…',
-    );
-    const backupTimer = setTimeout(() => {
-      backupProject(project, handle)
-        .then(() => {
-          if (pr.current !== project) return;
-          const currentBinding = projectBinding.current;
-          if (
-            currentBinding &&
-            fileSaved.current?.binding === currentBinding &&
-            fileSaved.current?.project === project
-          )
-            setSaved('已保存到 ' + currentBinding.name);
-          else if (currentBinding)
-            setSaved(
-              '有修改未保存 · 浏览器草稿已保存 · Ctrl+S 保存到 ' +
-                currentBinding.name,
-            );
-          else setSaved('浏览器草稿已保存 · 未保存工程文件');
-        })
-        .catch((error: unknown) => {
-          setSaved('浏览器备份失败');
-          setStatus(
-            '浏览器备份失败：' + errorMessage(error) + '；请保存到工程文件',
-          );
-        });
+    if (studioSnapshot.editorState.previewId) return;
+    const timer = setTimeout(() => {
+      host.autosave().catch((error) => setStatus(errorMessage(error)));
     }, 200);
-    return () => {
-      clearTimeout(backupTimer);
-    };
-  }, [project, initialized, bindingVersion, gesturing]);
-  useEffect(() => {
-    const flush = () => {
-      if (
-        initialized &&
-        (backupSaved.current !== pr.current ||
-          backupBinding.current !== fileHandle.current)
-      )
-        backupProject(pr.current).catch(() => {});
-    };
-    const visibility = () => {
-      if (document.visibilityState === 'hidden') flush();
-    };
-    const leave = (e: BeforeUnloadEvent) => {
-      if (
-        initialized &&
-        (backupSaved.current !== pr.current ||
-          backupBinding.current !== fileHandle.current)
-      ) {
-        flush();
-        e.preventDefault();
-      }
-    };
-    document.addEventListener('visibilitychange', visibility);
-    window.addEventListener('pagehide', flush);
-    window.addEventListener('beforeunload', leave);
-    return () => {
-      document.removeEventListener('visibilitychange', visibility);
-      window.removeEventListener('pagehide', flush);
-      window.removeEventListener('beforeunload', leave);
-    };
-  }, [initialized]);
+    return () => clearTimeout(timer);
+  }, [
+    project,
+    initialized,
+    gesturing,
+    host,
+    studioSnapshot.editorState.previewId,
+  ]);
   useEffect(() => {
     if (!initialized) return;
     let alive = true;
     queueMicrotask(() => {
       if (!alive) return;
-      setReady(false);
+      setReadyImage(null);
       setPreview([]);
       setCandidates([]);
       setShowCandidates(false);
@@ -1049,7 +857,7 @@ export default function StudioApp() {
           x: p.x / s,
           y: p.y / s,
         }));
-        setReady(true);
+        setReadyImage(project.image);
         setStatus('底图就绪');
         fitViewForEffect();
       } catch (error: unknown) {
@@ -1078,48 +886,48 @@ export default function StudioApp() {
     return () => observer.disconnect();
   }, []);
   const undo = () => {
-    if (busyRef.current || drag.current) return;
-    lastNodeTap.current = null;
-    const p = history.current.pop();
-    if (!p) return;
-    future.current.push(cloneTraceValue(pr.current));
-    setHistorySize(history.current.length);
-    setFutureSize(future.current.length);
-    setDoc(p, false);
-    setPreview([]);
-    setProposed(null);
-    previewToken.current++;
-    if (!p.paths.some((x) => x.id === ar.current)) {
-      setActiveNow(p.paths.at(-1)?.id || null);
-      setDrawing(false);
+    {
+      if (busyRef.current || drag.current) return;
+      studioDrag.cancel();
+      host.undo();
+      const p = host.getSnapshot().project as Project;
+      pr.current = p;
+      setPreview([]);
+      setProposed(null);
+      previewToken.current++;
+      if (!p.paths.some((x) => x.id === ar.current)) {
+        setActiveNow(p.paths.at(-1)?.id || null);
+        setDrawing(false);
+      }
+      setSelection(null);
+      setMergeSource(null);
+      if (p.paths.find((x) => x.id === ar.current)?.closed) finish();
+      selectPathsNow(
+        pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
+      );
+      setStatus('已撤销');
+      return;
     }
-    setSelection(null);
-    setMergeSource(null);
-    if (p.paths.find((x) => x.id === ar.current)?.closed) finish();
-    selectPathsNow(
-      pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
-    );
-    setStatus('已撤销');
   };
   const redo = () => {
-    if (busyRef.current || drag.current) return;
-    lastNodeTap.current = null;
-    const p = future.current.pop();
-    if (!p) return;
-    history.current.push(cloneTraceValue(pr.current));
-    setHistorySize(history.current.length);
-    setFutureSize(future.current.length);
-    setDoc(p, false);
-    setSelection(null);
-    setMergeSource(null);
-    if (!p.paths.some((x) => x.id === ar.current && !x.closed)) finish();
-    selectPathsNow(
-      pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
-    );
-    setStatus('已重做');
+    {
+      if (busyRef.current || drag.current) return;
+      studioDrag.cancel();
+      host.redo();
+      const p = host.getSnapshot().project as Project;
+      pr.current = p;
+      setSelection(null);
+      setMergeSource(null);
+      if (!p.paths.some((x) => x.id === ar.current && !x.closed)) finish();
+      selectPathsNow(
+        pathsRef.current.filter((id) => p.paths.some((v) => v.id === id)),
+      );
+      setStatus('已重做');
+      return;
+    }
   };
   const finish = () => {
-    lastNodeTap.current = null;
+    traceTarget.current = null;
     setMergeSource(null);
     setDrawing(false);
     drawingRef.current = false;
@@ -1128,12 +936,34 @@ export default function StudioApp() {
     setStatus('路径已结束 · 可编辑节点，或新建下一条路径');
   };
   const begin = () => {
+    const target = creationApi.current?.trace_target() || null;
     finish();
+    traceTarget.current = target;
     setTraceEnd('end');
     setActiveNow(null);
     setTool('trace');
     setSelection(null);
     setStatus('点击新的轮廓起点');
+  };
+  const finishDrawing = () => {
+    if (busyRef.current) return '请先完成当前描线';
+    let issue: string | null = null;
+    if (host && drawingRef.current && ar.current) {
+      try {
+        const captured = host.getSnapshot();
+        pr.current = captured.runtime
+          .commandPath(
+            { kind: 'finish-path', pathId: ar.current },
+            { project: captured.project },
+          )
+          .commit() as Project;
+      } catch (error) {
+        issue = `${errorMessage(error)} · 线条已保留，可从端点续画`;
+      }
+    }
+    finish();
+    if (issue) setStatus(issue);
+    return issue;
   };
   const resumePath = (pathId: string, end: 'start' | 'end') => {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
@@ -1243,30 +1073,32 @@ export default function StudioApp() {
       validPoint(p);
       const config = { ...sr.current, ...options };
       const current = pr.current.paths.find((p) => p.id === ar.current);
+      const captured = host.getSnapshot();
       if (!drawingRef.current || !current || current.closed) {
         setTraceEnd('end');
+        const target =
+          traceTarget.current || creationApi.current?.trace_target();
         const start = await snapped(p, config);
-        const path: TracePath = {
-          id: crypto.randomUUID(),
-          name: `路径 ${pr.current.paths.length + 1}`,
-          color: palette[pr.current.paths.length % palette.length],
-          start,
-          anchors: [start],
-          curves: [],
-          closed: false,
-          visible: true,
-          quality: 1,
-          fitError: 0,
-          fitting: 'single',
-        };
-        const creation = creationApi.current?.new_path(path);
-        transact((p) => {
-          p.paths.push(path);
-          if (creation) {
-            p.creation = creation;
-            p.version = 3;
-          }
-        });
+        const beforeIds = new Set(
+          captured.project.paths.map((path: TracePath) => path.id),
+        );
+        const next = captured.runtime
+          .commandPath(
+            {
+              kind: 'start-path',
+              pixelPoint: start,
+              ...(target ? { role: target.role, targets: target.targets } : {}),
+              ...(target?.ownerNodeId
+                ? { ownerNodeId: target.ownerNodeId }
+                : {}),
+            },
+            { project: captured.project },
+          )
+          .commit() as Project;
+        const path = next.paths.find((path) => !beforeIds.has(path.id));
+        if (!path) throw Error('新线条未出现在源视图');
+        pr.current = next;
+        traceTarget.current = null;
         setActiveNow(path.id);
         setDrawing(true);
         drawingRef.current = true;
@@ -1277,10 +1109,18 @@ export default function StudioApp() {
       const a = splineEndpoint(current, end);
       if (dist(a, p) < 2) return a;
       const r = await traceSpan(a, p, config);
-      transact((p) => {
-        const index = p.paths.findIndex((v) => v.id === current.id);
-        p.paths[index] = extendSpline(p.paths[index], end, r);
-      });
+      if (r.curves.length !== 1) throw Error('续画需要单段拟合结果');
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'extend-path',
+            pathId: current.id,
+            end,
+            pixelCubic: r.curves[0],
+          },
+          { project: captured.project },
+        )
+        .commit() as Project;
       setStatus(
         config.mode === 'manual'
           ? '已直连 · 未吸附、未拟合 · 可拖动控制柄调整'
@@ -1298,16 +1138,25 @@ export default function StudioApp() {
       if (!path || path.curves.length < 1) throw Error('至少先绘制一段曲线');
       if (path.closed) return;
       const end = drawingRef.current ? drawingEndRef.current : 'end';
+      const captured = host.getSnapshot();
       const r = await traceSpan(
         splineEndpoint(path, end),
         splineEndpoint(path, end === 'start' ? 'end' : 'start'),
         options,
         false,
       );
-      transact((p) => {
-        const index = p.paths.findIndex((x) => x.id === path.id);
-        p.paths[index] = extendSpline(p.paths[index], end, r, true);
-      });
+      if (r.curves.length !== 1) throw Error('闭合需要单段拟合结果');
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'close-path',
+            pathId: path.id,
+            end,
+            pixelCubic: r.curves[0],
+          },
+          { project: captured.project },
+        )
+        .commit() as Project;
       finish();
       setStatus(
         r.fitError > sr.current.tolerance
@@ -1333,32 +1182,28 @@ export default function StudioApp() {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
     const original = pr.current.paths.find((p) => p.id === pathId);
     if (!original) throw Error('路径不存在');
-    const result = removeNode(original, nodeIndex, sr.current.tolerance);
-    transact((p) => {
-      const index = p.paths.findIndex((q) => q.id === pathId);
-      if (result.path) p.paths[index] = result.path;
-      else p.paths.splice(index, 1);
-    });
+    const result = nodeActions().deleteNodes(
+      pathId,
+      [nodeIndex],
+      sr.current.tolerance,
+    );
+    const next = host.getSnapshot().project as Project;
+    const path = next.paths.find((item) => item.id === pathId);
     finish();
-    setActiveNow(result.path ? pathId : null);
+    setActiveNow(path ? pathId : null);
     setTool('edit');
     setSelection(null);
     setStatus(
-      !result.path
+      result.removed
         ? '最后一个节点已删除 · 空路径已移除 · Ctrl+Z 撤销'
-        : result.merged
-          ? '节点已删除 · 相邻两段合成一段 · 形状变化约 ' +
-            result.fitError.toFixed(1) +
-            ' px · Ctrl+Z 撤销'
-          : '端点已删除 · 其余节点保持不变 · Ctrl+Z 撤销',
+        : '节点已删除 · 相邻节点直接连接 · Ctrl+Z 撤销',
     );
     return {
       pathId,
       removedNode: nodeIndex,
-      nodes: result.path ? pathNodes(result.path).length : 0,
-      segments: result.path?.curves.length || 0,
-      merged: result.merged,
-      shapeError: result.fitError,
+      nodes: path ? pathNodes(path).length : 0,
+      segments: path?.curves.length || 0,
+      removed: result.removed,
     };
   };
   const deleteSelection = () => {
@@ -1374,15 +1219,13 @@ export default function StudioApp() {
       return;
     }
     try {
-      const result = deleteNodes(path, ids, sr.current.tolerance);
-      transact(
-        (p) =>
-          (p.paths = result
-            ? p.paths.map((p) => (p.id === path.id ? result : p))
-            : p.paths.filter((p) => p.id !== path.id)),
+      const result = nodeActions().deleteNodes(
+        path.id,
+        ids,
+        sr.current.tolerance,
       );
       setSelection(null);
-      if (!result) selectPathsNow([]);
+      if (result.removed) selectPathsNow([]);
       setStatus(
         '已删除 ' + ids.length + ' 个节点 · 相邻节点直接连接 · Ctrl+Z 撤销',
       );
@@ -1406,16 +1249,7 @@ export default function StudioApp() {
           : (path?.curves.length || 0) - 1);
     if (!path || !Number.isInteger(index) || !path.curves[index])
       throw Error('请先绘制一段曲线，或选中要调整的节点/控制柄');
-    transact((p) => {
-      const q = p.paths.find((p) => p.id === pathId)!;
-      const c = q.curves[index];
-      q.curves[index] = straightCubic(c[0], c[3]) as Cubic;
-      q.nodeModes = nodeModes(q);
-      q.nodeModes![index] = 'corner';
-      q.nodeModes![q.closed ? (index + 1) % q.curves.length : index + 1] =
-        'corner';
-      delete q.fitError;
-    });
+    nodeActions().straighten(pathId, index);
     setPreview([]);
     previewToken.current++;
     setStatus('第 ' + (index + 1) + ' 段已改为直连 · 端点不动 · Ctrl+Z 撤销');
@@ -1456,11 +1290,21 @@ export default function StudioApp() {
     const a = pr.current.paths.find((p) => p.id === args.firstId),
       b = pr.current.paths.find((p) => p.id === args.secondId);
     const result = mergeSplines(a, args.firstEnd, b, args.secondEnd);
-    transact((p) => {
-      p.paths = p.paths
-        .filter((p) => p.id !== args.secondId)
-        .map((p) => (p.id === args.firstId ? result.path : p));
-    });
+    {
+      const captured = host.getSnapshot();
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'merge-paths',
+            firstPathId: args.firstId,
+            secondPathId: args.secondId,
+            firstEnd: args.firstEnd,
+            secondEnd: args.secondEnd,
+          },
+          { project: captured.project },
+        )
+        .commit();
+    }
     finish();
     setTool('edit');
     setActiveNow(result.path.id);
@@ -1485,24 +1329,60 @@ export default function StudioApp() {
     ) || { x: 0, y: 0 };
   const inside = (p: Point) =>
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
+  const studioDrag = useSourceDrag({
+    runtime: studioSnapshot.runtime,
+    project,
+    pathId: active ?? '',
+    nodes: selectedNodes,
+    disabled: busy || !!mergeSource,
+    isPanning: () => space.current || tool === 'pan',
+    getCaptureTarget: () => stage.current,
+    toPoint: coordinate,
+    onSelectionChange: (nodes, selection) => {
+      selectNodesNow(nodes);
+      setPointSelection(selection);
+    },
+    onError: (error) => setStatus(errorMessage(error)),
+    onActiveChange: setGesturing,
+    onObjectCommit: setObjectMoveCommit,
+    snapEnabled: settings.snap,
+    scale: view.s,
+    onSnapFeedback: (feedback) =>
+      setSnapFeedback(feedback as EndpointSnapFeedback | null),
+  });
   const cancelGesture = () => {
+    studioDrag.cancel();
     const g = drag.current;
     if (!g) return;
-    if (g.base) {
-      pr.current = g.base;
-      setProject(g.base);
-    }
     if (g.kind === 'pan') setView(g.view);
     drag.current = null;
     if (stage.current?.hasPointerCapture(g.pointerId))
       stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
+    setSnapFeedback(null);
     setStatus('已取消拖动，恢复原位置');
   };
+  const handleCanvasContextMenu = useEffectEvent((event: MouseEvent) => {
+    event.preventDefault();
+    // Capture targets the stage, including drags begun on portal-rendered faces.
+    // Some browsers dispatch contextmenu before the right pointer is released.
+    if (studioDrag.isActive() || (drag.current && drag.current.button !== 2))
+      cancelGesture();
+  });
+  useEffect(() => {
+    if (!stageElement) return;
+    const contextMenu = (event: MouseEvent) => handleCanvasContextMenu(event);
+    stageElement.addEventListener('contextmenu', contextMenu);
+    return () => stageElement.removeEventListener('contextmenu', contextMenu);
+  }, [stageElement]);
   const selectCanvasPath = (e: React.PointerEvent, id: string) => {
     if (drag.current) return;
-    if (space.current || e.button === 1 || tool === 'pan') return;
+    if (space.current || e.button !== 0 || tool === 'pan') return;
+    if (tool === 'move') {
+      startObjectDrag(e, { pathId: id });
+      return;
+    }
     if (
       !['select', 'edit'].includes(tool) ||
       e.button !== 0 ||
@@ -1531,17 +1411,35 @@ export default function StudioApp() {
     creationApi.current?.select_paths(ids);
     setStatus('已选择线条 · 按 A 编辑节点 · 选择工具不会移动形状');
   };
+  const startObjectDrag = (
+    e: React.PointerEvent,
+    target: { pathId?: string; objectId?: string },
+  ) => {
+    if (drag.current || busyRef.current || tool !== 'move' || e.button !== 0)
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    stage.current?.focus({ preventScroll: true });
+    const toggle = e.shiftKey || e.ctrlKey || e.metaKey;
+    const selected = creationApi.current?.prepare_move({ ...target, toggle });
+    if (!selected?.nodeIds.length || toggle) return;
+    if (!selected.canDrag) {
+      setStatus('已选中 ' + selected.label + ' · 再次按住拖动可整体移动');
+      return;
+    }
+    studioDrag.onObjectPointerDown(e, selected.nodeIds, selected.pathIds);
+  };
   const pointerDown = (e: React.PointerEvent) => {
-    if (drag.current) return;
+    if (drag.current || studioDrag.isActive()) return;
     if (
-      e.button === 2 ||
-      (e.target as HTMLElement).closest?.('button,input,select')
+      (e.target as HTMLElement).closest?.('button,input,select') &&
+      (e.button === 0 || !(e.target as HTMLElement).closest('.drawing-canvas'))
     )
       return;
     updateModifiers(e);
     stage.current?.focus({ preventScroll: true });
     const p = coordinate(e);
-    if (tool === 'pan' || space.current || e.button === 1) {
+    if (tool === 'pan' || space.current || e.button === 1 || e.button === 2) {
       e.preventDefault();
       drag.current = {
         kind: 'pan',
@@ -1550,11 +1448,16 @@ export default function StudioApp() {
         x: e.clientX,
         y: e.clientY,
         view: vr.current,
+        moved: false,
       };
       stage.current?.setPointerCapture(e.pointerId);
       return;
     }
     if (busyRef.current || e.button !== 0 || mergeSource) return;
+    if (tool === 'move') {
+      setStatus('拖动部件的面或源线移动对象 · 空白处右键拖动平移视图');
+      return;
+    }
     if (['paint', 'height'].includes(tool)) {
       creationApi.current?.clear();
       return;
@@ -1587,7 +1490,8 @@ export default function StudioApp() {
     if (drag.current) {
       if (drag.current.pointerId !== e.pointerId) return;
       // A missed release must never turn later hovering into an edit.
-      const buttonMask = drag.current.button === 1 ? 4 : 1;
+      const buttonMask =
+        drag.current.button === 2 ? 2 : drag.current.button === 1 ? 4 : 1;
       if (!(e.buttons & buttonMask)) {
         cancelGesture();
         return;
@@ -1600,6 +1504,10 @@ export default function StudioApp() {
     if (drag.current) {
       const g = drag.current;
       if (g.kind === 'pan') {
+        if (!g.moved) {
+          if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < 4) return;
+          g.moved = true;
+        }
         setView({
           ...g.view,
           x: g.view.x + e.clientX - g.x,
@@ -1621,46 +1529,6 @@ export default function StudioApp() {
         setMarquee(g.rect);
         return;
       }
-      const q: Project = {
-        ...g.base,
-        paths: g.base.paths.map((path: TracePath) =>
-          path.id === g.path ? cloneTraceValue(path) : path,
-        ),
-      };
-      let dx = p.x - g.origin.x,
-        dy = p.y - g.origin.y;
-      if (e.shiftKey) {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-        else dx = 0;
-      }
-      {
-        const path = q.paths.find((p) => p.id === g.path);
-        if (!path) return;
-        if (g.kind === 'nodes') translateNodes(path, g.ids, dx, dy);
-        else {
-          const originalPath = g.base.paths.find(
-            (candidate: TracePath) => candidate.id === g.path,
-          );
-          const original = originalPath?.curves[g.curve]?.[g.point];
-          if (!original) return;
-          moveHandle(path, g.curve, g.point, {
-            x: original.x + dx,
-            y: original.y + dy,
-          });
-          path.anchors = pathNodes(path);
-          delete path.fitError;
-        }
-      }
-      pr.current = q;
-      setProject(q);
-      setStatus(
-        '移动 X ' +
-          dx.toFixed(1) +
-          ' / Y ' +
-          dy.toFixed(1) +
-          ' px · Shift 限制方向 · Esc 取消',
-      );
-      return;
     }
     if (
       tool !== 'trace' ||
@@ -1719,13 +1587,14 @@ export default function StudioApp() {
   useEffect(() => {
     if (tool !== 'edit') queueMicrotask(() => setMergeSource(null));
   }, [tool]);
+  const mergePathsForEffect = useEffectEvent(mergePaths);
   useEffect(() => {
     if (!mergeTarget) return;
     queueMicrotask(() => {
       setMergeTarget(null);
       if (!mergeSource) return;
       try {
-        mergePaths({
+        mergePathsForEffect({
           firstId: mergeSource.pathId,
           firstEnd: mergeSource.end,
           secondId: mergeTarget.pathId,
@@ -1744,33 +1613,14 @@ export default function StudioApp() {
       stage.current.releasePointerCapture(g.pointerId);
     setMarquee(null);
     setGesturing(false);
-    if (!g.moved && g.collapseNode !== undefined) {
-      const path = pr.current.paths.find((p) => p.id === g.path);
-      if (path) setSelection(nodeSelection(path, g.collapseNode));
-    }
-    // Pointer capture retargets native click/dblclick to the stage. Recognize
-    // two completed, unmoved endpoint taps here, after releasing the gesture.
-    if (g.kind === 'nodes' && !g.moved) {
-      const path = pr.current.paths.find((p) => p.id === g.path);
-      const index = selectedNode(path, { curve: g.curve, point: g.point });
-      const previous = lastNodeTap.current;
-      lastNodeTap.current =
-        path && index !== null
-          ? { pathId: path.id, index, time: currentTime() }
-          : null;
-      if (
-        path &&
-        !path.closed &&
-        index !== null &&
-        [0, path.curves.length].includes(index) &&
-        previous?.pathId === path.id &&
-        previous.index === index &&
-        currentTime() - previous.time < 400
-      ) {
-        resumeSelected(index === 0 ? 'start' : 'end');
-        return;
+    setSnapFeedback(null);
+    if (g.kind === 'pan') {
+      if (g.button === 2 && !g.moved) {
+        if (tool === 'trace') finishDrawing();
+        else if (mergeSource) setMergeSource(null);
       }
-    } else lastNodeTap.current = null;
+      return;
+    }
     if (g.kind === 'box') {
       if (tool === 'select') {
         const hits = g.moved
@@ -1807,73 +1657,13 @@ export default function StudioApp() {
       }
       return;
     }
-    if (g.moved && g.base) {
-      if (JSON.stringify(pr.current.paths) !== JSON.stringify(g.base.paths)) {
-        history.current.push(g.base);
-        if (history.current.length > 80) history.current.shift();
-        future.current = [];
-        setHistorySize(history.current.length);
-        setFutureSize(0);
-        setHistoryTick((t) => t + 1);
-      }
-      setStatus(
-        (g.kind === 'nodes' ? '节点' : '控制柄') + '已移动 · Ctrl+Z 撤销',
-      );
-    }
   };
   const startPointDrag = (
     e: React.PointerEvent,
     curve: number,
     point: number,
   ) => {
-    if (drag.current) return;
-    if (space.current || e.button === 1 || tool === 'pan') return;
-    e.stopPropagation();
-    if (tool !== 'edit' || busyRef.current || e.button !== 0 || mergeSource)
-      return;
-    e.preventDefault();
-    stage.current?.focus({ preventScroll: true });
-    const path = pr.current.paths.find((p) => p.id === ar.current);
-    if (!path) return;
-    const index = selectedNode(path, { curve, point });
-    let ids: number[] = [];
-    if (index !== null) {
-      const modified = e.shiftKey || e.ctrlKey || e.metaKey;
-      ids = modified
-        ? (pickSelection(nodesRef.current as never, index as never, [], {
-            toggle: true,
-          }) as unknown as number[])
-        : nodesRef.current.includes(index)
-          ? nodesRef.current
-          : [index];
-      setSelection(
-        ids.length
-          ? nodeSelection(path, ids.includes(index) ? index : ids.at(-1))
-          : null,
-      );
-      selectNodesNow(ids);
-      if (modified) {
-        lastNodeTap.current = null;
-        return;
-      }
-    } else setSelection({ curve, point });
-    drag.current = {
-      kind: index === null ? 'point' : 'nodes',
-      pointerId: e.pointerId,
-      button: e.button,
-      path: ar.current,
-      ids,
-      curve,
-      point,
-      x: e.clientX,
-      y: e.clientY,
-      origin: coordinate(e),
-      base: pr.current,
-      moved: false,
-      ...(index !== null && ids.length > 1 ? { collapseNode: index } : {}),
-    };
-    setGesturing(true);
-    stage.current?.setPointerCapture(e.pointerId);
+    if (tool === 'edit') studioDrag.onPointPointerDown(e, curve, point);
   };
   const splitAt = (e: React.MouseEvent, pathId: string) => {
     e.stopPropagation();
@@ -1894,23 +1684,12 @@ export default function StudioApp() {
         if (distance < best.distance) best = { distance, i, t };
       }
     });
-    transact((q) => {
-      const a = q.paths.find((x) => x.id === pathId)!;
-      const modes = nodeModes(a);
-      if (modes[best.i] === 'symmetric') modes[best.i] = 'smooth';
-      const nextNode = a.closed ? (best.i + 1) % a.curves.length : best.i + 1;
-      if (modes[nextNode] === 'symmetric') modes[nextNode] = 'smooth';
-      modes.splice(best.i + 1, 0, 'smooth');
-      a.curves.splice(
-        best.i,
-        1,
-        ...(splitCubic(a.curves[best.i], best.t) as Cubic[]),
-      );
-      a.nodeModes = modes;
-      enforceContinuity(a);
-      if (a.fitting === 'single')
-        a.anchors = [a.start, ...a.curves.map((c) => c[3])];
-    });
+    try {
+      nodeActions().splitSpan(pathId, best.i, best.t);
+    } catch (error) {
+      setStatus(errorMessage(error));
+      return;
+    }
     setActiveNow(pathId);
     setSelection({ curve: best.i, point: 3 });
     setStatus('已精确拆分，形状保持不变；受影响的对称节点改为平滑连接');
@@ -1944,6 +1723,8 @@ export default function StudioApp() {
         !((e.ctrlKey || e.metaKey) && ['z', 's'].includes(e.key.toLowerCase()))
       )
         return;
+      if (e.defaultPrevented) return;
+      studioDrag.onKeyDown(e);
       if (e.defaultPrevented) return;
       updateModifiers(e);
       // Select menus have no text-edit undo stack. Keep document undo/redo
@@ -2011,14 +1792,14 @@ export default function StudioApp() {
         } else groupSelection();
       } else if (e.ctrlKey || e.metaKey || e.altKey) return;
       else if (e.key === 'Enter') {
-        if (tool === 'trace') finish();
+        if (tool === 'trace') finishDrawing();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         if (mergeSource) {
           setMergeSource(null);
           setStatus('已取消合并');
         } else if (drawingRef.current) {
-          finish();
+          finishDrawing();
         } else if (proposed) {
           setProposed(null);
         } else if (selection || nodesRef.current.length) {
@@ -2028,7 +1809,7 @@ export default function StudioApp() {
       } else if (e.key.toLowerCase() === 'p') chooseTool('trace');
       else if (e.key.toLowerCase() === 'v') chooseTool('select');
       else if (e.key.toLowerCase() === 'a') chooseTool('edit');
-      else if (e.key.toLowerCase() === 'h') chooseTool('pan');
+      else if (e.key.toLowerCase() === 'h') chooseTool('move');
       else if (e.key.toLowerCase() === 'e' && tool === 'edit') {
         const path = pr.current.paths.find((p) => p.id === ar.current);
         const index =
@@ -2094,6 +1875,8 @@ export default function StudioApp() {
     if (!/^image\/(png|jpeg|webp)$/.test(f.type))
       throw Error('请导入 PNG、JPG 或 WebP 图片');
     if (f.size > 30 * 1024 * 1024) throw Error('图片不能超过 30 MB');
+    const startingState = host.getSnapshot().editorState;
+    if (startingState?.previewId) throw Error('请先完成或取消拖动，再新建工程');
     const data = await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result as string);
@@ -2119,22 +1902,41 @@ export default function StudioApp() {
       c.getContext('2d')!.drawImage(img, 0, 0, w, h);
       src = c.toDataURL('image/png');
     }
-    finish();
-    setActiveNow(null);
-    bindFile(null);
-    setDoc({
-      ...initialTraceProject,
-      image: src,
-      imageName: f.name,
-      width: w,
-      height: h,
-    });
-    setStatus('正在分析新底图…');
+    {
+      const image = await fetch(src);
+      const bytes = new Uint8Array(await image.arrayBuffer());
+      const current = host.getSnapshot().editorState;
+      if (
+        current.epoch !== startingState.epoch ||
+        current.revision !== startingState.revision ||
+        current.previewId
+      )
+        throw Error('读取图片期间工程已改变，请重新新建工程');
+      const opened = createReferenceProject({
+        bytes,
+        mediaType: image.headers.get('content-type'),
+        name: f.name,
+        width: w,
+        height: h,
+      });
+      const next = host.open(opened, {
+        fileName: null,
+        blenderExtrusionMM: host.getSnapshot().presentation.blenderExtrusionMM,
+      });
+      pr.current = next.project as Project;
+      finish();
+      setActiveNow(null);
+      setProposed(null);
+      setPendingRefit(null);
+      creationApi.current?.clear();
+      setStatus('正在分析新底图…');
+      return;
+    }
   };
   const exportFile = async (format: 'svg' | 'blender' | 'json') => {
     const p = pr.current;
     if (format === 'json') {
-      download(await encodeProjectBytes(p), 'Splinelet工程.spl', SPL_MIME);
+      download(host.exportBytes(), 'Splinelet工程.spl', SPL_MIME);
       setStatus('.spl 工程已导出，包含底图和所有编辑数据');
       return;
     }
@@ -2197,6 +1999,7 @@ export default function StudioApp() {
     args: import('@/hooks/trace-agent-contract').AgentCreatePathArgs,
   ) =>
     lock(async () => {
+      const captured = host.getSnapshot();
       if (
         !Array.isArray(args.points) ||
         args.points.length < 2 ||
@@ -2259,7 +2062,28 @@ export default function StudioApp() {
         a = r.end;
       }
       if (!path.curves.length) throw Error('锚点不能全部重合');
+      const plan = captured.runtime.commandPath(
+        {
+          kind: 'draw-path',
+          pixelCubics: path.curves,
+          closed: path.closed,
+          name: path.name,
+        },
+        { project: captured.project },
+      );
+      const commit = () => {
+        const beforeIds = new Set(
+          captured.project.paths.map((item: TracePath) => item.id),
+        );
+        const next: Project = plan.commit();
+        pr.current = next;
+        const added = next.paths.find((item) => !beforeIds.has(item.id));
+        if (!added) throw Error('新增源路径无法显示');
+        return added;
+      };
+      let createdId = path.id;
       if (args.preview) {
+        proposedCommit.current = { id: path.id, commit };
         setProposed(path);
         setStatus(
           `候选路径已生成 · ${path.curves.length} 段曲线` +
@@ -2268,8 +2092,8 @@ export default function StudioApp() {
               : '，检查后接受'),
         );
       } else {
-        transact((p) => p.paths.push(path));
-        setActiveNow(path.id);
+        createdId = commit().id;
+        setActiveNow(createdId);
         finish();
         setStatus(
           `已创建「${path.name}」· ${path.curves.length} 段曲线` +
@@ -2279,7 +2103,7 @@ export default function StudioApp() {
         );
       }
       return {
-        id: path.id,
+        id: createdId,
         name: path.name,
         segments: path.curves.length,
         quality: path.quality,
@@ -2306,14 +2130,7 @@ export default function StudioApp() {
     mode: string;
   }) => {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
-    const original = pr.current.paths.find((p) => p.id === args.pathId);
-    if (!original) throw Error('路径不存在');
-    const changed = cloneTraceValue(original);
-    setContinuity(changed, args.nodeIndex, args.mode);
-    delete changed.fitError;
-    transact((p) => {
-      p.paths[p.paths.findIndex((p) => p.id === args.pathId)] = changed;
-    });
+    nodeActions().setModes(args.pathId, [args.nodeIndex], args.mode);
     setStatus(
       args.mode === 'corner'
         ? '节点已设为尖角 · 控制柄独立'
@@ -2330,15 +2147,21 @@ export default function StudioApp() {
     after = false,
   ) {
     if (busyRef.current || drag.current) throw Error('请先完成当前操作');
-    const next = cloneTraceValue(pr.current);
-    const moved = movePaths(next, ids, groupId, targetId, after);
-    if (
-      moved &&
-      JSON.stringify(next.paths) !== JSON.stringify(pr.current.paths)
-    )
-      setDoc(next);
-    setStatus('已移动 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
-    return { moved, pathIds: ids, groupId };
+    {
+      commitGroup({
+        kind: 'move-group-paths',
+        pathIds: ids,
+        groupId,
+        targetId,
+        after,
+      });
+      setStatus('已移动 ' + ids.length + ' 条路径 · Ctrl+Z 撤销');
+      return {
+        moved: !targetId || !ids.includes(targetId),
+        pathIds: ids,
+        groupId,
+      };
+    }
   }
   useEffect(() => {
     movePathBatchRef.current = movePathBatch;
@@ -2381,30 +2204,28 @@ export default function StudioApp() {
       throw Error('请选择存在的路径');
     if (action === 'visibility' && typeof a.visible !== 'boolean')
       throw Error('visible 必须为布尔值');
-    const id = action === 'create' ? crypto.randomUUID() : a.id;
-    transact((p) => {
-      p.groups = p.groups || [];
-      if (action === 'create') p.groups.push({ id: id!, name: name.trim() });
-      if (action === 'rename')
-        p.groups.find((g) => g.id === id)!.name = name.trim();
-      if (action === 'assign')
-        p.paths
-          .filter((p) => pathIds.includes(p.id))
-          .forEach((p) => {
-            if (id) p.groupId = id;
-            else delete p.groupId;
-          });
-      if (action === 'visibility')
-        p.paths
-          .filter((p) => p.groupId === id)
-          .forEach((p) => (p.visible = visible));
-      if (action === 'delete') {
-        p.groups = p.groups.filter((g) => g.id !== id);
-        p.paths
-          .filter((p) => p.groupId === id)
-          .forEach((p) => delete p.groupId);
-      }
-    });
+    let id = action === 'create' ? crypto.randomUUID() : a.id;
+    {
+      const next = commitGroup({
+        kind: (
+          {
+            create: 'create-group',
+            rename: 'rename-group',
+            assign: 'assign-group',
+            visibility: 'group-visibility',
+            delete: 'delete-group',
+          } as Record<string, string>
+        )[action],
+        groupId: a.id,
+        name,
+        pathIds: action === 'assign' ? pathIds : [],
+        visible,
+      });
+      if (action === 'create')
+        id = next.groups?.find(
+          (item) => !groups.some((old) => old.id === item.id),
+        )?.id;
+    }
     setStatus(
       action === 'delete'
         ? '已解散分组，曲线已移至未分组 · 可撤销'
@@ -2420,20 +2241,18 @@ export default function StudioApp() {
   };
   const refitPath = async (args: { id?: string } = {}) =>
     lock(async () => {
-      const original = pr.current.paths.find(
+      const captured = host.getSnapshot();
+      const sourceProject = captured.project as Project;
+      const original = sourceProject.paths.find(
         (p) => p.id === (args.id || ar.current),
       );
       if (!original) throw Error('请先选中路径');
-      const points = original.anchors.filter(
-        (p, i, all) => !i || dist(p, all[i - 1]) > 0.1,
-      );
-      if (
-        original.closed &&
-        points.length > 1 &&
-        dist(points[0], points.at(-1)) < 0.1
-      )
-        points.pop();
-      if (points.length < 2) throw Error('这条旧路径没有足够的原落点记录');
+      // Refit current source spans without collapsing short edges or changing
+      // their identities.
+      const points = original.curves.map((curve) => curve[0]);
+      if (!original.closed && original.curves.length)
+        points.push(original.curves.at(-1)![3]);
+      if (points.length < 2) throw Error('这条路径没有足够的原落点记录');
       const path = cloneTraceValue(original);
       path.curves = [];
       path.quality = 1;
@@ -2454,9 +2273,16 @@ export default function StudioApp() {
         path.fitError = Math.max(path.fitError, r.fitError);
         a = b;
       }
-      transact((p) => {
-        p.paths[p.paths.findIndex((q) => q.id === original.id)] = path;
-      });
+      pr.current = captured.runtime
+        .commandPath(
+          {
+            kind: 'refit-path',
+            pathId: original.id,
+            pixelCubics: path.curves,
+          },
+          { project: captured.project },
+        )
+        .commit();
       finish();
       setTool('edit');
       setActiveNow(path.id);
@@ -2477,11 +2303,16 @@ export default function StudioApp() {
     });
   const acceptPreview = () => {
     if (!proposed) throw Error('没有候选路径');
+    let id = proposed.id;
+    {
+      if (proposedCommit.current?.id !== proposed.id)
+        throw Error('候选路径上下文已失效，请重新生成');
+      id = proposedCommit.current.commit().id;
+    }
     setStatus('候选路径已接受');
-    transact((p) => p.paths.push(proposed));
-    setActiveNow(proposed.id);
+    setActiveNow(id);
     setProposed(null);
-    return { id: proposed.id };
+    return { id };
   };
   const apiRef = useRef<TraceApi | null>(null);
   useEffect(() => {
@@ -2500,7 +2331,7 @@ export default function StudioApp() {
         widthMM: pr.current.widthMM,
         depthMM: pr.current.depthMM,
         storage: {
-          fileName: fileHandle.current?.name || null,
+          fileName: displayedFileName || null,
           status: saved,
           fileSystemSupported:
             typeof window !== 'undefined' &&
@@ -2513,7 +2344,8 @@ export default function StudioApp() {
         model: modelApi.current?.state(),
         creation: creationApi.current?.state(),
         selectedNodes: nodesRef.current,
-        gesturing: !!drag.current,
+        gesturing: !!drag.current || studioDrag.isActive(),
+        nodeSnapping: { enabled: nodeSnap, keepSeams, target: snapFeedback },
         view: vr.current,
         modifiers: modifierRef.current,
         mergeSource,
@@ -2593,7 +2425,7 @@ export default function StudioApp() {
           },
         ]),
       ),
-      creation_inspect: () => creationApi.current?.inspect(),
+      creation_inspect: () => creationApi.current?.inspect(() => pr.current),
       creation_focus: (a: AgentCreationFocusArgs) =>
         creationApi.current?.focus(a.objectId),
       creation_select: (a: AgentCreationSelectArgs) =>
@@ -2610,11 +2442,29 @@ export default function StudioApp() {
       creation_export: (a: AgentCreationExportArgs) =>
         creationApi.current?.export(a.format, false),
       create_path: createPath,
+      spline_inspect: (a: Parameters<typeof inspectSplines>[1]) =>
+        inspectSplines(pr.current, a),
+      spline_apply: (a: unknown) => {
+        if (busyRef.current || fileBusyRef.current || drag.current)
+          throw Error('请先完成当前描线、拖动或保存');
+        const captured = host.getSnapshot();
+        const result = captured.runtime
+          .commandSplines(a, { project: captured.project })
+          .commit();
+        pr.current = result.project as Project;
+        finish();
+        setProposed(null);
+        setStatus(`已提交 ${result.pathIds.length} 条精确样条 · Ctrl+Z 撤销`);
+        return { pathIds: result.pathIds };
+      },
       resume_path: (a: AgentPathEndArgs) => resumePath(a.pathId, a.end),
       add_anchor: (a: { position: Point } & Partial<TraceSettings>) =>
         addAnchor(a.position, a),
       finish_path: () => {
-        finish();
+        if (busyRef.current || fileBusyRef.current || drag.current)
+          throw Error('请先完成当前描线、拖动或保存');
+        const issue = finishDrawing();
+        if (issue) throw Error(issue);
         return { finished: true };
       },
       close_path: (a: Partial<TraceSettings>) => closePath(a),
@@ -2631,6 +2481,7 @@ export default function StudioApp() {
         )
           throw Error('pathIds 必须为现有路径 ID');
         chooseGroup(a.pathIds, false);
+        creationApi.current?.select_paths(pathsRef.current);
         return { selectedPaths: pathsRef.current };
       },
       move_paths: (a: AgentMovePathsArgs) => {
@@ -2683,14 +2534,7 @@ export default function StudioApp() {
         )
           throw Error('set_point 支持现有曲线的控制柄 1 或 2');
         const point = validPoint(a.position);
-        transact((p) => {
-          moveHandle(
-            p.paths.find((q) => q.id === a.pathId)!,
-            a.curve,
-            a.point,
-            point,
-          );
-        });
+        nodeActions().moveHandle(a.pathId, a.curve, a.point, point);
         return { updated: true };
       },
       export: (a: AgentExportArgs) => {
@@ -2701,6 +2545,17 @@ export default function StudioApp() {
             filename: '角色曲线_blender.py',
             content: blender(pr.current),
           };
+        if (a.format === 'json' && host) {
+          const bytes = host.exportBytes();
+          const chunks = [];
+          for (let i = 0; i < bytes.length; i += 16384)
+            chunks.push(String.fromCharCode(...bytes.subarray(i, i + 16384)));
+          return {
+            filename: 'Splinelet工程.spl',
+            mimeType: SPL_MIME,
+            base64: btoa(chunks.join('')),
+          };
+        }
         if (a.format === 'json')
           return {
             filename: 'Splinelet工程.bezier.json',
@@ -2708,17 +2563,11 @@ export default function StudioApp() {
           };
         throw Error('format 必须是 svg、blender 或 json');
       },
-      load_project: (a: AgentLoadProjectArgs) => {
+      load_project: async (a: AgentLoadProjectArgs) => {
         if (busyRef.current || fileBusyRef.current)
           throw Error('请等待拟合或保存完成');
-        const p = validateProject(a.project);
-        bindFile(null);
-        finish();
-        setActiveNow(null);
-        setDoc(p);
-        creationApi.current?.clear();
-        fitView();
-        return { paths: p.paths.length };
+        const input = readAgentProjectInput(a);
+        return loadProjectFile(input.bytes, input.name, null);
       },
       set_candidates_visible: (a: AgentVisibilityArgs) => {
         setShowCandidates(!!a.visible);
@@ -2726,6 +2575,7 @@ export default function StudioApp() {
       },
     };
   });
+  const loadDesktopProject = useEffectEvent(loadProjectFile);
   useEffect(() => {
     if (!isDesktopRuntime()) return;
     let alive = true;
@@ -2735,7 +2585,7 @@ export default function StudioApp() {
       if (!path || !alive) return;
       try {
         const legacy = !path.toLowerCase().endsWith('.spl');
-        await loadProjectFile(
+        await loadDesktopProject(
           await desktopReadFile(path),
           projectNameFromPath(path),
           legacy
@@ -2760,11 +2610,33 @@ export default function StudioApp() {
   }, []);
   useEffect(() => {
     const traceWindow = window as TraceStudioWindow;
+    host.setSelectionReader(() => creationApi.current?.readSelection() || null);
     traceWindow.traceStudio = {
-      version: '4.0',
+      version: '5.0',
       call: async (action: string, args: unknown = {}) => {
+        if (
+          action.includes('.') ||
+          (['undo', 'redo'].includes(action) &&
+            typeof args === 'object' &&
+            args !== null &&
+            'expectedRevision' in args)
+        )
+          return host.agentCall(action, args);
         const fn = apiRef.current?.[action];
         if (!fn) throw Error('未知操作 ' + action);
+        if (studioAgentTools[action]?.compatibilityWrite) {
+          const request = args as Record<string, unknown>;
+          if (!request || !Number.isInteger(request.expectedRevision))
+            throw Error(
+              '兼容写操作必须提供 document.get 返回的 expectedRevision',
+            );
+          if (
+            request.expectedRevision !== host.getSnapshot().editorState.revision
+          )
+            throw Error('expectedRevision 已过期，请重新读取工程');
+          const { expectedRevision: _revision, ...payload } = request;
+          args = payload;
+        }
         if (
           drag.current &&
           !['state', 'get_project', 'inspect_geometry', 'export'].includes(
@@ -2786,253 +2658,38 @@ export default function StudioApp() {
         }
       ).modelContext,
       controller = new AbortController();
-    const names = [
-      ...Object.keys(modelTools),
-      ...Object.keys(creationTools),
-      'state',
-      'detect_candidates',
-      'create_path',
-      'resume_path',
-      'add_anchor',
-      'finish_path',
-      'close_path',
-      'commit_preview',
-      'refit_path',
-      'set_node_mode',
-      'manage_group',
-      'move_path',
-      'select_paths',
-      'move_paths',
-      'merge_paths',
-      'straighten_span',
-      'select_node',
-      'delete_node',
-      'get_project',
-      'set_point',
-      'inspect_geometry',
-      'export',
-    ];
-    const properties: Record<string, unknown> = {
-      ...Object.fromEntries(
-        Object.entries({ ...modelTools, ...creationTools }).map(([name, t]) => [
-          name,
-          t.properties,
-        ]),
-      ),
-      state: {},
-      select_paths: { pathIds: { type: 'array', items: { type: 'string' } } },
-      move_paths: {
-        pathIds: { type: 'array', items: { type: 'string' } },
-        groupId: { type: 'string' },
-        targetId: { type: 'string' },
-        after: { type: 'boolean' },
-      },
-      detect_candidates: {
-        limit: { type: 'number' },
-        spacing: { type: 'number' },
-        region: { type: 'object' },
-      },
-      create_path: {
-        points: {
-          type: 'array',
-          items: {
-            oneOf: [
-              { type: 'string' },
-              {
-                type: 'object',
-                properties: { x: { type: 'number' }, y: { type: 'number' } },
-                required: ['x', 'y'],
-              },
-            ],
-          },
-        },
-        name: { type: 'string' },
-        closed: { type: 'boolean' },
-        preview: { type: 'boolean' },
-        mode: { enum: ['ink', 'edge', 'manual'] },
-        tolerance: { type: 'number' },
-        corridor: { type: 'number' },
-        snap: { type: 'boolean' },
-      },
-      commit_preview: {},
-      resume_path: {
-        pathId: { type: 'string' },
-        end: { enum: ['start', 'end'] },
-      },
-      add_anchor: {
-        position: {
-          type: 'object',
-          properties: { x: { type: 'number' }, y: { type: 'number' } },
-          required: ['x', 'y'],
-        },
-        mode: { enum: ['ink', 'edge', 'manual'] },
-        snap: { type: 'boolean' },
-      },
-      finish_path: {},
-      close_path: {
-        mode: { enum: ['ink', 'edge', 'manual'] },
-        snap: { type: 'boolean' },
-      },
-      refit_path: { id: { type: 'string' } },
-      set_node_mode: {
-        pathId: { type: 'string' },
-        nodeIndex: { type: 'integer' },
-        mode: { enum: ['corner', 'smooth', 'symmetric'] },
-      },
-      move_path: {
-        pathId: { type: 'string' },
-        groupId: { type: 'string' },
-        beforeId: { type: 'string' },
-      },
-      manage_group: {
-        action: {
-          enum: ['create', 'rename', 'assign', 'visibility', 'delete'],
-        },
-        id: { type: 'string' },
-        name: { type: 'string' },
-        pathIds: { type: 'array', items: { type: 'string' } },
-        visible: { type: 'boolean' },
-      },
-      merge_paths: {
-        firstId: { type: 'string' },
-        firstEnd: { enum: ['start', 'end'] },
-        secondId: { type: 'string' },
-        secondEnd: { enum: ['start', 'end'] },
-      },
-      straighten_span: {
-        pathId: { type: 'string' },
-        curve: { type: 'integer' },
-      },
-      select_node: {
-        pathId: { type: 'string' },
-        nodeIndex: { type: 'integer' },
-      },
-      delete_node: {
-        pathId: { type: 'string' },
-        nodeIndex: { type: 'integer' },
-      },
-      get_project: {},
-      inspect_geometry: {},
-      set_point: {
-        pathId: { type: 'string' },
-        curve: { type: 'integer' },
-        point: { enum: [1, 2] },
-        position: { type: 'object' },
-      },
-      export: { format: { enum: ['svg', 'blender', 'json'] } },
-    };
+    const names = Object.keys(studioAgentTools);
     for (const name of names)
       try {
         void Promise.resolve(
           context?.registerTool(
             {
               name: 'bezier_' + name,
-              description:
-                { ...modelTools, ...creationTools }[name]?.description ||
-                (
-                  {
-                    state:
-                      'Read image dimensions, paths, tool, selection sets and fit quality.',
-                    select_paths:
-                      'Select multiple paths by ID and enter object selection mode; empty list deselects.',
-                    move_paths:
-                      'Move multiple paths to a group or before/after a target path, preserving tree order. One undo step.',
-                    detect_candidates:
-                      'Generate numbered image corner candidates and display on canvas. Original image pixel coordinates.',
-                    create_path:
-                      'Trace ordered coordinates or candidate IDs along image edges and fit exactly one cubic per adjacent pair, without inserting intermediate anchors. fitError reports when the user should add a point. preview=true stages for visual review.',
-                    resume_path:
-                      'Resume an existing visible open path from its start or end. Changes drawing state only; keeps existing geometry and undo history unchanged.',
-                    add_anchor:
-                      'Add one point at the current drawing endpoint, with exactly one new cubic. If no drawing is active, starts a new path. Original-image pixel coordinates. Undoable.',
-                    finish_path:
-                      'Finish the current drawing session without changing geometry.',
-                    close_path:
-                      'Close the active open path from the current drawing endpoint with one cubic. Undoable.',
-                    refit_path:
-                      'Request a refit confirmation dialog. No geometry changes until the user explicitly confirms in the UI. Refitting replaces manual handle edits and continuity modes.',
-                    set_node_mode:
-                      'Set corner, smooth (collinear), or symmetric (equal opposite handles, C1) for one internal node. Undoable.',
-                    move_path:
-                      'Move a path into a group, or before another path (also adopting its group). Undoable.',
-                    manage_group:
-                      'Create, rename, assign paths, toggle group visibility, or dissolve a group without deleting paths. Undoable.',
-                    merge_paths:
-                      'Join two distinct open splines at chosen endpoints. Preserve curve shapes by reversing directions when needed; insert one straight cubic only when endpoints differ. Undoable; keep first path ID.',
-                    straighten_span:
-                      'Replace one existing cubic with a straight cubic at the same endpoints; keep all anchors. curve defaults to selection or last span. Undoable.',
-                    select_node:
-                      'Select a unique anchor by zero-based nodeIndex. Closed seam counts once. Highlight on canvas.',
-                    delete_node:
-                      'Delete one anchor by zero-based nodeIndex. Merge affected spans into exactly one cubic, preserve other spans. Undoable. Last node removes empty path.',
-                    commit_preview: 'Commit the staged path to the project.',
-                    inspect_geometry:
-                      'Check visible paths for connection gaps and sampled self-intersections; return locations. This is a 2D check, not a manifold mesh guarantee.',
-                    get_project:
-                      'Read complete image and editable Bezier geometry.',
-                    set_point:
-                      'Edit a cubic control handle by path, curve index, and handle index.',
-                    export:
-                      'Return SVG, Blender Python, or project JSON without downloading.',
-                  } as Record<string, string>
-                )[name],
+              description: studioAgentTools[name]!.description,
               inputSchema: {
                 type: 'object',
-                properties: properties[name],
-                required:
-                  { ...modelTools, ...creationTools }[name]?.required ||
-                  (name === 'resume_path'
-                    ? ['pathId', 'end']
-                    : name === 'add_anchor'
-                      ? ['position']
-                      : ['select_paths', 'move_paths'].includes(name)
-                        ? ['pathIds']
-                        : name === 'move_path'
-                          ? ['pathId']
-                          : name === 'set_node_mode'
-                            ? ['pathId', 'nodeIndex', 'mode']
-                            : name === 'manage_group'
-                              ? ['action']
-                              : name === 'merge_paths'
-                                ? [
-                                    'firstId',
-                                    'firstEnd',
-                                    'secondId',
-                                    'secondEnd',
-                                  ]
-                                : name === 'straighten_span'
-                                  ? ['pathId']
-                                  : name === 'create_path'
-                                    ? ['points']
-                                    : ['select_node', 'delete_node'].includes(
-                                          name,
-                                        )
-                                      ? ['pathId', 'nodeIndex']
-                                      : name === 'set_point'
-                                        ? [
-                                            'pathId',
-                                            'curve',
-                                            'point',
-                                            'position',
-                                          ]
-                                        : name === 'export'
-                                          ? ['format']
-                                          : []),
+                properties: {
+                  ...studioAgentTools[name]!.properties,
+                  ...(studioAgentTools[name]!.compatibilityWrite && {
+                    expectedRevision: { type: 'integer' },
+                  }),
+                },
+                required: [
+                  ...new Set([
+                    ...(studioAgentTools[name]!.compatibilityWrite
+                      ? ['expectedRevision']
+                      : []),
+                    ...(studioAgentTools[name]!.required || []),
+                  ]),
+                ],
                 additionalProperties: false,
               },
               annotations: {
-                readOnlyHint:
-                  { ...modelTools, ...creationTools }[name]?.readOnly ||
-                  [
-                    'state',
-                    'get_project',
-                    'inspect_geometry',
-                    'export',
-                  ].includes(name),
+                readOnlyHint: studioAgentTools[name]!.readOnly,
                 untrustedContentHint: true,
               },
               execute: (args: unknown) =>
-                traceWindow.traceStudio!.call(name, args),
+                traceWindow.traceStudio!.call(name, args).then(agentJSONValue),
             },
             { signal: controller.signal },
           ),
@@ -3079,7 +2736,7 @@ export default function StudioApp() {
             await fetch('http://127.0.0.1:4318/result', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(result),
+              body: JSON.stringify(agentJSONValue(result)),
             });
           }
         }
@@ -3092,13 +2749,25 @@ export default function StudioApp() {
       stopped = true;
       clearTimeout(timer);
       controller.abort();
+      host.setSelectionReader(null);
       delete traceWindow.traceStudio;
     };
-  }, []);
+  }, [host]);
   const geometryReport: GeometryReportItem[] =
     dialog === 'export' ? inspectGeometry(project.paths) : [];
   const current = project.paths.find((p) => p.id === active),
     count = project.paths.reduce((s, p) => s + p.curves.length, 0);
+  const endpointGuides = useMemo(() => {
+    if (!nodeSnap || tool !== 'edit' || !current || selectedNodes.length !== 1)
+      return [];
+    return (
+      studioSnapshot.runtime.readEndpointSnapContext(
+        project,
+        current.id,
+        selectedNodes[0],
+      )?.lines || []
+    );
+  }, [project, current, tool, selectedNodes, nodeSnap, studioSnapshot]);
   const projectSettings = (
     <>
       {' '}
@@ -3117,11 +2786,13 @@ export default function StudioApp() {
             value={project.widthMM}
             min={0.1}
             max={10000}
-            onCommit={(widthMM) =>
-              transact((p) => {
-                p.widthMM = widthMM;
-              })
-            }
+            onCommit={(widthMM) => {
+              try {
+                host.setSourceWidth(widthMM);
+              } catch (error) {
+                setStatus(errorMessage(error));
+              }
+            }}
           />
           <p>按整张底图宽度设置物理比例，影响整个作品。</p>
         </section>
@@ -3139,6 +2810,30 @@ export default function StudioApp() {
     >
       <div className="properties-area">
         <div aria-label="节点属性" hidden={propertyTab !== 'node'}>
+          <section className="endpoint-snap-settings" aria-label="端点吸附设置">
+            <h3>端点吸附</h3>
+            <label>
+              <input
+                type="checkbox"
+                checked={nodeSnap}
+                onChange={(e) => setNodeSnap(e.target.checked)}
+              />
+              端点吸附
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={keepSeams}
+                disabled={!nodeSnap}
+                onChange={(e) => setKeepSeams(e.target.checked)}
+              />
+              保持已有对称接缝
+            </label>
+            <p>
+              拖近端点或接缝时吸附；已有接缝可沿线滑动。Alt 暂时解除，Shift
+              轴向移动并暂停吸附。
+            </p>
+          </section>
           <section>
             <h3>
               {selectedNodes.length
@@ -3163,12 +2858,7 @@ export default function StudioApp() {
                 onResume={resumeSelected}
                 onMode={(mode) => {
                   try {
-                    transact((p) => {
-                      const path = p.paths.find((p) => p.id === current.id)!;
-                      selectedNodes.forEach((i) =>
-                        setContinuity(path, i, mode),
-                      );
-                    });
+                    nodeActions().setModes(current.id, selectedNodes, mode);
                     setStatus(
                       '已更新 ' +
                         selectedNodes.length +
@@ -3239,7 +2929,7 @@ export default function StudioApp() {
             end={drawingEnd}
             disabled={busy || !ready || gesturing}
             onResume={resumeSelected}
-            onFinish={finish}
+            onFinish={finishDrawing}
             onClose={(e) =>
               report(closePath(connectionSettings(sr.current, e)))
             }
@@ -3353,12 +3043,11 @@ export default function StudioApp() {
           onApi={() => setDialog('api')}
           onExample={() =>
             report(
-              fetch('/sandrone-example.spl')
-                .then(async (r) => {
-                  if (!r.ok) throw Error('示例读取失败');
-                  return decodeProject(new Uint8Array(await r.arrayBuffer()));
-                })
-                .then((p) => apiRef.current?.load_project({ project: p })),
+              fetch('/sandrone-example.spl').then(async (r) => {
+                if (!r.ok) throw Error('示例读取失败');
+                const bytes = new Uint8Array(await r.arrayBuffer());
+                return loadProjectFile(bytes, 'sandrone-example.spl', null);
+              }),
             )
           }
         />
@@ -3366,8 +3055,8 @@ export default function StudioApp() {
           className="project-name"
           data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}
         >
-          <span title={fileName || '未绑定文件'}>
-            {fileName || '未命名工程'}
+          <span title={displayedFileName || '未绑定文件'}>
+            {displayedFileName || '未命名工程'}
           </span>{' '}
           <i title={saved} aria-label={saved}>
             <span className="sr-only">{saved}</span>
@@ -3465,7 +3154,7 @@ export default function StudioApp() {
               [PenTool, 'trace', '描线', 'P'],
               [PaintBucket, 'paint', '上色', ''],
               [ArrowUpFromLine, 'height', '高低', ''],
-              [Hand, 'pan', '平移', 'H'],
+              [Move, 'move', '移动对象', 'H'],
             ] as Array<[typeof MousePointer2, string, string, string]>
           ).map(([Icon, value, label, key]) => (
             <button
@@ -3503,12 +3192,20 @@ export default function StudioApp() {
           ref={setStage}
           aria-label="编辑画布"
           className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
-          onPointerMove={pointerMove}
-          onPointerUp={pointerUp}
+          onPointerMove={(e) => {
+            if (studioDrag.isActive()) studioDrag.onPointerMove(e);
+            else pointerMove(e);
+          }}
+          onPointerUp={(e) => {
+            studioDrag.onPointerUp(e);
+            pointerUp(e);
+          }}
           onPointerCancel={(e) => {
+            studioDrag.onPointerCancel(e);
             if (drag.current?.pointerId === e.pointerId) cancelGesture();
           }}
           onLostPointerCapture={(e) => {
+            studioDrag.onLostPointerCapture(e);
             if (drag.current?.pointerId === e.pointerId) cancelGesture();
           }}
         >
@@ -3521,11 +3218,13 @@ export default function StudioApp() {
                   ? '智能描线'
                   : tool === 'edit'
                     ? '节点与控制柄'
-                    : tool === 'pan'
-                      ? '空格 / 中键拖动画布 · 滚轮缩放'
-                      : tool === 'select'
-                        ? '选择 · 不移动形状'
-                        : '平移画布'}
+                    : tool === 'move'
+                      ? '移动对象 · 右键拖动平移视图'
+                      : tool === 'pan'
+                        ? '空格 / 中键拖动画布 · 滚轮缩放'
+                        : tool === 'select'
+                          ? '选择 · 不移动形状'
+                          : '平移画布'}
             </span>
             <span>
               {project.imageName} · {project.width} × {project.height}
@@ -3540,12 +3239,6 @@ export default function StudioApp() {
                 setPreview([]);
                 previewToken.current++;
               }
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              if (drag.current) cancelGesture();
-              else if (tool === 'trace') finish();
-              else if (mergeSource) setMergeSource(null);
             }}
             width="100%"
             height="100%"
@@ -3569,204 +3262,37 @@ export default function StudioApp() {
                 />
               )}
               <g ref={setCreationLayer} />
-              {project.paths
-                .filter(
+              <SourcePathLayers
+                paths={project.paths.filter(
                   (p) =>
                     p.visible &&
                     !project.creation?.objects.some(
                       (o: { pathIds: string[]; visible: boolean }) =>
                         o.pathIds.includes(p.id) && !o.visible,
                     ),
-                )
-                .map((path) => (
-                  <g
-                    key={path.id}
-                    data-source-id={path.id}
-                    className={
-                      'source-path-layer' +
-                      (highlightSourceSelection &&
-                      selectedPaths.includes(path.id)
-                        ? ' selected'
-                        : '')
-                    }
-                  >
-                    {!path.curves.length && (
-                      <circle
-                        cx={path.start.x}
-                        cy={path.start.y}
-                        r={5 / view.s}
-                        fill={path.color}
-                        onPointerDown={(e) => selectCanvasPath(e, path.id)}
-                        onDoubleClick={() => {
-                          setActiveNow(path.id);
-                          chooseTool('edit');
-                        }}
-                      />
-                    )}
-                    <path
-                      d={d(path.curves) + (path.closed ? ' Z' : '')}
-                      fill={fill && path.closed ? path.color + '24' : 'none'}
-                      stroke={path.color}
-                      strokeWidth={
-                        (highlightSourceSelection &&
-                        selectedPaths.includes(path.id)
-                          ? 2.8
-                          : 1.5) / view.s
-                      }
-                      opacity={
-                        highlightSourceSelection &&
-                        selectedPaths.length &&
-                        !selectedPaths.includes(path.id)
-                          ? 0.55
-                          : 1
-                      }
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      aria-label={path.name}
-                      d={d(path.curves) + (path.closed ? ' Z' : '')}
-                      fill="none"
-                      stroke="transparent"
-                      strokeWidth={(tool === 'select' ? 3 : 14) / view.s}
-                      style={{
-                        pointerEvents: ['edit', 'select'].includes(tool)
-                          ? 'stroke'
-                          : 'none',
-                      }}
-                      onPointerDown={(e) => selectCanvasPath(e, path.id)}
-                      onDoubleClick={(e) => splitAt(e, path.id)}
-                    />
-                  </g>
-                ))}
+                )}
+                scale={view.s}
+                tool={tool}
+                selectedPaths={selectedPaths}
+                highlightSourceSelection={highlightSourceSelection}
+                fill={fill}
+                onSelectPath={selectCanvasPath}
+                onEditPath={(pathId) => {
+                  setActiveNow(pathId);
+                  chooseTool('edit');
+                }}
+                onSplitAt={splitAt}
+              />
               {current?.visible && (
                 <g>
                   {tool === 'edit' ? (
-                    <>
-                      {' '}
-                      {current.curves.map((c, i) => (
-                        <g key={i}>
-                          {[1, 2]
-                            .filter((k) => {
-                              const node =
-                                selectedNodes.length === 1
-                                  ? selectedNode(current, selection)
-                                  : null;
-                              return node !== null
-                                ? (k === 1
-                                    ? i
-                                    : current.closed
-                                      ? (i + 1) % current.curves.length
-                                      : i + 1) === node
-                                : !selectedNodes.length &&
-                                    selection?.curve === i;
-                            })
-                            .map((k) => (
-                              <g
-                                key={k}
-                                data-control-handle={i + ':' + k}
-                                onPointerDown={(e) => startPointDrag(e, i, k)}
-                                style={{ cursor: 'grab' }}
-                              >
-                                <line
-                                  x1={c[k === 1 ? 0 : 3].x}
-                                  y1={c[k === 1 ? 0 : 3].y}
-                                  x2={c[k].x}
-                                  y2={c[k].y}
-                                  stroke={current.color}
-                                  opacity=".6"
-                                  strokeWidth={1 / view.s}
-                                />
-                                <circle
-                                  cx={c[k].x}
-                                  cy={c[k].y}
-                                  r={9 / view.s}
-                                  fill="transparent"
-                                />
-                                <circle
-                                  cx={c[k].x}
-                                  cy={c[k].y}
-                                  r={4 / view.s}
-                                  stroke={current.color}
-                                  strokeWidth={1 / view.s}
-                                  fill={
-                                    selection?.curve === i &&
-                                    selection.point === k
-                                      ? current.color
-                                      : '#20272c'
-                                  }
-                                  pointerEvents="none"
-                                />
-                              </g>
-                            ))}
-                        </g>
-                      ))}
-                      {pathNodes(current).map((p: Point, index: number) => {
-                        const selected = selectedNodes.includes(index);
-                        const item = nodeSelection(current, index);
-                        return (
-                          <a
-                            key={'node-' + index}
-                            href={'#node-' + index}
-                            aria-label={'节点 ' + (index + 1)}
-                            data-node-index={index}
-                            data-node-mode={nodeModes(current)[index]}
-                            onPointerDown={(e) =>
-                              startPointDrag(e, item.curve, item.point)
-                            }
-                            style={{ cursor: 'move' }}
-                          >
-                            <circle
-                              cx={p.x}
-                              cy={p.y}
-                              r={11 / view.s}
-                              fill="transparent"
-                            />
-                            {selected && (
-                              <circle
-                                cx={p.x}
-                                cy={p.y}
-                                r={9 / view.s}
-                                fill="#ffbe5530"
-                                stroke="#ffbe55"
-                                strokeWidth={1 / view.s}
-                                pointerEvents="none"
-                              />
-                            )}
-                            <rect
-                              x={p.x - (selected ? 5 : 4) / view.s}
-                              y={p.y - (selected ? 5 : 4) / view.s}
-                              rx={
-                                nodeModes(current)[index] === 'corner'
-                                  ? 0
-                                  : 3 / view.s
-                              }
-                              width={(selected ? 10 : 8) / view.s}
-                              height={(selected ? 10 : 8) / view.s}
-                              fill={selected ? '#ffbe55' : current.color}
-                              stroke={selected ? '#fff5db' : '#102015'}
-                              strokeWidth={1.5 / view.s}
-                              pointerEvents="none"
-                            />
-                            {!current.closed &&
-                              [0, current.curves.length].includes(index) && (
-                                <text
-                                  x={p.x + 10 / view.s}
-                                  y={p.y - 12 / view.s}
-                                  fontSize={11 / view.s}
-                                  fill="#e5ffc5"
-                                  paintOrder="stroke"
-                                  stroke="#162321"
-                                  strokeWidth={3 / view.s}
-                                  pointerEvents="none"
-                                >
-                                  {index === 0 ? '头' : '尾'}
-                                </text>
-                              )}
-                          </a>
-                        );
-                      })}
-                    </>
+                    <SourceNodeHandles
+                      path={current}
+                      scale={view.s}
+                      selectedNodes={selectedNodes}
+                      selection={selection}
+                      onPointPointerDown={startPointDrag}
+                    />
                   ) : tool === 'trace' ||
                     (tool === 'select' &&
                       selectedPaths.length === 1 &&
@@ -3801,6 +3327,11 @@ export default function StudioApp() {
                   ) : null}
                 </g>
               )}
+              <EndpointSnapOverlay
+                feedback={snapFeedback}
+                scale={view.s}
+                guides={endpointGuides}
+              />
               {mergeSource && (
                 <g>
                   {coords &&
@@ -4026,7 +3557,16 @@ export default function StudioApp() {
                   ? ' · 建议手动补点'
                   : ''}
               </span>
-              <button className="primary" onClick={acceptPreview}>
+              <button
+                className="primary"
+                onClick={() => {
+                  try {
+                    acceptPreview();
+                  } catch (error) {
+                    setStatus(errorMessage(error));
+                  }
+                }}
+              >
                 <Check size={15} />
                 接受
               </button>
@@ -4067,12 +3607,15 @@ export default function StudioApp() {
         <>
           <CreationWorkspace
             project={project}
+            runtime={studioSnapshot.runtime}
             enabled={true}
             viewMode={creationView}
             tool={tool}
             onTool={chooseTool}
-            onView={setCreationView}
-            onProject={setDoc}
+            onView={(view) => {
+              cancelGesture();
+              setCreationView(view);
+            }}
             onStatus={setStatus}
             onApi={(api) => {
               creationApi.current = api;
@@ -4086,6 +3629,9 @@ export default function StudioApp() {
             onSelectionKind={setCreationSelectionKind}
             onFramePaths={framePaths}
             onCanvasPointerDown={pointerDown}
+            onMoveObject={startObjectDrag}
+            objectMoveCommit={objectMoveCommit}
+            objectMoving={studioDrag.isObjectActive()}
             sourceInspector={sourceInspector}
             onSourceExport={() => {
               setDialog('export');
@@ -4130,14 +3676,9 @@ export default function StudioApp() {
       </div>
       <ModelWorkspace
         project={project}
+        runtime={studioSnapshot.runtime}
         mode={workspace}
         initialPaths={selectedPaths}
-        onModel={(model) =>
-          transact((p) => {
-            p.version = p.creation ? 3 : 2;
-            p.model = model;
-          })
-        }
         onEditSource={(id) => {
           setWorkspace('trace');
           setActiveNow(id);
@@ -4172,7 +3713,7 @@ export default function StudioApp() {
           coords.y < project.height
             ? ` · X ${Math.round(coords.x)} Y ${Math.round(coords.y)}`
             : ''}{' '}
-          · 滚轮缩放 · 空格平移
+          · 滚轮缩放 · 右键/空格平移
         </span>
       </footer>
       <Dialog
@@ -4249,7 +3790,9 @@ export default function StudioApp() {
                     value={project.depthMM}
                     onChange={(e) => {
                       const v = +e.target.value;
-                      if (v >= 0 && v <= 1000) transact((p) => (p.depthMM = v));
+                      if (v >= 0 && v <= 1000) {
+                        host.setBlenderExtrusion(v);
+                      }
                     }}
                   />
                   <span>mm</span>
@@ -4286,7 +3829,7 @@ export default function StudioApp() {
               <div className="export-option">
                 <div>
                   <b>可继续编辑的完整工程</b>
-                  <p>底图、路径、尺寸与控制点 · JSON</p>
+                  <p>底图、路径、尺寸与控制点 · 完整工程文件</p>
                 </div>
                 <button onClick={() => report(exportFile('json'))}>
                   导出 .spl 工程副本
@@ -4318,13 +3861,17 @@ export default function StudioApp() {
             </>
           ) : dialog === 'api' ? (
             <>
-              <pre>{`await window.traceStudio.call('detect_candidates', {\n  region: {x: 300, y: 250, width: 500, height: 400},\n  limit: 35, spacing: 25\n});\nawait window.traceStudio.call('create_path', {\n  name: '刘海', points: ['C03', 'C12', {x: 610, y: 565}],\n  mode: 'ink', preview: true\n});\nawait window.traceStudio.call('commit_preview');`}</pre>
+              <pre>{`const call = window.traceStudio.call;\nconst observed = await call('document.get');\nconst changed = await call('authoring.run', {\n  expectedRevision: observed.revision,\n  action: { kind: 'create-shape', name: '刘海' },\n});\nawait call('undo', { expectedRevision: changed.revision });`}</pre>
               <p>
-                统一创作：creation_inspect、creation_focus、creation_select、creation_command、creation_view、creation_export。
-                填色和厚度命令须带最新 creation_inspect 返回的 revision。
+                先用 capabilities.get 发现 API 5 操作，再用 document.get
+                读取修订；每个写入传回读取到的 expectedRevision。 WebMCP 的
+                bezier_ 工具和浏览器调用使用同一注册表。
               </p>
               <p>
-                描线操作：state、detect_candidates、create_path、resume_path、add_anchor、finish_path、close_path、commit_preview、discard_preview、get_project、select_path、select_node、delete_node、merge_paths、straighten_span、refit_path、set_node_mode、manage_group、set_point、set_view、undo、inspect_geometry、export、load_project。
+                creation_command、spline_apply
+                和原图像素描线入口保留兼容调用；写入同样需要
+                expectedRevision，paint / height 另带最新 creation_inspect
+                revision。
               </p>
               <p>
                 构面 /
@@ -4393,7 +3940,8 @@ export default function StudioApp() {
               </p>
               <p>
                 <b>视图与保存</b>
-                　滚轮缩放；空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
+                　H
+                移动整个部件；滚轮缩放；右键、空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
                 才保存工程文件，Ctrl+Shift+S 另存为。导出面板提供分色 SVG、3MF
                 和 Blender 实体与源线；精确贝塞尔 SVG 在“工程 → 导出 → 源曲线
                 SVG”导出。

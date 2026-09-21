@@ -1,0 +1,321 @@
+import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
+import { outputIdentity } from '../relief/appearance.mjs';
+import { sourcePathId } from './source-view.mjs';
+import {
+  compileModifierAdd,
+  compileModifierUpdate,
+  compileModifierStructure,
+} from './modifier-intents.mjs';
+import {
+  CREATION_BASIC_INTENTS,
+  createCreationBasicIntent,
+  createObjectPlacementIntent,
+} from './creation-basic-intents.mjs';
+import { createConnectionIntent } from './connection-intents.mjs';
+import { childrenOf } from '../scene/hierarchy.mjs';
+
+export const CREATION_INTENTS = Object.freeze([
+  'roles',
+  'base',
+  'paint',
+  'height',
+  'clear_paint',
+  'swatch',
+  'delete_swatch',
+  'object',
+  'new_object',
+  'scene_group',
+  'scene_ungroup',
+  'scene_reparent',
+  'scene_node',
+  'modifier_update',
+  'modifier_add',
+  'modifier_move',
+  'modifier_remove',
+  ...CREATION_BASIC_INTENTS,
+  'join',
+  'connection',
+  'print_settings',
+  'print_layer_add',
+  'print_layer_rename',
+  'print_layer_move',
+  'print_layer_remove',
+]);
+
+// The original workspace supplies intent + the revision of its displayed view.
+// This adapter never accepts a mutated legacy Project or compiles old geometry.
+export function createCreationIntent(action, args, displayed) {
+  const request = structuredClone(args || {});
+  const view = structuredClone(displayed);
+  if (!CREATION_INTENTS.includes(action))
+    throw Error(`创作动作尚未适配：${action}`);
+  if (
+    !view ||
+    typeof view.epoch !== 'string' ||
+    !Number.isInteger(view.revision)
+  )
+    throw Error('创作视图必须携带 epoch 和 revision');
+  if (view.previewId !== undefined && view.previewId !== null)
+    throw Error('预览视图不能用于提交正式创作命令');
+  if (CREATION_BASIC_INTENTS.includes(action))
+    return createCreationBasicIntent(action, request, view);
+  if (action === 'join' || action === 'connection')
+    return createConnectionIntent(action, request, view);
+  return (initialDocument, context) => {
+    if (context.epoch !== view.epoch || context.revision !== view.revision)
+      throw Error('创作视图已失效，请等待当前工程求值');
+    let document = initialDocument;
+    let selectionIntent;
+    const changes = [];
+    const run = (intent) => {
+      const result = createAuthoringCommand(intent)(document, context);
+      document = result.document;
+      changes.push(...(result.changedRefs || []));
+      selectionIntent = result.selectionIntent || selectionIntent;
+    };
+    const requirePrintStack = () => {
+      if (!document.manufacturing.layerOrder.length)
+        throw Error('请先启用打印分层');
+    };
+    const targets = () => {
+      const byKey = new Map((view.cells || []).map((cell) => [cell.key, cell]));
+      if (byKey.size !== (view.cells || []).length)
+        throw Error('区域视图身份冲突');
+      const ownerIds = new Set(request.objectIds || []);
+      for (const id of ownerIds)
+        if (document.nodes[id]?.kind !== 'shape') throw Error('请指定当前部件');
+      const selected = ownerIds.size
+        ? [...byKey.values()].filter((cell) => ownerIds.has(cell.objectId))
+        : (request.cellKeys || []).map((key) => {
+            const cell = byKey.get(key);
+            if (!cell) throw Error('区域选区已失效');
+            return cell;
+          });
+      if (
+        view.errors?.some(
+          (error) =>
+            ownerIds.has(error.objectId) ||
+            selected.some((cell) => cell.objectId === error.objectId),
+        )
+      )
+        throw Error('选中部件求值失败，请先修复来源');
+      const refs = selected.map((cell) => {
+        if (
+          cell.outputRef?.kind !== 'output' ||
+          cell.outputRef.ownerNodeId !== cell.objectId
+        )
+          throw Error('区域视图缺少完整输出身份');
+        return cell.outputRef;
+      });
+      return [
+        ...new Map(refs.map((ref) => [outputIdentity(ref), ref])).values(),
+      ];
+    };
+    if (action === 'scene_group')
+      run({
+        kind: 'group-nodes',
+        nodeIds: request.nodeIds,
+        name: request.name || '对象组',
+      });
+    else if (action === 'scene_ungroup')
+      run({ kind: 'ungroup-nodes', nodeIds: request.nodeIds });
+    else if (action === 'scene_node')
+      run({ kind: 'set-node', nodeId: request.id, value: request.changes });
+    else if (action === 'scene_reparent') {
+      const before = request.beforeId ? document.nodes[request.beforeId] : null;
+      const parentId = before ? before.parentId : (request.parentId ?? null);
+      const siblings = childrenOf(document, parentId).filter(
+        (node) => !request.nodeIds.includes(node.id),
+      );
+      run({
+        kind: 'reparent-nodes',
+        nodeIds: request.nodeIds,
+        parentId,
+        keepWorld: true,
+        ...(before && {
+          index: siblings.findIndex((node) => node.id === before.id),
+        }),
+      });
+    } else if (action === 'roles') {
+      if (
+        Object.keys(request).some(
+          (key) => !['objectId', 'pathIds', 'role'].includes(key),
+        ) ||
+        document.nodes[request.objectId]?.kind !== 'shape' ||
+        !Array.isArray(request.pathIds)
+      )
+        throw Error('请选择当前部件的线条');
+      const paths = new Map(
+        Object.values(document.sketches)
+          .filter((sketch) => sketch.ownerNodeId === request.objectId)
+          .flatMap((sketch) =>
+            Object.keys(sketch.paths).map((id) => [
+              sourcePathId(sketch.id, id),
+              { kind: 'path', sketchId: sketch.id, id },
+            ]),
+          ),
+      );
+      const pathRefs = request.pathIds.map((id) => {
+        const ref = paths.get(id);
+        if (!ref) throw Error('线条不属于当前部件或选区已失效');
+        return ref;
+      });
+      run({ kind: 'set-path-roles', pathRefs, role: request.role });
+    } else if (action === 'base') {
+      const { objectIds, ...options } = request;
+      run({ ...options, kind: 'create-support', nodeIds: objectIds });
+    } else if (action === 'paint') {
+      const refs = targets();
+      if (!refs.length && !request.objectIds?.length)
+        throw Error('请先选择区域或部件');
+      let swatchId = request.swatchId;
+      if (request.color !== undefined) {
+        const existing = Object.values(document.appearances.swatches).find(
+          (swatch) =>
+            swatch.color.toLowerCase() === request.color.toLowerCase(),
+        );
+        if (existing) swatchId = existing.id;
+        else {
+          const before = new Set(Object.keys(document.appearances.swatches));
+          run({
+            kind: 'create-swatch',
+            name: request.name || request.color,
+            color: request.color,
+          });
+          swatchId = Object.keys(document.appearances.swatches).find(
+            (id) => !before.has(id),
+          );
+        }
+      }
+      for (const target of refs)
+        run({ kind: 'paint-region', target, swatchId });
+      for (const nodeId of request.objectIds || [])
+        run({ kind: 'set-default-appearance', nodeId, swatchId });
+    } else if (action === 'height') {
+      const refs = targets();
+      if (!refs.length) throw Error('请先选择可调整厚度的区域');
+      const thickness =
+        request.heightLayers !== undefined
+          ? { kind: 'layers', count: request.heightLayers }
+          : { kind: 'mm', value: request.heightMM };
+      if (
+        (thickness.kind === 'mm' &&
+          (!Number.isFinite(thickness.value) || thickness.value <= 0)) ||
+        (thickness.kind === 'layers' &&
+          (!Number.isInteger(thickness.count) || thickness.count <= 0))
+      )
+        throw Error('厚度必须为正数；打印层数必须为正整数');
+      for (const target of refs)
+        run({
+          kind: 'set-relief',
+          target,
+          value: { enabled: true, thickness },
+        });
+    } else if (action === 'clear_paint') {
+      for (const target of targets())
+        run({ kind: 'clear-region-paint', target });
+    } else if (action === 'swatch') {
+      run({ ...request, kind: request.id ? 'set-swatch' : 'create-swatch' });
+    } else if (action === 'delete_swatch') {
+      run({ ...request, kind: 'delete-swatch' });
+    } else if (action === 'new_object') {
+      run({ kind: 'create-shape', name: request.name || '新部件' });
+    } else if (action === 'object') {
+      const allowed = [
+        'name',
+        'visible',
+        'locked',
+        'swatchId',
+        'printable',
+        'partId',
+        'zMM',
+        'attachId',
+      ];
+      if (
+        Object.keys(request.changes || {}).some((key) => !allowed.includes(key))
+      )
+        throw Error('此部件属性尚需通过对应制造命令适配');
+      const { swatchId, printable, partId, zMM, attachId, ...value } =
+        request.changes || {};
+      if (Object.keys(value).length)
+        run({ kind: 'set-node', nodeId: request.id, value });
+      if (swatchId !== undefined)
+        run({ kind: 'set-default-appearance', nodeId: request.id, swatchId });
+      if (printable !== undefined) {
+        if (typeof printable !== 'boolean')
+          throw Error('参与成品导出必须是布尔值');
+        run({
+          kind: 'set-manufacturing-excluded',
+          target: { kind: 'node', id: request.id },
+          excluded: !printable,
+        });
+      }
+      if (partId !== undefined)
+        run({
+          kind: 'set-manufacturing-part',
+          target: { kind: 'node', id: request.id },
+          partId,
+        });
+      if (zMM !== undefined || attachId !== undefined) {
+        const placement = createObjectPlacementIntent(
+          {
+            id: request.id,
+            changes: {
+              ...(zMM !== undefined ? { zMM } : {}),
+              ...(attachId !== undefined ? { attachId } : {}),
+            },
+          },
+          view,
+        )(document, context);
+        document = placement.document;
+        changes.push(...(placement.changedRefs || []));
+      }
+    } else if (action === 'modifier_update') {
+      run(compileModifierUpdate(document, request));
+    } else if (action === 'modifier_add') {
+      run(compileModifierAdd(document, request));
+    } else if (action === 'modifier_move' || action === 'modifier_remove') {
+      run(compileModifierStructure(document, { ...request, action }));
+    } else if (action === 'print_settings') {
+      requirePrintStack();
+      run({ kind: 'set-print-settings', layerHeightMM: request.layerHeightMM });
+    } else if (action === 'print_layer_add') {
+      requirePrintStack();
+      run({
+        kind: 'create-print-layer',
+        name:
+          request.name ||
+          `堆叠层 ${document.manufacturing.layerOrder.length + 1}`,
+      });
+    } else if (action === 'print_layer_rename') {
+      requirePrintStack();
+      run({
+        kind: 'rename-print-layer',
+        id: request.layerId,
+        name: request.name,
+      });
+    } else if (action === 'print_layer_move') {
+      requirePrintStack();
+      if (![1, -1].includes(request.direction))
+        throw Error('层顺序调整方向无效');
+      const order = [...document.manufacturing.layerOrder];
+      const index = order.indexOf(request.layerId);
+      if (index < 0) throw Error('打印层不存在');
+      const next = index + request.direction;
+      if (next >= 0 && next < order.length) {
+        [order[index], order[next]] = [order[next], order[index]];
+        run({ kind: 'set-print-settings', layerOrder: order });
+      }
+    } else if (action === 'print_layer_remove') {
+      requirePrintStack();
+      if (document.manufacturing.layerOrder.length <= 1)
+        throw Error('至少保留一个堆叠层');
+      run({ kind: 'delete-print-layer', id: request.layerId });
+    }
+    return {
+      document,
+      changedRefs: changes,
+      ...(selectionIntent && { selectionIntent }),
+    };
+  };
+}

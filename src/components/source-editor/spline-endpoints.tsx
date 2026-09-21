@@ -54,6 +54,7 @@ export default function SplineEndpoints({
         return (
           <g
             key={side}
+            pointerEvents={active ? 'none' : undefined}
             transform={`translate(${p.x},${p.y}) scale(${1 / scale})`}
           >
             <title>{action}</title>
@@ -103,6 +104,7 @@ export default function SplineEndpoints({
                   width: '100%',
                   height: '100%',
                   opacity: 0,
+                  pointerEvents: active ? 'none' : undefined,
                   cursor: disabled || active ? 'default' : 'crosshair',
                 }}
                 onPointerDown={(event) => {

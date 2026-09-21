@@ -13,10 +13,13 @@ module.exports = async (browser, url, project) => {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await requested;
     await page.waitForFunction(() => window.traceStudio);
-    await page.evaluate(
-      (project) => window.traceStudio.call('load_project', { project }),
-      project,
-    );
+    await page.evaluate(async (project) => {
+      const observed = await window.traceStudio.call('document.get');
+      return window.traceStudio.call('load_project', {
+        expectedRevision: observed.revision,
+        project,
+      });
+    }, project);
     const imported = await page.evaluate(() =>
       window.traceStudio.call('get_project'),
     );

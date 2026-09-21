@@ -3,11 +3,7 @@ module.exports = async (page) => {
   const checks = [];
   const nearPoint = (a, b) =>
     assert(Math.hypot(a.x - b.x, a.y - b.y) < 0.001, JSON.stringify({ a, b }));
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const settle = async () => {
     await page.waitForFunction(
       async () =>

@@ -4,32 +4,35 @@ Splinelet 使用单一前端工程，共享 React 应用、领域模型和 Worke
 
 ## 目录职责
 
-| 路径                                                          | 职责                                            |
-| ------------------------------------------------------------- | ----------------------------------------------- |
-| `app/`                                                        | Web 路由、页面元数据和两端共用的全局样式        |
-| `src/desktop/`                                                | 桌面 HTML 与 React 启动入口                     |
-| `src/components/studio/`                                      | 共享应用主体、工作区组合与应用状态              |
-| `src/components/shell/`                                       | 窗口控制等宿主界面                              |
-| `src/components/{creation,modeling,source-editor,shared,ui}/` | 各工作区与通用界面                              |
-| `src/hooks/`                                                  | 可复用 React 状态逻辑                           |
-| `src/lib/platform/`                                           | Tauri 桥接、浏览器下载及平台分派                |
-| `src/lib/source-editor/`                                      | 选择、节点编辑、连续性、连接与画布数学          |
-| `src/lib/persistence/`                                        | IndexedDB 恢复草稿与文件写入队列                |
-| `src/lib/` 其他模块                                           | 领域模型、几何构造、实体、导出和模型 Worker     |
-| `src/types/`                                                  | Vite 资源与 Worker 导入的环境类型声明           |
-| `public/`                                                     | 示例资源、图标与兼容描线运行时                  |
-| `src-tauri/src/`                                              | Rust 应用装配、IPC 命令、文件权限和外部打开事件 |
-| `src-tauri/target/frontend/`                                  | 桌面前端构建输出                                |
-| `scripts/build/`                                              | 构建辅助模块                                    |
-| `scripts/tests/`                                              | Node 回归、隔离浏览器回归及最小 fixture         |
-| `docs/`                                                       | 当前使用、架构、专题说明；`qa/` 仅为历史验收    |
-| `dist/`                                                       | Web 构建输出                                    |
+| 路径                                                          | 职责                                                                  |
+| ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `app/`                                                        | Web 路由、页面元数据和两端共用的全局样式                              |
+| `src/desktop/`                                                | 桌面 HTML 与 React 启动入口                                           |
+| `src/components/studio/`                                      | 共享应用主体、工作区组合与应用状态                                    |
+| `src/components/shell/`                                       | 窗口控制等宿主界面                                                    |
+| `src/components/{creation,modeling,source-editor,shared,ui}/` | 各工作区与通用界面                                                    |
+| `src/hooks/`                                                  | 可复用 React 状态逻辑                                                 |
+| `src/lib/platform/`                                           | Tauri 桥接、浏览器下载及平台分派                                      |
+| `src/lib/source-editor/`                                      | 选择、节点编辑、连续性、连接与画布数学                                |
+| `src/lib/persistence/`                                        | IndexedDB 恢复草稿与文件写入队列                                      |
+| `src/lib/` 其他模块                                           | 领域模型、几何构造、实体、导出和模型 Worker                           |
+| `src/types/`                                                  | Vite 资源与 Worker 导入的环境类型声明                                 |
+| `public/`                                                     | 示例资源、图标与兼容描线运行时                                        |
+| `src-tauri/src/`                                              | Rust 应用装配、IPC 命令、文件权限和外部打开事件                       |
+| `src-tauri/target/frontend/`                                  | 桌面前端构建输出                                                      |
+| `scripts/build/`                                              | 构建辅助模块                                                          |
+| `scripts/tests/`                                              | Node 回归、隔离浏览器回归及最小 fixture                               |
+| `docs/`                                                       | 当前使用、架构、专题说明；`qa/` 仅为历史验收                          |
+| `tasks/`                                                      | 复杂任务总控、模块分发与逐项验收；见[任务目录](../../tasks/README.md) |
+| `dist/`                                                       | Web 构建输出                                                          |
 
-根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/` 和 `docs/`。`dist/` 仅存 Web 构建生成物，不纳入版本控制；桌面前端产物归入 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。
+根目录的主要目录是 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/`、`docs/` 和 `tasks/`。`dist/` 仅存 Web 构建生成物，不纳入版本控制；桌面前端产物归入 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。
 
 ## 依赖与状态边界
 
-`app/page.tsx` 与 `src/desktop/main.tsx` 都引用 `src/components/studio/studio-app.tsx`。客户端边界放在共享组件上，Web 路由不承担应用实现，桌面入口不导入 Web 路由组件。`@/*` 映射到 `src/*`。
+`app/page.tsx` 与 `src/desktop/main.tsx` 都引用 `src/components/studio/studio-entry.tsx`，共同加载原有 `studio-app.tsx`。V4 重构在原工作区的数据与命令边界接入，URL 参数不替换整套界面。客户端边界放在共享组件上，Web 路由不承担应用实现，桌面入口不导入 Web 路由组件。`@/*` 映射到 `src/*`。
+
+平面创作与建模面板的 Worker 请求生命周期共用 `src/lib/evaluation/worker-client.mjs`：负责请求配对、发送失败、引擎失效与关闭清理；不拥有工程状态，也不决定求值结果是否仍对应当前工程。工程 revision 与失效结果过滤仍由调用方负责，不能在传输层写回工程。
 
 `src/lib/platform/index.mjs` 提供跨平台下载分派，并导出桌面能力；`desktop.mjs` 封装 Tauri API，`browser.mjs` 负责浏览器下载。工程绑定、打开、保存与恢复的编排仍留在共享应用中。继续提取时应按行为边界拆分，不复制两套保存状态，不改变 `window.traceStudio.call`。
 
@@ -59,7 +62,7 @@ Rust 的 `lib.rs` 装配应用，`commands.rs` 定义 IPC，`files.rs` 管理路
 | `components/desktop-window-controls.tsx`                                     | `src/components/shell/desktop-window-controls.tsx`            |
 | `lib/desktop-runtime.mjs`                                                    | `src/lib/platform/{index,desktop,browser}.mjs`                |
 | `public/{canvas-gestures,connect,continuity,extend,node-edit,selection}.mjs` | `src/lib/source-editor/` 下同名文件                           |
-| `public/persistence.mjs`                                                     | `src/lib/persistence/workspace.mjs`                           |
+| `public/persistence.mjs`                                                     | `src/lib/persistence/file-writer.mjs`                         |
 | `public/creation-pick.mjs`                                                   | `src/lib/creation-pick.mjs`                                   |
 | `components/creation/model-worker.d.ts`                                      | `src/types/worker.d.ts`                                       |
 | `lib/vite-assets.d.ts`                                                       | `src/types/vite-assets.d.ts`                                  |

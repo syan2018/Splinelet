@@ -11,12 +11,39 @@ import { targetForCell } from './modifier-schema.mjs';
 import { contourSignatures, pipelineError } from './surface-lineage.mjs';
 import { polygonalGeometry } from './creation-styles.mjs';
 import { resolvePrintStack } from './print-stack.mjs';
+import {
+  modifierStages,
+  usesCurvePipeline,
+  objectPipeline,
+} from './modifier-stages.mjs';
+import { evaluateCurveProgram, fillCurves } from './curve-modifiers.mjs';
 
 const point = (coordinates) => readGeometry({ type: 'Point', coordinates });
 const line = (coordinates) => readGeometry({ type: 'LineString', coordinates });
 const empty = () => new GeometryFactory().createPolygon();
 const combine = (geometries) =>
   geometries.reduce((a, b) => a.union(b), empty());
+// Rotate evaluated polygons, including their holes. Editable source cubics are
+// never duplicated or sampled back into the project. Each input keeps its style.
+function radialArray(geometry, modifier) {
+  const source = describe(geometry).geometry;
+  const { x, y } = modifier.centerMM;
+  const copies = Array.from({ length: modifier.count }, (_, i) => {
+    if (!i) return geometry;
+    const angle = (i * modifier.angleDeg * Math.PI) / 180;
+    const cos = Math.cos(angle),
+      sin = Math.sin(angle);
+    const rotate = (coordinates) =>
+      typeof coordinates[0] === 'number'
+        ? [
+            x + cos * (coordinates[0] - x) - sin * (coordinates[1] - y),
+            y + sin * (coordinates[0] - x) + cos * (coordinates[1] - y),
+          ]
+        : coordinates.map(rotate);
+    return readGeometry({ ...source, coordinates: rotate(source.coordinates) });
+  });
+  return combine(copies);
+}
 const normalize = (geometry, width) => ({
   ...geometry,
   coordinates: (function scale(a) {
@@ -175,6 +202,9 @@ function splitGeometry(project, geometry, modifier) {
 }
 
 export function applyObjectModifiers(project, scene) {
+  const curvePrograms = new Map(
+    scene.creation.objects.map((o) => [o.id, evaluateCurveProgram(project, o)]),
+  );
   const modifierContracts = { ...scene.modifierContracts };
   const modifierBindings = {};
   const objects = new Map(scene.creation.objects.map((o) => [o.id, o]));
@@ -210,7 +240,10 @@ export function applyObjectModifiers(project, scene) {
     if (scene.errors.some((e) => e.objectId === id))
       throw Error(`「${object.name}」的基础构造需要修复`);
     visiting.add(id);
-    let cells = base.get(id);
+    let cells = base.get(id),
+      curves = null,
+      filled = false;
+    let domain = usesCurvePipeline(object) ? 'curves' : 'surfaces';
     try {
       for (const modifier of object.modifiers || []) {
         const inputOptions = cells.map((c) => ({
@@ -231,6 +264,79 @@ export function applyObjectModifiers(project, scene) {
           continue;
         }
         try {
+          const stage = modifierStages[modifier.type];
+          if (stage.input !== domain)
+            throw Error(
+              `${stage.name}需要${stage.input === 'curves' ? '曲线' : '面'}输入；请调整顺序，构面前仅使用曲线操作`,
+            );
+          if (['curve_mirror', 'curve_array', 'fill'].includes(modifier.type)) {
+            if (filled || cells.length)
+              throw Error(
+                '曲线步骤必须位于构面之前，并使用仅含参考源线的独立部件',
+              );
+            const program = curvePrograms.get(id);
+            const curveStage = program.stages.find(
+              (s) => s.stageId === modifier.id,
+            );
+            if (!curveStage)
+              throw Error(program.error?.message || '上游曲线阶段不可用');
+            curves ||= program.stages[0].curves;
+            status.inputCurveCount = curves.length;
+            curves = curveStage.curves;
+            if (modifier.type !== 'fill') {
+              status.outputCurveCount = curves.length;
+              status.afterArea = 0;
+              status.note = `${curves.length} 段派生贝塞尔，尚未构面`;
+              continue;
+            }
+            const result = fillCurves(
+              curves,
+              modifier.joinMM,
+              project.model?.toleranceMM,
+            );
+            const geometry = describe(result.geometry).geometry;
+            const key = `${id}:modifier:${modifier.id}:fill`;
+            const contract = [{ key, signature: shapeSignature(geometry) }];
+            if (
+              modifier.outputContract &&
+              JSON.stringify(modifier.outputContract) !==
+                JSON.stringify(contract)
+            )
+              throw Error('构面轮廓关系已改变，请修复上游曲线或重建构面步骤');
+            modifierContracts[modifier.id] = contract;
+            const style = modifier.styles?.find((s) => s.key === key);
+            const swatchId = style?.swatchId || object.swatchId;
+            cells = [
+              {
+                ...describe(result.geometry),
+                key,
+                objectId: id,
+                name: object.name,
+                painted: true,
+                swatchId,
+                color: colors.get(swatchId),
+                heightMM: style?.heightMM ?? object.heightMM,
+                ...(style?.heightLayers !== undefined
+                  ? { heightLayers: style.heightLayers }
+                  : object.heightLayers !== undefined
+                    ? { heightLayers: object.heightLayers }
+                    : {}),
+                zMM: scene.objectBottoms?.[id] ?? object.zMM,
+                modifierResult: { id: modifier.id },
+                sourceIds: object.pathIds,
+                normalizedGeometry: normalize(geometry, project.widthMM),
+              },
+            ];
+            filled = true;
+            domain = 'surfaces';
+            status.closedLoops = result.loopCount;
+            status.affected = 1;
+            status.afterArea = area(cells);
+            status.note = `${result.segmentCount} 段曲线闭合为 ${result.loopCount} 个环（奇偶填充）`;
+            continue;
+          }
+          if (curves && !filled)
+            throw Error('面修改器之前需要先添加闭合构面步骤');
           const refs = modifier.targets.refs || [];
           const matches = (c, r) =>
             (targetForCell(c).key === r.key ||
@@ -412,7 +518,9 @@ export function applyObjectModifiers(project, scene) {
                 const g = valid(
                   modifier.type === 'offset'
                     ? geometry.buffer(modifier.distanceMM, 12)
-                    : geometry[modifier.operation](operand),
+                    : modifier.type === 'radial_array'
+                      ? radialArray(geometry, modifier)
+                      : geometry[modifier.operation](operand),
                 );
                 replacements.set(
                   cell.key,
@@ -632,9 +740,13 @@ export function applyObjectModifiers(project, scene) {
     printLevels,
     errors,
     modifierStatus: statuses,
+    curvePreviews: [...curvePrograms.values()].flatMap((p) => p.stages),
     modifierContracts,
     modifierBindings,
     modifierBaseCells: [...base.values()].flat(),
+    pipelines: Object.fromEntries(
+      scene.creation.objects.map((o) => [o.id, objectPipeline(o)]),
+    ),
     featureGeometryOverrides: overrides,
     autoReplacedFeatureIds: replaced,
   };

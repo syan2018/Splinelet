@@ -10,18 +10,24 @@ export default function NumberEdit({
   disabled = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   onCommit: (n: number) => void;
   min?: number;
   max?: number;
   step?: number;
   disabled?: boolean;
 }) {
-  const [draft, setDraft] = useState<{ value: number; text: string } | null>(
-    null,
-  );
+  const [draft, setDraft] = useState<{
+    value: number | null;
+    text: string;
+  } | null>(null);
   const cancelled = useRef(false);
-  const text = draft?.value === value ? draft.text : String(+value.toFixed(6));
+  const text =
+    draft?.value === value
+      ? draft.text
+      : value == null
+        ? ''
+        : String(+value.toFixed(6));
   const commit = () => {
     setDraft(null);
     if (cancelled.current) {
@@ -45,6 +51,7 @@ export default function NumberEdit({
       type="number"
       disabled={disabled}
       aria-label={label}
+      placeholder={value == null ? '未设置' : undefined}
       min={min}
       max={max}
       step={step}

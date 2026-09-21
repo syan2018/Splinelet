@@ -26,7 +26,6 @@ import {
 } from '@/lib/project';
 import {
   emptyModel,
-  validateModel,
   regionDependants,
   featureDependants,
 } from '@/lib/model-schema.mjs';
@@ -36,11 +35,8 @@ import { deliver3MF } from '@/lib/manufacturing-download';
 import ReliefView from './relief-view';
 import NumberEdit from '../shared/creation-number';
 import WorkspaceDialog from '../shared/workspace-dialog';
-import {
-  printCount,
-  printMM,
-  requestedPrintCount,
-} from '@/lib/print-stack.mjs';
+import { projectModelPanel } from '@/lib/editor/model-panel-adapter.mjs';
+import { printCount } from '@/lib/print-stack.mjs';
 
 type RegionKind =
   | 'path'
@@ -53,7 +49,7 @@ type RegionKind =
 type ModelRegion = {
   id: string;
   name: string;
-  kind: RegionKind;
+  kind: RegionKind | 'output';
   color: string;
   pathId?: string;
   pathIds?: string[];
@@ -80,6 +76,7 @@ type ModelFeature = {
   heightMM: number;
   heightLayers?: number;
   attachId?: string;
+  attachmentLabel?: string;
   enabled: boolean;
   color: string;
 };
@@ -118,13 +115,19 @@ type PreviewConnection = {
   gapMM: number;
 };
 type Preview = {
+  commit: (
+    indices: number[],
+    options?: { replaceId?: string; name?: string },
+  ) => { project: unknown; regionIds: string[] };
   candidates: PreviewCandidate[];
   connections: PreviewConnection[];
   warnings: string[];
   spec: ModelRegionDraft;
   revision: Project;
 };
-type ModelRegionDraft = Omit<ModelRegion, 'id' | 'name' | 'color'>;
+type ModelRegionDraft = Omit<ModelRegion, 'id' | 'name' | 'color' | 'kind'> & {
+  kind: RegionKind;
+};
 type Solid = {
   partId: string;
   mesh: { positions: number[]; triangles: number[] };
@@ -144,10 +147,6 @@ type DeleteRequest = { rs: string[]; fs: string[] };
 type View = { x: number; y: number; s: number };
 type Gesture = { x: number; y: number; base: View };
 type ResizeDrag = { x: number; width: number };
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-};
 type ModelApi = {
   state: (input?: unknown) => unknown;
   [action: string]: (input?: unknown) => unknown;
@@ -171,15 +170,21 @@ type ModelApiArgs = {
   toleranceMM?: number;
   manufacturingMM?: number;
 } & Partial<ModelRegionDraft>;
-const modelFor = (project: Project): Model =>
-  (project.model as Model | undefined) ?? (emptyModel() as Model);
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
 type Props = {
   project: Project;
+  runtime: Pick<
+    ReturnType<
+      typeof import('@/lib/editor/creation-runtime.mjs').createV4CreationRuntime
+    >,
+    | 'evaluate'
+    | 'modelCommand'
+    | 'readOutputSettings'
+    | 'prepareModelConstruction'
+  >;
   mode: string;
-  onModel: (m: Model) => void;
   onEditSource: (id: string) => void;
   onApi: (api: ModelApi) => void;
   onMode: (mode: string) => void;
@@ -267,15 +272,33 @@ const esc = (s: string) =>
       })[c]!,
   );
 export default function ModelWorkspace(p: Props) {
-  // Legacy/source-only projects have no model. Keep their empty fallback stable
-  // so selection reconciliation cannot schedule itself after every render.
-  const model = useMemo(() => modelFor(p.project), [p.project]),
+  type CanonicalRead = {
+    project: Project;
+    view: ReturnType<
+      typeof import('@/lib/editor/model-workspace-view.mjs').projectModelWorkspaceView
+    >;
+    display: ReturnType<typeof projectModelPanel>;
+  };
+  const [canonical, setCanonical] = useState<CanonicalRead | null>(null);
+  const canonicalRef = useRef<CanonicalRead | null>(null);
+  // The panel displays only the canonical evaluation for its current project.
+  const model = useMemo(
+      () =>
+        (canonical?.display.model as Model | undefined) ??
+        ({
+          ...emptyModel(),
+          ...p.runtime.readOutputSettings(p.project),
+        } as Model),
+      [p.project, p.runtime, canonical],
+    ),
     ref = useRef(p);
   ref.current = p;
-  const worker = useRef<Worker | null>(null),
-    pending = useRef(new Map<number, PendingRequest>()),
-    seq = useRef(0),
-    [boot, setBoot] = useState(0);
+  const readModel = (project: Project): Model => {
+    if (canonicalRef.current?.project !== project)
+      throw Error('请等待当前工程求值');
+    return canonicalRef.current.display.model as Model;
+  };
+  const [boot, setBoot] = useState(0);
   const [regions, setRegions] = useState<ComputedRegion[]>([]),
     [result, setResult] = useState<Solid | null>(null),
     [calculating, setCalculating] = useState(false),
@@ -283,7 +306,9 @@ export default function ModelWorkspace(p: Props) {
   const [selected, setSelected] = useState<string[]>([]),
     [sourceIds, setSourceIds] = useState<string[]>([]),
     [featureId, setFeatureId] = useState(''),
-    [partId, setPartId] = useState('main');
+    [partId, setPartId] = useState(
+      () => p.runtime?.readOutputSettings(p.project).defaultPartId || 'main',
+    );
   const [operation, setOperation] = useState<RegionKind>('path'),
     [target, setTarget] = useState(''),
     [operand, setOperand] = useState(''),
@@ -339,69 +364,45 @@ export default function ModelWorkspace(p: Props) {
   const selectedRegion = regions.find((r) => r.id === selected.at(-1)),
     selectedSpec = model.regions.find((r) => r.id === selected.at(-1)),
     feature = model.features.find((f) => f.id === featureId);
-  const commit = (m: Model) => {
-    validateModel(m);
-    ref.current.onModel(m);
-  };
-  const mutate = (fn: (m: Model) => void) => {
-    const current = modelFor(ref.current.project),
-      m = structuredClone(current);
-    fn(m);
-    if (JSON.stringify(m) !== JSON.stringify(current)) commit(m);
-  };
   const rpc = <T,>(
     action: string,
     args: Record<string, unknown> = {},
     project = ref.current.project,
-  ) =>
-    new Promise<T>((resolve, reject) => {
-      if (!worker.current) {
-        reject(Error('几何引擎尚未准备好'));
-        return;
-      }
-      const id = ++seq.current;
-      pending.current.set(id, {
-        resolve: (value) => resolve(value as T),
-        reject,
-      });
-      worker.current.postMessage({
-        id,
-        action,
-        project: { ...project, image: '' },
-        args,
-      });
-    });
+  ): Promise<T> => {
+    const runtime = ref.current.runtime;
+    {
+      if (action === 'regions')
+        return runtime.evaluate('model_workspace', {}, project).then((view) => {
+          const captured = {
+            project,
+            view,
+            display: projectModelPanel(view),
+          } as CanonicalRead;
+          if (
+            ref.current.project === project &&
+            ref.current.runtime === runtime
+          ) {
+            canonicalRef.current = captured;
+            setCanonical(captured);
+            setError(
+              [
+                ...captured.view.creation.errors.map(
+                  (item: { message: string }) => item.message,
+                ),
+                ...(captured.view.unresolved.presentation.length
+                  ? ['部分区域名称或显示属性的引用已失效，请重新绑定']
+                  : []),
+              ].join('；'),
+            );
+          }
+          return captured.display.regions as T;
+        });
+      return runtime.evaluate(action, args, project) as Promise<T>;
+    }
+  };
   useEffect(() => {
-    const w = new Worker(
-        new URL('../../lib/model-worker.ts', import.meta.url),
-        {
-          type: 'module',
-        },
-      ),
-      pendingRequests = pending.current;
-    worker.current = w;
-    w.onmessage = ({ data }) => {
-      const r = pendingRequests.get(data.id);
-      if (!r) return;
-      pendingRequests.delete(data.id);
-      if (data.error) r.reject(Error(data.error));
-      else r.resolve(data.result);
-    };
-    w.onerror = (e) => {
-      setError('几何引擎加载失败：' + e.message);
-      for (const q of pendingRequests.values())
-        q.reject(Error('几何引擎加载失败'));
-      pendingRequests.clear();
-    };
     queueMicrotask(() => setBoot(1));
-    return () => {
-      w.terminate();
-      worker.current = null;
-      for (const q of pendingRequests.values())
-        q.reject(Error('工作空间已关闭'));
-      pendingRequests.clear();
-    };
-  }, []);
+  }, [p.runtime]);
   useEffect(() => {
     try {
       const w = Number(localStorage.getItem('bezier-model-sidebar'));
@@ -456,7 +457,7 @@ export default function ModelWorkspace(p: Props) {
         regionRevision.current = snapshot;
         if (p.mode === 'relief') {
           if (
-            !modelFor(snapshot).features.some(
+            !readModel(snapshot).features.some(
               (f) => f.enabled && f.partId === partId,
             )
           ) {
@@ -483,7 +484,7 @@ export default function ModelWorkspace(p: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [p.project, p.mode, partId, boot]);
+  }, [p.project, p.mode, partId, boot, p.runtime]);
   useEffect(() => {
     if (p.mode === 'faces' && p.initialPaths.length && !busy.current)
       queueMicrotask(() => setSourceIds(p.initialPaths));
@@ -612,18 +613,22 @@ export default function ModelWorkspace(p: Props) {
         throw Error('请选择两条路径');
       if (draft.kind === 'split' && (!draft.pathIds?.length || !draft.baseId))
         throw Error('请选择目标面和切分路径');
-      const value = await rpc<Omit<Preview, 'spec' | 'revision'>>(
-        'preview',
-        draft,
-        snapshot,
-      );
+      const captured = canonicalRef.current;
+      if (!captured || captured.project !== snapshot)
+        throw Error('请等待当前工程求值');
+      const value = ref.current.runtime.prepareModelConstruction(draft, {
+        project: snapshot,
+        view: captured.view,
+      });
       if (generation !== previewGeneration.current) return { cancelled: true };
       if (snapshot !== ref.current.project)
         throw Error('工程已改变，请重新预览');
       const prepared = { ...value, spec: draft, revision: snapshot };
       previewRef.current = prepared;
       setPreview(prepared);
-      setChosen(draft.kind === 'split' ? [] : [0]);
+      setChosen(
+        value.candidates.map((_item: PreviewCandidate, index: number) => index),
+      );
       setTab('create');
       return {
         candidates: value.candidates,
@@ -636,132 +641,145 @@ export default function ModelWorkspace(p: Props) {
     const value = previewRef.current;
     if (!value || value.revision !== ref.current.project)
       throw Error('预览已过期，请重新计算');
-    const ids = [...new Set(indices)];
-    if (
-      !ids.length ||
-      ids.some((i) => !Number.isInteger(i) || !value.candidates[i])
-    )
-      throw Error('请点击或勾选需要保留的区域');
-    if (replaceId && ids.length !== 1)
-      throw Error('重新绑定已有面时，请只选择一块区域');
-    const m = structuredClone(modelFor(ref.current.project)),
-      created: string[] = [];
-    for (const i of ids) {
-      const id = replaceId || crypto.randomUUID(),
-        old = m.regions.find((r) => r.id === id),
-        region = {
-          ...value.spec,
-          id,
-          name:
-            name?.trim() ||
-            old?.name ||
-            (value.spec.kind === 'path'
-              ? ref.current.project.paths.find(
-                  (x) => x.id === value.spec.pathId,
-                )?.name
-              : '') ||
-            `${labels[value.spec.kind]} ${m.regions.length + 1}`,
-          color: old?.color || palette[m.regions.length % palette.length],
-        };
-      if (value.spec.kind === 'split') {
-        region.seed = value.candidates[i].seed;
-        region.contourSignature = value.candidates[i].contourSignature;
-        region.seedWidthMM = ref.current.project.widthMM;
-        region.expectedCount = value.candidates.length;
-      }
-      if (old) m.regions[m.regions.indexOf(old)] = region;
-      else m.regions.push(region);
-      created.push(id);
-    }
-    commit(m);
+    const result = value.commit(indices, {
+      ...(replaceId ? { replaceId } : {}),
+      ...(name === undefined ? {} : { name }),
+    });
     cancel();
-    setSelected(created);
+    setSelected(result.regionIds);
     setFeatureId('');
     setTab('object');
-    p.status(`已建立 ${created.length} 个面 · 源样条保持原样 · 可撤销`);
-    return { regionIds: created };
+    p.status('已建立区域 · 源样条保持原样 · 可撤销');
+    return { regionIds: result.regionIds };
   }
   function addFeatures(args: ModelApiArgs = {}) {
-    const h = ref.current.project.creation?.printStack?.layerHeightMM;
-    if (h) {
-      const count = requestedPrintCount(
-        args.heightLayers !== undefined || args.heightMM !== undefined
-          ? args
-          : { heightLayers: printCount(2, h) },
-        h,
-      );
-      args = {
-        ...args,
-        heightMM: printMM(count, h),
-        heightLayers: count,
-        zMM: 0,
-        attachId: '',
-      };
-    }
-    const regionIds = args.regionIds || selected,
-      m = structuredClone(modelFor(ref.current.project));
-    if (!Array.isArray(regionIds) || !regionIds.length)
-      throw Error('请先选择一个或多个面');
-    if (!m.parts.some((x) => x.id === (args.partId || partId)))
-      throw Error('零件不存在');
-    const created: string[] = [];
-    for (const regionId of regionIds) {
-      const r = m.regions.find((r) => r.id === regionId);
-      if (!r) throw Error('面不存在');
-      const id = crypto.randomUUID();
-      m.features.push({
-        id,
-        name: r.name,
-        regionId,
-        partId: args.partId || partId,
-        mode: args.mode || 'add',
-        zMM: args.zMM ?? 0,
-        heightMM: args.heightMM ?? 2,
-        ...(h ? { heightLayers: args.heightLayers } : {}),
-        attachId: args.attachId || '',
-        enabled: true,
-        color: r.color,
-      });
-      created.push(id);
-    }
-    commit(m);
-    setFeatureId(created.at(-1)!);
+    const captured = canonicalRef.current;
+    if (!captured || captured.project !== ref.current.project)
+      throw Error('请等待当前工程求值');
+    const regionIds = args.regionIds || selected;
+    const plan = ref.current.runtime.modelCommand(
+      'create-relief',
+      { ...args, regionIds, partId: args.partId || partId },
+      { project: captured.project, view: captured.view },
+    );
+    plan.commit();
+    setFeatureId(plan.regionIds.at(-1)!);
     setTab('object');
     p.onMode('relief');
-    return { featureIds: created };
+    return { featureIds: plan.regionIds };
   }
   function updateFeature(id: string, changes: Partial<ModelFeature>) {
-    const h = ref.current.project.creation?.printStack?.layerHeightMM;
-    if (h && ('heightMM' in changes || 'heightLayers' in changes)) {
-      const count = requestedPrintCount(changes, h);
-      changes = {
-        ...changes,
-        heightLayers: count,
-        heightMM: printMM(count, h),
-      };
+    const captured = canonicalRef.current;
+    if (!captured || captured.project !== ref.current.project)
+      throw Error('请等待当前工程求值');
+    const plan = ref.current.runtime.modelCommand(
+      'feature',
+      { id, changes },
+      { project: captured.project, view: captured.view },
+    );
+    plan.commit();
+    const nextId = plan.regionIds.at(-1) || id;
+    if (nextId !== id) setFeatureId(nextId);
+    return { id: nextId };
+  }
+  function setRegionColor(regionId: string, color: string) {
+    const captured = canonicalRef.current;
+    if (!captured || captured.project !== ref.current.project)
+      throw Error('请等待当前工程求值');
+    ref.current.runtime
+      .modelCommand(
+        'color',
+        { regionId, color },
+        { project: captured.project, view: captured.view },
+      )
+      .commit();
+  }
+  function setRegionProperty(
+    regionId: string,
+    field: 'name' | 'visible',
+    value: string | boolean,
+  ) {
+    const captured = canonicalRef.current;
+    if (!captured || captured.project !== ref.current.project)
+      throw Error('请等待当前工程求值');
+    ref.current.runtime
+      .modelCommand(
+        'property',
+        {
+          action: field === 'name' ? 'set-region-name' : 'set-region-visible',
+          args: { regionId, value },
+        },
+        { project: captured.project, view: captured.view },
+      )
+      .commit();
+  }
+  function setModelOptions(
+    options: Partial<Pick<Model, 'toleranceMM' | 'manufacturingMM'>>,
+  ) {
+    if (
+      Object.keys(options).some(
+        (key) => !['toleranceMM', 'manufacturingMM'].includes(key),
+      )
+    )
+      throw Error('未知模型选项');
+    const tolerance = options.toleranceMM;
+    if (
+      tolerance !== undefined &&
+      (!Number.isFinite(tolerance) || tolerance < 0.001 || tolerance > 0.2)
+    )
+      throw Error('网格逼近精度必须为 0.001–0.2 mm');
+    const captured = canonicalRef.current;
+    if (!captured || captured.project !== ref.current.project)
+      throw Error('请等待当前工程求值');
+    ref.current.runtime
+      .modelCommand(
+        'property',
+        {
+          action: 'set-model-options',
+          args: {
+            scope: 'document',
+            ...(tolerance === undefined ? {} : { curveToleranceMM: tolerance }),
+            ...(options.manufacturingMM === undefined
+              ? {}
+              : { cleanupRadiusMM: options.manufacturingMM }),
+          },
+        },
+        { project: captured.project, view: captured.view },
+      )
+      .commit();
+    return { ok: true };
+  }
+  function createPart(name?: string) {
+    const id = crypto.randomUUID();
+    const title = name || '零件 ' + (model.parts.length + 1);
+    {
+      const captured = canonicalRef.current;
+      if (!captured || captured.project !== ref.current.project)
+        throw Error('请等待当前工程求值');
+      ref.current.runtime
+        .modelCommand(
+          'part',
+          { kind: 'create-part', id, name: title },
+          { project: captured.project, view: captured.view },
+        )
+        .commit();
     }
-    if (h && (changes.attachId || ('zMM' in changes && !('mode' in changes))))
-      throw Error('打印分层已接管起始高度，请在部件的所属堆叠层中调整');
-    const allowed = [
-      'name',
-      'regionId',
-      'partId',
-      'mode',
-      'zMM',
-      'heightMM',
-      'heightLayers',
-      'attachId',
-      'enabled',
-      'color',
-    ];
-    if (Object.keys(changes).some((k) => !allowed.includes(k)))
-      throw Error('未知体块属性');
-    mutate((m) => {
-      const f = m.features.find((f) => f.id === id);
-      if (!f) throw Error('体块不存在');
-      Object.assign(f, changes);
-    });
+    setPartId(id);
     return { id };
+  }
+  function renamePart(id: string, name: string) {
+    {
+      const captured = canonicalRef.current;
+      if (!captured || captured.project !== ref.current.project)
+        throw Error('请等待当前工程求值');
+      ref.current.runtime
+        .modelCommand(
+          'part',
+          { kind: 'rename-part', id, name },
+          { project: captured.project, view: captured.view },
+        )
+        .commit();
+    }
   }
   function requestDelete(kind: string, ids: string[]) {
     if (
@@ -770,13 +788,11 @@ export default function ModelWorkspace(p: Props) {
       !ids.length
     )
       throw Error('请指定对象类型和 ID 列表');
-    const objects =
-      kind === 'region'
-        ? ref.current.project.model?.regions || []
-        : ref.current.project.model?.features || [];
+    const current = readModel(ref.current.project);
+    const objects = kind === 'region' ? current.regions : current.features;
     if (ids.some((id) => !objects.some((o: { id: string }) => o.id === id)))
       throw Error('要删除的对象不存在');
-    const m = modelFor(ref.current.project),
+    const m = readModel(ref.current.project),
       rs = kind === 'region' ? regionDependants(m, ids) : [],
       fs = featureDependants(
         m,
@@ -792,17 +808,34 @@ export default function ModelWorkspace(p: Props) {
     return { deleted: true };
   }
   function erase(rs: string[], fs: string[]) {
-    mutate((m) => {
-      m.regions = m.regions.filter((r) => !rs.includes(r.id));
-      m.features = m.features.filter((f) => !fs.includes(f.id));
-    });
+    const captured = canonicalRef.current;
+    if (!captured || captured.project !== ref.current.project)
+      throw Error('请等待当前工程求值');
+    ref.current.runtime
+      .modelCommand(
+        rs.length ? 'delete-regions' : 'delete-relief',
+        rs.length ? { regionIds: rs, reliefIds: fs } : { regionIds: fs },
+        { project: captured.project, view: captured.view },
+      )
+      .commit();
     setDeleteRequest(null);
     cancel();
   }
   function reselect() {
     if (!selectedSpec) return;
+    if (selectedSpec.kind === 'output') {
+      setOperation('path');
+      setSourceIds([]);
+      setTarget('');
+      setOperand('');
+      setReplaceId(selectedSpec.id);
+      setTab('create');
+      p.onMode('faces');
+      p.status('选择新的来源并预览；确认后迁移此区域的属性，可撤销');
+      return;
+    }
     const s = selectedSpec;
-    setOperation(s.kind);
+    setOperation(selectedSpec.kind);
     setSourceIds(s.pathIds || [s.pathId].filter((id): id is string => !!id));
     setTarget(s.baseId || s.a || '');
     setOperand(s.b || '');
@@ -853,14 +886,15 @@ export default function ModelWorkspace(p: Props) {
         format === '3mf-generic' ||
         format === '3mf-bambu'
       ) {
-        if (format === '3mf-bambu' && !q.model?.slicerTemplate)
+        const slicerTemplate =
+          ref.current.runtime.readOutputSettings(q).slicerTemplate;
+        if (format === '3mf-bambu' && !slicerTemplate)
           throw Error('请先载入 Bambu Studio 配置模板');
         const result = await rpc<Parameters<typeof deliver3MF>[0]>(
           '3mf',
           {
             partId,
-            slicerTemplate:
-              format === '3mf-bambu' ? q.model?.slicerTemplate : null,
+            slicerTemplate: format === '3mf-bambu' ? slicerTemplate : null,
           },
           q,
         );
@@ -916,10 +950,13 @@ export default function ModelWorkspace(p: Props) {
         report: resultRevision.current === p.project ? result?.report : null,
         error,
       }),
-      inspect_model: async () => ({
-        regions: await rpc<ComputedRegion[]>('regions'),
-        model: modelFor(ref.current.project),
-      }),
+      inspect_model: async () => {
+        const snapshot = ref.current.project;
+        const regions = await rpc<ComputedRegion[]>('regions', {}, snapshot);
+        if (snapshot !== ref.current.project)
+          throw Error('工程已改变，请重新读取');
+        return { regions, model: readModel(snapshot) };
+      },
       preview_region: async (a: ModelRegionDraft) => {
         p.onMode('faces');
         return await makePreview(a);
@@ -946,25 +983,9 @@ export default function ModelWorkspace(p: Props) {
       create_relief: addFeatures,
       set_relief: (a: { id: string; changes: Partial<ModelFeature> }) =>
         updateFeature(a.id, a.changes),
-      set_model_options: (
-        a: Pick<Model, 'toleranceMM' | 'manufacturingMM'>,
-      ) => {
-        if (
-          Object.keys(a).some(
-            (k) => !['toleranceMM', 'manufacturingMM'].includes(k),
-          )
-        )
-          throw Error('未知模型选项');
-        mutate((m) => Object.assign(m, a));
-        return { ok: true };
-      },
+      set_model_options: setModelOptions,
       create_part: (a: { name?: string }) => {
-        const id = crypto.randomUUID();
-        mutate((m) =>
-          m.parts.push({ id, name: a.name || '零件 ' + (m.parts.length + 1) }),
-        );
-        setPartId(id);
-        return { id };
+        return createPart(a.name);
       },
       select_part: (a: { id: string }) => {
         if (!model.parts.some((x) => x.id === a.id)) throw Error('零件不存在');
@@ -1032,8 +1053,9 @@ export default function ModelWorkspace(p: Props) {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        if (featureId) requestDelete('feature', [featureId]);
-        else if (selected.length) requestDelete('region', selected);
+        if (featureId) void action(() => requestDelete('feature', [featureId]));
+        else if (selected.length)
+          void action(() => requestDelete('region', selected));
       }
     };
     const up = (e: Event) => {
@@ -1084,6 +1106,12 @@ export default function ModelWorkspace(p: Props) {
         ))}
     </select>
   );
+  const editFeature = (id: string, changes: Partial<ModelFeature>) => {
+    void action(() => updateFeature(id, changes));
+  };
+  const deleteFromUi = (kind: string, ids: string[]) => {
+    void action(() => requestDelete(kind, ids));
+  };
   return (
     <WorkspaceDialog
       open={p.mode !== 'trace'}
@@ -1440,10 +1468,8 @@ export default function ModelWorkspace(p: Props) {
                       <Rename
                         value={r.name}
                         onChange={(name) =>
-                          mutate(
-                            (m) =>
-                              (m.regions.find((x) => x.id === r.id)!.name =
-                                name),
+                          void action(() =>
+                            setRegionProperty(r.id, 'name', name),
                           )
                         }
                       />
@@ -1459,10 +1485,13 @@ export default function ModelWorkspace(p: Props) {
                         aria-label={`${r.name}显示`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          mutate((m) => {
-                            const o = m.regions.find((x) => x.id === r.id);
-                            if (o) o.visible = o.visible === false;
-                          });
+                          void action(() =>
+                            setRegionProperty(
+                              r.id,
+                              'visible',
+                              r.visible === false,
+                            ),
+                          );
                         }}
                         onPointerUp={(e) => e.stopPropagation()}
                       >
@@ -1496,14 +1525,7 @@ export default function ModelWorkspace(p: Props) {
                   <button
                     aria-label="新建零件"
                     onClick={() => {
-                      const id = crypto.randomUUID();
-                      mutate((m) =>
-                        m.parts.push({
-                          id,
-                          name: '零件 ' + (m.parts.length + 1),
-                        }),
-                      );
-                      setPartId(id);
+                      void action(() => createPart());
                     }}
                   >
                     <Plus size={15} />
@@ -1533,7 +1555,7 @@ export default function ModelWorkspace(p: Props) {
                           type="checkbox"
                           checked={f.enabled}
                           onChange={(e) =>
-                            updateFeature(f.id, { enabled: e.target.checked })
+                            editFeature(f.id, { enabled: e.target.checked })
                           }
                           onClick={(e) => e.stopPropagation()}
                         />
@@ -1546,7 +1568,7 @@ export default function ModelWorkspace(p: Props) {
                         </span>
                         <Rename
                           value={f.name}
-                          onChange={(name) => updateFeature(f.id, { name })}
+                          onChange={(name) => editFeature(f.id, { name })}
                         />
                         <small>
                           {f.mode === 'through'
@@ -1874,9 +1896,7 @@ export default function ModelWorkspace(p: Props) {
                           <b>体块属性</b>
                           <button
                             aria-label="删除当前体块"
-                            onClick={() =>
-                              requestDelete('feature', [featureId])
-                            }
+                            onClick={() => deleteFromUi('feature', [featureId])}
                           >
                             <Trash2 size={15} />
                           </button>
@@ -1887,7 +1907,7 @@ export default function ModelWorkspace(p: Props) {
                             aria-label="体块用途"
                             value={feature.mode}
                             onChange={(e) =>
-                              updateFeature(feature.id, {
+                              editFeature(feature.id, {
                                 mode: e.target.value as ModelFeature['mode'],
                                 zMM:
                                   e.target.value === 'cut' && !feature.attachId
@@ -1904,7 +1924,7 @@ export default function ModelWorkspace(p: Props) {
                         <label className="model-field">
                           来源面
                           {selectList(feature.regionId, (regionId) =>
-                            updateFeature(feature.id, { regionId }),
+                            editFeature(feature.id, { regionId }),
                           )}
                         </label>
                         <label className="model-field">
@@ -1912,7 +1932,7 @@ export default function ModelWorkspace(p: Props) {
                           <select
                             value={feature.partId}
                             onChange={(e) => {
-                              updateFeature(feature.id, {
+                              editFeature(feature.id, {
                                 partId: e.target.value,
                                 attachId: '',
                               });
@@ -1940,12 +1960,21 @@ export default function ModelWorkspace(p: Props) {
                                     aria-label="高度基准"
                                     value={feature.attachId || ''}
                                     onChange={(e) =>
-                                      updateFeature(feature.id, {
+                                      editFeature(feature.id, {
                                         attachId: e.target.value,
                                       })
                                     }
                                   >
                                     <option value="">绝对高度 · Z=0</option>
+                                    {feature.attachId &&
+                                      feature.attachmentLabel &&
+                                      !model.features.some(
+                                        (item) => item.id === feature.attachId,
+                                      ) && (
+                                        <option value={feature.attachId}>
+                                          {feature.attachmentLabel} · 顶面
+                                        </option>
+                                      )}
                                     {model.features
                                       .filter(
                                         (x) =>
@@ -1978,7 +2007,7 @@ export default function ModelWorkspace(p: Props) {
                                     defaultValue={feature.zMM}
                                     onBlur={(e) =>
                                       action(() =>
-                                        updateFeature(feature.id, {
+                                        editFeature(feature.id, {
                                           zMM: +e.target.value,
                                         }),
                                       )
@@ -2015,7 +2044,7 @@ export default function ModelWorkspace(p: Props) {
                                   }
                                   onCommit={(heightLayers) =>
                                     action(() =>
-                                      updateFeature(feature.id, {
+                                      editFeature(feature.id, {
                                         heightLayers,
                                       }),
                                     )
@@ -2032,7 +2061,7 @@ export default function ModelWorkspace(p: Props) {
                                   defaultValue={feature.heightMM}
                                   onBlur={(e) =>
                                     action(() =>
-                                      updateFeature(feature.id, {
+                                      editFeature(feature.id, {
                                         heightMM: +e.target.value,
                                       }),
                                     )
@@ -2069,7 +2098,7 @@ export default function ModelWorkspace(p: Props) {
                           </b>
                           <button
                             aria-label="删除所选面"
-                            onClick={() => requestDelete('region', selected)}
+                            onClick={() => deleteFromUi('region', selected)}
                           >
                             <Trash2 size={15} />
                           </button>
@@ -2101,7 +2130,10 @@ export default function ModelWorkspace(p: Props) {
                         {selected.length === 1 && selectedSpec && (
                           <>
                             <p className="model-help">
-                              来源：{labels[selectedSpec.kind]}
+                              来源：
+                              {selectedSpec.kind === 'output'
+                                ? '构造结果'
+                                : labels[selectedSpec.kind]}
                             </p>
                             <button onClick={reselect}>
                               重新指定来源 / 选区
@@ -2130,11 +2162,11 @@ export default function ModelWorkspace(p: Props) {
                                 type="color"
                                 value={selectedSpec?.color || '#b8ef62'}
                                 onChange={(e) =>
-                                  mutate(
-                                    (m) =>
-                                      (m.regions.find(
-                                        (r) => r.id === selectedSpec.id,
-                                      )!.color = e.target.value),
+                                  void action(() =>
+                                    setRegionColor(
+                                      selectedSpec.id,
+                                      e.target.value,
+                                    ),
                                   )
                                 }
                               />
@@ -2160,11 +2192,7 @@ export default function ModelWorkspace(p: Props) {
                           '零件'
                         }
                         onChange={(name) =>
-                          mutate(
-                            (m) =>
-                              (m.parts.find((x) => x.id === partId)!.name =
-                                name),
-                          )
+                          void action(() => renamePart(partId, name))
                         }
                       />
                     </div>
@@ -2188,7 +2216,7 @@ export default function ModelWorkspace(p: Props) {
                         defaultValue={model.toleranceMM}
                         onBlur={(e) =>
                           action(() =>
-                            mutate((m) => (m.toleranceMM = +e.target.value)),
+                            setModelOptions({ toleranceMM: +e.target.value }),
                           )
                         }
                       />
@@ -2198,9 +2226,10 @@ export default function ModelWorkspace(p: Props) {
                         type="checkbox"
                         checked={!!model.manufacturingMM}
                         onChange={(e) =>
-                          mutate(
-                            (m) =>
-                              (m.manufacturingMM = e.target.checked ? 0.02 : 0),
+                          void action(() =>
+                            setModelOptions({
+                              manufacturingMM: e.target.checked ? 0.02 : 0,
+                            }),
                           )
                         }
                       />
@@ -2290,7 +2319,8 @@ export default function ModelWorkspace(p: Props) {
               <button onClick={() => setDeleteRequest(null)}>取消</button>
               <button
                 onClick={() =>
-                  deleteRequest && erase(deleteRequest.rs, deleteRequest.fs)
+                  deleteRequest &&
+                  void action(() => erase(deleteRequest.rs, deleteRequest.fs))
                 }
               >
                 删除这些对象

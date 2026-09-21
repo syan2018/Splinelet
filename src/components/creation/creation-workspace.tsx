@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronRight,
@@ -15,24 +15,17 @@ import {
   Download,
   GripVertical,
   Focus,
+  Folder,
+  Lock,
+  Unlock,
 } from 'lucide-react';
-import {
-  type Project,
-  download,
-  blender,
-  validateProject,
-} from '@/lib/project';
-import {
-  creationDocument,
-  acceptDividerGraph,
-} from '@/lib/creation-schema.mjs';
-import { creationCommand } from '@/lib/creation-commands.mjs';
-import { bindSurfaceGraphs } from '@/lib/surface-lineage.mjs';
+import { type Project, download, blender } from '@/lib/project';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
 import SlicerTemplate from '../shared/slicer-template';
 import CreationView from './creation-view';
+import { useCurvePreview, CurvePreviewOverlay } from './creation-curve-preview';
 import PropertyNavigation, { globalPropertyPages } from './property-navigation';
 import CreationConnections from './creation-connections';
 import CreationModifiers from './creation-modifiers';
@@ -50,12 +43,19 @@ import {
   pathsForRegions,
 } from '@/lib/creation-selection.mjs';
 import { useCreationSelection } from '@/hooks/use-creation-selection';
+import { sceneGroupSelection } from '@/lib/editor/scene-group-selection.mjs';
+import { sceneTreeRows } from '@/lib/editor/scene-tree.mjs';
+import type { OutputRef } from '@/lib/document/types';
 import type {
   ModifierObject,
   ModifierScene,
   SurfaceModifier,
 } from '@/lib/modifier-types';
-import * as modelWorkerModule from '../../lib/model-worker.ts?worker';
+import type {
+  CreationRuntime,
+  CreationRuntimeContext,
+  PreparedCreationCommand,
+} from './creation-runtime';
 type Swatch = { id: string; name: string; color: string };
 type CreationObject = ModifierObject & {
   id: string;
@@ -75,18 +75,36 @@ type CreationObject = ModifierObject & {
   surfaceGraph?: { outputs: { key: string; signature: string }[] };
 };
 type CreationDocument = {
+  tree?: SceneNode[];
   objects: CreationObject[];
   swatches: Swatch[];
+  swatchOwners: Record<string, { id: string; name: string }[]>;
   printStack?: {
     layerHeightMM: number;
     layers: { id: string; name: string }[];
   };
 };
+type SceneNode = {
+  id: string;
+  kind: 'group' | 'shape';
+  name: string;
+  parentId: string | null;
+  visible: boolean;
+  locked: boolean;
+  ownVisible: boolean;
+  ownLocked: boolean;
+  hiddenBy: string[];
+  lockedBy: string[];
+  children: SceneNode[];
+};
+type SceneRow = CreationObject &
+  SceneNode & { depth: number; ancestors: string[] };
 type RegionGeometry = {
   type: 'Polygon' | 'MultiPolygon';
   coordinates: Point[][] | Point[][][];
 };
 type CreationCell = {
+  outputRef?: OutputRef;
   key: string;
   objectId: string;
   name?: string;
@@ -145,6 +163,10 @@ type CreationScene = Omit<
   ModifierScene,
   'creation' | 'cells' | 'errors' | 'modifierStatus'
 > & {
+  identities?: {
+    paths: Record<string, unknown>;
+    cells: Record<string, unknown>;
+  };
   creation: CreationDocument;
   cells: CreationCell[];
   errors: SceneError[];
@@ -160,16 +182,7 @@ type CreationScene = Omit<
     topMM: number;
     message?: string;
   }[];
-  modifierStatus?: {
-    objectId: string;
-    modifierId: string;
-    inputOptions: {
-      ref: { key: string; name: string; topology?: string };
-      name: string;
-    }[];
-    error?: string;
-    note?: string;
-  }[];
+  modifierStatus?: ModifierScene['modifierStatus'];
 };
 type SolidReport = {
   valid: boolean;
@@ -204,13 +217,10 @@ type PendingRoleResult = {
 type DragState = { y: number; value: number } | { slider: true };
 type PaintDrag = { keys: Set<string>; swatchId: string };
 type MoveState = { paths?: string[]; objects?: string[] };
-type WorkerRequest = {
-  resolve: (value: ModelResult) => void;
-  reject: (reason?: unknown) => void;
-};
 type CreationApi = {
+  readSelection: () => unknown;
   state: () => unknown;
-  inspect: () => Promise<unknown>;
+  inspect: (getProject?: () => Project) => Promise<unknown>;
   command: (
     action: string,
     args: Record<string, unknown>,
@@ -219,7 +229,22 @@ type CreationApi = {
   focus: (id: string) => void;
   select_paths: (ids: string[]) => void;
   select_cells: (keys: string[]) => void;
+  prepare_move: (target?: {
+    pathId?: string;
+    objectId?: string;
+    toggle?: boolean;
+  }) => {
+    pathIds: string[];
+    nodeIds: string[];
+    canDrag: boolean;
+    label: string;
+  };
   new_path: (path: { id: string }) => CreationDocument | undefined;
+  trace_target: () => {
+    ownerNodeId?: string;
+    role: string;
+    targets?: OutputRef[];
+  };
   show_output: (partId?: string) => void;
   show_project: () => void;
   show_tool: () => void;
@@ -230,19 +255,16 @@ type EyeDropperWindow = Window &
   typeof globalThis & {
     EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> };
   };
-const ModelWorker = (
-  modelWorkerModule as unknown as { default: new () => Worker }
-).default;
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 type Props = {
   project: Project;
+  runtime: CreationRuntime;
   enabled: boolean;
   viewMode: string;
   tool: string;
   onTool: (t: string) => void;
   onView: (v: string) => void;
-  onProject: (p: Project, record?: boolean) => void;
   onStatus: (s: string) => void;
   onApi: (a: CreationApi) => void;
   layer: SVGGElement | null;
@@ -253,6 +275,16 @@ type Props = {
   onSelectPaths: (ids: string[]) => void;
   onSelectionKind: (kind: 'object' | 'path' | 'cell') => void;
   onCanvasPointerDown: (e: React.PointerEvent) => void;
+  objectMoving: boolean;
+  objectMoveCommit: {
+    project: Project;
+    nodeIds: string[];
+    delta: { x: number; y: number };
+  } | null;
+  onMoveObject: (
+    e: React.PointerEvent,
+    target: { pathId?: string; objectId?: string },
+  ) => void;
   onFramePaths: (ids: string[], options?: { force?: boolean }) => void;
   sourceInspector: ReactNode;
   displaySettings: ReactNode;
@@ -326,18 +358,20 @@ export default function CreationWorkspace(p: Props) {
   useEffect(() => {
     ref.current = p;
   });
-  const doc = creationDocument(p.project) as CreationDocument,
+  const readCreation = (project: Project, runtime = p.runtime) =>
+    runtime.readCreationDocument(project) as CreationDocument;
+  const doc = readCreation(p.project),
     [scene, setScene] = useState<CreationScene | null>(null),
     sceneRef = useRef<CreationScene | null>(null),
     revision = useRef<Project | null>(null),
+    evaluationFailure = useRef<{ project: Project; message: string } | null>(
+      null,
+    ),
     roleChecking = useRef(false),
     applyRolesRef = useRef<(args: RoleArgs) => Promise<unknown>>(async () => {
       throw Error('区域引擎尚未准备好');
     }),
-    pendingRoleResult = useRef<PendingRoleResult | null>(null),
-    sequence = useRef(0),
-    worker = useRef<Worker | null>(null),
-    requests = useRef(new Map<number, WorkerRequest>());
+    pendingRoleResult = useRef<PendingRoleResult | null>(null);
   const [boot, setBoot] = useState(false),
     [engineCalculating, setCalculating] = useState(false),
     [evaluatedProject, setEvaluatedProject] = useState<Project | null>(null),
@@ -348,12 +382,12 @@ export default function CreationWorkspace(p: Props) {
   const calculating = engineCalculating || evaluatedProject !== p.project;
   const evaluationFailed = !calculating && !scene;
   const [outputPart, setOutputPartId] = useState('');
-  const outputParts = p.project.model?.parts.length
-    ? p.project.model.parts
-    : [{ id: 'main', name: '作品' }];
+  const outputSettings = p.runtime.readOutputSettings(p.project);
+  const slicerTemplate = outputSettings.slicerTemplate;
+  const outputParts = outputSettings.parts;
   const outputPartId = outputParts.some((part) => part.id === outputPart)
     ? outputPart
-    : outputParts[0].id;
+    : (outputSettings?.defaultPartId ?? outputParts[0].id);
   const [requestedPage, setTab] = useState('tool'),
     [brush, setBrush] = useState('cream'),
     [search, setSearch] = useState(''),
@@ -372,14 +406,17 @@ export default function CreationWorkspace(p: Props) {
     } | null>(null),
     [exporting, setExporting] = useState(false),
     [showLines, setShowLines] = useState(true),
-    [displayMode, setDisplayMode] = useState('reference');
+    [displayMode, setDisplayMode] = useState('overlay');
   const space = useRef(false),
     moving = useRef<MoveState | null>(null),
     root = useRef<HTMLElement>(null),
     nextRole = useRef('boundary'),
     revisionId = useRef(0);
   const selectionState = useCreationSelection({
-    doc,
+    doc: useMemo(
+      () => ({ objects: sceneTreeRows(doc.tree, doc.objects) as SceneRow[] }),
+      [doc],
+    ),
     scene,
     selectedPaths: p.selectedPaths,
     onSelectPaths: p.onSelectPaths,
@@ -394,13 +431,14 @@ export default function CreationWorkspace(p: Props) {
       if (
         next.ids.length &&
         next.kind !== 'path' &&
-        !['select', 'paint', 'height'].includes(ref.current.tool)
+        !['select', 'paint', 'height', 'move'].includes(ref.current.tool)
       )
         p.onTool('select');
     },
   });
   const {
     selection,
+    commit: commitSelection,
     objects,
     cellKeys,
     scope,
@@ -409,7 +447,25 @@ export default function CreationWorkspace(p: Props) {
     expandedCells,
     setExpandedCells,
   } = selectionState;
-  const canEditModifiers = selection.kind !== 'path' && objects.length === 1;
+  useEffect(() => {
+    if (p.tool === 'move' && selection.kind !== 'object')
+      commitSelection({ kind: 'object', ids: objects });
+  }, [p.tool, selection.kind, objects, commitSelection]);
+  const sceneRows = sceneTreeRows(doc.tree, doc.objects) as SceneRow[];
+  const groupSelection = sceneGroupSelection(
+    sceneRows,
+    selection.kind === 'object' ? selection.ids : [],
+  ) as {
+    selected: SceneRow[];
+    groups: SceneRow[];
+    shapes: SceneRow[];
+    rootGroups: SceneRow[];
+    singleGroup: SceneRow | null;
+  };
+  const selectedGroup = groupSelection.singleGroup;
+  const hasSelectedGroups = groupSelection.groups.length > 0;
+  const canEditModifiers =
+    selection.kind !== 'path' && objects.length === 1 && !hasSelectedGroups;
   const tab = ['object', 'lines', 'modifiers'].includes(requestedPage)
     ? !selection.ids.length
       ? 'tool'
@@ -459,14 +515,9 @@ export default function CreationWorkspace(p: Props) {
     setDisplayMode(mode);
     setShowLines(mode !== 'color');
   };
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (['trace', 'edit'].includes(p.tool)) chooseDisplay('reference');
-      else if (p.tool === 'paint') chooseDisplay('overlay');
-      else if (p.tool === 'height') chooseDisplay('color');
-    });
-    return () => window.clearTimeout(timer);
-  }, [p.tool]);
+  // Viewing the evaluated faces is independent of the active editing tool.
+  // In particular, entering source editing must not hide modifier results or
+  // replace an explicit display choice made by the user.
   useEffect(() => {
     p.stage?.setAttribute(
       'data-creation-lines',
@@ -486,48 +537,14 @@ export default function CreationWorkspace(p: Props) {
     action: string,
     args: Record<string, unknown> = {},
     project = ref.current.project,
-  ) =>
-    new Promise<ModelResult>((resolve, reject) => {
-      if (!worker.current) {
-        reject(Error('几何引擎尚未准备好'));
-        return;
-      }
-      const id = ++sequence.current;
-      requests.current.set(id, { resolve, reject });
-      worker.current.postMessage({
-        id,
-        action,
-        args,
-        project: { ...project, image: '' },
-      });
-    });
+  ): Promise<ModelResult> =>
+    ref.current.runtime.evaluate(action, args, project) as Promise<ModelResult>;
   useEffect(() => {
-    const w = new ModelWorker() as Worker;
-    const pendingRequests = requests.current;
-    worker.current = w;
-    w.onmessage = ({ data }) => {
-      const r = pendingRequests.get(data.id);
-      if (!r) return;
-      pendingRequests.delete(data.id);
-      if (data.error) r.reject(Error(String(data.error)));
-      else r.resolve(data.result as ModelResult);
-    };
-    w.onerror = () => {
-      setError('区域引擎加载失败，请刷新后重试');
-      for (const r of pendingRequests.values()) r.reject(Error('引擎加载失败'));
-      pendingRequests.clear();
-    };
     const timer = window.setTimeout(() => setBoot(true));
-    return () => {
-      window.clearTimeout(timer);
-      w.terminate();
-      worker.current = null;
-      for (const r of pendingRequests.values()) r.reject(Error('工作台已关闭'));
-      pendingRequests.clear();
-    };
-  }, []);
+    return () => window.clearTimeout(timer);
+  }, [p.runtime]);
   useEffect(() => {
-    if (!boot) return;
+    if (!boot || p.objectMoving) return;
     let cancelled = false;
     const snapshot = p.project;
     const timer = setTimeout(() => {
@@ -541,15 +558,18 @@ export default function CreationWorkspace(p: Props) {
       call('creation', {}, snapshot)
         .then((result) => {
           if (cancelled || ref.current.project !== snapshot) return;
-          const bound = bindSurfaceGraphs(snapshot, result) as Project;
-          if (bound !== snapshot && !ref.current.busy) {
-            ref.current.onProject(bound, false);
-            return;
+          const binding = ref.current.runtime.bindEvaluation(snapshot, result);
+          if (binding.project !== snapshot && !ref.current.busy) {
+            // Evaluation only projects the committed V4 document; it cannot
+            // introduce another writable project behind the command boundary.
+            throw Error('运行时 bindEvaluation 不能返回未提交的 Project');
           }
-          setScene(result);
+          const nextScene = binding.scene as CreationScene;
+          setScene(nextScene);
           setEvaluatedProject(snapshot);
-          sceneRef.current = result;
+          sceneRef.current = nextScene;
           revision.current = snapshot;
+          evaluationFailure.current = null;
           setError('');
         })
         .catch((error: unknown) => {
@@ -558,6 +578,10 @@ export default function CreationWorkspace(p: Props) {
             setScene(null);
             sceneRef.current = null;
             revision.current = null;
+            evaluationFailure.current = {
+              project: snapshot,
+              message: errorMessage(error),
+            };
             setError(errorMessage(error));
           }
         })
@@ -569,7 +593,7 @@ export default function CreationWorkspace(p: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [p.project, p.busy, boot]);
+  }, [p.project, p.busy, p.objectMoving, boot]);
   const notify = (message: string) => {
     setError('');
     p.onStatus(message);
@@ -589,13 +613,12 @@ export default function CreationWorkspace(p: Props) {
           ? '正在更新区域，请稍候再操作'
           : '区域计算失败或尚未就绪，请修复来源后重试',
       );
-    const next = creationCommand(
-      ref.current.project,
-      action,
-      args,
-      sceneRef.current,
-    ) as CommandResult;
-    p.onProject(next);
+    const context: CreationRuntimeContext = {
+      project: ref.current.project,
+      scene: revision.current === ref.current.project ? sceneRef.current : null,
+    };
+    const plan = ref.current.runtime.command(action, args, context);
+    const next = plan.commit() as CommandResult;
     clearConnectionPreview();
     notify(
       action === 'paint'
@@ -776,6 +799,8 @@ export default function CreationWorkspace(p: Props) {
     };
   });
   const svgExport = () => {
+    const scene = sceneRef.current,
+      p = ref.current;
     if (!scene) throw Error('请等待区域更新后导出');
     const invalid = scene?.errors.find((e) =>
       scene.creation.objects.some((o) => o.id === e.objectId && o.visible),
@@ -844,7 +869,7 @@ export default function CreationWorkspace(p: Props) {
         format === '3mf-generic' ||
         format === '3mf-bambu'
       ) {
-        if (format === '3mf-bambu' && !snapshot.model?.slicerTemplate)
+        if (format === '3mf-bambu' && !slicerTemplate)
           throw Error(
             '请先在「3MF 切片配置」载入一个 Bambu Studio 工程作为模板，之后可一直复用。',
           );
@@ -852,8 +877,7 @@ export default function CreationWorkspace(p: Props) {
           '3mf',
           {
             partId: outputPartId,
-            slicerTemplate:
-              format === '3mf-bambu' ? snapshot.model?.slicerTemplate : null,
+            slicerTemplate: format === '3mf-bambu' ? slicerTemplate : null,
           },
           snapshot,
         );
@@ -889,6 +913,18 @@ export default function CreationWorkspace(p: Props) {
   }
   useEffect(() => {
     p.onApi({
+      readSelection: () => ({
+        kind: selection.kind,
+        refs: selection.ids
+          .map((id) =>
+            selection.kind === 'object'
+              ? { kind: 'node', id }
+              : selection.kind === 'path'
+                ? scene?.identities?.paths[id]
+                : scene?.identities?.cells[id],
+          )
+          .filter(Boolean),
+      }),
       state: () => ({
         revision: revisionId.current,
         objects: doc.objects,
@@ -905,12 +941,18 @@ export default function CreationWorkspace(p: Props) {
         view: p.viewMode,
         displayMode,
       }),
-      inspect: async () => {
-        const snapshot = ref.current.project;
-        const result = await call('creation', {}, snapshot);
-        if (ref.current.project !== snapshot)
-          throw Error('作品已变化，请重新读取候选区域');
-        return { ...result, revision: revisionId.current };
+      inspect: async (getProject = () => ref.current.project) => {
+        // Read the same committed evaluation used by commands and export.
+        // The root getter includes edits not yet delivered through React props.
+        const deadline = Date.now() + 30000;
+        while (revision.current !== getProject() || !sceneRef.current) {
+          const failed = evaluationFailure.current;
+          if (failed?.project === getProject()) throw Error(failed.message);
+          if (Date.now() >= deadline)
+            throw Error('区域计算尚未完成，请稍后重试 creation_inspect');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return { ...sceneRef.current, revision: revisionId.current };
       },
       command: (
         action: string,
@@ -928,20 +970,86 @@ export default function CreationWorkspace(p: Props) {
       },
       focus: (id: string) => selectObject(id, {}, true),
       select_paths: selectionState.selectPaths,
+      prepare_move: (target) => {
+        const rawHit =
+          target?.objectId ||
+          (target?.pathId
+            ? doc.objects.find((o) => o.pathIds.includes(target.pathId!))?.id
+            : undefined);
+        const hitRow = sceneRows.find((row) => row.id === rawHit);
+        const hit =
+          objects.find((id) => hitRow?.ancestors.includes(id)) || rawHit;
+        const canDrag =
+          !!hit &&
+          selection.kind === 'object' &&
+          revision.current === ref.current.project &&
+          objects.includes(hit) &&
+          !target?.toggle;
+        const ids = hit
+          ? target?.toggle
+            ? objects.includes(hit)
+              ? objects.filter((id) => id !== hit)
+              : [...objects, hit]
+            : objects.includes(hit)
+              ? objects
+              : [hit]
+          : target
+            ? []
+            : objects;
+        const selected = sceneRows.filter(
+          (o) => ids.includes(o.id) && o.visible && !o.locked,
+        );
+        selectionState.commit({
+          kind: 'object',
+          ids: selected.map((o) => o.id),
+        });
+        return {
+          pathIds: [...new Set(selected.flatMap((o) => o.pathIds))],
+          nodeIds: sceneRows
+            .filter((row) =>
+              selected.some(
+                (node) => row.id === node.id || row.ancestors.includes(node.id),
+              ),
+            )
+            .map((row) => row.id),
+          canDrag,
+          label:
+            selected.length === 1
+              ? selected[0].name
+              : `${selected.length} 个部件`,
+        };
+      },
       select_cells: (keys: string[]) => {
-        if (keys.some((k) => !scene?.cells.some((c) => c.key === k)))
+        if (keys.some((k) => !sceneRef.current?.cells.some((c) => c.key === k)))
           throw Error('选区已变化');
         selectionState.commit({ kind: 'cell', ids: keys });
       },
       new_path: (path: { id: string }) => {
-        const c = creationDocument(ref.current.project) as CreationDocument,
-          o = c.objects.find((o) => o.id === objects.at(-1));
-        if (o) {
-          acceptDividerGraph(o);
-          o.pathIds.push(path.id);
-          o.roles[path.id] = nextRole.current;
-          return c;
+        return ref.current.runtime.attachNewPath(path, {
+          project: ref.current.project,
+          scene:
+            revision.current === ref.current.project ? sceneRef.current : null,
+        }) as CreationDocument | undefined;
+      },
+      trace_target: () => {
+        const ownerNodeId = objects.at(-1);
+        if (!ownerNodeId || hasSelectedGroups) return { role: 'boundary' };
+        if (ref.current.runtime && nextRole.current !== 'boundary') {
+          if (revision.current !== ref.current.project)
+            throw Error('区域正在更新，请稍候再落点');
+          const cells =
+            sceneRef.current?.cells.filter(
+              (cell) => cell.objectId === ownerNodeId,
+            ) || [];
+          if (!cells.length || cells.some((cell) => !cell.outputRef))
+            throw Error('当前部件没有可编辑区域');
+          return {
+            ownerNodeId,
+            role: nextRole.current,
+            targets: cells.map((cell) => cell.outputRef!),
+          };
         }
+        return { ownerNodeId, role: nextRole.current };
       },
       show_output: (partId) => {
         if (partId) setOutputPartId(partId);
@@ -957,7 +1065,10 @@ export default function CreationWorkspace(p: Props) {
     if (ref.current.busy || roleChecking.current)
       throw Error('请先完成当前操作');
     const snapshot = ref.current.project;
-    const next = creationCommand(snapshot, 'roles', args, sceneRef.current);
+    const context: CreationRuntimeContext = {
+      project: snapshot,
+      scene: revision.current === snapshot ? sceneRef.current : null,
+    };
     const beforeCount =
       sceneRef.current?.cells.filter((c) => c.objectId === args.objectId)
         .length || 0;
@@ -966,6 +1077,9 @@ export default function CreationWorkspace(p: Props) {
     setRoleIssue(null);
     setRoleResult(null);
     try {
+      const prepared: PreparedCreationCommand =
+        await ref.current.runtime.prepare('roles', args, context);
+      const next = prepared.project;
       const result = await call('creation', {}, next);
       if (ref.current.project !== snapshot)
         throw Error('线条已变化，请重新设置用途');
@@ -978,7 +1092,7 @@ export default function CreationWorkspace(p: Props) {
         p.onStatus('本次用途切换未应用；原区域与颜色保留');
         return { applied: false, issue };
       }
-      p.onProject(next);
+      const committed = ref.current.runtime.commitPrepared(prepared, context);
       clearConnectionPreview();
       if (failure?.kind === 'pipeline') {
         notify('用途已更新 · 下游构造已暂停，请修复或重建分区输出');
@@ -1006,7 +1120,7 @@ export default function CreationWorkspace(p: Props) {
             : '线条用途已更新';
       // Keep the result tied to the committed project; source edits clear it.
       pendingRoleResult.current = {
-        project: next,
+        project: committed,
         message,
         objectId: args.objectId,
       };
@@ -1072,6 +1186,13 @@ export default function CreationWorkspace(p: Props) {
           ) as unknown as Partial<CreationScene>),
         }
       : editedDraft;
+  const curvePreview = useCurvePreview(
+    p.project,
+    current?.id,
+    p.runtime,
+    evaluatedProject,
+    p.tool === 'edit' || p.tool === 'trace',
+  );
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.
@@ -1091,7 +1212,7 @@ export default function CreationWorkspace(p: Props) {
                 !o?.visible ||
                 c.mode === 'cut' ||
                 c.mode === 'through' ||
-                c.enabled === false
+                (c.enabled === false && c.painted)
               )
                 return null;
               const candidate = !c.painted,
@@ -1109,6 +1230,13 @@ export default function CreationWorkspace(p: Props) {
                     'creation-cell ' +
                     (candidate ? 'candidate ' : '') +
                     (active ? 'active ' : '')
+                  }
+                  transform={
+                    p.objectMoveCommit?.project === p.project &&
+                    evaluatedProject !== p.project &&
+                    p.objectMoveCommit.nodeIds.includes(o.id)
+                      ? `translate(${p.objectMoveCommit.delta.x} ${p.objectMoveCommit.delta.y})`
+                      : undefined
                   }
                   d={regionSVGPath(c.geometry, p.project)}
                   fill={painting ? swatch?.color : c.color}
@@ -1133,19 +1261,21 @@ export default function CreationWorkspace(p: Props) {
                   style={{
                     pointerEvents:
                       !basePreview &&
-                      ['select', 'paint', 'height'].includes(p.tool)
+                      ['select', 'paint', 'height', 'move'].includes(p.tool)
                         ? 'all'
                         : 'none',
                   }}
                   onPointerDown={(e) => {
                     // This SVG layer is a React portal. Its events do not bubble
                     // through Home's stage handlers even though the DOM is inside it.
-                    if (e.button === 1 || space.current) {
+                    if (e.button === 1 || e.button === 2 || space.current) {
                       p.onCanvasPointerDown(e);
                       return;
                     }
                     if (e.button !== 0 || space.current) return;
-                    if (p.tool === 'select') {
+                    if (p.tool === 'move') {
+                      p.onMoveObject(e, { objectId: o.id });
+                    } else if (p.tool === 'select') {
                       e.preventDefault();
                       e.stopPropagation();
                       selectionState.choose('cell', c.key, {
@@ -1165,6 +1295,7 @@ export default function CreationWorkspace(p: Props) {
                       e.stopPropagation();
                     }
                   }}
+                  onContextMenu={(e) => e.preventDefault()}
                   onPointerEnter={() => {
                     if (paintDrag.current) {
                       paintDrag.current.keys.add(c.key);
@@ -1209,6 +1340,17 @@ export default function CreationWorkspace(p: Props) {
                   pointerEvents="none"
                 />
               ))}
+            <CurvePreviewOverlay
+              previews={curvePreview.previews}
+              move={
+                p.objectMoveCommit?.project === p.project &&
+                evaluatedProject !== p.project
+                  ? p.objectMoveCommit
+                  : undefined
+              }
+              project={p.project}
+              scale={p.scale}
+            />
           </g>,
           p.layer,
         )}
@@ -1218,6 +1360,7 @@ export default function CreationWorkspace(p: Props) {
             {p.viewMode === '3d' && (
               <CreationView
                 scene={draftScene as never}
+                curvePreviews={curvePreview.previews}
                 selected={
                   scope === 'object'
                     ? (draftScene?.cells || [])
@@ -1313,6 +1456,7 @@ export default function CreationWorkspace(p: Props) {
                 </details>
               )}
             </div>
+            {curvePreview.controls}
             {scope !== 'source' &&
               (objects.length > 0 || cellKeys.length > 0) &&
               p.tool === 'height' && (
@@ -1410,11 +1554,21 @@ export default function CreationWorkspace(p: Props) {
                 aria-label="添加项目色"
                 onClick={() =>
                   safely(() => {
+                    const before = new Set(
+                      readCreation(
+                        ref.current.project,
+                        ref.current.runtime,
+                      ).swatches.map((item) => item.id),
+                    );
                     const next = run('swatch', {
                       color: swatch?.color || '#d2b777',
                       name: '新颜色',
                     });
-                    setBrush(next.creation.swatches.at(-1)!.id);
+                    const created = next.creation.swatches.find(
+                      (item) => !before.has(item.id),
+                    );
+                    if (!created) throw Error('新色卡未出现在命令结果中');
+                    setBrush(created.id);
                     setTab('palette');
                   })
                 }
@@ -1435,7 +1589,16 @@ export default function CreationWorkspace(p: Props) {
                     safely(() => {
                       if (basePreview.revision !== ref.current.project)
                         throw Error('来源已变化，请重新预览');
-                      p.onProject(validateProject(basePreview.project));
+                      ref.current.runtime.commitPreparedDisplay(
+                        basePreview.project,
+                        {
+                          project: basePreview.revision,
+                          scene:
+                            revision.current === basePreview.revision
+                              ? sceneRef.current
+                              : null,
+                        },
+                      );
                       selectionState.commit({
                         kind: 'object',
                         ids: [basePreview.objectId],
@@ -1465,7 +1628,28 @@ export default function CreationWorkspace(p: Props) {
       >
         <div className="creation-tree-head">
           <b>作品</b>
-          <span>{doc.objects.length} 个对象</span>
+          <span>{sceneRows.length} 个对象</span>
+          <button
+            aria-label="编为场景组"
+            title="编为场景组（保留各部件）"
+            disabled={selection.kind !== 'object' || !objects.length}
+            onClick={() =>
+              safely(() => {
+                const next = run('scene_group', { nodeIds: objects });
+                const created = sceneTreeRows(
+                  next.creation.tree,
+                  next.creation.objects,
+                ).find(
+                  (row: { id: string }) =>
+                    !sceneRows.some((before) => before.id === row.id),
+                );
+                if (created)
+                  selectionState.commit({ kind: 'object', ids: [created.id] });
+              })
+            }
+          >
+            <Folder size={16} />
+          </button>
           <button
             aria-label="定位选中内容 (F)"
             title="定位选中内容 · F"
@@ -1481,9 +1665,21 @@ export default function CreationWorkspace(p: Props) {
             title="新建部件"
             onClick={() =>
               safely(() => {
+                const before = new Set(
+                  readCreation(
+                    ref.current.project,
+                    ref.current.runtime,
+                  ).objects.map((item) => item.id),
+                );
                 const next = run('new_object');
-                const id = next.creation.objects.at(-1)!.id;
-                selectionState.commit({ kind: 'object', ids: [id] });
+                const created = next.creation.objects.find(
+                  (item) => !before.has(item.id),
+                );
+                if (!created) throw Error('新部件未出现在命令结果中');
+                selectionState.commit({
+                  kind: 'object',
+                  ids: [created.id],
+                });
               })
             }
           >
@@ -1511,8 +1707,25 @@ export default function CreationWorkspace(p: Props) {
           onKeyDown={(e) => {
             if (e.key === 'Escape') clear();
           }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            if (
+              event.target !== event.currentTarget ||
+              !moving.current?.objects
+            )
+              return;
+            event.preventDefault();
+            const nodeIds = moving.current.objects;
+            moving.current = null;
+            setDragTarget('');
+            safely(() => run('scene_reparent', { nodeIds, parentId: null }));
+          }}
         >
-          {doc.objects
+          {sceneRows
+            .filter(
+              (row) =>
+                !!search || row.ancestors.every((id) => expanded.includes(id)),
+            )
             .filter(
               (o) =>
                 !search ||
@@ -1524,6 +1737,137 @@ export default function CreationWorkspace(p: Props) {
                 ),
             )
             .map((o) => {
+              if (o.kind === 'group')
+                return (
+                  <div
+                    key={o.id}
+                    role="treeitem"
+                    aria-level={o.depth + 1}
+                    aria-expanded={expanded.includes(o.id)}
+                    aria-selected={
+                      selection.kind === 'object' && objects.includes(o.id)
+                    }
+                    data-tree-object={o.id}
+                    tabIndex={0}
+                    style={{ marginLeft: o.depth * 14 }}
+                    className={
+                      'creation-object-row ' +
+                      (objects.includes(o.id) ? 'selected ' : '') +
+                      (dragTarget === o.id ? 'drop-target' : '')
+                    }
+                    onClick={(event) => selectObject(o.id, event, true)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ')
+                        selectObject(o.id, event, true);
+                    }}
+                    draggable
+                    onDragStart={(event) => {
+                      const ids =
+                        selection.kind === 'object' && objects.includes(o.id)
+                          ? objects
+                          : [o.id];
+                      moving.current = { objects: ids };
+                      event.dataTransfer.setData(
+                        'application/x-creation-objects',
+                        JSON.stringify(ids),
+                      );
+                    }}
+                    onDragEnd={() => {
+                      moving.current = null;
+                      setDragTarget('');
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setDragTarget(o.id);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const nodeIds = moving.current?.objects;
+                      moving.current = null;
+                      setDragTarget('');
+                      if (nodeIds)
+                        safely(() =>
+                          run('scene_reparent', { nodeIds, parentId: o.id }),
+                        );
+                    }}
+                  >
+                    <button
+                      aria-label={
+                        (expanded.includes(o.id) ? '折叠' : '展开') + o.name
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setExpanded(
+                          expanded.includes(o.id)
+                            ? expanded.filter((id) => id !== o.id)
+                            : [...expanded, o.id],
+                        );
+                      }}
+                    >
+                      <ChevronRight
+                        size={15}
+                        style={{
+                          transform: expanded.includes(o.id)
+                            ? 'rotate(90deg)'
+                            : '',
+                        }}
+                      />
+                    </button>
+                    <Folder size={15} />
+                    <Name
+                      value={o.name}
+                      label="重命名场景组"
+                      onRename={(name) =>
+                        safely(() =>
+                          run('scene_node', { id: o.id, changes: { name } }),
+                        )
+                      }
+                    />
+                    <small>组 · {o.children.length}</small>
+                    <button
+                      aria-label={(o.ownVisible ? '隐藏' : '显示') + o.name}
+                      title={
+                        o.hiddenBy.length
+                          ? '隐藏来源：' +
+                            o.hiddenBy
+                              .map(
+                                (id) =>
+                                  sceneRows.find((row) => row.id === id)
+                                    ?.name || id,
+                              )
+                              .join('、')
+                          : undefined
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        safely(() =>
+                          run('scene_node', {
+                            id: o.id,
+                            changes: { visible: !o.ownVisible },
+                          }),
+                        );
+                      }}
+                    >
+                      {o.visible ? <Eye size={15} /> : <EyeOff size={15} />}
+                    </button>
+                    <button
+                      aria-label={(o.ownLocked ? '解锁' : '锁定') + o.name}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        safely(() =>
+                          run('scene_node', {
+                            id: o.id,
+                            changes: { locked: !o.ownLocked },
+                          }),
+                        );
+                      }}
+                    >
+                      {o.locked ? <Lock size={15} /> : <Unlock size={15} />}
+                    </button>
+                  </div>
+                );
               const open = expanded.includes(o.id),
                 paths = p.project.paths.filter((path) =>
                   o.pathIds.includes(path.id),
@@ -1534,6 +1878,7 @@ export default function CreationWorkspace(p: Props) {
               return (
                 <div
                   key={o.id}
+                  style={{ marginLeft: o.depth * 14 }}
                   className={
                     'creation-tree-object ' +
                     (dragTarget === o.id ? 'drop-target' : '')
@@ -1557,8 +1902,8 @@ export default function CreationWorkspace(p: Props) {
                             objectId: o.id,
                             pathIds: movingData.paths,
                           })
-                        : run('reorder', {
-                            objectIds: movingData.objects,
+                        : run('scene_reparent', {
+                            nodeIds: movingData.objects,
                             beforeId: o.id,
                           }),
                     );
@@ -1566,6 +1911,7 @@ export default function CreationWorkspace(p: Props) {
                 >
                   <div
                     role="treeitem"
+                    aria-level={o.depth + 1}
                     aria-expanded={open}
                     data-tree-object={o.id}
                     aria-selected={
@@ -1660,18 +2006,56 @@ export default function CreationWorkspace(p: Props) {
                           : `${paths.length} 线`}
                     </small>
                     <button
-                      aria-label={(o.visible ? '隐藏' : '显示') + o.name}
+                      aria-label={(o.ownVisible ? '隐藏' : '显示') + o.name}
+                      title={
+                        o.hiddenBy?.length
+                          ? '隐藏来源：' +
+                            o.hiddenBy
+                              .map(
+                                (id) =>
+                                  sceneRows.find((row) => row.id === id)
+                                    ?.name || id,
+                              )
+                              .join('、')
+                          : undefined
+                      }
                       onClick={(e) => {
                         e.stopPropagation();
                         safely(() =>
                           run('object', {
                             id: o.id,
-                            changes: { visible: !o.visible },
+                            changes: { visible: !o.ownVisible },
                           }),
                         );
                       }}
                     >
                       {o.visible ? <Eye size={15} /> : <EyeOff size={15} />}
+                    </button>
+                    <button
+                      aria-label={(o.ownLocked ? '解锁' : '锁定') + o.name}
+                      title={
+                        o.lockedBy?.length
+                          ? '锁定来源：' +
+                            o.lockedBy
+                              .map(
+                                (id) =>
+                                  sceneRows.find((row) => row.id === id)
+                                    ?.name || id,
+                              )
+                              .join('、')
+                          : undefined
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        safely(() =>
+                          run('scene_node', {
+                            id: o.id,
+                            changes: { locked: !o.ownLocked },
+                          }),
+                        );
+                      }}
+                    >
+                      {o.locked ? <Lock size={15} /> : <Unlock size={15} />}
                     </button>
                   </div>
                   {open && (
@@ -1819,43 +2203,150 @@ export default function CreationWorkspace(p: Props) {
             canEditModifiers={canEditModifiers}
           />
           <div className="property-content">
-            <div className="property-context" aria-live="polite">
-              <b>
-                {tab === 'project'
-                  ? '工程设置'
-                  : tab === 'palette'
-                    ? '项目色卡'
-                    : tab === 'print'
-                      ? '打印方案'
-                      : tab === 'make'
-                        ? '检查与导出'
-                        : tab === 'tool'
-                          ? '当前工具'
-                          : tab === 'modifiers'
-                            ? '构造与修改器'
-                            : '选区属性'}
-              </b>
-              <span>
-                {globalPropertyPages.includes(tab)
-                  ? '整个工程 · 不随选区改变'
-                  : tab === 'tool'
-                    ? {
-                        trace: '描线 · 拟合与吸附',
-                        edit: '节点 · 编辑当前线条',
-                        select: '选择 · 不改变形状',
-                        paint: '上色 · 使用当前画笔色',
-                        height: '高低 · 调整选中区域',
-                        pan: '平移 · 只移动视图',
-                      }[p.tool] || p.tool
-                    : selection.ids.length
-                      ? selection.kind === 'path'
-                        ? selection.ids.length + ' 条线条'
-                        : selection.kind === 'cell'
-                          ? selection.ids.length + ' 个区域'
-                          : selection.ids.length + ' 个部件'
-                      : '未选择对象'}
-              </span>
-            </div>
+            {selectedGroup && tab === 'object' && (
+              <section className="creation-section">
+                <h3>{selectedGroup.name} · 场景组</h3>
+                <p>
+                  移动此组会带动全部子对象；源线坐标和修改器局部锚点保持不变。
+                </p>
+                <label>
+                  父对象
+                  <select
+                    aria-label="场景组父对象"
+                    value={selectedGroup.parentId || ''}
+                    onChange={(event) =>
+                      safely(() =>
+                        run('scene_reparent', {
+                          nodeIds: [selectedGroup.id],
+                          parentId: event.target.value || null,
+                        }),
+                      )
+                    }
+                  >
+                    <option value="">作品根</option>
+                    {sceneRows
+                      .filter(
+                        (row) =>
+                          row.kind === 'group' &&
+                          row.id !== selectedGroup.id &&
+                          !row.ancestors.includes(selectedGroup.id),
+                      )
+                      .map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {row.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <button
+                  onClick={() =>
+                    safely(() => {
+                      run('scene_ungroup', { nodeIds: [selectedGroup.id] });
+                      selectionState.commit(
+                        {
+                          kind: 'object',
+                          ids: selection.ids.filter(
+                            (id) => id !== selectedGroup.id,
+                          ),
+                        },
+                        false,
+                      );
+                    })
+                  }
+                >
+                  解散场景组
+                </button>
+              </section>
+            )}
+            {hasSelectedGroups && !selectedGroup && tab === 'object' && (
+              <section className="creation-section" aria-live="polite">
+                <h3>场景组选区</h3>
+                <p>
+                  已选 {groupSelection.groups.length} 个场景组
+                  {groupSelection.shapes.length
+                    ? `、${groupSelection.shapes.length} 个部件`
+                    : ''}
+                  。
+                </p>
+                {groupSelection.rootGroups.length !==
+                  groupSelection.groups.length && (
+                  <p className="creation-muted">
+                    已选内层组由外层组涵盖；解组按{' '}
+                    {groupSelection.rootGroups.length} 个根场景组执行。
+                  </p>
+                )}
+                <p className="creation-muted">
+                  父级只能单选场景组后修改；部件属性请单选部件。
+                </p>
+                <button
+                  onClick={() =>
+                    safely(() => {
+                      const groupIds = groupSelection.rootGroups.map(
+                        (group) => group.id,
+                      );
+                      run('scene_ungroup', { nodeIds: groupIds });
+                      selectionState.commit(
+                        {
+                          kind: 'object',
+                          ids: selection.ids.filter(
+                            (id) => !groupIds.includes(id),
+                          ),
+                        },
+                        false,
+                      );
+                    })
+                  }
+                >
+                  解散选中的 {groupSelection.rootGroups.length} 个根场景组
+                </button>
+              </section>
+            )}
+            {!(selectedGroup && tab === 'object') && (
+              <div className="property-context" aria-live="polite">
+                <b>
+                  {tab === 'project'
+                    ? '工程设置'
+                    : tab === 'palette'
+                      ? '项目色卡'
+                      : tab === 'print'
+                        ? '打印方案'
+                        : tab === 'make'
+                          ? '检查与导出'
+                          : tab === 'tool'
+                            ? '当前工具'
+                            : tab === 'modifiers'
+                              ? '构造与修改器'
+                              : '选区属性'}
+                </b>
+                <span>
+                  {globalPropertyPages.includes(tab)
+                    ? '整个工程 · 不随选区改变'
+                    : tab === 'tool'
+                      ? {
+                          trace: '描线 · 拟合与吸附',
+                          edit: '节点 · 编辑当前线条',
+                          select: '选择 · 不改变形状',
+                          paint: '上色 · 使用当前画笔色',
+                          height: '高低 · 调整选中区域',
+                          pan: '平移 · 只移动视图',
+                          move: '移动对象 · 整体移动选中部件',
+                        }[p.tool] || p.tool
+                      : selection.ids.length
+                        ? selection.kind === 'path'
+                          ? selection.ids.length + ' 条线条'
+                          : selection.kind === 'cell'
+                            ? selection.ids.length + ' 个区域'
+                            : hasSelectedGroups
+                              ? `${groupSelection.groups.length} 个场景组${
+                                  groupSelection.shapes.length
+                                    ? `、${groupSelection.shapes.length} 个部件`
+                                    : ''
+                                }`
+                              : selection.ids.length + ' 个部件'
+                        : '未选择对象'}
+                </span>
+              </div>
+            )}
             <div
               className="creation-properties"
               key={
@@ -1965,6 +2456,7 @@ export default function CreationWorkspace(p: Props) {
                         <CreationSwatchDelete
                           key={swatch.id}
                           creation={doc}
+                          owners={doc.swatchOwners[swatch.id]}
                           swatch={swatch}
                           disabled={p.busy || calculating}
                           onDelete={(replacementId) => {
@@ -2006,29 +2498,33 @@ export default function CreationWorkspace(p: Props) {
                           ? '点击区域上色；拖过多个区域完成一笔。画笔色在画布底部选择。'
                           : p.tool === 'height'
                             ? '选择区域后使用高度柄，或在选区属性中输入厚度。'
-                            : '拖动画布移动视图；空格或中键可临时平移。'}
+                            : p.tool === 'move'
+                              ? '先点击选中部件，再按住其面或线整体移动；Shift 限制方向。右键、空格或中键拖动只平移视图。'
+                              : '右键、空格或中键拖动画布移动视图。'}
                     </p>
                   </div>
                 ))}
-              {['object', 'lines'].includes(tab) && current && (
-                <CreationSelectionDetails
-                  selection={selection}
-                  objects={objects}
-                  project={p.project}
-                  scene={scene}
-                  onSelect={(next) => selectionState.commit(next)}
-                  onEnable={() => safely(() => applyHeight(displayedHeight))}
-                  onEdit={() => {
-                    const ids =
-                      selection.kind === 'cell'
-                        ? pathsForRegions(p.project, scene, cellKeys)
-                        : current.pathIds;
-                    selectionState.selectPaths(ids);
-                    p.onTool('edit');
-                    setTab('tool');
-                  }}
-                />
-              )}
+              {['object', 'lines'].includes(tab) &&
+                current &&
+                !hasSelectedGroups && (
+                  <CreationSelectionDetails
+                    selection={selection}
+                    objects={objects}
+                    project={p.project}
+                    scene={scene}
+                    onSelect={(next) => selectionState.commit(next)}
+                    onEnable={() => safely(() => applyHeight(displayedHeight))}
+                    onEdit={() => {
+                      const ids =
+                        selection.kind === 'cell'
+                          ? pathsForRegions(p.project, scene, cellKeys)
+                          : current.pathIds;
+                      selectionState.selectPaths(ids);
+                      p.onTool('edit');
+                      setTab('tool');
+                    }}
+                  />
+                )}
               {tab === 'modifiers' &&
                 selection.kind !== 'path' &&
                 objects.length === 1 && (
@@ -2173,7 +2669,7 @@ export default function CreationWorkspace(p: Props) {
                     />
                   );
                 })}
-              {tab === 'object' && (
+              {tab === 'object' && !hasSelectedGroups && (
                 <>
                   {current ? (
                     <>
@@ -2190,6 +2686,7 @@ export default function CreationWorkspace(p: Props) {
                             画轮廓
                           </button>
                           <button
+                            disabled={p.busy || (!!p.runtime && calculating)}
                             onClick={() =>
                               safely(() => {
                                 nextRole.current = 'divider';
@@ -2202,6 +2699,7 @@ export default function CreationWorkspace(p: Props) {
                             画分区线
                           </button>
                           <button
+                            disabled={p.busy || (!!p.runtime && calculating)}
                             onClick={() =>
                               safely(() => {
                                 nextRole.current = 'hole';
@@ -2278,7 +2776,9 @@ export default function CreationWorkspace(p: Props) {
                                 ? [
                                     doc.swatches.find(
                                       (s) => s.id === current.swatchId,
-                                    )?.color || swatch.color,
+                                    )?.color ||
+                                      swatch?.color ||
+                                      null,
                                   ]
                                 : (scene?.cells || [])
                                     .filter((c) =>
@@ -2426,16 +2926,13 @@ export default function CreationWorkspace(p: Props) {
                                         ),
                                       }
                                     : { heightMM: baseHeight }),
-                                  swatchId: swatch.id,
+                                  swatchId: swatch?.id,
                                 });
                                 if (ref.current.project !== snapshot)
                                   throw Error('来源已变化，请重新预览');
                                 setBasePreview({
                                   ...result,
-                                  project: {
-                                    ...result.project,
-                                    image: snapshot.image,
-                                  },
+                                  project: result.project,
                                   revision: snapshot,
                                 });
                               })
@@ -2569,11 +3066,13 @@ export default function CreationWorkspace(p: Props) {
                                 .every(
                                   (id) =>
                                     (current.roles[id] ||
-                                      (p.project.paths.find(
-                                        (path) => path.id === id,
-                                      )?.closed
-                                        ? 'boundary'
-                                        : 'guide')) === role,
+                                      (scene?.modifierModel === 'program'
+                                        ? undefined
+                                        : p.project.paths.find(
+                                              (path) => path.id === id,
+                                            )?.closed
+                                          ? 'boundary'
+                                          : 'guide')) === role,
                                 )}
                               onClick={() => chooseRole(role)}
                             >
@@ -2613,10 +3112,22 @@ export default function CreationWorkspace(p: Props) {
                           const snapshot = p.project,
                             id = current.id,
                             token = ++connectionRequest.current;
-                          const result = await call('creation', {
-                            objectId: id,
-                            joinMM,
-                          });
+                          const prepared = await ref.current.runtime.prepare(
+                            'join',
+                            { objectId: id, joinMM },
+                            {
+                              project: snapshot,
+                              scene:
+                                revision.current === snapshot
+                                  ? sceneRef.current
+                                  : null,
+                            },
+                          );
+                          const result = await call(
+                            'creation',
+                            {},
+                            prepared.project,
+                          );
                           if (
                             token !== connectionRequest.current ||
                             focusedObject.current !== id
@@ -2728,23 +3239,17 @@ export default function CreationWorkspace(p: Props) {
                   </p>
                   <SlicerTemplate
                     onExport={() => safely(() => exportWork('3mf-bambu'))}
-                    value={p.project.model?.slicerTemplate}
+                    value={slicerTemplate}
                     disabled={exporting || calculating || evaluationFailed}
-                    onChange={(slicerTemplate) =>
-                      p.onProject({
-                        ...p.project,
-                        model: {
-                          ...(p.project.model || {
-                            version: 1,
-                            toleranceMM: 0.015,
-                            regions: [],
-                            features: [],
-                            parts: [{ id: 'main', name: '零件 1' }],
-                          }),
-                          slicerTemplate,
-                        },
-                      })
-                    }
+                    onChange={(slicerTemplate) => {
+                      ref.current.runtime.setSlicerTemplate(slicerTemplate, {
+                        project: ref.current.project,
+                        scene:
+                          revision.current === ref.current.project
+                            ? sceneRef.current
+                            : null,
+                      });
+                    }}
                   />
                   <button onClick={() => p.onAdvanced('relief')}>
                     零件与制造参数…

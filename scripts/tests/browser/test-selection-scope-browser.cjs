@@ -2,11 +2,7 @@ module.exports = async (page, fixture) => {
   const assert = require('node:assert/strict');
   const checks = [];
   fixture = JSON.parse(JSON.stringify(fixture));
-  const call = (action, args = {}) =>
-    page.evaluate(({ action, args }) => window.traceStudio.call(action, args), {
-      action,
-      args,
-    });
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const settle = async () => {
     await page.waitForFunction(
       async () =>

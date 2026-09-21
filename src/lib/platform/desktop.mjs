@@ -57,7 +57,7 @@ export const desktopExportFile = (bytes, filename, _mimeType) =>
   invokeDesktop('export_file', {
     data: Array.from(bytes),
     suggestedName: filename,
-    extension: filename.split('./').at(-1)?.toLowerCase() || 'json',
+    extension: filename.split('.').at(-1)?.toLowerCase() || 'json',
   });
 
 export const desktopPendingOpenPaths = () =>

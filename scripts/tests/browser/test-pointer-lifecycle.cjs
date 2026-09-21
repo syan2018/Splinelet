@@ -1,13 +1,7 @@
 module.exports = async (page) => {
   const assert = require('node:assert/strict');
   const checks = [];
-  const call = async (action, args = {}) => {
-    await page.waitForFunction(() => window.traceStudio);
-    return page.evaluate(
-      ({ action, args }) => window.traceStudio.call(action, args),
-      { action, args },
-    );
-  };
+  const call = require('./harness/legacy-call.cjs').legacyCaller(page);
   const settle = async () => {
     await page.waitForFunction(
       async () =>
@@ -112,7 +106,7 @@ module.exports = async (page) => {
   );
   assert.deepEqual((await call('state')).creation.selection, {
     kind: 'path',
-    ids: ['pointer-rectangle'],
+    ids: [before[0].id],
   });
   checks.push(
     'path click with one-pixel jitter ends cleanly and later hover cannot move geometry',
