@@ -1,3 +1,7 @@
+import { objectTransformCenter } from '../source-editor/object-transform-center.mjs';
+import { createObjectTransformCommand } from '../editing/commands/object-transform.mjs';
+import { projectSourceView } from './source-view.mjs';
+import { descendantsOf } from '../scene/hierarchy.mjs';
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
 import { outputIdentity } from '../relief/appearance.mjs';
 import { sourcePathId } from './source-view.mjs';
@@ -24,6 +28,7 @@ export const CREATION_INTENTS = Object.freeze([
   'delete_swatch',
   'object',
   'new_object',
+  'scene_transform',
   'scene_group',
   'scene_ungroup',
   'scene_reparent',
@@ -113,6 +118,32 @@ export function createCreationIntent(action, args, displayed) {
         ...new Map(refs.map((ref) => [outputIdentity(ref), ref])).values(),
       ];
     };
+    if (action === 'scene_transform') {
+      const ids = new Set(
+        (request.nodeIds || []).flatMap((id) => [
+          id,
+          ...descendantsOf(document, id),
+        ]),
+      );
+      const frame = document.sourceFrame || {
+        width: 100,
+        height: 100,
+        widthMM: 100,
+      };
+      const source = projectSourceView(document, frame);
+      const centerMM = objectTransformCenter(
+        [...ids],
+        source.paths,
+        view.cells,
+        frame,
+      );
+      return createObjectTransformCommand({
+        ...request,
+        ...(request.mode === 'translate'
+          ? {}
+          : { centerMM: request.centerMM || centerMM }),
+      })(document, context);
+    }
     if (action === 'scene_group')
       run({
         kind: 'group-nodes',

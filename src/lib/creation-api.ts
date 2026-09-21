@@ -20,7 +20,7 @@ export const creationTools: ToolCatalog = {
   },
   creation_command: {
     description:
-      'Compatibility creation intent using the same V4 dispatcher. expectedRevision must come from document.get; paint/height also require creation_inspect revision. Prefer API 5 authoring.run for new automation. Geometry failures retain diagnostics; object/group changes do not rewrite source coordinates.',
+      'Compatibility creation intent using the same V4 dispatcher. expectedRevision must come from document.get; paint/height also require creation_inspect revision. Prefer API 5 authoring.run for new automation. Geometry failures retain diagnostics. Translation/rotation preserve source coordinates; uniform object scaling changes local geometry and spatial operator parameters.',
     // These compatibility intents compile to the same canonical commands.
     // Modifier parameters are documented here as well as in docs/modifiers.md,
     // so an agent can operate the stack from tool discovery alone.
@@ -41,6 +41,7 @@ export const creationTools: ToolCatalog = {
           'delete_swatch',
           'object',
           'new_object',
+          'scene_transform',
           'scene_group',
           'scene_ungroup',
           'scene_reparent',
@@ -62,7 +63,7 @@ export const creationTools: ToolCatalog = {
       args: {
         type: 'object',
         description:
-          'modifier_add supports curve_mirror/curve_array (targets:{kind:all}, centerMM, angleDeg, count), join (explicit connections from modifierAdd.endpoints), and fill (rule:even-odd|non-zero, only when no region output exists). modifier_update edits type-specific parameters including connections/rule; move/remove use the reported structure capabilities. scene_group {nodeIds,name?}, scene_ungroup {nodeIds}, scene_reparent {nodeIds,parentId|beforeId}, scene_node {id,changes} operate on scene Nodes, preserving world placement. scene_delete {nodeIds} deletes selected Nodes and descendants; delete_paths {pathIds} deletes source paths using displayed IDs. Both reject locked targets atomically. Legacy manage_group refers only to path Collections.',
+          'modifier_add supports curve_mirror/curve_array (targets:{kind:all}, centerMM, angleDeg, count), join (explicit connections from modifierAdd.endpoints), and fill (rule:even-odd|non-zero, only when no region output exists). modifier_update edits type-specific parameters including connections/rule; move/remove use the reported structure capabilities. scene_transform {nodeIds,mode:translate|rotate|scale,deltaMM?|angleRad?|factor?,centerMM?} transforms complete groups in one undo step. Rotation/scaling default to the evaluated selection center; scale is a positive uniform factor, keeps relief thickness, and rejects spatial references crossing the selection. scene_group {nodeIds,name?}, scene_ungroup {nodeIds}, scene_reparent {nodeIds,parentId|beforeId}, scene_node {id,changes} operate on scene Nodes, preserving world placement. scene_delete {nodeIds} deletes selected Nodes and descendants; delete_paths {pathIds} deletes source paths using displayed IDs. Both reject locked targets atomically. Legacy manage_group refers only to path Collections.',
       },
       revision: {
         type: 'integer',

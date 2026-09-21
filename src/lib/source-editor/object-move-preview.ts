@@ -1,3 +1,7 @@
+import {
+  objectTransformAttribute,
+  type ObjectTransformDelta,
+} from './object-transform-preview';
 /** Temporary SVG transforms only; the document remains owned by the runtime. */
 export function objectMovePreview(
   stage: Element,
@@ -20,9 +24,9 @@ export function objectMovePreview(
     element.getAttribute('transform'),
   );
   let frame = 0;
-  let delta = { x: 0, y: 0 };
+  let delta: ObjectTransformDelta = { x: 0, y: 0 };
   return {
-    update(next: { x: number; y: number }) {
+    update(next: ObjectTransformDelta) {
       delta = next;
       if (frame) return;
       frame = requestAnimationFrame(() => {
@@ -30,7 +34,7 @@ export function objectMovePreview(
         elements.forEach((element, index) => {
           element.setAttribute(
             'transform',
-            `translate(${delta.x} ${delta.y}) ${originals[index] || ''}`,
+            `${objectTransformAttribute(delta)} ${originals[index] || ''}`,
           );
         });
       });

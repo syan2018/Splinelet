@@ -1,3 +1,4 @@
+import { createObjectTransformCommand } from '../editing/commands/object-transform.mjs';
 import { createCreationIntent } from './creation-intents.mjs';
 import { projectCreationView } from './creation-view.mjs';
 import { evaluateDocument } from '../evaluation/evaluate-document.mjs';
@@ -10,7 +11,7 @@ import { createSourceRuntime } from './source-runtime.mjs';
 import { projectSourceView } from './source-view.mjs';
 import { projectEndpointSnapContext } from './endpoint-snap-view.mjs';
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
-import { effectiveNodeState } from '../scene/hierarchy.mjs';
+import { effectiveNodeState, selectedRoots } from '../scene/hierarchy.mjs';
 import { creationOutput } from './creation-output.mjs';
 import { projectModelWorkspaceView } from './model-workspace-view.mjs';
 import { createModelIntent } from './model-intents.mjs';
@@ -170,11 +171,16 @@ export function createV4CreationRuntime({
         }),
       );
     },
-    beginObjectGesture(project, nodeIds, { displayOnly = false } = {}) {
+    beginObjectGesture(
+      project,
+      nodeIds,
+      { displayOnly = false, mode = 'translate', center = { x: 0, y: 0 } } = {},
+    ) {
       const entry = current(project);
       if (!Array.isArray(nodeIds) || !nodeIds.length)
         throw Error('移动部件需要非空选区');
       const ids = [...new Set(nodeIds)];
+      const roots = new Set(selectedRoots(entry.state.document, ids));
       for (const id of ids) {
         if (
           typeof id !== 'string' ||
@@ -182,17 +188,30 @@ export function createV4CreationRuntime({
         )
           throw Error('移动部件不存在');
         const state = effectiveNodeState(entry.state.document, id);
-        if (!state.visible || state.locked) throw Error('移动部件已隐藏或锁定');
+        if ((roots.has(id) && !state.visible) || state.locked)
+          throw Error('变换目标已隐藏或锁定');
       }
       const frame = sourceRuntime.readSourceView(project).source.frame;
       const [a, b, c, d] = frame.pixelToWorld;
       const compile = (delta) => {
         if (!Number.isFinite(delta?.x) || !Number.isFinite(delta?.y))
           throw Error('拖动位移必须是有限像素坐标');
-        return createAuthoringCommand({
-          kind: 'move-nodes',
+        return createObjectTransformCommand({
+          mode,
           nodeIds: ids,
-          deltaMM: [a * delta.x + c * delta.y, b * delta.x + d * delta.y],
+          ...(mode === 'translate'
+            ? {
+                deltaMM: [a * delta.x + c * delta.y, b * delta.x + d * delta.y],
+              }
+            : {
+                centerMM: transformPoint(frame.pixelToWorld, [
+                  center.x,
+                  center.y,
+                ]),
+                ...(mode === 'rotate'
+                  ? { angleRad: delta.angleRad ?? 0 }
+                  : { factor: delta.factor ?? 1 }),
+              }),
         });
       };
       if (displayOnly) {

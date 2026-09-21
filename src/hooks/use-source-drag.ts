@@ -11,6 +11,10 @@ import { nodeSelection, selectedNode } from '@/lib/source-editor/node-edit.mjs';
 import { snapEndpoint } from '@/lib/source-editor/endpoint-snap.mjs';
 
 import { objectMovePreview } from '@/lib/source-editor/object-move-preview';
+import {
+  pointerObjectTransform,
+  type ObjectTransformDelta,
+} from '@/lib/source-editor/object-transform-preview';
 import type { Project } from '@/lib/project';
 
 type Point = { x: number; y: number };
@@ -29,8 +33,10 @@ type Active = {
   snapContext?: ReturnType<SourceInput['runtime']['readEndpointSnapContext']>;
   snapId?: string;
   object?: {
+    mode: 'translate' | 'rotate' | 'scale';
+    center: Point;
     nodeIds: string[];
-    delta: Point;
+    delta: ObjectTransformDelta;
     preview: ReturnType<typeof objectMovePreview>;
   };
 };
@@ -51,6 +57,7 @@ export function useSourceDrag({
   onError,
   onActiveChange,
   onObjectCommit,
+  transformMode = 'translate',
   snapEnabled = false,
   scale = 1,
   onSnapFeedback = () => {},
@@ -67,8 +74,9 @@ export function useSourceDrag({
   onObjectCommit: (value: {
     project: Project;
     nodeIds: string[];
-    delta: Point;
+    delta: ObjectTransformDelta;
   }) => void;
+  transformMode?: 'translate' | 'rotate' | 'scale';
   snapEnabled?: boolean;
   scale?: number;
   onSnapFeedback?: (feedback: ReturnType<typeof snapEndpoint>) => void;
@@ -146,6 +154,7 @@ export function useSourceDrag({
       event: PointerEvent,
       nodeIds: string[],
       pathIds: string[],
+      center: Point,
     ) {
       if (!runtime) return;
       if (active.current || disabled || isPanning() || event.button !== 0)
@@ -161,10 +170,16 @@ export function useSourceDrag({
           event,
           target,
           origin,
-          runtime.beginObjectGesture(project, nodeIds, { displayOnly: true }),
+          runtime.beginObjectGesture(project, nodeIds, {
+            displayOnly: true,
+            mode: transformMode,
+            center,
+          }),
           undefined,
           {
             nodeIds,
+            mode: transformMode,
+            center,
             delta: { x: 0, y: 0 },
             preview: objectMovePreview(target, nodeIds, pathIds),
           },
@@ -277,8 +292,14 @@ export function useSourceDrag({
         else x = 0;
       }
       if (current.object) {
-        current.object.delta = { x, y };
-        current.object.preview.update({ x, y });
+        current.object.delta = pointerObjectTransform(
+          current.object.mode,
+          current.origin,
+          point,
+          current.object.center,
+          event.shiftKey,
+        );
+        current.object.preview.update(current.object.delta);
         return;
       }
       try {
@@ -311,13 +332,13 @@ export function useSourceDrag({
       if (current.object && current.moved) {
         const point = toPoint(event);
         if (point) {
-          let x = point.x - current.origin.x,
-            y = point.y - current.origin.y;
-          if (event.shiftKey) {
-            if (Math.abs(x) > Math.abs(y)) y = 0;
-            else x = 0;
-          }
-          current.object.delta = { x, y };
+          current.object.delta = pointerObjectTransform(
+            current.object.mode,
+            current.origin,
+            point,
+            current.object.center,
+            event.shiftKey,
+          );
         }
       }
       finish(true);

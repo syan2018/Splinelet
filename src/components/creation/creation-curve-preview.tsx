@@ -1,4 +1,8 @@
 'use client';
+import {
+  objectTransformAttribute,
+  type ObjectTransformDelta,
+} from '@/lib/source-editor/object-transform-preview';
 import { useMemo, useState } from 'react';
 import { evaluateCurveProgram } from '@/lib/curve-modifiers.mjs';
 import { creationDocument } from '@/lib/creation-schema.mjs';
@@ -137,7 +141,7 @@ export function CurvePreviewOverlay({
   previews: CurvePreview[];
   project: Project;
   scale: number;
-  move?: { nodeIds: string[]; delta: { x: number; y: number } };
+  move?: { nodeIds: string[]; delta: ObjectTransformDelta };
 }) {
   const mm = project.width / project.widthMM;
   const xy = ({ x, y }: { x: number; y: number }) =>
@@ -155,7 +159,7 @@ export function CurvePreviewOverlay({
           data-curve-preview-stage={s.stageId}
           transform={
             move?.nodeIds.includes(s.objectId)
-              ? `translate(${move.delta.x} ${move.delta.y})`
+              ? objectTransformAttribute(move.delta)
               : undefined
           }
         >

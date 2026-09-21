@@ -25,6 +25,14 @@ import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
 import SlicerTemplate from '../shared/slicer-template';
 import CreationView from './creation-view';
+import { objectTransformCenter } from '@/lib/source-editor/object-transform-center.mjs';
+import ObjectTransformControls, {
+  type ObjectTransformMode,
+} from './object-transform-controls';
+import {
+  objectTransformAttribute,
+  type ObjectTransformDelta,
+} from '@/lib/source-editor/object-transform-preview';
 import { useCurvePreview, CurvePreviewOverlay } from './creation-curve-preview';
 import PropertyNavigation, { globalPropertyPages } from './property-navigation';
 import CreationConnections from './creation-connections';
@@ -236,6 +244,7 @@ type CreationApi = {
   }) => {
     pathIds: string[];
     nodeIds: string[];
+    center: { x: number; y: number };
     canDrag: boolean;
     label: string;
   };
@@ -276,10 +285,12 @@ type Props = {
   onSelectionKind: (kind: 'object' | 'path' | 'cell') => void;
   onCanvasPointerDown: (e: React.PointerEvent) => void;
   objectMoving: boolean;
+  transformMode: ObjectTransformMode;
+  onTransformMode: (mode: ObjectTransformMode) => void;
   objectMoveCommit: {
     project: Project;
     nodeIds: string[];
-    delta: { x: number; y: number };
+    delta: ObjectTransformDelta;
   } | null;
   onMoveObject: (
     e: React.PointerEvent,
@@ -1031,7 +1042,29 @@ export default function CreationWorkspace(p: Props) {
           kind: 'object',
           ids: selected.map((o) => o.id),
         });
+        const nodeIds = sceneRows
+          .filter((row) =>
+            selected.some(
+              (node) => row.id === node.id || row.ancestors.includes(node.id),
+            ),
+          )
+          .map((row) => row.id);
+        const sourcePaths = p.project.paths.map((path) => ({
+          ...path,
+          ownerNodeId: doc.objects.find((o) => o.pathIds.includes(path.id))?.id,
+        }));
+        const [cx, cy] = objectTransformCenter(
+          nodeIds,
+          sourcePaths,
+          revision.current === p.project ? sceneRef.current?.cells : [],
+          p.project,
+        );
+        const center = {
+          x: p.project.width / 2 + (cx * p.project.width) / p.project.widthMM,
+          y: p.project.height / 2 - (cy * p.project.width) / p.project.widthMM,
+        };
         return {
+          center,
           pathIds: [...new Set(selected.flatMap((o) => o.pathIds))],
           nodeIds: sceneRows
             .filter((row) =>
@@ -1263,7 +1296,7 @@ export default function CreationWorkspace(p: Props) {
                     p.objectMoveCommit?.project === p.project &&
                     evaluatedProject !== p.project &&
                     p.objectMoveCommit.nodeIds.includes(o.id)
-                      ? `translate(${p.objectMoveCommit.delta.x} ${p.objectMoveCommit.delta.y})`
+                      ? objectTransformAttribute(p.objectMoveCommit.delta)
                       : undefined
                   }
                   d={regionSVGPath(c.geometry, p.project)}
@@ -2357,7 +2390,7 @@ export default function CreationWorkspace(p: Props) {
                           paint: '上色 · 使用当前画笔色',
                           height: '高低 · 调整选中区域',
                           pan: '平移 · 只移动视图',
-                          move: '移动对象 · 整体移动选中部件',
+                          move: '变换对象 · 移动、旋转、等比缩放',
                         }[p.tool] || p.tool
                       : selection.ids.length
                         ? selection.kind === 'path'
@@ -2513,7 +2546,18 @@ export default function CreationWorkspace(p: Props) {
                 />
               )}
               {tab === 'tool' &&
-                (['trace', 'edit'].includes(p.tool) ? (
+                (p.tool === 'move' ? (
+                  <ObjectTransformControls
+                    mode={p.transformMode}
+                    onMode={p.onTransformMode}
+                    disabled={!objects.length || calculating || p.busy}
+                    onApply={(args) =>
+                      safely(() =>
+                        run('scene_transform', { ...args, nodeIds: objects }),
+                      )
+                    }
+                  />
+                ) : ['trace', 'edit'].includes(p.tool) ? (
                   <div className="creation-source-settings">
                     {p.sourceInspector}
                   </div>

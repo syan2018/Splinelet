@@ -1,4 +1,6 @@
 'use client';
+import type { ObjectTransformMode } from '@/components/creation/object-transform-controls';
+import type { ObjectTransformDelta } from '@/lib/source-editor/object-transform-preview';
 import {
   useState,
   useRef,
@@ -390,10 +392,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     height: number;
   } | null>(null);
   const [gesturing, setGesturing] = useState(false);
+  const [transformMode, setTransformMode] =
+    useState<ObjectTransformMode>('translate');
   const [objectMoveCommit, setObjectMoveCommit] = useState<{
     project: Project;
     nodeIds: string[];
-    delta: Point;
+    delta: ObjectTransformDelta;
   } | null>(null);
   const [nodeSnap, setNodeSnap] = useState(true),
     [keepSeams, setKeepSeams] = useState(true),
@@ -437,7 +441,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     if (next === 'move') {
       setSelection(null);
     }
-    if (['trace', 'edit'].includes(next)) creationApi.current?.show_tool();
+    if (['trace', 'edit', 'move'].includes(next))
+      creationApi.current?.show_tool();
     stage.current?.focus({ preventScroll: true });
     setStatus(
       next === 'select'
@@ -451,7 +456,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               : next === 'height'
                 ? '选择局部或整个部件 · 拖动高度柄或输入毫米数值'
                 : next === 'move'
-                  ? '移动对象 · 拖动部件整体移动 · 右键拖动只平移视图'
+                  ? '变换对象 · 在工具属性选择移动、旋转或缩放 · 右键平移视图'
                   : '右键、空格或中键拖动平移视图',
     );
   };
@@ -1330,6 +1335,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const inside = (p: Point) =>
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
   const studioDrag = useSourceDrag({
+    transformMode,
     runtime: studioSnapshot.runtime,
     project,
     pathId: active ?? '',
@@ -1427,7 +1433,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       setStatus('已选中 ' + selected.label + ' · 再次按住拖动可整体移动');
       return;
     }
-    studioDrag.onObjectPointerDown(e, selected.nodeIds, selected.pathIds);
+    studioDrag.onObjectPointerDown(
+      e,
+      selected.nodeIds,
+      selected.pathIds,
+      selected.center,
+    );
   };
   const pointerDown = (e: React.PointerEvent) => {
     if (drag.current || studioDrag.isActive()) return;
@@ -1455,7 +1466,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     }
     if (busyRef.current || e.button !== 0 || mergeSource) return;
     if (tool === 'move') {
-      setStatus('拖动部件的面或源线移动对象 · 空白处右键拖动平移视图');
+      setStatus('拖动部件的面或源线变换对象 · 空白处右键拖动平移视图');
       return;
     }
     if (['paint', 'height'].includes(tool)) {
@@ -3154,7 +3165,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               [PenTool, 'trace', '描线', 'P'],
               [PaintBucket, 'paint', '上色', ''],
               [ArrowUpFromLine, 'height', '高低', ''],
-              [Move, 'move', '移动对象', 'H'],
+              [Move, 'move', '变换对象', 'H'],
             ] as Array<[typeof MousePointer2, string, string, string]>
           ).map(([Icon, value, label, key]) => (
             <button
@@ -3219,7 +3230,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                   : tool === 'edit'
                     ? '节点与控制柄'
                     : tool === 'move'
-                      ? '移动对象 · 右键拖动平移视图'
+                      ? '变换对象 · 右键拖动平移视图'
                       : tool === 'pan'
                         ? '空格 / 中键拖动画布 · 滚轮缩放'
                         : tool === 'select'
@@ -3631,6 +3642,11 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             onCanvasPointerDown={pointerDown}
             onMoveObject={startObjectDrag}
             objectMoveCommit={objectMoveCommit}
+            transformMode={transformMode}
+            onTransformMode={(mode) => {
+              studioDrag.cancel();
+              setTransformMode(mode);
+            }}
             objectMoving={studioDrag.isObjectActive()}
             sourceInspector={sourceInspector}
             onSourceExport={() => {
