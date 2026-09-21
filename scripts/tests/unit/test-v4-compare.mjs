@@ -21,7 +21,10 @@ const baseline = JSON.parse(
 );
 const sha256 = async (path) =>
   createHash('sha256')
-    .update(await readFile(new URL(path, root)))
+    // The manifest hashes repository text, independent of Git's Windows checkout EOL.
+    .update(
+      (await readFile(new URL(path, root), 'utf8')).replaceAll('\r\n', '\n'),
+    )
     .digest('hex');
 const clone = (value) => structuredClone(value);
 const mismatch = (expected, actual, path) =>
