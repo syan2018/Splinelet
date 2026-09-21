@@ -770,6 +770,32 @@ export default function CreationWorkspace(p: Props) {
       }
       if (
         (e.key === 'Delete' || e.key === 'Backspace') &&
+        (e.target as HTMLElement).closest('.creation-tree') &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!selection.ids.length) return;
+        if (selection.kind === 'cell') {
+          notify('区域由线条生成；请选中部件或线条后删除');
+          return;
+        }
+        safely(() => {
+          run(
+            selection.kind === 'object' ? 'scene_delete' : 'delete_paths',
+            selection.kind === 'object'
+              ? { nodeIds: selection.ids }
+              : { pathIds: selection.ids },
+          );
+          clear();
+          notify('已删除选中项 · Ctrl+Z 撤销');
+        });
+        return;
+      }
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
         ['paint', 'height'].includes(p.tool)
       ) {
         e.preventDefault();

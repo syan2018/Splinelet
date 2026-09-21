@@ -22,6 +22,7 @@ pnpm desktop:check
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
 - `pnpm test:browser:all`：完整浏览器门禁，顺序运行既有 `legacy` suite 和 Studio suite；每个 suite 都得到独立的默认 `outputs/v4-qa/<run>/` 证据目录。它不包含在 `check:all` 中。
 - `pnpm test:browser:studio`：Studio 子门禁。它为每个已注册的 Vite fixture 建立临时 localhost 端口与全新 Playwright browser/context，并把 manifest、截图和结果写入独立的 `outputs/v4-qa/<run>/`。当前覆盖默认最终面，以及完整原 Studio 的 Sandrone 打开、编辑、保存和重开旅程；最终面用例还通过原 GUI 覆盖 Mirror/Array、Join/Fill 与嵌套场景组交互。
+- `pnpm test:browser --suite studio --case outliner-delete`：大纲 Delete / Backspace 的多选、场景组后代、锁定整批拒绝、源线删除及撤销/重做回归。
 - `pnpm test:browser -- --suite studio --case final-preview`：只运行默认最终面、Join/Fill 和 Group 交互；`--case original-studio` 只运行完整原 Studio 旅程。两个原 smoke 文件仍可直接运行，并会委托给同一注册 runner。
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
 - `test-spline-edit.mjs`：精确双柄样条、坐标往返、矩阵变换、来源保留与整批失败；共用提案解析器在冻结的几何/归属视图上工作，不分配 ID 或修改展示数据。

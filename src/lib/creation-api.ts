@@ -45,6 +45,8 @@ export const creationTools: ToolCatalog = {
           'scene_ungroup',
           'scene_reparent',
           'scene_node',
+          'scene_delete',
+          'delete_paths',
           'move_paths',
           'roles',
           'reorder',
@@ -60,7 +62,7 @@ export const creationTools: ToolCatalog = {
       args: {
         type: 'object',
         description:
-          'modifier_add supports curve_mirror/curve_array (targets:{kind:all}, centerMM, angleDeg, count), join (explicit connections from modifierAdd.endpoints), and fill (rule:even-odd|non-zero, only when no region output exists). modifier_update edits type-specific parameters including connections/rule; move/remove use the reported structure capabilities. scene_group {nodeIds,name?}, scene_ungroup {nodeIds}, scene_reparent {nodeIds,parentId|beforeId}, scene_node {id,changes} operate on scene Nodes, preserving world placement. Legacy manage_group refers only to path Collections.',
+          'modifier_add supports curve_mirror/curve_array (targets:{kind:all}, centerMM, angleDeg, count), join (explicit connections from modifierAdd.endpoints), and fill (rule:even-odd|non-zero, only when no region output exists). modifier_update edits type-specific parameters including connections/rule; move/remove use the reported structure capabilities. scene_group {nodeIds,name?}, scene_ungroup {nodeIds}, scene_reparent {nodeIds,parentId|beforeId}, scene_node {id,changes} operate on scene Nodes, preserving world placement. scene_delete {nodeIds} deletes selected Nodes and descendants; delete_paths {pathIds} deletes source paths using displayed IDs. Both reject locked targets atomically. Legacy manage_group refers only to path Collections.',
       },
       revision: {
         type: 'integer',

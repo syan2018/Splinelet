@@ -87,7 +87,12 @@ assert.deepEqual(
 const studioRegistered = harness.verifyStudioRegistry();
 assert.deepEqual(
   studioRegistered.map((entry) => entry.name),
-  ['final-preview', 'original-studio', 'scene-group-selection'],
+  [
+    'outliner-delete',
+    'final-preview',
+    'original-studio',
+    'scene-group-selection',
+  ],
 );
 assert.equal(
   studioRegistered.find((entry) => entry.name === 'final-preview').fixture.path,
@@ -129,7 +134,12 @@ assert.deepEqual(
   harness
     .selectCases({ suite: 'studio', caseName: null })
     .map((entry) => entry.name),
-  ['final-preview', 'original-studio', 'scene-group-selection'],
+  [
+    'outliner-delete',
+    'final-preview',
+    'original-studio',
+    'scene-group-selection',
+  ],
 );
 assert.throws(
   () => harness.selectCases({ suite: 'v4', caseName: null }),
@@ -171,7 +181,7 @@ const manifestWithArtifacts = harness.createManifest(
 const studioManifest = harness.createManifest(
   harness.parseArguments(['--suite', 'studio']),
   'studio-unit-run',
-  studioRegistered.slice(0, 1),
+  studioRegistered.filter((entry) => entry.name === 'final-preview'),
   resolve('F:/Projects/Splinelet/outputs/v4-qa/studio-unit-run'),
 );
 assert.equal(studioManifest.cases[0].adapter, 'studio-fixture');

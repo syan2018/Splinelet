@@ -113,6 +113,12 @@ const legacyCases = [
 // suite instead of being hidden behind one-off smoke commands.
 const studioCases = [
   {
+    name: 'outliner-delete',
+    module: 'studio/test-outliner-delete.cjs',
+    adapter: 'studio-fixture',
+    fixture: fixture('file', 'scripts/tests/fixtures/v4-original-studio.mjs'),
+  },
+  {
     name: 'final-preview',
     module: 'smoke/test-v4-final-preview.cjs',
     adapter: 'studio-fixture',

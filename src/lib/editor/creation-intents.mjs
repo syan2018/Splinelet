@@ -28,6 +28,8 @@ export const CREATION_INTENTS = Object.freeze([
   'scene_ungroup',
   'scene_reparent',
   'scene_node',
+  'scene_delete',
+  'delete_paths',
   'modifier_update',
   'modifier_add',
   'modifier_move',
@@ -121,7 +123,28 @@ export function createCreationIntent(action, args, displayed) {
       run({ kind: 'ungroup-nodes', nodeIds: request.nodeIds });
     else if (action === 'scene_node')
       run({ kind: 'set-node', nodeId: request.id, value: request.changes });
-    else if (action === 'scene_reparent') {
+    else if (action === 'scene_delete')
+      run({ kind: 'delete-nodes', nodeIds: request.nodeIds });
+    else if (action === 'delete_paths') {
+      if (!Array.isArray(request.pathIds) || !request.pathIds.length)
+        throw Error('请选择要删除的线条');
+      const paths = new Map(
+        Object.values(document.sketches).flatMap((sketch) =>
+          Object.keys(sketch.paths).map((id) => [
+            sourcePathId(sketch.id, id),
+            { kind: 'path', sketchId: sketch.id, id },
+          ]),
+        ),
+      );
+      run({
+        kind: 'delete-paths',
+        pathRefs: request.pathIds.map((id) => {
+          const ref = paths.get(id);
+          if (!ref) throw Error('线条不存在或选区已失效');
+          return ref;
+        }),
+      });
+    } else if (action === 'scene_reparent') {
       const before = request.beforeId ? document.nodes[request.beforeId] : null;
       const parentId = before ? before.parentId : (request.parentId ?? null);
       const siblings = childrenOf(document, parentId).filter(
