@@ -29,6 +29,13 @@ export function createV4PersistenceSession(options = {}) {
   let legacySource = false;
   let dirty = false;
   let queue = Promise.resolve();
+  const currentAssets = () =>
+    Object.fromEntries(
+      Object.keys(document?.assets || {}).map((id) => {
+        if (!assets[id]) throw Error('资源缺失：' + id);
+        return [id, assets[id]];
+      }),
+    );
   const state = () =>
     readonly({
       epoch,
@@ -55,7 +62,7 @@ export function createV4PersistenceSession(options = {}) {
       epoch,
       revision,
       document: clone(document),
-      assets: clone(assets),
+      assets: clone(currentAssets()),
       target,
     };
   };
@@ -101,6 +108,14 @@ export function createV4PersistenceSession(options = {}) {
       legacySource = nextLegacySource;
       dirty = nextDirty;
       return state();
+    },
+    // Retain bytes for undo/redo; only current document assets enter files/drafts.
+    registerAssets(resources) {
+      const previous = assets;
+      assets = { ...assets, ...clone(resources) };
+      return () => {
+        assets = previous;
+      };
     },
     update(editorState) {
       requireCurrent();

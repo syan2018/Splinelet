@@ -172,3 +172,10 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 `tests/browser/test-object-move-pipeline.cjs` 默认载入已提交的 Sandrone 示例并通过 `examples/draw-cup-emblem.mjs` 创建图样，覆盖进入页面时无选区也显示完整轮廓、按下及拖动不发布模型 preview、松手只提交一次、杯身和源定义不变，以及一步撤销。可用 `pnpm test:browser --suite legacy --case object-move-pipeline --target web` 在隔离环境运行。模块第三参数可指定本地待验证文件，以未绑定副本加载；不得把私有文件路径写成固定 fixture。阶段计时只作为带日期的 QA 记录，不将运行机器的耗时当作产品保证。
 
 `tests/unit/test-v4-planar-stage-cache.mjs` 用最小构造工程逐项对照冷求值，覆盖局部平面结果复用及世界坐标引用、祖先变换、请求域和设置的失效边界，随 `pnpm test` 执行。
+
+## 参考图叠放回归
+
+- `tests/unit/test-reference-commands.mjs`：图层命令、锁定、顺序、共享资源与单步撤销。
+- `tests/unit/test-reference-host.mjs`：批量添加、文件绑定、保存重开、草稿恢复、删除后撤销与资源 URL 生命周期。
+- `tests/unit/test-reference-evaluation.mjs`：图片修改复用几何结果，几何变化重新求值。
+- `pnpm test:browser:studio --case reference-images --port 4187 --inspector-port 9247`：隔离画布交互和文件重开；证据由测试框架写入 `outputs/v4-qa/`。

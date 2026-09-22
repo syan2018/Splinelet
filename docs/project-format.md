@@ -9,12 +9,16 @@ mimetype
 manifest.json
 project.json
 assets/reference.png | reference.jpg | reference.webp
+assets/<asset-id>.png | <asset-id>.jpg | <asset-id>.webp
 ```
 
 - `mimetype` 存储固定 MIME 字符串。
 - `manifest.json` 声明 `format`、`containerVersion`、`documentVersion`、入口和资源清单。
 - `project.json` 保存曲线、构面、创作、颜色和打印分层数据，参考图字段改为资源引用。
-- `assets/reference.*` 保存原参考图，避免在 JSON 中使用 base64 放大文件。
+- `assets/reference.*` 保留基准图兼容路径，附加图使用 `assets/<asset-id>.*`；V4 的 `assets` 保存资源描述，`references` 保存图层和仿射变换，多个图层可以共享同一资源。图片字节不进入 Document 或撤销历史。
+- Reference 的可选 `role`（`base` / `overlay`）与 `order` 描述基准身份和从下至上的绘制顺序。缺少这些字段的旧 V4 文档按校准矩阵识别基准图；V1–V3 仍通过旧工程导入器转换。源坐标和毫米比例继续由 `sourceFrame` 决定。
+- 容器与文档版本仍为 1 / 4；新增字段遵循 V4 严格校验，旧客户端不认识这些字段时应拒绝打开，不能忽略后覆盖。
+- 删除最后一个图片引用时，当前文档删除对应资源描述；会话保留撤销所需字节直到关闭工程，保存与草稿只写当前文档引用的资源。
 
 资源清单记录媒体类型、字节数和 SHA-256。读取时校验 ZIP 路径、条目数、解压上限、文件头与哈希；未来容器版本不会被旧客户端覆盖保存。
 

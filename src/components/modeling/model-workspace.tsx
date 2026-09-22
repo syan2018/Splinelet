@@ -1,4 +1,8 @@
 'use client';
+import {
+  ReferenceLayer,
+  type ReferenceLayerProps,
+} from '@/components/references/reference-layer';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
@@ -175,6 +179,7 @@ const errorMessage = (error: unknown) =>
 
 type Props = {
   project: Project;
+  referenceLayer?: Omit<ReferenceLayerProps, 'opacity'>;
   runtime: Pick<
     ReturnType<
       typeof import('@/lib/editor/creation-runtime.mjs').createV4CreationRuntime
@@ -1222,13 +1227,20 @@ export default function ModelWorkspace(p: Props) {
                 <g
                   transform={`translate(${view.x} ${view.y}) scale(${view.s})`}
                 >
-                  <image
-                    href={p.project.image}
-                    width={p.project.width}
-                    height={p.project.height}
-                    opacity={opacity / 100}
-                    style={{ pointerEvents: 'none' }}
-                  />
+                  {p.referenceLayer ? (
+                    <ReferenceLayer
+                      {...p.referenceLayer}
+                      opacity={opacity / 100}
+                    />
+                  ) : (
+                    <image
+                      href={p.project.image}
+                      width={p.project.width}
+                      height={p.project.height}
+                      opacity={opacity / 100}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  )}
                   {regions
                     .filter(
                       (r) =>

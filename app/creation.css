@@ -1899,3 +1899,10 @@
   width: 100%;
   min-width: 0;
 }
+
+.creation-stage[data-reference-adjusting='true'] .drawing-canvas image {
+  visibility: visible;
+}
+.creation-stage[data-reference-adjusting='true'] .creation-cell {
+  pointer-events: none;
+}
