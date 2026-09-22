@@ -39,6 +39,8 @@ export function createReferenceProject({
   document.references[referenceId] = {
     id: referenceId,
     assetId,
+    role: 'base',
+    order: 0,
     name,
     pixelWidth: width,
     pixelHeight: height,

@@ -133,6 +133,17 @@ import { useSourceDrag } from '@/hooks/use-source-drag';
 import { openProject } from '@/lib/persistence/open-project.mjs';
 import { readAgentProjectInput } from '@/lib/persistence/agent-project-input.mjs';
 import { encodeDocument } from '@/lib/document/codec.mjs';
+import {
+  ReferencePanel,
+  type ReferenceRequest,
+} from '@/components/references/reference-panel';
+import { ReferenceLayer } from '@/components/references/reference-layer';
+import ReferenceHandles from '@/components/references/reference-handles';
+import type { Reference, Affine2D } from '@/lib/document/types';
+import { createSourceViewFrame } from '@/lib/editor/source-view.mjs';
+import { transformPoint, multiplyTransforms } from '@/lib/scene/transforms.mjs';
+import { createReferenceCommand } from '@/lib/editing/commands/references.mjs';
+import { readReferenceImage } from '@/lib/editor/reference-images.mjs';
 import { createReferenceProject } from '@/lib/editor/new-reference-project.mjs';
 
 type ModelApi = {
@@ -250,6 +261,38 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
   const { project, snapshot: studioSnapshot } = useStudioProject(host);
+  const [referencePanelOpen, setReferencePanelOpen] = useState(false);
+  const [selectedReferenceId, setSelectedReferenceId] = useState<string | null>(
+    null,
+  );
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceDraft, setReferenceDraft] = useState<{
+    id: string;
+    matrix: Affine2D;
+    epoch: string;
+    revision: number;
+  } | null>(null);
+  const referenceFrame = createSourceViewFrame(
+    studioSnapshot.presentation.frame,
+  );
+  const referenceImages = (studioSnapshot.presentation.references ||
+    []) as (Reference & { url: string })[];
+  const shownReferences = referenceImages.map((ref) =>
+    referenceDraft?.id === ref.id &&
+    referenceDraft.epoch === studioSnapshot.editorState.epoch &&
+    referenceDraft.revision === studioSnapshot.editorState.revision
+      ? { ...ref, pixelToWorld: referenceDraft.matrix }
+      : ref,
+  );
+  const selectedReference = shownReferences.find(
+    (ref) => ref.id === selectedReferenceId,
+  );
+  const adjustingReference =
+    referencePanelOpen &&
+    selectedReference &&
+    !selectedReference.locked &&
+    selectedReference.visible &&
+    selectedReference.id !== studioSnapshot.presentation.reference?.id;
   const pr = useRef(project);
   useLayoutEffect(() => {
     pr.current = project;
@@ -421,6 +464,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
+    setSelectedReferenceId(null);
+    setReferenceDraft(null);
     studioDrag.cancel();
     if (['trace', 'edit', 'move'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
@@ -936,6 +981,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     setStatus('路径已结束 · 可编辑节点，或新建下一条路径');
   };
   const begin = () => {
+    setSelectedReferenceId(null);
+    setReferenceDraft(null);
     const target = creationApi.current?.trace_target() || null;
     finish();
     traceTarget.current = target;
@@ -1706,6 +1753,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       if (creationViewRef.current === '3d') return;
+      if ((e.target as HTMLElement).closest('.reference-panel')) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       zoom(Math.exp(-e.deltaY * 0.0015), {
@@ -1724,6 +1772,23 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       )
         return;
       if (e.defaultPrevented) return;
+      if (
+        ((referencePanelOpen && selectedReference) ||
+          (e.target as HTMLElement).closest('.reference-panel')) &&
+        !(e.target as HTMLElement).closest('input,textarea')
+      ) {
+        if (e.key === 'Escape') {
+          setReferenceDraft(null);
+          setSelectedReferenceId(null);
+          e.preventDefault();
+          return;
+        }
+        if (!(e.ctrlKey || e.metaKey) && e.code !== 'Space') return;
+        if (referenceDraft) {
+          e.preventDefault();
+          return;
+        }
+      }
       studioDrag.onKeyDown(e);
       if (e.defaultPrevented) return;
       updateModifiers(e);
@@ -1932,6 +1997,93 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       setStatus('正在分析新底图…');
       return;
     }
+  };
+  const addReferenceImages = async (files: File[]) => {
+    if (busyRef.current || fileBusyRef.current || referenceBusy)
+      throw Error('请等待当前操作完成');
+    if (!files.length) return;
+    if (referenceImages.length + files.length > 32)
+      throw Error('最多放置 32 张参考图');
+    const identity = host.getSnapshot().editorState;
+    if (identity.previewId || drag.current) throw Error('请先完成当前拖动');
+    setReferenceBusy(true);
+    try {
+      const images = [];
+      let decodedBytes = 0;
+      let decodedPixels = referenceImages.reduce(
+        (sum, ref) => sum + ref.pixelWidth * ref.pixelHeight,
+        0,
+      );
+      for (const file of files) {
+        const image = await readReferenceImage(file);
+        decodedBytes += image.bytes.length;
+        decodedPixels += image.width * image.height;
+        if (decodedBytes > 48 * 1024 * 1024 || decodedPixels > 48 * 1024 * 1024)
+          throw Error('本批参考图超过容量，请缩小图片后再添加');
+        images.push(image);
+      }
+      const result = host.addReferenceImages(images, identity);
+      pr.current = result.project as Project;
+      finish();
+      setReferencePanelOpen(true);
+      setSelectedReferenceId(null);
+      setReferenceDraft(null);
+      setStatus('参考图已添加；选择“调整”摆放图片。自动描线仍分析基准底图。');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+  const referenceCommand = (request: ReferenceRequest) => {
+    try {
+      if (
+        busyRef.current ||
+        fileBusyRef.current ||
+        referenceBusy ||
+        drag.current
+      )
+        throw Error('请先完成当前操作');
+      host.dispatch(createReferenceCommand(request));
+      pr.current = host.getSnapshot().project as Project;
+      setReferenceDraft(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+  const locateReference = (id: string) => {
+    const ref = referenceImages.find((item) => item.id === id);
+    const element = stage.current;
+    if (!ref || !element) return;
+    const matrix = multiplyTransforms(
+      referenceFrame.worldToPixel,
+      ref.pixelToWorld,
+    );
+    const corners = [
+      [0, 0],
+      [ref.pixelWidth, 0],
+      [ref.pixelWidth, ref.pixelHeight],
+      [0, ref.pixelHeight],
+    ].map((point) => transformPoint(matrix, point));
+    const xs = corners.map((p) => p[0]),
+      ys = corners.map((p) => p[1]);
+    const minX = Math.min(...xs),
+      maxX = Math.max(...xs),
+      minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    const width = Math.max(100, element.clientWidth - 310),
+      height = element.clientHeight;
+    const s = Math.max(
+      0.01,
+      Math.min(
+        20,
+        (width - 60) / Math.max(1, maxX - minX),
+        (height - 120) / Math.max(1, maxY - minY),
+      ),
+    );
+    setView({
+      s,
+      x: width / 2 - ((minX + maxX) / 2) * s,
+      y: height / 2 - ((minY + maxY) / 2) * s,
+    });
   };
   const exportFile = async (format: 'svg' | 'blender' | 'json') => {
     const p = pr.current;
@@ -3027,8 +3179,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       onDragOverCapture={(e) => e.preventDefault()}
       onDropCapture={(e) => {
         e.preventDefault();
-        if (e.dataTransfer.files[0])
-          report(importImage(e.dataTransfer.files[0]));
+        if (e.dataTransfer.files.length)
+          report(addReferenceImages(Array.from(e.dataTransfer.files)));
       }}
     >
       <header data-tauri-drag-region={isDesktopRuntime() ? '' : undefined}>
@@ -3063,6 +3215,18 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           </i>
         </span>
         <div className="header-actions">
+          <button
+            aria-label="参考图面板"
+            aria-pressed={referencePanelOpen}
+            onClick={() => {
+              setReferencePanelOpen(!referencePanelOpen);
+              setSelectedReferenceId(null);
+              setReferenceDraft(null);
+            }}
+          >
+            <Plus size={16} />
+            参考图
+          </button>
           <button
             className="header-save"
             aria-label="保存工程"
@@ -3191,6 +3355,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           role="application"
           ref={setStage}
           aria-label="编辑画布"
+          data-reference-adjusting={adjustingReference ? 'true' : undefined}
           className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
           onPointerMove={(e) => {
             if (studioDrag.isActive()) studioDrag.onPointerMove(e);
@@ -3209,6 +3374,29 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             if (drag.current?.pointerId === e.pointerId) cancelGesture();
           }}
         >
+          {referencePanelOpen && creationView === 'flat' && (
+            <ReferencePanel
+              references={referenceImages}
+              baseId={studioSnapshot.presentation.reference?.id || null}
+              selectedId={selectedReferenceId}
+              disabled={
+                referenceBusy ||
+                busy ||
+                fileBusy ||
+                Boolean(studioSnapshot.editorState.previewId) ||
+                Boolean(referenceDraft)
+              }
+              onSelect={(id) => {
+                finish();
+                setSelectedReferenceId(id);
+                setReferenceDraft(null);
+                setVectorsOnly(false);
+              }}
+              onAdd={(files) => report(addReferenceImages(files))}
+              onCommand={referenceCommand}
+              onLocate={locateReference}
+            />
+          )}
           <div className="stage-top">
             <span>
               <span className="live-dot" />
@@ -3233,6 +3421,17 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           <svg
             className="drawing-canvas"
             aria-label="贝塞尔绘图画布"
+            onPointerDownCapture={(event) => {
+              if (
+                adjustingReference &&
+                event.button === 0 &&
+                !space.current &&
+                !(event.target as Element).closest('[data-reference-handles]')
+              ) {
+                event.stopPropagation();
+                event.preventDefault();
+              }
+            }}
             onPointerDown={pointerDown}
             onPointerLeave={() => {
               if (!drag.current) {
@@ -3254,10 +3453,9 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                 strokeWidth={1 / view.s}
               />
               {!vectorsOnly && (
-                <image
-                  href={project.image}
-                  width={project.width}
-                  height={project.height}
+                <ReferenceLayer
+                  references={shownReferences}
+                  worldToPixel={referenceFrame.worldToPixel}
                   opacity={opacity / 100}
                 />
               )}
@@ -3482,6 +3680,42 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                   </g>
                 ))}
             </g>
+            {adjustingReference && creationView === 'flat' && (
+              <g transform={`translate(${view.x},${view.y}) scale(${view.s})`}>
+                <ReferenceHandles
+                  key={
+                    selectedReference.id +
+                    ':' +
+                    studioSnapshot.editorState.epoch +
+                    ':' +
+                    studioSnapshot.editorState.revision
+                  }
+                  reference={selectedReference}
+                  worldToPixel={referenceFrame.worldToPixel}
+                  scale={view.s}
+                  pan={isSpaceDown}
+                  onPreview={(matrix) =>
+                    setReferenceDraft(
+                      matrix
+                        ? {
+                            id: selectedReference.id,
+                            matrix,
+                            epoch: studioSnapshot.editorState.epoch,
+                            revision: studioSnapshot.editorState.revision,
+                          }
+                        : null,
+                    )
+                  }
+                  onCommit={(matrix) =>
+                    referenceCommand({
+                      kind: 'reference-update',
+                      id: selectedReference.id,
+                      patch: { pixelToWorld: matrix },
+                    })
+                  }
+                />
+              </g>
+            )}
             {marquee && (
               <rect
                 data-selection-box="true"
@@ -3675,6 +3909,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         </>
       </div>
       <ModelWorkspace
+        referenceLayer={{
+          references: referenceImages,
+          worldToPixel: referenceFrame.worldToPixel,
+        }}
         project={project}
         runtime={studioSnapshot.runtime}
         mode={workspace}

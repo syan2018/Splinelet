@@ -21,7 +21,10 @@ const baseline = JSON.parse(
 );
 const sha256 = async (path) =>
   createHash('sha256')
-    .update(await readFile(new URL(path, root)))
+    // These fixtures are tracked text; Git may check them out as CRLF on Windows.
+    .update(
+      (await readFile(new URL(path, root), 'utf8')).replaceAll('\r\n', '\n'),
+    )
     .digest('hex');
 const clone = (value) => structuredClone(value);
 const mismatch = (expected, actual, path) =>
