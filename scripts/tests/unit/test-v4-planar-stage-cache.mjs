@@ -61,6 +61,41 @@ const planarStageCache = createPlanarStageCache();
 const evaluate = (doc, extra = {}) =>
   evaluateDocument(doc, { requestedDomains, planarStageCache, ...extra });
 let previous = await evaluate(document);
+const changedProperties = structuredClone(document);
+changedProperties.reliefDefinitions.defaults[source.id] = {
+  enabled: true,
+  thickness: { kind: 'mm', value: 2.5 },
+  mode: 'add',
+  placement: { kind: 'free', zMM: 0 },
+};
+changedProperties.manufacturing.layerHeightMM = 0.25;
+changedProperties.appearances.swatches.red = {
+  id: 'red',
+  name: 'Red',
+  color: '#ff0000',
+};
+changedProperties.appearances.defaults[source.id] = { swatchId: 'red' };
+const propertyResult = await evaluate(changedProperties);
+assert.equal(
+  propertyResult.planar,
+  previous.planar,
+  'downstream author edits reuse the entire immutable planar result',
+);
+assert.deepEqual(
+  propertyResult,
+  await evaluateDocument(changedProperties, { requestedDomains }),
+  'reused planar result still resolves current color and height',
+);
+assert.throws(() => {
+  propertyResult.planar.published.fake = {};
+}, TypeError);
+const invalidProperty = structuredClone(changedProperties);
+invalidProperty.manufacturing.layerHeightMM = NaN;
+await assert.rejects(
+  evaluate(invalidProperty),
+  /无效|有限|正数/,
+  'a complete planar hit never bypasses validation of downstream author data',
+);
 assert.equal(
   previous.planar.published[`${receiver.id}:curves`].status,
   'ready',

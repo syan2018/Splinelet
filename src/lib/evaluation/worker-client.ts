@@ -25,4 +25,5 @@ export type WorkerClient = Readonly<{
 /** Runtime stays in .mjs so protocol tests run directly in Node. */
 export const createWorkerClient = createRuntimeWorkerClient as (
   endpoint: WorkerEndpoint,
+  options?: { ownedResponses?: boolean },
 ) => WorkerClient;

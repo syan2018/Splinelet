@@ -114,7 +114,7 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 
 `node scripts/tests/browser/smoke/test-v4-original-modifier-controls.cjs` 在临时端口和全新浏览器 context 中加载原 `CreationModifiers`、原样式与真实 V4 会话，检查实际数值提交、一次撤销、参数驱动、缺失参数和锁定，并断言卡片样式加载。最小 fixture 为 `tests/fixtures/v4-modifier-controls.mjs`，不读取应用草稿或用户文件；结果与截图位于 `output/playwright/v4-original-modifier-controls/`。这是组件接线验证，不能代替默认根工作区或原生文件旅程。浏览器 CommonJS 脚本使用单独 lint override：允许 require 和 Node 模块导出函数的解构，不将其误判为需要绑定 this 的实例方法；产品 TypeScript 规则保持不变。
 
-`test-v4-import-source-identity.mjs` 严格比较实际旧工程与全部 V4 可写来源，检查路径/边总集合、独立边使用、孤立节点及源列表次序；默认只读 `tests/fixtures/legacy-sandrone.spl`，可用首个参数指定额外旧工程。该历史 fixture 同时服务迁移差分回归，当前原生 V4 产品示例仍位于 `public/sandrone-example.spl`。`test-v4-partition-endpoint-join.mjs` 验证分区接边在端点/底面变化后重新求值、禁用与空输入行为。派生接边不能保存为隐藏可写来源。
+`test-v4-import-source-identity.mjs` 严格比较实际旧工程与全部 V4 可写来源，检查路径/边总集合、独立边使用、孤立节点及源列表次序；默认只读 `tests/fixtures/legacy-sandrone.spl`，可用首个参数指定额外旧工程。该历史 fixture 同时服务迁移差分回归，当前原生 V5 产品示例仍位于 `public/sandrone-example.spl`。`test-v4-partition-endpoint-join.mjs` 验证分区接边在端点/底面变化后重新求值、禁用与空输入行为。派生接边不能保存为隐藏可写来源。
 
 `tests/unit/test-v4-source-order.mjs` 覆盖导入/容器重开后的源路径与集合顺序、新线追加、排序意图和过期视图；`test-v4-source-organization.mjs` 覆盖整理集合及全局源顺序的原子命令、重叠成员、锁定和一次撤销。它们不替代原树拖放的 UI 接线验收。
 
@@ -134,6 +134,12 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 移动脚本时必须成组更新相对 import、fixture、输出路径、文档命令和 `package.json`，并用 `node --check` 覆盖 JavaScript 脚本。
 
 ## 区域更新性能验证
+
+`node scripts/validation/profile-relief-edit.mjs --scope both --output outputs/relief-height-run.json` 从公开示例创建隔离编辑会话，实际提交单区和部件批量厚度命令，分别记录同步命令、后台求值及视图投影时间；核对平面结果和源数据不变及一次撤销。`--input` 可指定只读副本，`--scope cell` 用于仅测单区，输出不得覆盖输入。它不包含 Worker 传输或浏览器渲染成本。
+
+`node scripts/tests/browser/studio/test-relief-height-edit.cjs --output outputs/v4-qa/relief-height-run` 在隔离 Studio 中操作厚度数字框与滑块、实际三维预览，记录 Worker 请求和端到端延迟，核对撤销重开。`test-v5-region-property-edit.mjs` 验证持久属性命令不求几何、断链不阻止属性修改、严格引用与原子性；`test-creation-mesh-cache.mjs` 验证三维网格复用、变高后的实际空间与拾取、轮廓变更失效及资源释放。两者随 `pnpm test` 执行。
+
+`test-planar-transfer.mjs` 检查私有 Worker 平面快照传输与完整求值等价、当前颜色更新、并发响应按请求重组、换域/换工程/失效基准退回完整传输和缓冲隔离。`test-v4-worker-protocol.mjs` 与 `test-chain-snapshots.mjs` 继续验证响应身份及只读共享，均随 `pnpm test` 执行。
 
 `tests/unit/test-v4-output-identity.mjs` 随 `pnpm test` 执行，以旧算法为参照验证完整身份、实例/lineage 顺序、重复与冲突、精确匹配优先、继承候选顺序、空/失效 scope 和操作内查询生命周期。
 

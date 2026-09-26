@@ -620,6 +620,56 @@ console.log(
 }
 
 for (const typed of [false, true]) {
+  // Native Worker messages transfer an already isolated graph to the client.
+  const listeners = new Map();
+  let delivered;
+  let received;
+  const client = createWorkerClient(
+    {
+      addEventListener: (type, listener) => listeners.set(type, listener),
+      removeEventListener: (type) => listeners.delete(type),
+      postMessage(request) {
+        delivered = {
+          ...request,
+          kind: 'result',
+          snapshot: { values: typed ? new Float32Array([1, 2]) : [1, 2] },
+        };
+        queueMicrotask(() => listeners.get('message')({ data: delivered }));
+      },
+    },
+    { ownedResponses: true },
+  );
+  const nativeBroker = createEvaluationSession({
+    capabilities: ['curves'],
+    evaluate: async (request) => {
+      received = await client.request(request);
+      return received.snapshot;
+    },
+  });
+  nativeBroker.update(editorState('native-sharing', 0));
+  const nativeRequest = {
+    epoch: 'native-sharing',
+    revision: 0,
+    previewId: null,
+    domains: ['curves'],
+  };
+  const nativeValue = await nativeBroker.evaluate(nativeRequest);
+  if (typed) {
+    assert.notEqual(received.snapshot.values, delivered.snapshot.values);
+    delivered.snapshot.values[0] = 99;
+    nativeValue.values[0] = 88;
+    assert.equal((await nativeBroker.evaluate(nativeRequest)).values[0], 1);
+  } else {
+    assert.equal(nativeValue, delivered.snapshot);
+    assert.equal(nativeValue, received.snapshot);
+    assert.throws(() => {
+      delivered.snapshot.values[0] = 99;
+    }, TypeError);
+  }
+  nativeBroker.dispose();
+  client.close();
+
+  // A custom evaluator retains ownership and always needs isolation.
   const broker = createEvaluationSession({
     capabilities: ['curves'],
     evaluate: async () => ({

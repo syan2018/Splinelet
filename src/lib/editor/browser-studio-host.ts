@@ -1,5 +1,6 @@
 import * as workerModule from '../evaluation/document-worker.ts?worker';
 import { createWorkerClient } from '../evaluation/worker-client.ts';
+import { createPlanarTransferDecoder } from '../evaluation/planar-transfer.mjs';
 import {
   canonicalDomains,
   assertEvaluationIdentity,
@@ -13,7 +14,8 @@ const DocumentWorker = (
 /** Shared Web/Desktop host assembly: canonical evaluation runs off the UI thread. */
 export function createBrowserStudioHost(options: Record<string, unknown>) {
   const worker = new DocumentWorker();
-  const client = createWorkerClient(worker);
+  const client = createWorkerClient(worker, { ownedResponses: true });
+  const planarTransfer = createPlanarTransferDecoder();
   let closed = false;
   const close = () => {
     if (closed) return;
@@ -38,6 +40,8 @@ export function createBrowserStudioHost(options: Record<string, unknown>) {
         },
       ) => {
         assertEvaluationIdentity(request);
+        const domains = canonicalDomains(request.requestedDomains);
+        const base = planarTransfer.capture({ ...request, domains });
         const response = await client.request({
           kind: 'evaluate',
           requestId: crypto.randomUUID(),
@@ -48,10 +52,12 @@ export function createBrowserStudioHost(options: Record<string, unknown>) {
           ...(request.previewId && {
             previewVersion: request.previewVersion ?? 0,
           }),
-          domains: canonicalDomains(request.requestedDomains),
+          domains,
+          planarTransfer: true,
+          ...(base && { planarBase: base.token }),
         });
         if (response.kind !== 'result') throw Error(response.error);
-        return response.snapshot;
+        return planarTransfer.decode(response, base);
       },
     });
     return Object.freeze({

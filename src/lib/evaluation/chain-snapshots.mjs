@@ -1,9 +1,17 @@
+import { isImmutableSnapshot } from './readonly-snapshot.mjs';
+
 const statuses = new Set(['ready', 'empty', 'absent', 'blocked']);
 const immutable = new WeakSet();
 const mutableBuffers = new WeakSet();
 
 const freeze = (value, seen = new WeakSet()) => {
-  if (!value || typeof value !== 'object' || immutable.has(value)) return value;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    immutable.has(value) ||
+    isImmutableSnapshot(value)
+  )
+    return value;
   if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
     mutableBuffers.add(value);
     return value;

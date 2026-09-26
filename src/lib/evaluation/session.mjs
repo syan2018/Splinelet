@@ -1,4 +1,8 @@
 import { sameDocument } from '../editing/history.mjs';
+import {
+  readonlySnapshot as readonly,
+  ownedSnapshot,
+} from './readonly-snapshot.mjs';
 
 const domains = new Set([
   'curves',
@@ -9,29 +13,6 @@ const domains = new Set([
 ]);
 const purposes = new Set(['interactive', 'exact']);
 const clone = (value) => structuredClone(value);
-// Only plain, deeply frozen DTOs can be shared. Typed buffers still cross a
-// copy boundary, since Object.freeze cannot protect their contents.
-const immutable = new WeakSet();
-const freeze = (value) => {
-  if (!value || typeof value !== 'object' || immutable.has(value)) return value;
-  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return value;
-  const children = Object.values(value);
-  children.forEach(freeze);
-  Object.freeze(value);
-  if (
-    (Array.isArray(value) ||
-      Object.getPrototypeOf(value) === Object.prototype ||
-      Object.getPrototypeOf(value) === null) &&
-    children.every(
-      (child) => !child || typeof child !== 'object' || immutable.has(child),
-    )
-  )
-    immutable.add(value);
-  return value;
-};
-const readonly = (value) =>
-  immutable.has(value) ? value : freeze(clone(value));
-const ownedSnapshot = (value) => readonly(freeze(value));
 const sort = (a, b) => a.localeCompare(b);
 const errorMessage = (error) =>
   error instanceof Error ? error.message : String(error);
@@ -174,7 +155,7 @@ const editorCapture = (state) => {
 };
 
 /** A small Worker-compatible request broker. It also supports Node worker_threads. */
-export function createWorkerClient(endpoint) {
+export function createWorkerClient(endpoint, { ownedResponses = false } = {}) {
   if (!endpoint?.postMessage) throw Error('worker endpoint 必须有 postMessage');
   const pending = new Map();
   let closed = false;
@@ -192,10 +173,12 @@ export function createWorkerClient(endpoint) {
       if (!responseMatches(entry.request, response))
         throw Error('Worker response 的身份、requestId 或 domains 不匹配');
       if (response.kind === 'error') entry.reject(Error(response.error));
-      // One isolated immutable DTO crosses the client/session boundary. Plain
-      // snapshots can then be shared instead of cloning the entire planar graph
-      // again in execute(); mutable typed buffers still require a later copy.
-      else entry.resolve(readonly(response));
+      // Native Worker messages already crossed a structured-clone boundary.
+      // Custom endpoints default to copying; they may still own the response.
+      else
+        entry.resolve(
+          ownedResponses ? ownedSnapshot(response) : readonly(response),
+        );
     } catch (error) {
       entry.reject(error);
     }

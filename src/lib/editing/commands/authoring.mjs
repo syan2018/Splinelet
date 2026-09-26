@@ -64,6 +64,7 @@ import { createPathRolesCommand } from './path-roles.mjs';
 import { createSourceScaleCommand } from './source-scale.mjs';
 import { curveFilterOperator } from '../../construction/operators/curves/filter.mjs';
 import { initializePathBasis } from '../../geometry/path-basis.mjs';
+import { definitionRef } from '../../construction/region-definitions.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -340,9 +341,19 @@ function drawPath(document, action, rawIdFactory) {
     },
   };
 }
-function currentTarget(document, target) {
+function assertPropertyTarget(document, target) {
   if (target?.kind !== 'output') throw Error('请指定当前区域');
   writable(document, target.ownerNodeId);
+  // A persistent selection is author data. Editing its properties neither
+  // selects a different face nor requires its producer to succeed right now.
+  // Temporary candidates still need the geometric witness below before the
+  // transaction can bind them to a new persistent definition.
+  if (document.version === 5 && !target.key?.startsWith('cell:')) {
+    const definition = document.regionDefinitions[target.key];
+    if (!definition || !sameOutputRef(definitionRef(definition), target))
+      throw Error('区域引用未声明或与定义上下文不一致');
+    return;
+  }
   const stage = evaluateProgram(document, target.ownerNodeId).regions;
   if (
     stage.status !== 'ready' ||
@@ -411,7 +422,7 @@ export function createAuthoringCommand(action) {
       return { document, changedRefs: [] };
     }
     if (action.kind === 'clear-region-paint') {
-      currentTarget(document, action.target);
+      assertPropertyTarget(document, action.target);
       for (const [id, item] of Object.entries(document.appearances.overrides))
         if (sameOutputRef(item.target, action.target))
           delete document.appearances.overrides[id];
@@ -424,7 +435,7 @@ export function createAuthoringCommand(action) {
       return { document, changedRefs: [action.target] };
     }
     if (action.kind === 'set-relief') {
-      currentTarget(document, action.target);
+      assertPropertyTarget(document, action.target);
       assign(
         document.reliefDefinitions.overrides,
         action.target,
@@ -690,7 +701,7 @@ export function createAuthoringCommand(action) {
       };
     }
     if (action.kind === 'paint-region' || action.kind === 'set-thickness') {
-      currentTarget(document, action.target);
+      assertPropertyTarget(document, action.target);
       if (action.kind === 'paint-region') {
         if (!document.appearances.swatches[action.swatchId])
           throw Error('颜色不存在');

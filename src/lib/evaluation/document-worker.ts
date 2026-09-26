@@ -1,6 +1,7 @@
 import { evaluateDocument } from './evaluate-document.mjs';
 import { createPlanarStageCache } from './planar-stage-cache.mjs';
 import { createPostStageCache } from './post-evaluation-plan.mjs';
+import { createPlanarTransferEncoder } from './planar-transfer.mjs';
 import { assertEvaluationIdentity, canonicalDomains } from './worker-protocol';
 import type {
   WorkerEvaluationRequest,
@@ -12,6 +13,7 @@ let cacheEpoch: string | null = null;
 let planarStageCache = createPlanarStageCache();
 let postStageCache = createPostStageCache();
 const solidOptions = { locateFile: () => wasmURL };
+const planarTransfer = createPlanarTransferEncoder();
 
 self.onmessage = async ({ data }: MessageEvent<WorkerEvaluationRequest>) => {
   try {
@@ -38,7 +40,7 @@ self.onmessage = async ({ data }: MessageEvent<WorkerEvaluationRequest>) => {
       ...(data.previewId && { previewVersion: data.previewVersion ?? 0 }),
       requestId: data.requestId,
       domains,
-      snapshot,
+      ...planarTransfer.encode(data, snapshot),
     };
     self.postMessage(response);
   } catch (error) {

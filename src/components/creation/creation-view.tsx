@@ -4,6 +4,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { pickVisibleIntersection } from '@/lib/creation-pick.mjs';
 import { curvePreviewGroup, disposeCurvePreview } from './curve-preview-3d';
+import {
+  createCreationMeshCache,
+  disposeCreationMeshes,
+  syncCreationMeshes,
+} from './creation-mesh-cache.mjs';
 import type { CurvePreview } from '@/lib/modifier-types';
 
 type Coordinate = [number, number];
@@ -41,12 +46,20 @@ type PointerStart = {
   y: number;
   moved: boolean;
 };
+type CreationMeshCache = Map<
+  string,
+  {
+    mesh: THREE.Mesh<THREE.ExtrudeGeometry, THREE.MeshStandardMaterial>;
+    signature: string;
+  }
+>;
 type ViewState = {
   renderer: THREE.WebGLRenderer;
   world: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
   content: THREE.Group;
+  meshCache: CreationMeshCache;
   framed: boolean;
   interaction: {
     tool: string;
@@ -152,6 +165,7 @@ export default function CreationView({
       camera,
       controls,
       content,
+      meshCache: createCreationMeshCache(),
       framed: false,
       interaction: {
         tool: 'select',
@@ -252,6 +266,7 @@ export default function CreationView({
       cancelAnimationFrame(frame);
       ro.disconnect();
       controls.dispose();
+      disposeCreationMeshes(s.content, s.meshCache);
       world.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return;
         object.geometry.dispose();
@@ -322,68 +337,7 @@ export default function CreationView({
   useEffect(() => {
     const s = state.current;
     if (!s) return;
-    for (const child of s.content.children.slice()) {
-      if (!(child instanceof THREE.Mesh)) continue;
-      const mesh = child;
-      mesh.geometry.dispose();
-      const materials = Array.isArray(mesh.material)
-        ? mesh.material
-        : [mesh.material];
-      materials.forEach((material) => material.dispose());
-      s.content.remove(mesh);
-    }
-    if (!scene) return;
-    let renderIndex = 0;
-    for (const cell of scene.cells.filter(
-      (c) =>
-        c.painted &&
-        !c.flatOnly &&
-        !c.conflict &&
-        c.mode !== 'cut' &&
-        c.mode !== 'through' &&
-        c.enabled !== false,
-    )) {
-      const o = scene.creation.objects.find((o) => o.id === cell.objectId);
-      if (!o?.visible) continue;
-      const polygons =
-        cell.geometry.type === 'Polygon'
-          ? [cell.geometry.coordinates]
-          : cell.geometry.coordinates;
-      for (const rings of polygons) {
-        const pickOrder = renderIndex++;
-        const shape = new THREE.Shape(
-          rings[0].map(([x, y]) => new THREE.Vector2(x, y)),
-        );
-        shape.holes = rings
-          .slice(1)
-          .map(
-            (ring) =>
-              new THREE.Path(ring.map(([x, y]) => new THREE.Vector2(x, y))),
-          );
-        const geometry = new THREE.ExtrudeGeometry(shape, {
-          depth: cell.heightMM,
-          bevelEnabled: false,
-          steps: 1,
-        });
-        const material = new THREE.MeshStandardMaterial({
-          polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1 - pickOrder * 0.1,
-          color: cell.color,
-          roughness: 0.76,
-          metalness: 0,
-          emissive: selected.includes(cell.key) ? '#354738' : '#000000',
-          emissiveIntensity: 0.3,
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.z = cell.bottomMM ?? cell.zMM ?? 0;
-        mesh.userData.key = cell.key;
-        // This explicit ordering keeps draw order and picking order aligned.
-        mesh.userData.pickOrder = pickOrder;
-        mesh.renderOrder = pickOrder;
-        s.content.add(mesh);
-      }
-    }
+    syncCreationMeshes(s.content, s.meshCache, scene, selected);
     if (!s.framed && s.content.children.length) {
       frameView('iso');
       s.framed = true;

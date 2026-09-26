@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { createChainSnapshotStore } from '../../../src/lib/evaluation/chain-snapshots.mjs';
+import {
+  ownedSnapshot,
+  isImmutableSnapshot,
+} from '../../../src/lib/evaluation/readonly-snapshot.mjs';
 
 const token = (
   revision,
@@ -208,5 +212,26 @@ assert.equal(
   1,
   'returned mesh buffers cannot alter retained snapshots',
 );
+
+store.update(token(0, null, 'plain-epoch'));
+const shared = ownedSnapshot(stage('ready', 'worker-owned'));
+const shallow = Object.freeze(stage('ready', 'only-outer-frozen'));
+assert.equal(isImmutableSnapshot(shared), true);
+assert.equal(isImmutableSnapshot(shallow), false);
+assert.equal(isImmutableSnapshot(ownedSnapshot(meshStage)), false);
+store.accept(
+  token(0, null, 'plain-epoch'),
+  planar({
+    shared: ports([['regions', shared]]),
+    shallow: ports([['regions', shallow]]),
+  }),
+);
+assert.equal(store.read('shared', 'regions').current, shared);
+assert.throws(() => {
+  shared.value.nested.label = 'changed';
+}, TypeError);
+assert.throws(() => {
+  shallow.value.nested.label = 'changed';
+}, TypeError);
 
 console.log('chain snapshot store tests passed');

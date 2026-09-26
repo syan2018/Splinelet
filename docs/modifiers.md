@@ -6,7 +6,9 @@
 
 ## 数据和计算
 
-V4 的 Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保存构造算子和显式输入、输出。求值依次产生 CurveSet、RegionSet、ReliefSet、PlacedReliefSet 和 BodySet；这些结果都是只读数据。颜色、厚度、制造归属分别写入作者定义，不存在可写的 `object.modifiers`、`object.sources` 或旧 `Project.model` 第二条运行管线。旧文件只在打开时单向导入。
+Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保存构造算子和显式输入、输出。求值依次产生 CurveSet、RegionSet、ReliefSet、PlacedReliefSet 和 BodySet；这些结果都是只读数据。颜色、厚度、制造归属分别写入作者定义，不存在可写的 `object.modifiers`、`object.sources` 或旧 `Project.model` 第二条运行管线。旧文件只在打开时单向导入。
+
+修改已声明区域的厚度或颜色，只校验完整作者引用和编辑权限，不在属性命令内重新构面。后台复用未变化的平面结果，更新浮雕和放置；三维预览复用轮廓网格，仅改变高度和起始位置。首次选中尚未声明的临时面仍需当前求值见证。界面选区继续受当前修订保护，不能将旧画面上的所有区域当成新拓扑的完整选区。
 
 镜像和阵列变换精确三次贝塞尔，仅构面时按工程精度采样，不增加源节点。曲线和区域的引用明确记录来源；循环、缺失来源、断口和失效选区会报告当前错误，不回退到上一次成功几何。
 

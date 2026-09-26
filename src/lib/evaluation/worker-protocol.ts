@@ -19,6 +19,8 @@ export type WorkerEvaluationRequest = Readonly<
     requestId: string;
     domains: readonly EvaluationDomain[];
     document: unknown;
+    planarTransfer?: boolean;
+    planarBase?: string;
   }
 >;
 export type WorkerEvaluationResult = Readonly<
@@ -27,6 +29,8 @@ export type WorkerEvaluationResult = Readonly<
     requestId: string;
     domains: readonly EvaluationDomain[];
     snapshot: unknown;
+    planarToken?: string;
+    planarBase?: string;
   }
 >;
 export type WorkerEvaluationFailure = Readonly<
@@ -97,6 +101,10 @@ export function createWorkerRequest(
     revision: value.revision,
     previewId: value.previewId,
     ...(value.previewId && { previewVersion: value.previewVersion ?? 0 }),
+    ...(value.planarTransfer !== undefined && {
+      planarTransfer: value.planarTransfer,
+    }),
+    ...(value.planarBase !== undefined && { planarBase: value.planarBase }),
     domains: freeze(canonicalDomains(value.domains)),
     document: clone(value.document),
   });
