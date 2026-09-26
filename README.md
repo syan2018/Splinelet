@@ -203,6 +203,8 @@ pnpm build
 
 区域身份匹配使用统一的六字段规则和单次求值查询索引，保留既有 `.spl` 引用与冲突判断；实现边界见[构造链与失效处理](docs/architecture/construction-pipeline.md#区域身份查询)。可重复性能比较与隔离浏览器计时入口见 [Scripts](scripts/README.md#区域更新性能验证)，本机测量见[优化验收快照](docs/qa/identity-optimization-2026-09-26.md)。
 
+后续清理已选定[声明式区域定义与单向纯求值](docs/architecture/region-identity-redesign-2026-09-26.md)：用户定义与临时面分离，来源在构造时传递，源线交互独立于后台区域求值。这是尚未实施的架构决策；当前编辑身份缺陷及验证边界仍以故障复审为准。
+
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
 
 ### Agent 接口（可选）
