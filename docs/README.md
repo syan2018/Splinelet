@@ -14,7 +14,7 @@
 - [工程结构与平台边界](architecture/project-structure-2026-09-19.md)
 - [面修改器](modifiers.md)
 - [构造链与失效处理](architecture/construction-pipeline.md)
-- [区域作者模型与求值职责（设计复审，尚未完整落地）](architecture/region-identity-redesign-2026-09-26.md)
+- [修改器链、输出快照与断链修复（设计与实施中）](architecture/region-identity-redesign-2026-09-26.md)
 - [打印分层](print-stack.md)
 - [3MF 打印导出](3mf-export.md)
 - [Splinelet `.spl` 工程格式](project-format.md)
