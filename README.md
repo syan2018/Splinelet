@@ -57,7 +57,7 @@ Windows 发布产物为 `src-tauri/target/release/splinelet.exe`，前端资源�
 
 应用目前以中文界面为主。初次启动会载入内置的 Sandrone 完整工程；浏览器已有工程时优先恢复。
 
-内置示例使用原生 V4 工程，包含杯上纹样与签名；所有构造与源曲线仍可编辑。更新示例后可运行 `node scripts/validation/verify-example.mjs` 检查保存往返、输出身份、实体与分色导出。旧格式迁移测试使用独立的历史 fixture，避免示例更新改变兼容性基线。
+内置示例使用原生 V4 工程，包含杯上纹样与签名，并保留构造与源曲线。更新示例后可运行 `node scripts/validation/verify-example.mjs` 检查保存往返、输出身份、实体与分色导出；这是快照校验，不涵盖基础编辑的身份稳定性。当前删点可能阻断分区，反转分区路径存在区域身份错误对应，见[故障复审与重构方案](docs/qa/spline-edit-failure-2026-09-26.md)。旧格式迁移测试使用独立的历史 fixture，避免示例更新改变兼容性基线。
 
 ## 基本工作流
 

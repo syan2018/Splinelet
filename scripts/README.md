@@ -20,6 +20,8 @@ pnpm desktop:check
 - `pnpm test:core`：构造链、修改器和打印分层回归。
 - `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
 - `node scripts/validation/verify-example.mjs`：验证当前原生 V4 内置示例的容器往返、引用绑定、完整求值、有效实体与通用/Bambu 分色导出；可传入其他示例副本路径。验证不会修改输入工程。
+- `node scripts/validation/audit-region-identity.mjs`：用最小正方形分区检查等价源编辑后的区域/赋值对应。默认输出诊断；`--check` 在期望不变量失败时非零退出，当前用于揭示尚未修复的身份缺陷，不包含在绿色单测门禁中。
+- `node scripts/validation/audit-spline-edit.mjs --before <baseline.spl> --after <edited.spl> [--probe-unbound]`：只读比较两个工程的作者态、求值阻断及逐面几何/身份；摘要输出到 stdout。可选去契约实验仅操作内存副本，不修复或写回输入。测量口径与已知缺陷见[复审](../docs/qa/spline-edit-failure-2026-09-26.md)。
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
 - `pnpm test:browser:all`：完整浏览器门禁，顺序运行既有 `legacy` suite 和 Studio suite；每个 suite 都得到独立的默认 `outputs/v4-qa/<run>/` 证据目录。它不包含在 `check:all` 中。
 - `pnpm test:browser:studio`：Studio 子门禁。它为每个已注册的 Vite fixture 建立临时 localhost 端口与全新 Playwright browser/context，并把 manifest、截图和结果写入独立的 `outputs/v4-qa/<run>/`。当前覆盖默认最终面，以及完整原 Studio 的 Sandrone 打开、编辑、保存和重开旅程；最终面用例还通过原 GUI 覆盖 Mirror/Array、Join/Fill 与嵌套场景组交互。

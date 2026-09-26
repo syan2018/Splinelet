@@ -38,6 +38,8 @@ OutputRef 的 owner、operator、port、key、instances、lineage 共同参与�
 
 这一运行时优化不改变 `.spl` 协议、嵌套来源 key 或复制重映射规则，也不改变求值域调度、平面缓存失效条件和取消策略。持久化来源表示压缩需要单独的版本迁移设计。
 
+已知边界：当前 key/lineage 将源 Edge 表示与持久面身份混合，等价的分段合并会使分区契约失效；分区线反转还可能在引用集合不变时交换引用对应的物理面。因此精确查询正确不代表编辑前后身份正确。[故障复审](../qa/spline-edit-failure-2026-09-26.md)给出可执行反例；[重构提案](region-identity-redesign-2026-09-26.md)尚未实施，不能当作当前运行能力。
+
 ## 失败范围
 
 阶段状态为 ready、empty、absent、blocked。relief 和 placedRelief 另带 branches，每个分支携带 ownerNodeId、状态、诊断和当前有效成员。存在阻断分支时，聚合为 blocked 且没有 value。预览可读取其中 ready 分支；实体和导出必须检查聚合完整性，不能使用预览子集作为成品。
