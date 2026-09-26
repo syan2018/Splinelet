@@ -51,7 +51,7 @@ export function createReferenceProject({
   };
   validateDocument(document);
   return {
-    kind: 'v4',
+    kind: 'v5',
     document,
     assets: { [assetId]: ownedBytes },
     target: null,

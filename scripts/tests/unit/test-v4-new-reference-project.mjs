@@ -17,7 +17,10 @@ const input = {
   height: 1200,
 };
 const opened = createReferenceProject(input);
-assert.equal(opened.kind, 'v4');
+assert.equal(opened.kind, 'v5');
+assert.equal(opened.document.version, 5);
+assert.equal(opened.document.evaluationSemanticsVersion, 1);
+assert.deepEqual(opened.document.regionDefinitions, {});
 assert.equal(opened.dirty, true);
 assert.equal(opened.target, null);
 assert.deepEqual(opened.document.nodes, {});
@@ -45,5 +48,5 @@ assert.throws(() =>
   createReferenceProject({ ...input, bytes: new Uint8Array() }),
 );
 console.log(
-  'PASS new reference project: empty V4 authority, owned image bytes, centered frame and container roundtrip',
+  'PASS new reference project: empty V5 authority, owned image bytes, centered frame and container roundtrip',
 );

@@ -13,6 +13,7 @@ import {
   createOutputIdentity,
 } from '../../output-identity.mjs';
 import { fillCurves, sampleCubic } from './fill.mjs';
+import { betweenGeometry } from './between-geometry.mjs';
 import {
   connectPartitionCutters,
   validatePartitionEndpointJoin,
@@ -186,51 +187,6 @@ const boundarySignature = (base, cutters, face) =>
     ],
   )[0];
 const gap = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-const snapRing = (ring, point) => {
-  let best;
-  for (let index = 0; index < ring.length - 1; index++) {
-    const a = ring[index],
-      b = ring[index + 1],
-      dx = b[0] - a[0],
-      dy = b[1] - a[1],
-      length = dx * dx + dy * dy;
-    const t = length
-      ? Math.max(
-          0,
-          Math.min(
-            1,
-            ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / length,
-          ),
-        )
-      : 0;
-    const hit = [a[0] + dx * t, a[1] + dy * t],
-      gapMM = gap(point, hit);
-    if (!best || gapMM < best.gapMM) best = { index, point: hit, gapMM };
-  }
-  return best;
-};
-const boundaryRoute = (ring, from, to) => {
-  const route = [from.point];
-  for (
-    let index = (from.index + 1) % (ring.length - 1);
-    ;
-    index = (index + 1) % (ring.length - 1)
-  ) {
-    route.push(ring[index]);
-    if (index === to.index) break;
-  }
-  route.push(to.point);
-  return route;
-};
-const routeLength = (route) =>
-  route
-    .slice(1)
-    .reduce((sum, point, index) => sum + gap(point, route[index]), 0);
-const shortestBoundaryRoute = (ring, from, to) => {
-  const forward = boundaryRoute(ring, from, to),
-    backward = boundaryRoute(ring, to, from).reverse();
-  return routeLength(forward) <= routeLength(backward) ? forward : backward;
-};
 
 export const regionReferenceOperator = {
   type: 'region-reference',
@@ -513,29 +469,7 @@ export const betweenOperator = {
         ),
       };
     try {
-      const sample = (curve) =>
-        curve.edges.flatMap((edge, index) =>
-          sampleCubic(
-            edge.cubic,
-            document.geometrySettings.curveToleranceMM,
-          ).slice(index ? 1 : 0),
-        );
-      const left = sample(a),
-        right = sample(b);
-      const direct = Math.hypot(
-        left.at(-1)[0] - right[0][0],
-        left.at(-1)[1] - right[0][1],
-      );
-      const reverse = Math.hypot(
-        left.at(-1)[0] - right.at(-1)[0],
-        left.at(-1)[1] - right.at(-1)[1],
-      );
-      let ring = [
-        ...left,
-        ...(reverse < direct ? right.slice().reverse() : right),
-        left[0],
-      ];
-      const connections = [];
+      let boundaryGeometry;
       if (operator.params.boundaryRef) {
         const boundary = input(inputs, 'boundary');
         const found = selected(boundary, {
@@ -543,62 +477,21 @@ export const betweenOperator = {
           refs: [operator.params.boundaryRef],
         });
         if (found.stage) return { regions: found.stage };
-        const geometry = found.selected[0]?.geometry;
-        if (geometry?.type !== 'Polygon' || geometry.coordinates.length !== 1)
-          throw Error('between boundary 必须是单一无孔 Polygon Region');
-        const ringBoundary = geometry.coordinates[0];
-        const pairs = [
-          [left.at(-1), ring[left.length]],
-          [ring.at(-2), left[0]],
-        ].map(([from, to]) => ({
-          from,
-          to,
-          a: snapRing(ringBoundary, from),
-          b: snapRing(ringBoundary, to),
-        }));
-        const joinMM = operator.params.boundaryJoinMM ?? 0;
-        if (pairs.some((pair) => Math.max(pair.a.gapMM, pair.b.gapMM) > joinMM))
-          throw Error('between 端点超过 boundaryJoinMM，拒绝隐式直线补边');
-        const first = shortestBoundaryRoute(
-            ringBoundary,
-            pairs[0].a,
-            pairs[0].b,
-          ),
-          second = shortestBoundaryRoute(ringBoundary, pairs[1].a, pairs[1].b);
-        ring.splice(left.length, 0, ...first);
-        ring.splice(ring.length - 1, 0, ...second);
-        connections.push(
-          ...pairs.map((pair, index) => ({
-            kind: 'boundary-route',
-            from: pair.from,
-            to: pair.to,
-            boundaryFrom: pair.a.point,
-            boundaryTo: pair.b.point,
-            gapMM: Math.max(pair.a.gapMM, pair.b.gapMM),
-            coordinates: index ? second : first,
-          })),
-        );
-      } else
-        connections.push(
-          { kind: 'explicit-line', from: left.at(-1), to: ring[left.length] },
-          { kind: 'explicit-line', from: ring.at(-2), to: left[0] },
-        );
-      ring = ring.filter(
-        (point, index) => !index || gap(point, ring[index - 1]) > 1e-9,
-      );
-      let part = readGeometry({ type: 'Polygon', coordinates: [ring] });
-      const repairWarnings = [];
-      if (!part.isValid() && operator.params.repair === true)
-        part = validateArea(part, true, repairWarnings);
-      if (!part.isValid() || part.isEmpty())
-        throw Error('between 的显式端点边界不能形成有效区域');
-      const tokens = [...curveTokens(a), ...curveTokens(b)].sort(compare);
+        boundaryGeometry = found.selected[0]?.geometry;
+      }
+      const derived = betweenGeometry({
+        curves: all,
+        params: operator.params,
+        boundaryGeometry,
+        geometrySettings: document.geometrySettings,
+      });
+      const tokens = derived.curves.flatMap(curveTokens).sort(compare);
       const region = output(
         ownerNodeId,
         operator.id,
-        text(['between', a.key, b.key, tokens]),
+        text(['between', derived.curves[0].key, derived.curves[1].key, tokens]),
         tokens,
-        part,
+        readGeometry(derived.geometry),
       );
       return {
         regions: stageRegions(
@@ -608,15 +501,15 @@ export const betweenOperator = {
             [
               {
                 kind: 'explicit-boundary',
-                curves: [a.key, b.key],
-                connections,
+                curves: derived.curves.map((curve) => curve.key),
+                connections: derived.connections,
               },
             ],
           ),
           ownerNodeId,
           [
             ...clone(source.diagnostics || []),
-            ...repairWarnings.map((message) => ({
+            ...derived.warnings.map((message) => ({
               severity: 'warning',
               code: 'repaired-self-intersection',
               message,
@@ -963,7 +856,9 @@ export const regionCollectOperator = {
   inputPorts: { input: { domain: 'regions', min: 0 } },
   outputPorts: { regions: { domain: 'regions' } },
   validateParams: (params) =>
-    Object.keys(params).length === 0 || 'region-collect 不接受几何参数',
+    Object.keys(params).length === 0 ||
+    (Object.keys(params).length === 1 && params.disjointSelections === true) ||
+    'region-collect 只接受 disjointSelections: true',
   rebase: (operator) => clone(operator),
   copy: (operator) => clone(operator),
   evaluate: ({ ownerNodeId, inputs }) => {

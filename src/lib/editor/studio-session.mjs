@@ -3,6 +3,7 @@ import {
   orderedReferences,
 } from '../editing/commands/references.mjs';
 import { validateDocument } from '../document/schema.mjs';
+import { migrateRegionDefinitions } from '../document/import/region-definitions.mjs';
 import { createEditorSession } from '../editing/dispatcher.mjs';
 import { createV4PersistenceSession } from '../persistence/v4-session.mjs';
 import { createV4CreationRuntime } from './creation-runtime.mjs';
@@ -57,6 +58,7 @@ export function createStudioSession({
       {
         epoch: state.epoch,
         revision: state.revision,
+        documentVersion: documentOf(state).version,
         source: projectSourceView(documentOf(state), nextLayout.frame),
         creation,
         canUndo: state.canUndo,
@@ -76,9 +78,14 @@ export function createStudioSession({
   const prepareOpen = (input, nextPresentation) => {
     // All fallible input validation happens before replacing editor authority.
     const next = structuredClone(input);
-    if (!['v4', 'legacy'].includes(next?.kind)) throw Error('未知工程格式');
+    if (!['v4', 'v5', 'legacy', 'migrated'].includes(next?.kind))
+      throw Error('未知工程格式');
     if (next.dirty !== undefined && typeof next.dirty !== 'boolean')
       throw Error('dirty 必须为布尔值');
+    if (next.kind === 'migrated') {
+      next.target = null;
+      next.dirty = true;
+    }
     validateDocument(next.document);
     const nextLayout = freeze(
       structuredClone({
@@ -355,21 +362,36 @@ export function createStudioSession({
       const identity = capture();
       const draft = await files.restore(identity);
       if (!draft) return null;
-      const nextPresentation = await presentationForDraft(draft);
-      alive();
-      // Editing while choosing a reference frame also invalidates recovery.
-      const now = editor.state;
-      if (
-        now.epoch !== identity.expectedEpoch ||
-        now.revision !== identity.expectedRevision ||
-        now.previewId !== identity.previewId ||
-        (now.preview?.version ?? null) !== identity.previewVersion
-      )
-        throw Error('恢复结果已过期');
-      return open(
-        { kind: 'v4', ...draft, target: null, dirty: true },
-        nextPresentation,
-      );
+      const assertCurrent = () => {
+        alive();
+        // Editing while migrating or choosing a reference frame invalidates
+        // recovery before it can replace the current authority.
+        const now = editor.state;
+        if (
+          now.epoch !== identity.expectedEpoch ||
+          now.revision !== identity.expectedRevision ||
+          now.previewId !== identity.previewId ||
+          (now.preview?.version ?? null) !== identity.previewVersion
+        )
+          throw Error('恢复结果已过期');
+      };
+      assertCurrent();
+      const converted =
+        draft.document.version === 4
+          ? migrateRegionDefinitions(draft.document)
+          : null;
+      assertCurrent();
+      const restored = {
+        ...draft,
+        kind: converted ? 'migrated' : 'v5',
+        document: converted?.document || draft.document,
+        target: null,
+        dirty: true,
+        report: converted?.report ?? draft.report,
+      };
+      const nextPresentation = await presentationForDraft(restored);
+      assertCurrent();
+      return open(restored, nextPresentation);
     },
     dispose() {
       evaluation.dispose();

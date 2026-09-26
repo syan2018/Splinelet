@@ -8,7 +8,7 @@ import { createV4AgentAPI } from '../../../src/lib/agent/v4-api.mjs';
 
 let sequence = 0;
 const idFactory = () => `resources-${++sequence}`;
-const session = createEditorSession(createDocument({ idFactory }), {
+const session = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const run = (action) =>

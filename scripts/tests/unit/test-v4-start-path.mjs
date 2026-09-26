@@ -15,9 +15,12 @@ let serial = 0;
 const idFactory = () => `start-${++serial}`;
 const frame = { width: 800, height: 600, widthMM: 100 };
 for (const end of ['start', 'end']) {
-  const editor = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const editor = createEditorSession(
+    createDocument({ version: 4, idFactory }),
+    {
+      idFactory,
+    },
+  );
   const dispatch = (command) =>
     editor.dispatch(command, { expectedRevision: editor.state.revision });
   const view = () => ({

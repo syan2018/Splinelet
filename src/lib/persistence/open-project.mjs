@@ -1,25 +1,21 @@
 import { decodeDocument } from '../document/codec.mjs';
 import { decodeProject } from '../project-format.mjs';
 import { importLegacy as importLegacyDocument } from '../document/import/legacy-import.mjs';
+import { migrateRegionDefinitions } from '../document/import/region-definitions.mjs';
 
-/** Both formats enter one V4 session; conversion does not bind the old file. */
+/** Conversion is atomic at the file boundary and never binds the old file. */
 export function openProject(
   input,
   {
     decodeV4 = decodeDocument,
     decodeLegacy = decodeProject,
     importLegacy = importLegacyDocument,
+    migrate = migrateRegionDefinitions,
   } = {},
 ) {
+  let decoded;
   try {
-    const decoded = decodeV4(input.bytes);
-    return {
-      kind: 'v4',
-      document: decoded.document,
-      assets: decoded.assets,
-      target: input.target || null,
-      report: null,
-    };
+    decoded = decodeV4(input.bytes);
   } catch (v4Error) {
     if (typeof importLegacy !== 'function') throw v4Error;
     let source = input.legacy;
@@ -31,12 +27,33 @@ export function openProject(
       }
     }
     const legacy = importLegacy(source);
+    const converted = migrate(legacy.documentV4 || legacy.document);
     return {
-      kind: 'legacy',
-      document: legacy.documentV4 || legacy.document,
+      kind: 'migrated',
+      document: converted.document,
       assets: legacy.assets || {},
-      target: input.target || null,
-      report: legacy.report,
+      target: null,
+      dirty: true,
+      report: { ...legacy.report, regionMigration: converted.report },
     };
   }
+  if (decoded.document.version === 5)
+    return {
+      kind: 'v5',
+      document: decoded.document,
+      assets: decoded.assets,
+      target: input.target || null,
+      report: null,
+    };
+  // Migration errors propagate as such; they must not trigger a legacy decoder
+  // or replace the currently open editor with a partially converted document.
+  const converted = migrate(decoded.document);
+  return {
+    kind: 'migrated',
+    document: converted.document,
+    assets: decoded.assets,
+    target: null,
+    dirty: true,
+    report: converted.report,
+  };
 }

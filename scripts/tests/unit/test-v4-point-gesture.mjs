@@ -34,9 +34,12 @@ function authoredDocument({
   rotated = false,
   shared = false,
 } = {}) {
-  const editor = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const editor = createEditorSession(
+    createDocument({ version: 4, idFactory }),
+    {
+      idFactory,
+    },
+  );
   editor.dispatch(
     createAuthoringCommand({
       kind: 'draw-path',
@@ -140,6 +143,61 @@ const begin = (session, path, curve, point, nodes) =>
     point,
     nodes,
   });
+
+// Canvas deltas are display-only: 100 pointer events must leave author state,
+// file dirtiness and subscribers untouched. Release records one ordinary edit.
+{
+  const session = makeSession({ shared: true, rotated: true });
+  const { snapshot: original, path } = shownPath(session);
+  let notifications = 0;
+  const unsubscribe = session.subscribe(() => notifications++);
+  const gesture = beginV4PointGesture({
+    runtime: original.runtime,
+    project: original.project,
+    pathId: path.id,
+    curve: 0,
+    point: 0,
+    displayOnly: true,
+  });
+  let source;
+  for (let index = 1; index <= 100; index++)
+    source = gesture.update({ x: index, y: 30 });
+  assert.equal(session.getSnapshot(), original);
+  assert.equal(notifications, 0);
+  near(source.paths[0].anchors[0].x, path.anchors[0].x + 100);
+  near(source.paths[1].anchors[0].x, path.anchors[0].x + 100);
+  gesture.commit();
+  assert.equal(
+    session.getSnapshot().editorState.revision,
+    original.editorState.revision + 1,
+  );
+  assert.equal(session.getSnapshot().editorState.previewId, null);
+  const committed = shownPath(session).path;
+  assert.deepEqual(committed.curves, source.paths[0].curves);
+  session.undo();
+  assert.deepEqual(shownPath(session).path.curves, path.curves);
+  unsubscribe();
+  session.dispose();
+}
+
+{
+  const session = makeSession();
+  const { snapshot: original, path } = shownPath(session);
+  const gesture = beginV4PointGesture({
+    runtime: original.runtime,
+    project: original.project,
+    pathId: path.id,
+    curve: 0,
+    point: 1,
+    displayOnly: true,
+  });
+  const source = gesture.update({ x: 12, y: -8 });
+  assert.notDeepEqual(source.paths[0].curves, path.curves);
+  gesture.cancel();
+  assert.equal(session.getSnapshot(), original);
+  assert.throws(() => gesture.commit(), /失效/);
+  session.dispose();
+}
 
 // The operation starts with source identities and repeatedly applies pointer-down
 // deltas to the captured anchors, never to a previous preview sample.

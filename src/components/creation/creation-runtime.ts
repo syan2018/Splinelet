@@ -1,6 +1,22 @@
 import type { BambuSlicerTemplate } from '@/lib/project';
 import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
-import type { CurvePreview } from '@/lib/modifier-types';
+import type { CurvePreview, ModifierScene } from '@/lib/modifier-types';
+import type { InputRef, OutputRef } from '@/lib/document/types';
+import type { StageResult } from '@/lib/construction/types';
+
+export type ModifierInputRepairRequest = {
+  ownerNodeId: string;
+  operatorId: string;
+  input: string;
+  index: number;
+  reference: InputRef;
+};
+export type ModifierInputRepair = {
+  preview: ModifierScene['modifierStatus'];
+  ports: Record<string, StageResult>;
+  commit: () => StudioDisplayProject;
+  cancel: () => void;
+};
 
 export type CreationRuntimeContext = {
   project: StudioDisplayProject;
@@ -33,6 +49,41 @@ export type BoundCreationEvaluation = {
  * treat them as an alternate writable source model.
  */
 export type CreationRuntime = {
+  bakeModifierSnapshot: (
+    project: StudioDisplayProject,
+    ownerNodeId: string,
+    modifierId: string,
+  ) => StudioDisplayProject;
+  readPostChain: (
+    project: StudioDisplayProject,
+    ownerNodeId: string,
+  ) => {
+    id: string;
+    label: string;
+    status: string;
+    lastRevision: number | null;
+    diagnostics: { message: string }[];
+  }[];
+  readRegionSelections: (
+    project: StudioDisplayProject,
+    ownerNodeId: string,
+    modifierId: string,
+  ) => {
+    geometryStage: StageResult;
+    definitions: {
+      definitionId: string;
+      status: string;
+      candidates: {
+        ref: OutputRef;
+        label: string;
+        occupiedByDefinitionId: string | null;
+      }[];
+    }[];
+  };
+  prepareRegionSelectionRepair: (
+    request: { definitionId: string; candidateRef: OutputRef },
+    context: { project: StudioDisplayProject },
+  ) => Promise<ModifierInputRepair>;
   readOutputSettings: (project: StudioDisplayProject) => {
     parts: { id: string; name: string }[];
     defaultPartId: string;
@@ -43,6 +94,39 @@ export type CreationRuntime = {
     project: StudioDisplayProject,
   ) => CurvePreview[] | null;
   readCreationDocument: (project: StudioDisplayProject) => unknown;
+  readRevision: (project: StudioDisplayProject) => string;
+  readModifierStatus: (
+    project: StudioDisplayProject,
+  ) => ModifierScene['modifierStatus'];
+  readModifierInputs: (
+    project: StudioDisplayProject,
+    ownerNodeId: string,
+    modifierId: string,
+  ) => {
+    revision: number;
+    outputs: string[];
+    inputs: {
+      input: string;
+      index: number;
+      reference: InputRef | null;
+      label: string;
+      options: { label: string; reference: InputRef }[];
+      diagnostics: { message: string; code: string }[];
+    }[];
+  };
+  readModifierSnapshot: (
+    project: StudioDisplayProject,
+    modifierId: string,
+    port: string,
+  ) => {
+    current: StageResult | null;
+    lastSuccessful: { revision: number; stage: StageResult } | null;
+    freshness: string;
+  } | null;
+  prepareModifierInputRepair: (
+    request: ModifierInputRepairRequest,
+    context: { project: StudioDisplayProject },
+  ) => Promise<ModifierInputRepair>;
   evaluate: (
     action: string,
     args: Record<string, unknown>,

@@ -4,7 +4,7 @@ import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 import { resolveRelation } from '../../../src/lib/geometry/relations.mjs';
 let serial = 0;
-const editor = createEditorSession(createDocument(), {
+const editor = createEditorSession(createDocument({ version: 4 }), {
   idFactory: () => `source-command-${++serial}`,
 });
 const run = (action) =>

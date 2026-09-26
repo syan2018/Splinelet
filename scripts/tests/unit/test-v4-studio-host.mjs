@@ -40,6 +40,7 @@ const fakeUrls = () => {
 };
 const sourceDocument = () => {
   const document = createDocument({
+    version: 4,
     idFactory: () => `studio-host-document-${++documentSerial}`,
   });
   const assetId = 'asset:reference';
@@ -76,7 +77,8 @@ const samePoint = (actual, expected) => {
 };
 
 // The tracked fixture is a legacy project. Its import must retain the original
-// source canvas and convert its embedded image into one canonical V4 asset.
+// source canvas, migrate it to V5, and convert its embedded image into one
+// canonical asset.
 const openedBuiltin = openProject({
   bytes: fixtureBytes,
   target: 'sandrone.spl',
@@ -99,7 +101,10 @@ const builtinReference = Object.values(openedBuiltin.document.references)[0];
 const builtinAsset = openedBuiltin.document.assets[builtinReference.assetId];
 const builtinUrl = builtinSnapshot.project.image;
 
-assert.equal(openedBuiltin.kind, 'legacy');
+assert.equal(openedBuiltin.kind, 'migrated');
+assert.equal(openedBuiltin.document.version, 5);
+assert.equal(openedBuiltin.dirty, true);
+assert.equal(openedBuiltin.target, null);
 assert.equal(builtinSnapshot.project.paths.length, 76);
 assert.equal(legacyProject.paths.length, 76);
 for (const [index, path] of legacyProject.paths.entries()) {
@@ -136,12 +141,13 @@ assert.deepEqual(
 );
 assert.equal(builtinUrls.blobs.get(builtinUrl).type, builtinAsset.mediaType);
 
-// Saving converts the legacy import to V4. The URL is presentation-only and
+// Saving commits the migrated V5 authority. The URL is presentation-only and
 // the encoded container must continue to carry the actual image bytes.
 await builtinHost.save('converted.spl');
 assert.equal(writes.length, 1);
 assert.equal(writes[0].target, 'converted.spl');
 const encoded = decodeDocument(writes[0].bytes);
+assert.equal(encoded.document.version, 5);
 assert.deepEqual(
   encoded.assets[builtinReference.assetId],
   originalAssets[builtinReference.assetId],

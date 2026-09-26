@@ -52,10 +52,21 @@ export type StudioImportIssue = Readonly<
   }
 >;
 
-/** Legacy import diagnostics are presentation data and never enter V4 storage. */
+/** Immutable current-document projection consumed by the established Studio shell. */
+export type StudioRegionMigrationReport = Readonly<{
+  kind: 'region-definitions' | 'native';
+  regions: number;
+  verifiedOutputs?: number;
+}>;
+
+/** Import diagnostics and conversion facts are presentation data only. */
 export type StudioImportReport = Readonly<
   Record<string, unknown> & {
-    issues: readonly StudioImportIssue[];
+    issues?: readonly StudioImportIssue[];
+    kind?: StudioRegionMigrationReport['kind'];
+    regions?: number;
+    verifiedOutputs?: number;
+    regionMigration?: StudioRegionMigrationReport;
   }
 >;
 
@@ -114,13 +125,13 @@ export type StudioDisplaySceneNode = Readonly<{
 }>;
 
 /**
- * Immutable V4 projection consumed by the established Studio shell.
+ * Immutable current-document projection consumed by the established Studio shell.
  *
  * It deliberately has no legacy file-format version: a display handle is
- * issued by the V4 runtime and is never accepted by legacy encoders.
+ * issued by the Studio runtime and is never accepted by legacy encoders.
  */
 export type StudioDisplayProject = Readonly<{
-  version: 4;
+  version: 4 | 5;
   image: string;
   imageName: string;
   width: number;

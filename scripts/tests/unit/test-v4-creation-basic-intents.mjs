@@ -9,7 +9,7 @@ import { sourcePathId } from '../../../src/lib/editor/source-view.mjs';
 
 let serial = 0;
 const idFactory = () => `creation-basic-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>
@@ -191,9 +191,12 @@ await assert.rejects(
 );
 assert.deepEqual(editor.state, beforeCombine);
 
-const combineEditor = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const combineEditor = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 const combineDispatch = (command) =>
   combineEditor.dispatch(command, {
     expectedRevision: combineEditor.state.revision,
@@ -250,9 +253,12 @@ assert.deepEqual(
   'plain closed Shapes combine in one undoable source/program transaction',
 );
 
-const guideEditor = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const guideEditor = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 const guideDispatch = (command) =>
   guideEditor.dispatch(command, {
     expectedRevision: guideEditor.state.revision,

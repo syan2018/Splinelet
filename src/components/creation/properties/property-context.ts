@@ -46,6 +46,11 @@ export type PropertyContext = {
   sourceOnly: boolean;
   surfaceDisabled: boolean;
   command: (action: string, args: Record<string, unknown>) => void;
+  renderModifierRecovery?: (
+    ownerNodeId: string,
+    modifierId: string,
+  ) => ReactNode;
+  renderPostChain?: (ownerNodeId: string) => ReactNode;
   select: (selection: CreationSelection) => void;
   editSources: () => void;
   draw: (role: string) => void;

@@ -7,7 +7,7 @@ import { exportSnapshot } from '../../../src/lib/export/snapshot.mjs';
 import { mountV4BrowserAPI } from '../helpers/v4-browser.mjs';
 import { createV4AgentAPI } from '../../../src/lib/agent/v4-api.mjs';
 let serial = 0;
-const doc = createDocument();
+const doc = createDocument({ version: 4 });
 doc.appearances.swatches.red = { id: 'red', name: 'red', color: '#ff0000' };
 const editor = createEditorSession(doc, {
   idFactory: () => `export-view-${++serial}`,

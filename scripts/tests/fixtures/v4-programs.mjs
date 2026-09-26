@@ -2,7 +2,10 @@ import { createDocument } from '../../../src/lib/document/schema.mjs';
 
 export function repeatedRingDocument() {
   let sequence = 0;
-  const document = createDocument({ idFactory: () => `fixture-${++sequence}` });
+  const document = createDocument({
+    version: 4,
+    idFactory: () => `fixture-${++sequence}`,
+  });
   document.nodes.shape = {
     id: 'shape',
     name: '重复纹样',

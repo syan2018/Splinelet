@@ -12,7 +12,7 @@ import { useSourceDrag } from '../../../src/hooks/use-source-drag.ts';
 
 let serial = 0;
 const idFactory = () => `snap-dom-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 for (const points of [

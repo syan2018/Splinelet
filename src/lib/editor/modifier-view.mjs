@@ -34,6 +34,14 @@ export function projectModifierControls(document, ownerNodeId, operatorId) {
       drivenFields.push(field);
   };
   const params = operator.params;
+  if (operator.type === 'curve-endpoint-attach') {
+    values.toleranceMM = params.endpointJoin.toleranceMM;
+    editableFields.push('toleranceMM');
+  }
+  if (operator.type === 'region-select') {
+    values.anchors = structuredClone(params.anchors);
+    editableFields.push('anchors');
+  }
   if (operator.type === 'join') {
     values.connections = structuredClone(params.connections);
     editableFields.push('connections');

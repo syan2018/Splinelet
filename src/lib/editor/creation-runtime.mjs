@@ -1,9 +1,17 @@
 import { createObjectTransformCommand } from '../editing/commands/object-transform.mjs';
 import { createCreationIntent } from './creation-intents.mjs';
-import { projectCreationView } from './creation-view.mjs';
+import {
+  projectCreationView,
+  projectModifierStatus,
+} from './creation-view.mjs';
 import { evaluateDocument } from '../evaluation/evaluate-document.mjs';
 import { createDocumentEvaluationSession } from '../evaluation/document-session.mjs';
 import { createAuthoringCommand } from '../editing/commands/authoring.mjs';
+import { createRebindModifierInputCommand } from '../editing/commands/rebind-modifier-input.mjs';
+import { projectModifierInputs } from './modifier-repair-view.mjs';
+import { projectRegionSelectionRepairView } from './region-selection-repair-view.mjs';
+import { createRebindRegionSelectionCommand } from '../editing/commands/rebind-region-selection.mjs';
+import { createBakeRegionSnapshotCommand } from '../editing/commands/bake-region-snapshot.mjs';
 import { sameDocument } from '../editing/history.mjs';
 import { evaluatePlanar } from '../construction/document-evaluation.mjs';
 import { projectCurvePreviews } from './curve-preview.mjs';
@@ -161,6 +169,179 @@ export function createV4CreationRuntime({
     readCreationDocument(project) {
       return metadata(project).view.creation;
     },
+    readRevision(project) {
+      const entry = current(project);
+      return `${entry.state.epoch}:${entry.state.revision}`;
+    },
+    readModifierStatus(project) {
+      const entry = metadata(project);
+      if (!sameState(entry.state, editorSession.state))
+        throw Error('修改器展示工程已过期');
+      return projectModifierStatus(documentOf(entry.state), {
+        planar: entry.evaluatedPlanar,
+      });
+    },
+    readModifierSnapshot(project, modifierId, port) {
+      const entry = current(project);
+      if (
+        !Object.values(entry.state.document.programs).some(
+          (program) => program.operators[modifierId],
+        )
+      )
+        throw Error('修改器不存在');
+      return (
+        evaluation.readChainSnapshot?.(`operator:${modifierId}`, port) || null
+      );
+    },
+    readModifierInputs(project, ownerNodeId, modifierId) {
+      const entry = current(project);
+      const view = projectModifierInputs(
+        entry.state.document,
+        ownerNodeId,
+        modifierId,
+      );
+      return freeze({
+        ...view,
+        revision: entry.state.revision,
+        inputs: view.inputs.map((input) => ({
+          ...input,
+          diagnostics:
+            entry.evaluatedPlanar?.components?.[
+              `operator:${modifierId}`
+            ]?.inputs?.find(
+              (item) => item.port === input.input && item.index === input.index,
+            )?.diagnostics || [],
+        })),
+      });
+    },
+    readRegionSelections(project, ownerNodeId, modifierId) {
+      const entry = current(project);
+      return freeze(
+        projectRegionSelectionRepairView(
+          entry.state.document,
+          entry.evaluatedPlanar,
+          ownerNodeId,
+          modifierId,
+        ),
+      );
+    },
+    readPostChain(project, ownerNodeId) {
+      current(project);
+      return [
+        [`post:appearance:${ownerNodeId}`, 'appearance', '外观'],
+        [`post:relief:${ownerNodeId}`, 'relief', '浮雕'],
+        ['post:placement:global', 'placed-relief', '打印位置'],
+        ['post:cleanup:global', 'cleaned-placed-relief', '轮廓清理'],
+        ['post:bodies:global', 'bodies', '实体'],
+      ].map(([id, domain, label]) => {
+        const status = evaluation.readChainStatus?.(id, domain);
+        return {
+          id,
+          label,
+          status: status?.status || 'pending',
+          lastRevision: status?.lastRevision ?? null,
+          diagnostics: status?.diagnostics || [],
+        };
+      });
+    },
+    bakeModifierSnapshot(project, ownerNodeId, modifierId) {
+      const entry = current(project);
+      const snapshot = evaluation.readChainSnapshot?.(
+        `operator:${modifierId}`,
+        'regions',
+      )?.lastSuccessful;
+      if (!snapshot || snapshot.epoch !== entry.state.epoch)
+        throw Error('当前工程没有可固化的区域快照');
+      const command = createBakeRegionSnapshotCommand(
+        {
+          ownerNodeId,
+          sourceRevision: snapshot.revision,
+          sourceWorldMatrix: snapshot.worldMatrix,
+        },
+        snapshot.stage,
+      );
+      return issue(
+        editorSession.dispatch(command, {
+          expectedRevision: entry.state.revision,
+        }),
+      );
+    },
+    async prepareRegionSelectionRepair(request, context) {
+      const entry = current(context.project);
+      if (!entry.evaluatedPlanar) throw Error('请等待当前区域结果后重新选择');
+      const definition =
+        entry.state.document.regionDefinitions?.[request.definitionId];
+      if (!definition) throw Error('局部选择不存在');
+      const token = await editorSession.prepare(
+        createRebindRegionSelectionCommand(request, {
+          planar: entry.evaluatedPlanar,
+        }),
+        { expectedRevision: entry.state.revision },
+      );
+      current(context.project);
+      const snapshot = await evaluation.candidate(
+        token.result.document,
+        entry.state,
+        ['curves', 'regions', 'relief', 'placed-relief'],
+      );
+      current(context.project);
+      let finished = false;
+      return Object.freeze({
+        preview: projectModifierStatus(token.result.document, snapshot),
+        ports:
+          snapshot.planar?.components?.[
+            `operator:${definition.context.operatorId}`
+          ]?.ports || {},
+        commit() {
+          if (finished) throw Error('修复预览已结束');
+          current(context.project);
+          const next = editorSession.dispatch(token, {
+            expectedRevision: entry.state.revision,
+          });
+          finished = true;
+          return issue(next);
+        },
+        cancel() {
+          finished = true;
+        },
+      });
+    },
+    async prepareModifierInputRepair(request, context) {
+      const entry = current(context.project);
+      const token = await editorSession.prepare(
+        createRebindModifierInputCommand(request),
+        {
+          expectedRevision: entry.state.revision,
+        },
+      );
+      current(context.project);
+      const snapshot = await evaluation.candidate(
+        token.result.document,
+        entry.state,
+        ['curves', 'regions'],
+      );
+      current(context.project);
+      const preview = projectModifierStatus(token.result.document, snapshot);
+      let finished = false;
+      return Object.freeze({
+        preview,
+        ports:
+          snapshot.planar?.components?.[`operator:${request.operatorId}`]
+            ?.ports || {},
+        commit() {
+          if (finished) throw Error('修复预览已结束');
+          current(context.project);
+          const next = editorSession.dispatch(token, {
+            expectedRevision: entry.state.revision,
+          });
+          finished = true;
+          return issue(next);
+        },
+        cancel() {
+          finished = true;
+        },
+      });
+    },
     readOutputSettings(project) {
       const document = metadata(project).state.document;
       return freeze(
@@ -279,6 +460,7 @@ export function createV4CreationRuntime({
           : sourceRuntime.readSourceView(project).source,
         pathId,
         nodeIndex,
+        { planar: entry.evaluatedPlanar || null },
       );
       snapCache.values.set(key, context);
       return context;
@@ -346,10 +528,16 @@ export function createV4CreationRuntime({
             entry.baseline,
             requested,
           )
-        : await evaluation.snapshot(entry.state, requested);
+        : await evaluation.snapshot(entry.state, requested, {
+            purpose: 'interactive',
+          });
       assertAlive();
       if (!sameState(entry.baseline || entry.state, editorSession.state))
         throw Error('求值期间工程已变化');
+      entry.evaluatedPlanar = snapshot.planar;
+      // A pending gesture keeps its captured guides; the next gesture can use
+      // newly accepted derived endpoints from this exact document revision.
+      snapCache = null;
       entry.evaluatedCurvePreviews = projectCurvePreviews(
         documentOf(entry.state),
         snapshot,

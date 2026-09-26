@@ -107,6 +107,7 @@ const addLegacyPath = (sketch, legacy) => {
 
 const fixture = ({ welded = false } = {}) => {
   const document = createDocument({
+    version: 4,
     id: 'merge-document',
     idFactory: () => 'merge-initial-part',
   });

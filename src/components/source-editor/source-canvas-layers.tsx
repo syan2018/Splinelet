@@ -16,6 +16,7 @@ type SourcePathLayersProps = {
   highlightSourceSelection: boolean;
   fill: boolean;
   onSelectPath: (event: React.PointerEvent, pathId: string) => void;
+  onPathPointerDown?: (event: React.PointerEvent, pathId: string) => boolean;
   onEditPath: (pathId: string) => void;
   onSplitAt: (event: React.MouseEvent, pathId: string) => void;
 };
@@ -28,10 +29,21 @@ export function SourcePathLayers({
   highlightSourceSelection,
   fill,
   onSelectPath,
+  onPathPointerDown,
   onEditPath,
   onSplitAt,
 }: SourcePathLayersProps) {
-  return paths.map((path) => (
+  // While editing, a selected curve owns its overlapping hit corridor. A
+  // later cutter must not steal the pointer and turn a drag into selection.
+  const selected = new Set(selectedPaths);
+  const ordered =
+    tool === 'edit'
+      ? [
+          ...paths.filter((path) => !selected.has(path.id)),
+          ...paths.filter((path) => selected.has(path.id)),
+        ]
+      : paths;
+  return ordered.map((path) => (
     <g
       key={path.id}
       data-source-id={path.id}
@@ -82,7 +94,9 @@ export function SourcePathLayers({
             ? 'stroke'
             : 'none',
         }}
-        onPointerDown={(e) => onSelectPath(e, path.id)}
+        onPointerDown={(e) => {
+          if (!onPathPointerDown?.(e, path.id)) onSelectPath(e, path.id);
+        }}
         onDoubleClick={(e) => onSplitAt(e, path.id)}
       />
     </g>

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   GripVertical,
   ChevronDown,
@@ -43,24 +43,46 @@ const operationNames: Record<string, string> = {
 
 const curveModifierTypes = new Set(['curve_mirror', 'curve_array', 'fill']);
 const radialTypes = new Set(['radial_array', 'curve_array']);
+const pendingEditableFields = new Set([
+  'enabled',
+  'name',
+  'count',
+  'angleDeg',
+  'centerMM',
+  'distanceMM',
+  'widthMM',
+  'operation',
+  'rule',
+  'anchors',
+  'toleranceMM',
+]);
+type ProgramModifierStatus = NonNullable<
+  ModifierScene['modifierStatus']
+>[number] & { pending?: boolean };
 
 function ProgramModifierCard({
   controls,
   error,
   note,
   structure,
+  pending = false,
+  recovery,
   onCommand,
 }: {
   controls: ModifierControls;
   error?: string;
   note?: string;
   structure?: ModifierStructureCapabilities;
+  pending?: boolean;
+  recovery?: ReactNode;
   onCommand: ModifierCommand;
 }) {
   const [open, setOpen] = useState(false);
   const { values, type } = controls;
   const editable = (field: string) =>
-    !controls.locked && controls.editableFields.includes(field);
+    !controls.locked &&
+    controls.editableFields.includes(field) &&
+    (!pending || pendingEditableFields.has(field));
   const reason = (field: string) => {
     const diagnostic = controls.diagnostics
       .filter((item) => item.field === field)
@@ -205,6 +227,73 @@ function ProgramModifierCard({
       )}
       {open && (
         <div className="modifier-parameters">
+          {type === 'curve-endpoint-attach' && (
+            <>
+              <ModifierNumber
+                label="端点接边上限"
+                value={values.toleranceMM}
+                min={0}
+                max={10000}
+                step={0.01}
+                disabled={!editable('toleranceMM')}
+                onChange={(value) => update({ toleranceMM: value })}
+              />
+              <p className="modifier-hint">
+                在声明的边界与先行曲线组内动态接边，超过上限保持不连接。输入关联和本步曲线结果可在下方检查。
+              </p>
+            </>
+          )}
+          {type === 'region-select' && (
+            <>
+              <p className="modifier-hint">
+                局部坐标锚点（mm）。每个锚点必须位于一个输入面内部；重复命中按已声明的合并策略去重。边界上或没有命中时需手动修复。
+              </p>
+              {(values.anchors || []).map((point, index) => (
+                <div key={index}>
+                  {([0, 1] as const).map((axis) => (
+                    <ModifierNumber
+                      key={axis}
+                      label={`锚点 ${index + 1} ${axis ? 'Y' : 'X'}`}
+                      value={point[axis]}
+                      min={-10000}
+                      max={10000}
+                      step={0.01}
+                      disabled={!editable('anchors')}
+                      onChange={(value) =>
+                        update({
+                          anchors: values.anchors?.map((p, i) =>
+                            i === index
+                              ? p.map((v, a) => (a === axis ? value : v))
+                              : p,
+                          ),
+                        })
+                      }
+                    />
+                  ))}
+                  <button
+                    disabled={
+                      !editable('anchors') || values.anchors?.length === 1
+                    }
+                    onClick={() =>
+                      update({
+                        anchors: values.anchors?.filter((_, i) => i !== index),
+                      })
+                    }
+                  >
+                    删除锚点 {index + 1}
+                  </button>
+                </div>
+              ))}
+              <button
+                disabled={!editable('anchors')}
+                onClick={() =>
+                  update({ anchors: [...(values.anchors || []), [0, 0]] })
+                }
+              >
+                添加锚点
+              </button>
+            </>
+          )}
           {type === 'join' && (
             <JoinConnections
               value={values.connections || []}
@@ -324,6 +413,7 @@ function ProgramModifierCard({
         </div>
       )}
       {note && note !== error && <p className="modifier-hint">{note}</p>}
+      {recovery}
     </article>
   );
 }
@@ -715,6 +805,7 @@ export default function CreationModifiers({
   onCommand,
   busy,
   onLocate,
+  renderRecovery,
 }: {
   object?: ModifierObject;
   project: ModifierProject;
@@ -723,6 +814,7 @@ export default function CreationModifiers({
   onCommand: ModifierCommand;
   busy: boolean;
   onLocate?: (ids: string[]) => void;
+  renderRecovery?: (ownerNodeId: string, modifierId: string) => ReactNode;
 }) {
   const [adding, setAdding] = useState(false),
     [kind, setKind] = useState('difference'),
@@ -740,9 +832,9 @@ export default function CreationModifiers({
         <p>先选择一个部件或区域，再添加修改器。</p>
       </div>
     );
-  const programStatuses = (scene?.modifierStatus || []).filter(
-    (status) => status.objectId === object.id && status.controls,
-  );
+  const programStatuses = (
+    (scene?.modifierStatus || []) as ProgramModifierStatus[]
+  ).filter((status) => status.objectId === object.id && status.controls);
   if (scene?.modifierModel === 'program' || programStatuses.length) {
     return (
       <fieldset
@@ -765,7 +857,9 @@ export default function CreationModifiers({
               controls={status.controls!}
               error={status.error}
               note={status.note}
-              structure={status.structure}
+              structure={status.pending ? undefined : status.structure}
+              pending={status.pending === true}
+              recovery={renderRecovery?.(status.objectId, status.modifierId)}
               onCommand={onCommand}
             />
           ))}
@@ -773,13 +867,17 @@ export default function CreationModifiers({
         {!programStatuses.length && (
           <p className="modifier-empty">当前没有可展示的修改器参数。</p>
         )}
-        <ProgramModifierAdd
-          object={
-            scene?.creation.objects.find((item) => item.id === object.id) ||
-            object
-          }
-          onCommand={onCommand}
-        />
+        {programStatuses.some((status) => status.pending) ? (
+          <p className="modifier-hint">等待当前构造结果后再添加步骤。</p>
+        ) : (
+          <ProgramModifierAdd
+            object={
+              scene?.creation.objects.find((item) => item.id === object.id) ||
+              object
+            }
+            onCommand={onCommand}
+          />
+        )}
         <p className="modifier-hint">
           线性同域步骤可排序或删除；分叉、跨域和精确区域范围会明确禁用结构调整。
         </p>

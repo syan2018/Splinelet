@@ -16,6 +16,7 @@ export type EntityRef =
 export type NodeRef = { kind: 'node'; id: Id };
 export type VertexRef = { kind: 'vertex'; sketchId: Id; id: Id };
 export type EdgeRef = { kind: 'edge'; sketchId: Id; id: Id };
+export type PathRef = { kind: 'path'; sketchId: Id; id: Id };
 export type EdgeEndRef = {
   kind: 'edge-end';
   sketchId: Id;
@@ -56,7 +57,19 @@ export type Edge = {
 export type Path = {
   id: Id;
   name: string;
-  edges: { edgeId: Id; reversed: boolean }[];
+  edges: {
+    edgeId: Id;
+    reversed: boolean;
+    basisSpan?: [number, number];
+    basisId?: Id;
+    basisPieces?: {
+      t: [number, number];
+      basisId: Id;
+      span: [number, number];
+    }[];
+  }[];
+  basisPeriod?: number;
+  basisCatalog?: Record<Id, { period?: number }>;
   visible: boolean;
 };
 export type Sketch = {
@@ -281,3 +294,85 @@ export type DocumentV4 = {
   references: Record<Id, Reference>;
   collections: Record<Id, Collection>;
 };
+
+/** Version 5 stores region intent separately from evaluated polygon handles. */
+export type RegionSourceUse =
+  | {
+      kind: 'baked-boundary';
+      operatorId: Id;
+      role: string;
+      regionId: Id;
+      instances?: OutputRef['instances'];
+    }
+  | {
+      kind: 'curve-use' | 'generated-closure' | 'generated-stroke';
+      operatorId: Id;
+      role: string;
+      sketchId: Id;
+      pathId: Id;
+      instances: OutputRef['instances'];
+    }
+  | {
+      kind: 'generated-join';
+      operatorId: Id;
+      role: string;
+      sketchId: Id;
+      pathId: Id;
+      instances: OutputRef['instances'];
+      endpoint: number;
+    }
+  | {
+      kind: 'generated-offset';
+      operatorId: Id;
+      role: string;
+      parent: OutputRef;
+      instances?: OutputRef['instances'];
+    }
+  | {
+      kind: 'generated-between-join';
+      operatorId: Id;
+      role: string;
+      instances?: OutputRef['instances'];
+      ends: {
+        path: { sketchId: Id; pathId: Id };
+        parameter: number;
+        instances: OutputRef['instances'];
+      }[][];
+    };
+export type RegionIntersection = {
+  kind: 'intersection';
+  branches: { use: RegionSourceUse; domain: 'all' | [number, number] }[];
+};
+export type RegionBoundaryRun = {
+  sources: { use: RegionSourceUse; direction: 1 | -1 }[];
+} & ({ closed: true } | { start: RegionIntersection; end: RegionIntersection });
+export type RegionSelector =
+  | { kind: 'result'; role: 'snapshot'; id: Id }
+  | { kind: 'cell'; outer: RegionBoundaryRun[]; holes: RegionBoundaryRun[][] }
+  | {
+      kind: 'result';
+      role: 'closed-path' | 'between' | 'outline' | 'selection';
+    }
+  | {
+      kind: 'result';
+      role: 'boolean' | 'offset' | 'reference';
+      parent: OutputRef;
+    }
+  | { kind: 'result'; role: 'array'; parent: OutputRef; index: number }
+  | {
+      kind: 'result';
+      role: 'stroke';
+      path: PathRef;
+      instances: OutputRef['instances'];
+    };
+export type RegionDefinition = {
+  id: Id;
+  context: Pick<OutputRef, 'ownerNodeId' | 'operatorId' | 'port' | 'instances'>;
+  selector: RegionSelector;
+};
+export type DocumentV5 = Omit<DocumentV4, 'version'> & {
+  version: 5;
+  evaluationSemanticsVersion: 1;
+  regionDefinitions: Record<Id, RegionDefinition>;
+};
+export type Document = DocumentV4 | DocumentV5;

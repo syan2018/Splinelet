@@ -4,6 +4,7 @@ import {
   createV4PersistenceSession,
   DRAFT_KEY,
 } from '../../../src/lib/persistence/v4-session.mjs';
+import { createDocument } from '../../../src/lib/document/schema.mjs';
 
 const deferred = () => {
   let resolve;
@@ -15,7 +16,12 @@ const deferred = () => {
   };
 };
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const document = (id) => ({ version: 4, id });
+const document = (id) =>
+  createDocument({
+    version: 4,
+    id,
+    idFactory: () => `${id}-default-part`,
+  });
 const openedV4 = openProject(
   { bytes: new Uint8Array([1]), target: 'v4.spl' },
   {
@@ -25,7 +31,10 @@ const openedV4 = openProject(
     }),
   },
 );
-assert.equal(openedV4.kind, 'v4');
+assert.equal(openedV4.kind, 'migrated');
+assert.equal(openedV4.document.version, 5);
+assert.equal(openedV4.dirty, true);
+assert.equal(openedV4.target, null);
 const openedLegacy = openProject(
   { bytes: new Uint8Array([0]), legacy: { version: 3 }, target: 'old.spl' },
   {
@@ -40,7 +49,9 @@ const openedLegacy = openProject(
     }),
   },
 );
-assert.equal(openedLegacy.kind, 'legacy');
+assert.equal(openedLegacy.kind, 'migrated');
+assert.equal(openedLegacy.document.version, 5);
+assert.equal(openedLegacy.dirty, true);
 assert.equal(openedLegacy.report.warnings.length, 0);
 
 const writes = [];

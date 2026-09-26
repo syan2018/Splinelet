@@ -1,5 +1,11 @@
 import { validateDocument } from '../../document/schema.mjs';
 import { effectiveNodeState } from '../../scene/hierarchy.mjs';
+import {
+  basisIdForUse,
+  basisPiecesForUse,
+  hasPathBasis,
+  reverseBasisPieces,
+} from '../../geometry/path-basis.mjs';
 
 export const PATH_MERGE_ACTIONS = Object.freeze(['merge-paths']);
 
@@ -99,10 +105,15 @@ const requireUnsharedEdges = (sketch, firstPath, secondPath, edgeIds) => {
       throw Error(`两条路径共享 Edge ${use.edgeId}，不能合并`);
 };
 
-const reversedUses = (uses) =>
-  uses
-    .toReversed()
-    .map((use) => ({ edgeId: use.edgeId, reversed: !use.reversed }));
+const reversedUses = (path, uses) =>
+  uses.toReversed().map((use) => ({
+    ...use,
+    reversed: !use.reversed,
+    ...(Array.isArray(use.basisSpan)
+      ? { basisSpan: [use.basisSpan[1], use.basisSpan[0]] }
+      : {}),
+    ...(use.basisPieces ? { basisPieces: reverseBasisPieces(path, use) } : {}),
+  }));
 
 const relationTouchesVertex = (document, sketch, vertexId) => {
   const direct = (ref) =>
@@ -189,6 +200,33 @@ const nextUniqueId = (document, idFactory) => {
   return id;
 };
 
+const sameBasisMetadata = (left, right) => left?.period === right?.period;
+const mergePathBasisCatalog = (catalog, path, uses) => {
+  for (const use of uses) {
+    for (const { basisId } of basisPiecesForUse(path, use)) {
+      const metadata =
+        path.basisCatalog?.[basisId] ||
+        (basisId === path.id && path.basisPeriod !== undefined
+          ? { period: path.basisPeriod }
+          : {});
+      if (catalog[basisId] && !sameBasisMetadata(catalog[basisId], metadata))
+        throw Error(`logical basis ${basisId} 的周期定义冲突，不能合并`);
+      catalog[basisId] = structuredClone(metadata);
+    }
+  }
+  return catalog;
+};
+const explicitBasisUses = (path, uses) =>
+  uses.map((use) => ({
+    ...use,
+    ...(use.basisPieces
+      ? { basisPieces: structuredClone(use.basisPieces) }
+      : {
+          basisSpan: [...use.basisSpan],
+          basisId: basisIdForUse(path, use),
+        }),
+  }));
+
 const clearMode = (modes, vertexId) => {
   delete modes[vertexId];
 };
@@ -268,7 +306,6 @@ export function createPathMergeCommand(request) {
       throw Error('跨 owner 合并尚未支持；请先转移源路径');
     if (first.sketch.id !== second.sketch.id)
       throw Error('跨 Sketch 合并尚未支持；请先转移源路径');
-
     const sketch = first.sketch;
     const firstTrace = traceOpenFreePath(sketch, first.path, '第一条路径');
     const secondTrace = traceOpenFreePath(sketch, second.path, '第二条路径');
@@ -279,14 +316,19 @@ export function createPathMergeCommand(request) {
       new Set([...firstTrace.edgeIds, ...secondTrace.edgeIds]),
     );
 
-    const firstUses =
+    const v5 = hasPathBasis(document);
+    let firstUses =
       action.firstEnd === 'start'
-        ? reversedUses(first.path.edges)
+        ? reversedUses(first.path, first.path.edges)
         : structuredClone(first.path.edges);
-    const secondUses =
+    let secondUses =
       action.secondEnd === 'end'
-        ? reversedUses(second.path.edges)
+        ? reversedUses(second.path, second.path.edges)
         : structuredClone(second.path.edges);
+    if (v5) {
+      firstUses = explicitBasisUses(first.path, firstUses);
+      secondUses = explicitBasisUses(second.path, secondUses);
+    }
     const firstTailUse = firstUses.at(-1);
     const firstTailEdge = sketch.edges[firstTailUse.edgeId];
     const firstVertexId = directedVertices(firstTailEdge, firstTailUse)[1];
@@ -299,6 +341,7 @@ export function createPathMergeCommand(request) {
     const changedRefs = [pathRef(sketch.id, first.path.id)];
     const removedRefs = [pathRef(sketch.id, second.path.id)];
     let bridgeUse = [];
+    let bridgeBasisId;
 
     if (welded && firstVertexId !== secondVertexId) {
       const { seamEdge, seamField } = requireWeldableVertex(
@@ -326,7 +369,17 @@ export function createPathMergeCommand(request) {
         startHandle: { kind: 'free', vector: startVector },
         endHandle: { kind: 'free', vector: endVector },
       };
-      bridgeUse = [{ edgeId, reversed: false }];
+      if (v5) bridgeBasisId = nextUniqueId(document, idFactory);
+      bridgeUse = v5
+        ? [
+            {
+              edgeId,
+              reversed: false,
+              basisId: bridgeBasisId,
+              basisSpan: [0, 1],
+            },
+          ]
+        : [{ edgeId, reversed: false }];
       changedRefs.push(edgeRef(sketch.id, edgeId));
     }
 
@@ -337,6 +390,20 @@ export function createPathMergeCommand(request) {
     clearMode(modes, firstVertexId);
     clearMode(modes, secondVertexId);
     first.path.edges = [...firstUses, ...bridgeUse, ...secondUses];
+    if (v5) {
+      const basisCatalog = mergePathBasisCatalog({}, first.path, firstUses);
+      mergePathBasisCatalog(basisCatalog, second.path, secondUses);
+      if (bridgeBasisId) basisCatalog[bridgeBasisId] = {};
+      first.path.basisCatalog = basisCatalog;
+      if (
+        new Set(
+          first.path.edges.flatMap((use) =>
+            basisPiecesForUse(first.path, use).map((piece) => piece.basisId),
+          ),
+        ).size !== 1
+      )
+        delete first.path.basisPeriod;
+    }
     first.path.name = `${first.path.name} + ${second.path.name}`;
     if (Object.keys(modes).length) first.path.handleModes = modes;
     else delete first.path.handleModes;

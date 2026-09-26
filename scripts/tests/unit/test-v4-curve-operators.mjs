@@ -390,6 +390,7 @@ assert.equal(
 
 let generatedId = 0;
 const integration = createDocument({
+  version: 4,
   idFactory: () => `generated-${++generatedId}`,
 });
 integration.nodes.shape = {

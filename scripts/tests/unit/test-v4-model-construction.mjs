@@ -31,7 +31,7 @@ const regions = (document, ownerNodeId) => {
 const owner = (document, name) =>
   Object.values(document.nodes).find((node) => node.name === name)?.id;
 
-let document = createDocument();
+let document = createDocument({ version: 4 });
 document = commit(document, {
   kind: 'draw-path',
   name: '轮廓',
@@ -64,7 +64,7 @@ const strokeResult = strokePreview.command(document, context());
 assert.equal(strokeResult.changedRefs.length, 1);
 assert.equal(regions(document, shape).length, 2);
 
-let betweenDocument = createDocument();
+let betweenDocument = createDocument({ version: 4 });
 betweenDocument = commit(betweenDocument, {
   kind: 'draw-path',
   name: '母线',
@@ -96,7 +96,7 @@ assert.equal(betweenPreview.candidates.length, 1);
 betweenPreview.command(betweenDocument, context());
 assert.equal(regions(betweenDocument, betweenOwner).length, 1);
 
-let splitDocument = createDocument();
+let splitDocument = createDocument({ version: 4 });
 splitDocument = commit(splitDocument, {
   kind: 'draw-path',
   name: '待分区',
@@ -183,7 +183,7 @@ assert.ok(
   'the preserved base accepts a new relief after the derived split',
 );
 
-let booleanDocument = createDocument();
+let booleanDocument = createDocument({ version: 4 });
 booleanDocument = commit(booleanDocument, {
   kind: 'draw-path',
   name: '底面',
@@ -240,7 +240,7 @@ assert.equal(
 );
 
 const splitFixture = () => {
-  let value = createDocument();
+  let value = createDocument({ version: 4 });
   value = commit(value, {
     kind: 'draw-path',
     name: '可选分区',
@@ -341,7 +341,7 @@ assert.equal(
   '替换区域',
 );
 
-let deletionDocument = createDocument();
+let deletionDocument = createDocument({ version: 4 });
 deletionDocument = commit(deletionDocument, {
   kind: 'draw-path',
   name: '保留源 Sketch',
@@ -449,7 +449,7 @@ assert.deepEqual(
   'deleting a region retains its source Sketch',
 );
 
-let firstReliefDocument = createDocument();
+let firstReliefDocument = createDocument({ version: 4 });
 firstReliefDocument = commit(firstReliefDocument, {
   kind: 'draw-path',
   name: '首体块旧来源',
@@ -549,7 +549,7 @@ assert.equal(
   firstSwatchId,
 );
 
-let contributionDocument = createDocument();
+let contributionDocument = createDocument({ version: 4 });
 contributionDocument = commit(contributionDocument, {
   kind: 'draw-path',
   name: '旧来源',

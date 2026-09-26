@@ -25,11 +25,12 @@ const passthrough = (input) =>
   );
 
 /** Converts a PlacedReliefSet directly into cloneable meshes; no legacy Project is built. */
-export async function buildBodies(
+async function buildBodySet(
   placedResult,
   options,
   meshToleranceMM = 0.005,
   cleanupRadiusMM = 0,
+  cleanupAlreadyApplied = false,
 ) {
   if (!placedResult || placedResult.domain !== 'placed-relief')
     return stage('blocked', undefined, [
@@ -79,7 +80,7 @@ export async function buildBodies(
         const key = JSON.stringify(item.ref);
         if (!sections.has(key)) {
           let geometry = item.geometry;
-          if (cleanupRadiusMM > 0) {
+          if (cleanupRadiusMM > 0 && !cleanupAlreadyApplied) {
             const cleaned = readGeometry(geometry)
               .buffer(cleanupRadiusMM, 4)
               .buffer(-cleanupRadiusMM, 4);
@@ -244,4 +245,168 @@ export async function buildBodies(
   } finally {
     for (const object of [...owned].reverse()) object.delete();
   }
+}
+
+/**
+ * Applies the authored manufacturing cleanup as a serializable stage. The
+ * Manifold-only simplify remains in body construction; no engine objects cross
+ * an evaluation boundary or enter a cache.
+ */
+export function cleanPlacedRelief(placedResult, cleanupRadiusMM = 0) {
+  const cleanStage = (status, value, diagnostics = [], dependencies = []) => ({
+    domain: 'cleaned-placed-relief',
+    status,
+    ...(value === undefined ? {} : { value }),
+    diagnostics,
+    dependencies: unique(dependencies),
+  });
+  if (!placedResult || placedResult.domain !== 'placed-relief')
+    return cleanStage('blocked', undefined, [
+      { code: 'invalid-input', message: '需要 PlacedReliefSet' },
+    ]);
+  if (['absent', 'blocked'].includes(placedResult.status))
+    return cleanStage(
+      placedResult.status,
+      undefined,
+      clone(placedResult.diagnostics || []),
+      placedResult.dependencies || [],
+    );
+  if (placedResult.status === 'empty')
+    return cleanStage(
+      'empty',
+      { reliefs: [], provenance: [] },
+      clone(placedResult.diagnostics || []),
+      placedResult.dependencies || [],
+    );
+  if (!Number.isFinite(cleanupRadiusMM) || cleanupRadiusMM < 0)
+    return cleanStage(
+      'blocked',
+      undefined,
+      [
+        {
+          code: 'invalid-cleanup-radius',
+          message: '制造清理半径必须是非负有限数',
+        },
+      ],
+      placedResult.dependencies || [],
+    );
+  const reliefs = placedResult.value?.reliefs;
+  if (!Array.isArray(reliefs))
+    return cleanStage(
+      'blocked',
+      undefined,
+      [{ code: 'invalid-input', message: 'PlacedReliefSet DTO 无效' }],
+      placedResult.dependencies || [],
+    );
+  try {
+    const cleaned = reliefs.map((item) => {
+      const next = clone(item);
+      if (cleanupRadiusMM <= 0) return next;
+      const geometry = readGeometry(next.geometry)
+        .buffer(cleanupRadiusMM, 4)
+        .buffer(-cleanupRadiusMM, 4);
+      if (geometry.isEmpty())
+        throw Error(
+          `输出 ${next.ref?.key || 'unknown'} 在制造清理后为空，请减小清理半径`,
+        );
+      next.geometry = describe(geometry).geometry;
+      return next;
+    });
+    return cleanStage(
+      cleaned.length ? 'ready' : 'empty',
+      {
+        reliefs: cleaned,
+        provenance: cleaned.map((item) => clone(item.ref)),
+      },
+      [],
+      placedResult.dependencies || [],
+    );
+  } catch (error) {
+    return cleanStage(
+      'blocked',
+      undefined,
+      [{ code: 'cleanup-failed', message: error.message }],
+      placedResult.dependencies || [],
+    );
+  }
+}
+
+/**
+ * Runs each manufacturing Part independently. A blocked aggregate has no
+ * value for export, while branches retain unrelated successful Parts for
+ * inspection and recovery UI.
+ */
+export async function buildBodies(
+  placedResult,
+  options,
+  meshToleranceMM = 0.005,
+  cleanupRadiusMM = 0,
+) {
+  const cleanupAlreadyApplied =
+    placedResult?.domain === 'cleaned-placed-relief';
+  const input = cleanupAlreadyApplied
+    ? { ...placedResult, domain: 'placed-relief' }
+    : placedResult;
+  if (!input || input.domain !== 'placed-relief')
+    return buildBodySet(
+      input,
+      options,
+      meshToleranceMM,
+      cleanupRadiusMM,
+      cleanupAlreadyApplied,
+    );
+  if (['absent', 'blocked', 'empty'].includes(input.status))
+    return buildBodySet(
+      input,
+      options,
+      meshToleranceMM,
+      cleanupRadiusMM,
+      cleanupAlreadyApplied,
+    );
+  const reliefs = input.value?.reliefs;
+  if (!Array.isArray(reliefs))
+    return buildBodySet(
+      input,
+      options,
+      meshToleranceMM,
+      cleanupRadiusMM,
+      cleanupAlreadyApplied,
+    );
+  const grouped = Object.groupBy(
+    reliefs.filter((item) => item.enabled),
+    (item) => item.partId,
+  );
+  const branches = [];
+  for (const [partId, members] of Object.entries(grouped)) {
+    const branch = await buildBodySet(
+      {
+        ...input,
+        value: { ...input.value, reliefs: members },
+      },
+      options,
+      meshToleranceMM,
+      cleanupRadiusMM,
+      cleanupAlreadyApplied,
+    );
+    branches.push({ partId, ...branch });
+  }
+  const diagnostics = branches.flatMap((branch) => branch.diagnostics || []);
+  const dependencies = unique(input.dependencies || []);
+  if (branches.some((branch) => branch.status === 'blocked'))
+    return {
+      domain: 'bodies',
+      status: 'blocked',
+      diagnostics,
+      dependencies,
+      branches,
+    };
+  const bodies = branches.flatMap((branch) => branch.value?.bodies || []);
+  return {
+    domain: 'bodies',
+    status: bodies.length ? 'ready' : 'empty',
+    value: { bodies, provenance: bodies.flatMap((body) => body.sources) },
+    diagnostics,
+    dependencies,
+    branches,
+  };
 }

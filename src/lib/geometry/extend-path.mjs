@@ -4,6 +4,13 @@ import {
   worldMatrix,
 } from '../scene/transforms.mjs';
 import { resolveRelation } from './relations.mjs';
+import {
+  basisIdForUse,
+  basisPiecesForUse,
+  hasPathBasis,
+  pathHasCompositeBasis,
+  withBasisPieces,
+} from './path-basis.mjs';
 
 const vec = (value) =>
   Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
@@ -95,9 +102,81 @@ export function extendPath(document, action, { idFactory }) {
       vector: cubic[2].map((n, i) => n - cubic[3][i]),
     },
   };
-  const use = { edgeId, reversed: false };
+  const basis = hasPathBasis(document);
+  const adjacentUse = end === 'start' ? path.edges[0] : path.edges.at(-1);
+  const adjacentPieces =
+    basis && adjacentUse ? basisPiecesForUse(path, adjacentUse) : [];
+  const adjacentPiece =
+    end === 'start' ? adjacentPieces[0] : adjacentPieces.at(-1);
+  const adjacentSpan = adjacentPiece?.span;
+  const direction = adjacentSpan
+    ? Math.sign(adjacentSpan[1] - adjacentSpan[0]) || 1
+    : 1;
+  const adjacentBasisId =
+    adjacentPiece?.basisId ||
+    (adjacentUse ? basisIdForUse(path, adjacentUse) : path.id);
+  const compositeClose = basis && action.close && pathHasCompositeBasis(path);
+  const bridgeBasisId = compositeClose ? idFactory() : null;
+  if (
+    bridgeBasisId !== null &&
+    (typeof bridgeBasisId !== 'string' || !bridgeBasisId)
+  )
+    throw Error('复合闭合需要有效 bridge basis ID');
+  const rawUse = { edgeId, reversed: false };
+  const use = basis
+    ? withBasisPieces(
+        document,
+        path,
+        rawUse,
+        compositeClose
+          ? [{ t: [0, 1], basisId: bridgeBasisId, span: [0, 1] }]
+          : [
+              {
+                t: [0, 1],
+                basisId: adjacentBasisId,
+                span: path.edges.length
+                  ? end === 'start' && !action.close
+                    ? [adjacentSpan[0] - direction, adjacentSpan[0]]
+                    : [adjacentSpan[1], adjacentSpan[1] + direction]
+                  : [0, 1],
+              },
+            ],
+      )
+    : rawUse;
   if (end === 'start' && !action.close) path.edges.unshift(use);
   else path.edges.push(use);
+  if (basis && action.close) {
+    if (compositeClose) {
+      path.basisCatalog = {
+        ...path.basisCatalog,
+        [bridgeBasisId]: {},
+      };
+      delete path.basisPeriod;
+      delete path.startVertexId;
+      return {
+        document,
+        changedRefs: [
+          ref('path', sketch.id, path.id),
+          ref('edge', sketch.id, edgeId),
+        ],
+      };
+    }
+    const closingEnd = use.basisSpan[1];
+    const closingStart = path.edges[0].basisSpan[0];
+    const period = Math.abs(closingEnd - closingStart);
+    if (!(period > 0)) throw Error('闭合 Path basisPeriod 无法确定');
+    if (adjacentBasisId === path.id) path.basisPeriod = period;
+    else {
+      path.basisCatalog = {
+        ...path.basisCatalog,
+        [adjacentBasisId]: {
+          ...path.basisCatalog?.[adjacentBasisId],
+          period,
+        },
+      };
+      delete path.basisPeriod;
+    }
+  }
   delete path.startVertexId;
   return {
     document,

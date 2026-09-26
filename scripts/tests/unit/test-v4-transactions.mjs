@@ -7,7 +7,7 @@ import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 
 let ids = 0;
 const idFactory = () => `id-${++ids}`;
-const original = createDocument({ idFactory });
+const original = createDocument({ version: 4, idFactory });
 const guarded = createEditorSession(original, { idFactory });
 assert.throws(
   () =>
@@ -209,7 +209,10 @@ assert.throws(
         kind: 'editor-prepared-command',
         epoch: session.state.epoch,
         revision: session.state.revision,
-        result: { document: createDocument({ idFactory }), changedRefs: [] },
+        result: {
+          document: createDocument({ version: 4, idFactory }),
+          changedRefs: [],
+        },
       },
       { expectedRevision: 7 },
     ),
@@ -220,7 +223,7 @@ const crossProjectPrepared = await session.prepare(changeTolerance(0.04), {
   expectedRevision: 7,
 });
 const stalePreview = session.beginPreview({ expectedRevision: 7 }).previewId;
-const replacement = createDocument({ idFactory });
+const replacement = createDocument({ version: 4, idFactory });
 const priorEpoch = session.state.epoch;
 session.replaceDocument(replacement, { expectedRevision: 7 });
 assert.notEqual(session.state.epoch, priorEpoch);
@@ -242,13 +245,16 @@ assert.ok(notices.length >= 8);
 unsubscribe();
 
 let validations = 0;
-const tokenSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-  validator(document) {
-    validations += 1;
-    return validateDocument(document);
+const tokenSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+    validator(document) {
+      validations += 1;
+      return validateDocument(document);
+    },
   },
-});
+);
 const token = await tokenSession.prepare(changeTolerance(0.02), {
   expectedRevision: 0,
 });
@@ -260,12 +266,15 @@ assert.ok(
 
 const listenerErrors = [];
 const observedRevisions = [];
-const notificationSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-  onListenerError(error, state) {
-    listenerErrors.push([error.message, state.revision]);
+const notificationSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+    onListenerError(error, state) {
+      listenerErrors.push([error.message, state.revision]);
+    },
   },
-});
+);
 notificationSession.subscribe(() => {
   throw Error('listener failure');
 });

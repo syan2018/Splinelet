@@ -1470,6 +1470,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     runtime: studioSnapshot.runtime,
     project,
     pathId: active ?? '',
+    sourceIdentity:
+      studioSnapshot.editorState.epoch +
+      ':' +
+      studioSnapshot.editorState.revision,
     nodes: selectedNodes,
     disabled: busy || !!mergeSource,
     isPanning: () => space.current || tool === 'pan',
@@ -1551,6 +1555,17 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     selectPathsNow(ids, id);
     creationApi.current?.select_paths(ids);
     setStatus('已选择线条 · 按 A 编辑节点 · 选择工具不会移动形状');
+  };
+  const startSelectedPathDrag = (e: React.PointerEvent, id: string) => {
+    if (
+      tool !== 'edit' ||
+      e.shiftKey ||
+      e.ctrlKey ||
+      e.metaKey ||
+      !selectedPaths.includes(id)
+    )
+      return false;
+    return studioDrag.onPathPointerDown(e, selectedPaths);
   };
   const startObjectDrag = (
     e: React.PointerEvent,
@@ -3080,7 +3095,9 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   }, [host]);
   const geometryReport: GeometryReportItem[] =
     dialog === 'export' ? inspectGeometry(project.paths) : [];
-  const current = project.paths.find((p) => p.id === active),
+  const sourcePaths: readonly StudioDisplayPath[] =
+    studioDrag.sourcePreview?.paths ?? project.paths;
+  const current = sourcePaths.find((p) => p.id === active),
     count = project.paths.reduce((s, p) => s + p.curves.length, 0);
   const endpointGuides = useMemo(() => {
     if (!nodeSnap || tool !== 'edit' || !current || selectedNodes.length !== 1)
@@ -3670,7 +3687,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               )}
               <g ref={setCreationLayer} />
               <SourcePathLayers
-                paths={project.paths.filter(
+                paths={sourcePaths.filter(
                   (p) =>
                     p.visible &&
                     !project.creation?.objects.some(
@@ -3684,6 +3701,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                 highlightSourceSelection={highlightSourceSelection}
                 fill={fill}
                 onSelectPath={selectCanvasPath}
+                onPathPointerDown={startSelectedPathDrag}
                 onEditPath={(pathId) => {
                   setActiveNow(pathId);
                   chooseTool('edit');
@@ -3743,7 +3761,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                 <g>
                   {coords &&
                     (() => {
-                      const source = project.paths.find(
+                      const source = sourcePaths.find(
                         (p) => p.id === mergeSource.pathId,
                       );
                       if (!source) return null;
@@ -3764,7 +3782,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                         />
                       );
                     })()}
-                  {project.paths
+                  {sourcePaths
                     .filter(
                       (p) =>
                         p.id !== mergeSource.pathId &&

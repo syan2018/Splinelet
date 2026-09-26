@@ -4,7 +4,11 @@
 
 `node scripts/validation/prototype-author-regions.mjs` 运行共享边界作者区域的隔离模型试验，检查内部锚点删除、精确拆段、表示反转、共享接点、物理填充范围及合并属性冲突。它不依赖历史面匹配，尚未接入产品 UI、文件迁移或制造导出，不能作为完整修复验收。设计边界见[作者模型复审](../docs/architecture/region-identity-redesign-2026-09-26.md)。
 
+当前编辑器使用 V5，原 `v4` 文件名和测试名称保留历史/兼容边界。以下较早接线说明中的验收只代表对应 fixture；当前源编辑、修改器链修复和公开示例的覆盖范围见[2026-09-26 验收记录](../docs/qa/modifier-chain-recovery-2026-09-26.md)，架构以[修改器链方案](../docs/architecture/region-identity-redesign-2026-09-26.md)为准。较早的[选择器实验记录](../docs/qa/region-repair-2026-09-26.md)保留为历史证据。
+
 ## 常用入口
+
+链修复使用 `node scripts/tests/unit/test-chain-snapshots.mjs` 和 `node scripts/tests/unit/test-modifier-chain-recovery.mjs`，检查逐端口显示快照、真实 V4/V5 图的局部更新、断链、明确重绑、取消、撤销、坐标空间和过期拒绝。`node scripts/tests/browser/studio/test-modifier-chain-recovery.cjs` 在隔离 Studio fixture 中验证修改器卡片的快照和修复入口；真实头发工程另由下述 `test-v5-repaired-walkthrough.cjs` 覆盖。
 
 在仓库根目录运行：
 
@@ -21,8 +25,12 @@ pnpm desktop:check
 
 - `pnpm test:core`：构造链、修改器和打印分层回归。
 - `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
-- `node scripts/validation/verify-example.mjs`：验证当前原生 V4 内置示例的容器往返、引用绑定、完整求值、有效实体与通用/Bambu 分色导出；可传入其他示例副本路径。验证不会修改输入工程。
-- `node scripts/validation/audit-region-identity.mjs`：用最小正方形分区检查等价源编辑后的区域/赋值对应。默认输出诊断；`--check` 在期望不变量失败时非零退出，当前用于揭示尚未修复的身份缺陷，不包含在绿色单测门禁中。
+- `node scripts/validation/verify-example.mjs`：验证当前原生 V5 内置示例的容器往返、引用绑定、完整求值、有效实体与通用/Bambu 分色导出；可传入其他示例副本路径。验证不会修改输入工程。
+- `node scripts/validation/audit-region-identity.mjs --check`：用最小正方形分区检查 V5 等价源编辑后的几何、颜色和厚度。`--legacy` 保留 V4 故障对照，该模式的 `--check` 预期非零退出。
+- `node scripts/validation/benchmark-source-interaction.mjs [example.spl]`：只读载入工程、执行 100 次源展示手势，核对零求值、一次提交与撤销，输出同步耗时；不是浏览器绘制时延。
+- `node scripts/validation/profile-v5-region-selectors.mjs [--input example.spl]`：比较冷、暖、普通源编辑及指定头发编辑的求值计数和时间，并与独立冷结果深比较。默认读取公开示例；可显式传 V4 文件测试迁移。
+- `node scripts/validation/repair-sandrone-edit.mjs --baseline <good-v4.spl> --edited <source-edited-v4.spl> --output <new-copy.spl>`：基于已知良好基准，验证一次相邻节点删除及源坐标变更后恢复为新 V5 副本。禁止覆盖输入或既有输出，验证不通过时不生成工程；失效定义可写出 `.diagnostic.json` 用于审查。这是显式离线恢复，不是运行时重绑。
+- `node scripts/tests/browser/studio/test-source-drag-fastpath.cjs` 与 `node scripts/tests/browser/studio/test-v5-native-studio.cjs`：在独立端口/context 验证真实源手势及原生 V5 打开、编辑、保存与重开。
 - `node scripts/validation/probe-tagged-noding.mjs`：仅用生成的直线验证现有 JSTS 下层切分能保留来源 data、重合的多个用途及方向；只输出 stdout，不读写工程。它是[新架构](../docs/architecture/region-identity-redesign-2026-09-26.md)的底层接口可行性探针，不能替代完整平面图、选择器或产品修复验收。
 - `node scripts/validation/audit-spline-edit.mjs --before <baseline.spl> --after <edited.spl> [--probe-unbound]`：只读比较两个工程的作者态、求值阻断及逐面几何/身份；摘要输出到 stdout。可选去契约实验仅操作内存副本，不修复或写回输入。测量口径与已知缺陷见[复审](../docs/qa/spline-edit-failure-2026-09-26.md)。
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
@@ -181,9 +189,9 @@ Node 脚本只读 `public/sandrone-example.spl`，在内存副本上分别测试
 
 `test-v4-model-workspace-view.mjs` 验证高级建模规范读取：捕获身份、稳定区域/源身份、孔洞面积、关闭和放置失败时仍可读原浮雕定义、失效输出赋值保留，以及内置 Sandrone。`test-v4-model-intents.mjs` 验证高级体块属性按选区一次提交，保留其他继承字段、撤销、失效/伪造视图、非法厚度和后置锁定的整批回滚。它们不替代原 ModelWorkspace 面板事件接线验收。
 
-## 默认 V4 与原生回归
+## 默认宿主与原生回归
 
-双端默认入口使用 V4 宿主。`node scripts/tests/native/test-v4-default-entry.mjs` 驱动实际 Windows 发布程序的默认入口，验证原生保存、文件打开事件及两份 Sandrone 测试副本的编辑/撤销/保存重开；先执行 `pnpm desktop:release`，关闭其他 Splinelet 实例。脚本只对副本写入，逐字节核对原件未变。
+双端默认入口使用共享 Studio 宿主，作者文档为 V5；代码中的部分 `v4` 命名保留兼容入口。`node scripts/tests/native/test-v4-default-entry.mjs` 驱动实际 Windows 发布程序的默认入口，验证原生保存、文件打开事件及 Sandrone 测试副本的编辑/撤销/保存重开；先执行 `pnpm desktop:release`，关闭其他 Splinelet 实例。脚本只对副本写入，逐字节核对原件未变；其历史运行记录不代替当前版本的实测。
 
 `test-v4-model-panel-adapter.mjs` 验证原高级面板的只读投影及稀疏属性意图；`test-v4-model-construction.mjs` 验证规范 Program 构造预览/提交；`test-v4-model-intents.mjs` 同时验证零件、首次浮雕、原子失败和撤销。原 Studio 浏览器测试独立配置 Vite 缓存及扫描入口，避免同时运行默认入口验收时依赖缓存互相失效。
 
@@ -200,6 +208,14 @@ Node 脚本只读 `public/sandrone-example.spl`，在内存副本上分别测试
 `tests/browser/test-object-move-pipeline.cjs` 默认载入已提交的 Sandrone 示例并通过 `examples/draw-cup-emblem.mjs` 创建图样，覆盖进入页面时无选区也显示完整轮廓、按下及拖动不发布模型 preview、松手只提交一次、杯身和源定义不变，以及一步撤销。可用 `pnpm test:browser --suite legacy --case object-move-pipeline --target web` 在隔离环境运行。模块第三参数可指定本地待验证文件，以未绑定副本加载；不得把私有文件路径写成固定 fixture。阶段计时只作为带日期的 QA 记录，不将运行机器的耗时当作产品保证。
 
 `tests/unit/test-v4-planar-stage-cache.mjs` 用最小构造工程逐项对照冷求值，覆盖局部平面结果复用及世界坐标引用、祖先变换、请求域和设置的失效边界，随 `pnpm test` 执行。
+
+`test-region-select.mjs`、`test-region-selection-repair.mjs`、`test-curve-endpoint-attach.mjs` 和 `test-region-snapshot-source.mjs` 覆盖明确选择、手动重选、独立接边与 Bake 的坐标、撤销和持久化。`test-post-evaluation-plan.mjs` 验证后段依赖计划、冷/热与并发等价、自定义能力的缓存边界、实体副本隔离以及 Part 失败。
+
+`node scripts/tests/browser/studio/test-modifier-chain-recovery.cjs --output outputs/v4-qa/chain-recovery-run` 在隔离 Studio 中验证输入重绑、局部选择、预览取消和撤销。`node scripts/tests/browser/studio/test-v5-repaired-walkthrough.cjs --output outputs/v4-qa/sandrone-chain-run` 验证实际拖动、零 pointer-move 区域请求、原失败头发节点的同幅移动、控制柄/整线编辑与保存重开。
+
+`node scripts/tests/browser/studio/test-sandrone-final-preview.cjs --output outputs/v4-qa/sandrone-final-preview` 在隔离 Studio 中实际点击适合画布和立体预览，检查公开示例的二维区域、三维画布与诊断并保存截图。
+
+`node scripts/validation/rebuild-sandrone-selections.mjs --input <repaired-v5-copy.spl> --output <new-example.spl>` 是显式样例重建工具，需要先由 `repair-sandrone-edit.mjs` 从原始与编辑副本生成 V5 输入。它按已声明的命名锚点重建头发属性组，验证原反例、几何、制造、撤销及重开；不是打开工程时的自动匹配器。最终示例不能作为该脚本的旧输入。重建配置在 `tests/fixtures/sandrone-hair-region-selections.mjs`，具体产物与误差口径见[本轮验收](../docs/qa/modifier-chain-recovery-2026-09-26.md)。
 
 `node scripts/examples/add-sandrone-signature.mjs <input.spl> <output.spl>` 在独立服务和隔离浏览器中给 Sandrone 杯身导入已提交的手写签名，另存工程和 PNG 预览。输入工程需包含「杯子」；输出必须另命名。参数和本次产物见 [签名验收](../docs/qa/vector-objects-2026-09-22.md)。
 

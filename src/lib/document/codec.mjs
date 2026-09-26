@@ -20,6 +20,7 @@ import {
   unzipChecked,
 } from '../project-container.mjs';
 import { validateDocument } from './schema.mjs';
+import { validateDurableRegionReferences } from './region-reference-validation.mjs';
 
 const fail = (message) => containerFail(message);
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -102,7 +103,7 @@ const validateManifest = (manifest) => {
         : '不支持的容器版本',
     );
   }
-  if (manifest.documentVersion !== 4) fail('不支持的文档版本');
+  if (![4, 5].includes(manifest.documentVersion)) fail('不支持的文档版本');
   if (manifest.entrypoint !== 'project.json') fail('工程入口无效');
   if (
     manifest.appVersion !== undefined &&
@@ -145,6 +146,7 @@ const validateManifest = (manifest) => {
 
 export function encodeDocument(document, { assets = {}, appVersion } = {}) {
   validateDocument(document);
+  validateDurableRegionReferences(document);
   if (appVersion !== undefined && typeof appVersion !== 'string')
     fail('appVersion 无效');
   const resources = bytesRecord(assets);
@@ -156,7 +158,7 @@ export function encodeDocument(document, { assets = {}, appVersion } = {}) {
   const manifest = {
     format: PROJECT_FORMAT,
     containerVersion: CONTAINER_VERSION,
-    documentVersion: 4,
+    documentVersion: document.version,
     ...(appVersion === undefined ? {} : { appVersion }),
     entrypoint: 'project.json',
     assets: assetsManifest,
@@ -203,6 +205,7 @@ export function decodeDocument(input) {
   const document = validateDocument(
     parseJson(strFromU8(entries['project.json']), 'project.json'),
   );
+  validateDurableRegionReferences(document);
   if (document.version !== manifest.documentVersion)
     fail('工程版本与清单不一致');
   const declared = Object.keys(document.assets).sort();

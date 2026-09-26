@@ -63,6 +63,7 @@ function shape(document, id, parentId, pose) {
 function fixture() {
   let generated = 0;
   const document = createDocument({
+    version: 4,
     idFactory: () => `generated-${++generated}`,
   });
   document.nodes.group = {

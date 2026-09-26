@@ -51,10 +51,41 @@ function targetSlot(document, target) {
   return [edge, target.end === 'start' ? 'startHandle' : 'endHandle'];
 }
 
+/** Private draft for one point/handle gesture. It never aliases a Sketch that
+ * can be edited: sketch-edit takes ownership lazily through its WeakSet. */
+export function createSourceCommandBatch(
+  document,
+  { sourceDelta = false } = {},
+) {
+  return {
+    document: { ...document, sketches: { ...document.sketches } },
+    sourceDelta,
+    ownedSketches: new WeakSet(),
+    finish() {
+      if (!sourceDelta) validateDocument(this.document);
+      return this.document;
+    },
+  };
+}
+
 /** Source commands edit declared inputs; relation results never become a second writable model. */
 export function createSourceCommand(request) {
   const action = structuredClone(request);
-  return (document, { idFactory }) => {
+  return (document, { idFactory, sourceDelta = false, sourceBatch } = {}) => {
+    if (sourceBatch && sourceBatch.document !== document)
+      throw Error('源批处理与当前草稿不一致');
+    // sourceBatch owns only lazily cloned Sketch records. Reject every command
+    // that could write a shared top-level table before reaching its handler.
+    if (
+      sourceBatch &&
+      !['set-vertex', 'set-handle', 'move-path-handle'].includes(action.kind)
+    )
+      throw Error('源批处理只接受点或控制柄移动');
+    if (
+      sourceDelta &&
+      !['set-vertex', 'set-handle', 'move-path-handle'].includes(action.kind)
+    )
+      throw Error('源预览只接受点或控制柄移动');
     if (['create-parameter', 'create-datum'].includes(action.kind)) {
       const table =
         action.kind === 'create-parameter' ? 'parameters' : 'datums';
@@ -145,6 +176,10 @@ export function createSourceCommand(request) {
     const sketch = document.sketches[action.sketchId];
     if (!sketch) throw Error('线条来源不存在');
     writable(document, sketch.ownerNodeId);
-    return editSketch(document, action, { idFactory });
+    return editSketch(document, action, {
+      idFactory,
+      sourceDelta,
+      sourceBatch,
+    });
   };
 }

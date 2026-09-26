@@ -28,6 +28,7 @@ const toArray = ({ x, y }) => [x, y];
 
 function fixture({ count = 5, closed = false, handleModes } = {}) {
   const document = createDocument({
+    version: 4,
     id: 'path-node-delete-document',
     idFactory: () => 'path-node-delete-part',
   });

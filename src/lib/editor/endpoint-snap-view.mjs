@@ -68,7 +68,7 @@ const curveEndpoints = (curve) => {
 };
 
 const outputForOwner = (document, planar, ownerNodeId) => {
-  const stage = planar.published[`${ownerNodeId}:curves`];
+  const stage = planar?.published?.[`${ownerNodeId}:curves`];
   if (stage?.status !== 'ready' || stage.value?.frame?.kind !== 'local')
     return null;
   if (!document.nodes[stage.value.frame.ownerNodeId]) return null;
@@ -124,6 +124,7 @@ export function projectEndpointSnapContext(
   source,
   pathId,
   nodeIndex,
+  options = {},
 ) {
   try {
     validateDocument(document);
@@ -148,7 +149,12 @@ export function projectEndpointSnapContext(
       return null;
 
     const origin = nodeIndex === 0 ? path.curves[0][0] : path.curves.at(-1)[3];
-    const planar = evaluatePlanar(document, { requestedDomains: ['curves'] });
+    // Interactive callers explicitly supply the current worker snapshot (or
+    // null while pending). Source endpoints remain available without invoking
+    // construction during pointerdown. Standalone inspection may evaluate.
+    const planar = Object.hasOwn(options, 'planar')
+      ? options.planar
+      : evaluatePlanar(document, { requestedDomains: ['curves'] });
     const sourceWorld = new Map();
     const outputByOwner = new Map();
     const degreeByOwner = new Map();

@@ -263,7 +263,11 @@ export function createV4AgentAPI(options = {}) {
         '旧写协议不再接受数组索引或旧 group 语义；请改用 API 5.0 authoring.run 与稳定引用',
         { action },
       );
-    if (action === 'capabilities.get') return clone(capabilities);
+    if (action === 'capabilities.get')
+      return clone({
+        ...capabilities,
+        documentVersion: editor.state.document.version,
+      });
     if (action === 'document.get')
       return {
         apiVersion: V4_AGENT_API_VERSION,
@@ -396,7 +400,10 @@ export function createV4AgentAPI(options = {}) {
   return Object.freeze({
     version: V4_AGENT_API_VERSION,
     get capabilities() {
-      return clone(capabilities);
+      return clone({
+        ...capabilities,
+        documentVersion: editor.state.document.version,
+      });
     },
     call,
   });

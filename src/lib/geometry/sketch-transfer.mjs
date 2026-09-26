@@ -4,6 +4,7 @@ import {
   transformPoint,
   transformVector,
 } from '../scene/transforms.mjs';
+import { remapV5RegionDefinitionsForSketchTransfer } from '../construction/region-definition-remap.mjs';
 
 const compare = (left, right) => left.localeCompare(right);
 const ref = (kind, sketchId, id) => ({ kind, sketchId, id });
@@ -297,6 +298,18 @@ export function applySketchTransfer(document, plan) {
   const source = next.sketches[current.sourceSketchId];
   const target = next.sketches[current.targetSketchId];
   const matrix = assertTransform(current.transform);
+  const movedBasisIds = new Set(
+    current.closure.pathIds.flatMap((pathId) => {
+      const path = document.sketches[current.sourceSketchId].paths[pathId];
+      return [
+        pathId,
+        ...path.edges.flatMap((use) => [
+          use.basisId || path.id,
+          ...(use.basisPieces || []).map((piece) => piece.basisId),
+        ]),
+      ];
+    }),
+  );
   for (const vertexId of current.closure.vertexIds) {
     const vertex = source.vertices[vertexId];
     if (!vertex || vertex.position.kind !== 'free')
@@ -366,6 +379,11 @@ export function applySketchTransfer(document, plan) {
         current.closure,
       ),
     );
+  remapV5RegionDefinitionsForSketchTransfer(next, {
+    sourceSketchId: current.sourceSketchId,
+    targetSketchId: current.targetSketchId,
+    movedBasisIds,
+  });
   validateDocument(next);
   return {
     document: next,

@@ -7,7 +7,7 @@ import { createEvaluationSnapshot } from '../../../src/lib/construction/snapshot
 
 let ids = 0;
 const idFactory = () => `id-${++ids}`;
-const document = createDocument({ idFactory });
+const document = createDocument({ version: 4, idFactory });
 const shape = (id, programId, x = 0) => ({
   id,
   name: id,
@@ -493,6 +493,34 @@ assert.deepEqual(
   document.nodes.receiverShape.pose.translationMM,
   [3, 0],
   'evaluation never writes the source document',
+);
+
+const sourceFailure = evaluateConstruction(document, {
+  registry,
+  resolveSketch() {
+    throw Error('source kernel failed');
+  },
+});
+assert.equal(
+  sourceFailure.components['operator:source'].ports.curves.status,
+  'blocked',
+);
+assert.equal(
+  sourceFailure.components['operator:source'].inputs[0].diagnostics[0].code,
+  'input-resolution-error',
+);
+assert.equal(
+  sourceFailure.components['operator:source'].inputs[0].reference.sketchId,
+  'sourceSketch',
+);
+assert.equal(
+  sourceFailure.components['operator:local'].inputs[0].reference.operatorId,
+  'source',
+);
+assert.equal(
+  sourceFailure.published['emptyShape:curves'].status,
+  'empty',
+  'a source resolver exception does not abort unrelated branches',
 );
 
 console.log(

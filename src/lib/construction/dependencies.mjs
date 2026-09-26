@@ -30,6 +30,18 @@ const operatorIndex = (document) => {
       index.set(operator.id, { operator, ownerNodeId: program.ownerNodeId });
   return index;
 };
+const regionDefinitionIndex = (document) => {
+  const index = new Map();
+  for (const definition of Object.values(document.regionDefinitions || {})) {
+    const context = definition.context;
+    if (!context?.ownerNodeId || !context?.operatorId) continue;
+    const id = componentId(context.operatorId);
+    const values = index.get(id) || [];
+    values.push(definition);
+    index.set(id, values);
+  }
+  return index;
+};
 
 export function dependencyValue(document, key, supplied = {}) {
   const suppliedValue = values(supplied)(key);
@@ -60,6 +72,7 @@ export function dependencyValue(document, key, supplied = {}) {
 
 export function buildDependencyGraph(document, registry) {
   const byOperator = operatorIndex(document);
+  const regionDefinitions = regionDefinitionIndex(document);
   const inferredPorts = new Map();
   const rememberPort = (ref) => {
     if (ref?.kind !== 'port') return;
@@ -109,6 +122,14 @@ export function buildDependencyGraph(document, registry) {
       ownerNodeId: entry.ownerNodeId,
       specification,
       inferredPorts: inferredPorts.get(operatorId) || {},
+      // Region definitions are owned by one region-producing operator. Keeping
+      // this slice on the component prevents unrelated V5 definitions from
+      // invalidating every planar cache entry. V4 has no region-definition
+      // contract, so preserve its defensive whole-document invalidation.
+      regionDefinitions:
+        document.version === 5
+          ? regionDefinitions.get(componentId(operatorId)) || []
+          : (document.regionDefinitions ?? null),
       upstream,
       dependencyKeys,
     });
@@ -200,17 +221,18 @@ export function dependencyFingerprint(
   document,
   component,
   supplied,
-  inputStages = {},
+  inputGenerations = {},
+  inputStages,
 ) {
-  const stageKeys = Object.values(inputStages)
-    .flat()
-    .flatMap((stage) => stage.dependencies || []);
-  const dependencies = [...new Set([...component.dependencyKeys, ...stageKeys])]
+  const dependencies = [...component.dependencyKeys]
     .sort(sortText)
     .map((key) => [key, dependencyValue(document, key, supplied)]);
   return stableFingerprint({
+    documentVersion: document.version,
+    regionDefinitions: component.regionDefinitions,
     operator: component.operator,
     dependencies,
-    inputStages,
+    inputGenerations,
+    ...(inputStages === undefined ? {} : { inputStages }),
   });
 }

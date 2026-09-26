@@ -15,6 +15,7 @@ const approximately = (actual, expected, label) =>
 
 let serial = 0;
 const document = createDocument({
+  version: 4,
   id: 'modifier-intents-document',
   idFactory: () => `generated-${++serial}`,
 });

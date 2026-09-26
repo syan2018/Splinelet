@@ -8,7 +8,7 @@ import { createSourceIntent } from '../../../src/lib/editor/source-intents.mjs';
 
 let sequence = 0;
 const idFactory = () => `source-intent-${++sequence}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

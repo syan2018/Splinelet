@@ -31,6 +31,7 @@ const polygon = (x) => ({
 function fixture() {
   let sequence = 0;
   const document = createDocument({
+    version: 4,
     idFactory: () => `generated-${++sequence}`,
   });
   for (const [id, order, visible, locked] of [

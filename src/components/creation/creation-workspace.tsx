@@ -1,4 +1,5 @@
 'use client';
+import ModifierInputRepairPanel from './modifier-input-repair';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -158,6 +159,40 @@ type EyeDropperWindow = Window &
   };
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+const pendingModifierFields = new Set([
+  'enabled',
+  'name',
+  'count',
+  'angleDeg',
+  'centerMM',
+  'distanceMM',
+  'widthMM',
+  'operation',
+  'rule',
+  'anchors',
+  'toleranceMM',
+]);
+const isPendingModifierUpdate = (
+  action: string,
+  args: Record<string, unknown>,
+) => {
+  if (action !== 'modifier_update') return false;
+  if (
+    Object.keys(args).some(
+      (key) =>
+        !['objectId', 'modifierId', 'changes', 'sourceFeatureId'].includes(key),
+    )
+  )
+    return false;
+  const changes = args.changes;
+  return (
+    changes !== null &&
+    typeof changes === 'object' &&
+    !Array.isArray(changes) &&
+    Object.keys(changes).length > 0 &&
+    Object.keys(changes).every((key) => pendingModifierFields.has(key))
+  );
+};
 type Props = {
   project: StudioDisplayProject;
   runtime: CreationRuntime;
@@ -301,6 +336,25 @@ export default function CreationWorkspace(p: Props) {
     evaluation?.runtime === p.runtime ? evaluation.project : null;
   const calculating = engineCalculating || evaluatedProject !== p.project;
   const evaluationFailed = !calculating && !scene;
+  const pendingModifierStatus =
+    (calculating || evaluationFailed) && !p.busy
+      ? (p.runtime.readModifierStatus(p.project) || []).map((status) => ({
+          ...status,
+          pending: true,
+        }))
+      : null;
+  const modifierScene = pendingModifierStatus
+    ? ({
+        ...(scene || {
+          creation: doc,
+          cells: [],
+          errors: [],
+          diagnostics: [],
+        }),
+        modifierModel: 'program',
+        modifierStatus: pendingModifierStatus,
+      } as CreationScene)
+    : scene;
   const [outputPart, setOutputPartId] = useState('');
   const outputSettings = p.runtime.readOutputSettings(p.project);
   const slicerTemplate = outputSettings.slicerTemplate;
@@ -474,7 +528,7 @@ export default function CreationWorkspace(p: Props) {
     return () => window.clearTimeout(timer);
   }, [p.runtime]);
   useEffect(() => {
-    if (!boot || p.objectMoving) return;
+    if (!boot || p.objectMoving || p.busy) return;
     let cancelled = false;
     const snapshot = p.project;
     const runtime = p.runtime;
@@ -531,11 +585,14 @@ export default function CreationWorkspace(p: Props) {
   };
   const run = (action: string, args: Record<string, unknown> = {}) => {
     if (ref.current.busy) throw Error('请先完成当前拖动或描线');
+    const pendingModifierUpdate =
+      revision.current !== ref.current.project &&
+      isPendingModifierUpdate(action, args);
     if (
       (['paint', 'height', 'continue_partition', 'rebuild_surfaces'].includes(
         action,
       ) ||
-        action.startsWith('modifier_') ||
+        (action.startsWith('modifier_') && !pendingModifierUpdate) ||
         action.startsWith('print_')) &&
       revision.current !== ref.current.project
     )
@@ -546,7 +603,12 @@ export default function CreationWorkspace(p: Props) {
       );
     const context: CreationRuntimeContext = {
       project: ref.current.project,
-      scene: revision.current === ref.current.project ? sceneRef.current : null,
+      // A scalar modifier update is addressed by current owner/operator IDs.
+      // Never supply the last evaluated scene while its revision is stale.
+      scene:
+        !pendingModifierUpdate && revision.current === ref.current.project
+          ? sceneRef.current
+          : null,
     };
     const plan = ref.current.runtime.command(action, args, context);
     const next = plan.commit() as CommandResult;
@@ -1170,7 +1232,6 @@ export default function CreationWorkspace(p: Props) {
     objects.length === 1 && !hasSelectedGroups ? current?.id : undefined,
     p.runtime,
     evaluatedProject,
-    p.tool === 'edit' || p.tool === 'trace',
   );
   const transformNodeIds = useMemo(
     () =>
@@ -1256,9 +1317,10 @@ export default function CreationWorkspace(p: Props) {
       }}
     />
   );
+  const pendingModifierEditor =
+    tab === 'modifiers' && pendingModifierStatus !== null && !p.busy;
   const propertyDisabled =
-    calculating ||
-    evaluationFailed ||
+    (!pendingModifierEditor && (calculating || evaluationFailed)) ||
     p.busy ||
     sceneRows.some((row) => objects.includes(row.id) && row.locked);
   const propertyContext: PropertyContext = {
@@ -1269,7 +1331,7 @@ export default function CreationWorkspace(p: Props) {
     scope: scope as PropertyContext['scope'],
     project: p.project,
     doc,
-    scene,
+    scene: modifierScene,
     current,
     rows: sceneRows,
     groups: groupSelection,
@@ -1277,6 +1339,51 @@ export default function CreationWorkspace(p: Props) {
     sourceOnly: !!sourceOnly,
     surfaceDisabled: propertyDisabled || !!failedSelection,
     command: (action, args) => safely(() => run(action, args)),
+    renderModifierRecovery: (ownerNodeId, modifierId) =>
+      !p.busy && (
+        <ModifierInputRepairPanel
+          runtime={p.runtime}
+          project={p.project}
+          ownerNodeId={ownerNodeId}
+          modifierId={modifierId}
+          onCommitted={() => {
+            clearConnectionPreview();
+            notify('构造链已更新 · Ctrl+Z 撤销');
+          }}
+        />
+      ),
+    renderPostChain: (ownerNodeId) =>
+      !p.busy && (
+        <details>
+          <summary>区域之后的求值链</summary>
+          <p className="modifier-hint">
+            外观 → 浮雕 → 打印位置 → 轮廓清理 →
+            实体。清理与实体在预览或导出实体时计算；失败结果不会替换上次成功快照。
+          </p>
+          {p.runtime.readPostChain(p.project, ownerNodeId).map((node) => (
+            <div key={node.id}>
+              <p className="modifier-hint">
+                {node.label} ·{' '}
+                {{
+                  ready: '已更新',
+                  empty: '空结果',
+                  blocked: '需处理',
+                  absent: '未请求',
+                  pending: '尚无当前结果',
+                }[node.status] || node.status}
+                {node.lastRevision !== null
+                  ? ` · 上次成功修订 ${node.lastRevision}`
+                  : ''}
+              </p>
+              {node.diagnostics.map((item, index) => (
+                <p key={index} className="modifier-error">
+                  {item.message}
+                </p>
+              ))}
+            </div>
+          ))}
+        </details>
+      ),
     select: (next) => selectionState.commit(next),
     editSources: () => {
       const ids =
@@ -1313,7 +1420,7 @@ export default function CreationWorkspace(p: Props) {
       p.onTool('edit');
       p.onFramePaths(ids, { force: true });
     },
-    connections: connectionControls,
+    connections: pendingModifierEditor ? null : connectionControls,
     color: {
       colors:
         sourceOnly && current

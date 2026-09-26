@@ -15,10 +15,12 @@ import { readGeometry } from '../../src/lib/region-engine.mjs';
 // --check tests desired invariants, not that a known defect still occurs.
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('node scripts/validation/audit-region-identity.mjs [--check]');
+  console.log(
+    'node scripts/validation/audit-region-identity.mjs [--check] [--legacy]',
+  );
   process.exit(0);
 }
-if (args.some((arg) => arg !== '--check'))
+if (args.some((arg) => !['--check', '--legacy'].includes(arg)))
   throw Error('Unknown argument; see --help');
 const tolerance = 1e-9;
 const geometryDifference = (left, right) =>
@@ -33,9 +35,12 @@ const refHash = (ref) =>
 function fixture(points) {
   let serial = 0;
   const idFactory = () => `identity-audit-${++serial}`;
-  const session = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const session = createEditorSession(
+    createDocument({ idFactory, version: args.includes('--legacy') ? 4 : 5 }),
+    {
+      idFactory,
+    },
+  );
   const run = (action) =>
     session.dispatch(createAuthoringCommand(action), {
       expectedRevision: session.state.revision,
@@ -51,13 +56,15 @@ function fixture(points) {
     closed: true,
   });
   const ownerNodeId = Object.keys(session.state.document.nodes)[0];
-  const base = evaluateProgram(session.state.document, ownerNodeId).regions
-    .value.regions[0].ref;
+  let base = evaluateProgram(session.state.document, ownerNodeId).regions.value
+    .regions[0].ref;
   run({ kind: 'create-swatch', name: 'initial', color: '#888888' });
   const initialSwatch = Object.keys(
     session.state.document.appearances.swatches,
   )[0];
   run({ kind: 'paint-region', target: base, swatchId: initialSwatch });
+  base = evaluateProgram(session.state.document, ownerNodeId).regions.value
+    .regions[0].ref;
   run({
     kind: 'set-thickness',
     target: base,
@@ -262,6 +269,7 @@ for (const program of Object.values(diagnosticDocument.programs)) {
 const unbound = await capture(diagnosticDocument, deleteFixture.ownerNodeId);
 const diagnosticComparison = compare(deleteBefore, unbound);
 const report = {
+  documentVersion: deleteDocument.version,
   scope:
     'Real authoring commands and Document/Program/appearance/relief evaluation, generated square only.',
   desiredInvariant:
@@ -275,13 +283,17 @@ const report = {
     before: summary(deleteBefore),
     after: summary(deleteAfter),
     ...deleteComparison,
-    unboundDiagnosticOnly: {
-      warning:
-        'Disposable in-memory copy; not a repair or an acceptance of the edited document.',
-      after: summary(unbound),
-      geometrySetUnchanged: diagnosticComparison.geometrySetUnchanged,
-      bindings: diagnosticComparison.bindings,
-    },
+    ...(deleteDocument.version === 4
+      ? {
+          unboundDiagnosticOnly: {
+            warning:
+              'Disposable in-memory copy; not a repair or an acceptance of the edited document.',
+            after: summary(unbound),
+            geometrySetUnchanged: diagnosticComparison.geometrySetUnchanged,
+            bindings: diagnosticComparison.bindings,
+          },
+        }
+      : {}),
   },
   expectedInvariantsPassed:
     reverseComparison.expectedInvariantPassed &&

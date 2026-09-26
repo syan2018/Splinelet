@@ -15,7 +15,7 @@ import { sourcePathId } from '../../../src/lib/editor/source-view.mjs';
 
 let serial = 0;
 const idFactory = () => `creation-view-${++serial}`;
-const session = createEditorSession(createDocument({ idFactory }), {
+const session = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const run = (action) =>
@@ -198,6 +198,69 @@ assert.equal(
   'blocked placement does not invent an exclusion',
 );
 
+// Diagnostic severity is authoritative for the error banner. Informational
+// geometry status remains inspectable without turning the whole project red.
+const mixedDiagnosticSnapshot = structuredClone(snapshot);
+const mixedDiagnostics = [
+  { severity: 'error', code: 'real-relief-error', message: '真实浮雕错误' },
+  { severity: 'info', code: 'open-path', message: '开放路径状态' },
+  { severity: 'warning', code: 'near-limit', message: '接近限制' },
+  {
+    code: 'partition-endpoint-connected',
+    message: '分割端点已连接',
+  },
+];
+mixedDiagnosticSnapshot.relief = {
+  domain: 'relief',
+  status: 'blocked',
+  diagnostics: mixedDiagnostics,
+  dependencies: [],
+};
+const mixedDiagnosticView = projectCreationView(
+  session.state.document,
+  mixedDiagnosticSnapshot,
+);
+assert.deepEqual(
+  mixedDiagnosticView.errors
+    .filter((error) =>
+      ['真实浮雕错误', '开放路径状态', '接近限制', '分割端点已连接'].includes(
+        error.message,
+      ),
+    )
+    .map((error) => error.message),
+  ['真实浮雕错误'],
+  'only explicit diagnostic errors become creation errors',
+);
+assert.deepEqual(
+  mixedDiagnosticView.diagnostics
+    .filter((item) => item.source === 'relief')
+    .map((item) => item.message),
+  mixedDiagnostics.map((item) => item.message),
+  'the view retains informational and unclassified stage diagnostics',
+);
+
+const statusOnlySnapshot = structuredClone(snapshot);
+statusOnlySnapshot.relief = {
+  domain: 'relief',
+  status: 'blocked',
+  diagnostics: mixedDiagnostics.slice(1),
+  dependencies: [],
+};
+const statusOnlyView = projectCreationView(
+  session.state.document,
+  statusOnlySnapshot,
+);
+assert.ok(
+  statusOnlyView.errors.some((error) => error.message === 'relief 求值被阻断'),
+  'a blocked stage without explicit errors still receives a generic blocker',
+);
+assert.ok(
+  !statusOnlyView.errors.some((error) =>
+    ['开放路径状态', '接近限制', '分割端点已连接'].includes(error.message),
+  ),
+  'status diagnostics never become fallback error text',
+);
+
 // Full OutputRef identity must keep equal operator keys from colliding when
 // their instance paths differ. Current built-in region operators generally
 // include the index in key as well, so fork the current evaluated DTO only at
@@ -304,10 +367,33 @@ for (const status of ['blocked', 'empty']) {
     assert.ok(
       unavailableView.errors.some(
         (error) =>
-          error.objectId === shapeId && error.message === '当前输出不可用',
+          error.objectId === shapeId && error.message === 'regions 求值被阻断',
       ),
     );
 }
+
+const objectDiagnosticsSnapshot = structuredClone(snapshot);
+objectDiagnosticsSnapshot.planar.published[publishedKey] = {
+  domain: 'regions',
+  status: 'blocked',
+  diagnostics: [
+    { severity: 'error', code: 'real-region-error', message: '真实区域错误' },
+    { severity: 'info', code: 'open-path', message: '区域开放路径状态' },
+    { severity: 'warning', code: 'near-limit', message: '区域接近限制' },
+  ],
+  dependencies: [],
+};
+const objectDiagnosticsView = projectCreationView(
+  session.state.document,
+  objectDiagnosticsSnapshot,
+);
+assert.deepEqual(
+  objectDiagnosticsView.errors
+    .filter((error) => error.objectId === shapeId)
+    .map((error) => error.message),
+  ['真实区域错误'],
+  'blocked object summaries concatenate only explicit errors',
+);
 
 const siblingExcludedDocument = structuredClone(session.state.document);
 siblingExcludedDocument.manufacturing.excluded = [

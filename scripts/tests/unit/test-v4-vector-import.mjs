@@ -11,7 +11,7 @@ import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.
 
 let serial = 0;
 const idFactory = () => `vector-import-${++serial}`;
-const original = createDocument({ idFactory });
+const original = createDocument({ version: 4, idFactory });
 original.appearances.swatches.gold = {
   id: 'gold',
   name: '金色',

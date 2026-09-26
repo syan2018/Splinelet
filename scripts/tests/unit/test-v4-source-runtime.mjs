@@ -7,9 +7,12 @@ import { createV4CreationRuntime } from '../../../src/lib/editor/creation-runtim
 function fixture() {
   let serial = 0;
   const idFactory = () => `source-runtime-${++serial}`;
-  const editor = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const editor = createEditorSession(
+    createDocument({ version: 4, idFactory }),
+    {
+      idFactory,
+    },
+  );
   const dispatch = (request) =>
     editor.dispatch(createAuthoringCommand(request), {
       expectedRevision: editor.state.revision,
@@ -71,6 +74,26 @@ assert.deepEqual(
   'snap projection shares the immutable source frame',
 );
 assert.ok(Object.isFrozen(snapContext));
+assert.equal(
+  snapContext.lines.length,
+  0,
+  'pending snapping uses current raw sources',
+);
+await runtime.evaluate('creation', {}, initialProject);
+const evaluatedSnapContext = runtime.readEndpointSnapContext(
+  initialProject,
+  path.id,
+  0,
+);
+assert.ok(
+  evaluatedSnapContext.lines.length > 0,
+  'accepted worker curves enable derived guides',
+);
+assert.notEqual(
+  evaluatedSnapContext,
+  snapContext,
+  'accepting current evaluation invalidates pending guide cache',
+);
 assert.throws(
   () =>
     runtime.readEndpointSnapContext(
@@ -125,7 +148,7 @@ assert.throws(
 );
 assert.deepEqual(
   runtime.readEndpointSnapContext(repeated, path.id, 0),
-  snapContext,
+  evaluatedSnapContext,
   'preview guides retain the committed source and immutable frame',
 );
 assert.deepEqual(

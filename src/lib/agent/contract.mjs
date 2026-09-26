@@ -43,6 +43,7 @@ export function v4AgentActionNames({
 }
 
 export function v4AgentCapabilityMetadata({
+  documentVersion = 5,
   selectionRead = false,
   evaluationDomains = [],
   evaluationAvailable = evaluationDomains.length > 0,
@@ -52,7 +53,7 @@ export function v4AgentCapabilityMetadata({
   const exportAvailable = exports.length > 0;
   return Object.freeze({
     apiVersion: V4_AGENT_API_VERSION,
-    documentVersion: 4,
+    documentVersion,
     units: 'mm',
     actions: v4AgentActionNames({
       selectionRead,

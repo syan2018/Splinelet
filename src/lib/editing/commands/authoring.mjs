@@ -63,6 +63,7 @@ import { createRegionPathMembershipCommand } from './region-path-membership.mjs'
 import { createPathRolesCommand } from './path-roles.mjs';
 import { createSourceScaleCommand } from './source-scale.mjs';
 import { curveFilterOperator } from '../../construction/operators/curves/filter.mjs';
+import { initializePathBasis } from '../../geometry/path-basis.mjs';
 
 const identity = () => [1, 0, 0, 1, 0, 0];
 const nodeRef = (id) => ({ kind: 'node', id });
@@ -312,6 +313,7 @@ function drawPath(document, action, rawIdFactory) {
     edges: uses,
     ...(uses.length === 0 ? { startVertexId: vertices[0] } : {}),
   };
+  if (document.version === 5) initializePathBasis(sketch, sketch.paths[pathId]);
   document.sketches[sketchId] = sketch;
   if (action.auxiliary)
     return { document, changedRefs: [{ kind: 'path', sketchId, id: pathId }] };

@@ -10,7 +10,7 @@ const idFactory = () => `spline-${++serial}`;
 const session = createStudioSession({
   opened: {
     kind: 'v4',
-    document: createDocument({ idFactory }),
+    document: createDocument({ version: 4, idFactory }),
     assets: {},
     target: null,
   },

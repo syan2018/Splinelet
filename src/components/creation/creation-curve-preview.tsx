@@ -12,25 +12,21 @@ import type { CreationRuntime } from './creation-runtime';
 export function useCurvePreview(
   project: StudioDisplayProject,
   objectId: string | undefined,
-  runtime: Pick<
-    CreationRuntime,
-    'readCurvePreviews' | 'readEvaluatedCurvePreviews'
-  >,
+  runtime: Pick<CreationRuntime, 'readEvaluatedCurvePreviews'>,
   evaluatedProject?: StudioDisplayProject | null,
-  live = true,
 ) {
   const [visibility, setVisibility] = useState({ objectId: '', enabled: true });
   const enabled = visibility.objectId === objectId ? visibility.enabled : true;
   const [choice, setChoice] = useState({ objectId: '', stageId: 'final' });
-  // Browsing and rigid moves reuse the worker's evaluated scene. Only source
-  // editing needs synchronous curve previews before the surface result arrives.
-  const all = useMemo(() => {
-    if (!live && runtime.readEvaluatedCurvePreviews)
-      return (
-        runtime.readEvaluatedCurvePreviews(evaluatedProject || project) || []
-      );
-    return runtime.readCurvePreviews(project);
-  }, [project, runtime, evaluatedProject, live]);
+  // Source geometry already has its own immediate display delta. Derived
+  // curves may depend on regions (for example an outline), so rendering them
+  // must never invoke the construction evaluator on the UI thread. Retain the
+  // last accepted worker preview until the current revision is ready.
+  const all = useMemo(
+    () =>
+      runtime.readEvaluatedCurvePreviews?.(evaluatedProject || project) || [],
+    [project, runtime, evaluatedProject],
+  );
   const focusedId = objectId;
   const stages = all.filter((s) => s.objectId === focusedId);
   const defaultStage =

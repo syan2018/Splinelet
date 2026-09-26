@@ -6,7 +6,7 @@ import { createV4CreationRuntime } from '../../../src/lib/editor/creation-runtim
 
 let serial = 0;
 const idFactory = () => `preview-ui-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (action) =>

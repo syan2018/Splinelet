@@ -33,9 +33,12 @@ const draw = () =>
     ],
   });
 const documentWithPath = () => {
-  const editor = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const editor = createEditorSession(
+    createDocument({ version: 4, idFactory }),
+    {
+      idFactory,
+    },
+  );
   editor.dispatch(draw(), { expectedRevision: editor.state.revision });
   return editor.state.document;
 };
@@ -256,12 +259,19 @@ const restoring = makeSession({
 restoring.dispatch(draw());
 const recovery = restoring.restore(async () => presentation('draft.spl'));
 restoring.dispatch(draw());
+const afterSecondEdit = restoring.getSnapshot();
 restoreGate.resolve({ document: documentWithPath(), assets: {} });
 await assert.rejects(recovery, /过期/);
-assert.equal(restoring.getSnapshot().storage.dirty, true);
+assert.strictEqual(
+  restoring.getSnapshot(),
+  afterSecondEdit,
+  'a stale V4 draft migration cannot replace a newer document',
+);
+assert.equal(afterSecondEdit.storage.dirty, true);
 restoring.dispose();
 
 const recoveredDocument = documentWithPath();
+const originalRecoveredDocument = structuredClone(recoveredDocument);
 const recovered = makeSession({
   drafts: {
     write: async () => {},
@@ -271,7 +281,21 @@ const recovered = makeSession({
 const recoveredSnapshot = await recovered.restore(() =>
   presentation('draft.spl'),
 );
-assert.deepEqual(recoveredSnapshot.editorState.document, recoveredDocument);
+assert.equal(recoveredSnapshot.editorState.document.version, 5);
+assert.equal(
+  recoveredSnapshot.editorState.document.evaluationSemanticsVersion,
+  1,
+);
+assert.deepEqual(
+  recoveredSnapshot.editorState.document.nodes,
+  recoveredDocument.nodes,
+);
+const restoredSketch = Object.values(
+  recoveredSnapshot.editorState.document.sketches,
+)[0];
+const restoredPath = Object.values(restoredSketch.paths)[0];
+assert.deepEqual(restoredPath.edges[0].basisSpan, [0, 1]);
+assert.deepEqual(recoveredDocument, originalRecoveredDocument);
 assert.equal(recoveredSnapshot.storage.dirty, true);
 assert.equal(recoveredSnapshot.storage.target, null);
 assert.equal(

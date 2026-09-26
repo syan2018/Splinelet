@@ -46,7 +46,11 @@ export function sampleCubic(cubic, toleranceMM, depth = 0) {
 
 export function closedCurveRings(
   curveSet,
-  { curveToleranceMM = 0.015, joinToleranceMM = 0.001 } = {},
+  {
+    curveToleranceMM = 0.015,
+    joinToleranceMM = 0.001,
+    includeSource = false,
+  } = {},
 ) {
   if (
     !(curveToleranceMM > 0) ||
@@ -131,7 +135,11 @@ export function closedCurveRings(
         edge.instances,
       ]);
       lineage.push(token);
-      segments.push({ token, coordinates: sampled });
+      segments.push({
+        token,
+        coordinates: sampled,
+        ...(includeSource ? { edge, reverse } : {}),
+      });
       if (to === first) {
         coordinates.push(coordinates[0].slice());
         break;

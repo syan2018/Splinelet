@@ -12,7 +12,7 @@ import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.
 
 let serial = 0;
 const idFactory = () => `preview-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const run = (action) =>
@@ -227,7 +227,7 @@ const guideResult = createAuthoringCommand({
     [0, 0],
     [8, 4],
   ],
-})(createDocument({ idFactory }), { idFactory });
+})(createDocument({ version: 4, idFactory }), { idFactory });
 const guideDocument = guideResult.document;
 assert.deepEqual(
   projectCurvePreviews(guideDocument, evaluatePlanar(guideDocument)),

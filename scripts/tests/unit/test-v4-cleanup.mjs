@@ -228,7 +228,7 @@ assert.equal(
   'unfinished valid topology remains editable',
 );
 
-const editor = createEditorSession(createDocument());
+const editor = createEditorSession(createDocument({ version: 4 }));
 editor.dispatch(
   createAuthoringCommand({
     kind: 'draw-path',

@@ -14,9 +14,12 @@ import { createPathIntent } from '../../../src/lib/editor/path-intents.mjs';
 let sequence = 0;
 const idFactory = () => `extension-${++sequence}`;
 for (const reverse of [false, true]) {
-  const editor = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const editor = createEditorSession(
+    createDocument({ version: 4, idFactory }),
+    {
+      idFactory,
+    },
+  );
   const run = (action) =>
     editor.dispatch(createAuthoringCommand(action), {
       expectedRevision: editor.state.revision,
@@ -155,7 +158,7 @@ for (const reverse of [false, true]) {
   );
   assert.deepEqual(editor.state.document, locked);
 }
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

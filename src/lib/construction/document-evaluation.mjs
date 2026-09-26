@@ -8,6 +8,10 @@ import { createOperatorRegistry } from './registry.mjs';
 import { curveOperatorSpecifications } from './operators/curves/index.mjs';
 import { regionOperatorSpecifications } from './operators/regions/index.mjs';
 import { fillCurves } from './operators/regions/fill.mjs';
+import { declarativeRegionSpecification } from './operators/regions/declarative.mjs';
+import { regionSelectOperator } from './operators/regions/select.mjs';
+import { curveEndpointAttachOperator } from './operators/curves/endpoint-attach.mjs';
+import { regionSnapshotSourceOperator } from './operators/regions/snapshot-source.mjs';
 
 export const fillOperator = {
   type: 'fill',
@@ -40,16 +44,42 @@ export const defaultConstructionRegistry = createOperatorRegistry([
   })),
 ]);
 
+export const declarativeConstructionRegistry = createOperatorRegistry([
+  ...curveOperatorSpecifications,
+  regionSelectOperator,
+  curveEndpointAttachOperator,
+  regionSnapshotSourceOperator,
+  ...[fillOperator, ...regionOperatorSpecifications].map((specification) => ({
+    ...declarativeRegionSpecification(specification),
+    dependencies: (args) => [
+      'settings:geometry',
+      ...(specification.dependencies?.(args) || []),
+    ],
+  })),
+]);
+
 // One adapter binds source/finite-relation services. Source consumes only its
 // selected paths while the relation resolver can still read referenced entities.
-export function evaluatePlanar(
-  document,
-  { registry = defaultConstructionRegistry, ...options } = {},
-) {
+export function evaluatePlanar(document, inputOptions = {}) {
+  const { registry: suppliedRegistry, ...options } = inputOptions;
+  const registry =
+    suppliedRegistry ||
+    (document.version === 5
+      ? declarativeConstructionRegistry
+      : defaultConstructionRegistry);
   validateDocument(document);
+  const cacheInputStages =
+    !suppliedRegistry &&
+    ![
+      options.resolveSketch,
+      options.resolveScalar,
+      options.resolveDatum,
+      options.resolveRelation,
+    ].some((resolver) => typeof resolver === 'function');
   return evaluateConstruction(document, {
     ...options,
     registry,
+    cacheInputStages,
     resolveSketch: ({ document: current, sketchId, pathIds, ownerNodeId }) => {
       const source = current.sketches[sketchId];
       if (
@@ -103,7 +133,9 @@ export function evaluatePlanar(
 export function evaluateProgram(
   document,
   nodeId,
-  registry = defaultConstructionRegistry,
+  registry = document.version === 5
+    ? declarativeConstructionRegistry
+    : defaultConstructionRegistry,
   context = {},
 ) {
   if (document.nodes[nodeId]?.kind !== 'shape')

@@ -1,5 +1,7 @@
 # Splinelet
 
+构造链使用明确输入、只读结果与局部修复。源拖动不等待区域求值；修改器支持输入重绑、区域重选、成功快照查看与显式固化。设计与边界见[修改器链方案](docs/architecture/region-identity-redesign-2026-09-26.md)，本轮实测见[验证记录](docs/qa/modifier-chain-recovery-2026-09-26.md)。
+
 **Trace images. Shape curves. Build layered reliefs.**
 
 Splinelet 是一个在浏览器中运行的贝塞尔描线与浮雕建模工具：垫入参考图，沿轮廓落点，组织分区和颜色，再把图案做成有层次的可打印体块。适合制作徽章、挂件、装饰牌等简单的 2.5D 作品。
@@ -57,7 +59,7 @@ Windows 发布产物为 `src-tauri/target/release/splinelet.exe`，前端资源�
 
 应用目前以中文界面为主。初次启动会载入内置的 Sandrone 完整工程；浏览器已有工程时优先恢复。
 
-内置示例使用原生 V4 工程，包含杯上纹样与签名，并保留构造与源曲线。更新示例后可运行 `node scripts/validation/verify-example.mjs` 检查保存往返、输出身份、实体与分色导出；这是快照校验，不涵盖基础编辑的身份稳定性。当前删点可能阻断分区，反转分区路径存在区域身份错误对应，见[故障复审与重构方案](docs/qa/spline-edit-failure-2026-09-26.md)。旧格式迁移测试使用独立的历史 fixture，避免示例更新改变兼容性基线。
+内置示例使用原生 V5 工程，保留构造、源曲线、杯上纹样与签名。区域属性引用声明式定义，反转与分段编辑不再用当前 Edge 列表重新命名面。`node scripts/validation/verify-example.mjs` 检查保存往返、引用、实体与分色导出；编辑稳定性另由 V5 回归验证。旧格式测试使用独立历史 fixture，避免示例更新改变兼容性基线。修复证据见[验收记录](docs/qa/region-repair-2026-09-26.md)。
 
 ## 基本工作流
 
@@ -189,7 +191,7 @@ tasks/               复杂工程任务、模块工作包与验收管理
 dist/                Web 构建输出
 ```
 
-Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-entry.tsx`，默认创建 V4 工程宿主后加载现有 `studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
+Web 路由 `app/page.tsx` 和桌面入口 `src/desktop/main.tsx` 共用 `src/components/studio/studio-entry.tsx`，默认创建 V5 工程宿主后加载现有 `studio-app.tsx`。浏览器与 Tauri 能力位于 `src/lib/platform/`，`@/*` 映射到 `src/*`，原生宿主位于 `src-tauri/`。目录职责与迁移映射见 [工程结构](docs/architecture/project-structure-2026-09-19.md)。
 
 部分核心回归检查：
 
@@ -201,9 +203,9 @@ pnpm build
 
 完整双端检查使用 `pnpm check:all`（需要 Rust 与 Tauri 系统依赖），涵盖类型、lint、单测、格式、原生编译检查及双端前端构建。仅构建两端前端使用 `pnpm build:all`；原生发布程序使用 `pnpm desktop:release`。
 
-区域身份匹配使用统一的六字段规则和单次求值查询索引，保留既有 `.spl` 引用与冲突判断；实现边界见[构造链与失效处理](docs/architecture/construction-pipeline.md#区域身份查询)。可重复性能比较与隔离浏览器计时入口见 [Scripts](scripts/README.md#区域更新性能验证)，本机测量见[优化验收快照](docs/qa/identity-optimization-2026-09-26.md)。
+V5 区域引用的 key 指向声明式定义，lineage 为空；统一查询索引只负责精确查找，不负责从旧几何猜测新身份。实现边界见[构造链与失效处理](docs/architecture/construction-pipeline.md#区域身份查询)，可重复测量见 [Scripts](scripts/README.md#区域更新性能验证)，本机结果见[修复验收](docs/qa/region-repair-2026-09-26.md)。
 
-后续清理已选定[声明式区域定义与单向纯求值](docs/architecture/region-identity-redesign-2026-09-26.md)：用户定义与临时面分离，来源在构造时传递，源线交互独立于后台区域求值。这是尚未实施的架构决策；当前编辑身份缺陷及验证边界仍以故障复审为准。
+当前采用[声明式区域定义与单向纯求值](docs/architecture/region-identity-redesign-2026-09-26.md)：用户定义与临时面分离，来源在构造时传递，源线拖动独立于区域求值。旧工程只在打开时验证并迁移，成功后另存；无法证明一一对应时保留原文件并报告原因，运行时不会按旧面重叠率自动重绑。
 
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
 
@@ -231,10 +233,10 @@ node scripts/agent-server.mjs
 
 桥接监听 `127.0.0.1:4318`，浏览器连接限定为 `http://localhost:3000`。普通手工创作无需启动它；接口返回导出数据，不自动下载。
 
-Web 与桌面端已迁移到 V4 数据模型，保持现有工作区的布局、样式、工具和基本行为。简化候选界面的 URL 入口已撤销；双端默认入口统一使用 V4 文档、命令、求值及持久化，旧工作区写入和旧模型 Worker 不再作为回退路径，实施与真实工程验收见 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md)。
+Web 与桌面端统一使用 V5 数据模型，保持现有工作区的布局、样式、工具和基本行为。简化候选界面的 URL 入口已撤销；双端共享文档、命令、求值及持久化，旧工作区写入和旧模型 Worker 不再作为回退路径。当前区域重构见[修复验收](docs/qa/region-repair-2026-09-26.md)，先前宿主接线历史见 [V4 验收索引](tasks/editor-model-v4-refactor/acceptance-2026-09-19.md)。
 
-旧可写命令已从产品源码移到历史基线测试目录，旧 Worker、数据库和候选前端以不可执行源码保留；原路径没有转发模块。位置及用途见[旧路径隔离说明](scripts/tests/legacy/README.md)。原色卡的使用引用直接读取 V4 定义，不再读取旧对象字段。
+旧可写命令已从产品源码移到历史基线测试目录，旧 Worker、数据库和候选前端以不可执行源码保留；原路径没有转发模块。位置及用途见[旧路径隔离说明](scripts/tests/legacy/README.md)。原色卡的使用引用直接读取作者定义，不再读取旧对象字段。
 
-V4 宿主中的原用途操作通过规范成员与构造命令处理边界、参考、分区和挖洞，暂停再恢复内轮廓时保留原孔洞关系。复杂派生来源通过对应构造编辑，内部连接不增加默认界面概念；会破坏来源、构造引用或局部赋值的结构调整明确拒绝，不回退到旧模型。
+共享宿主中的原用途操作通过规范成员与构造命令处理边界、参考、分区和挖洞，暂停再恢复内轮廓时保留原孔洞关系。复杂派生来源通过对应构造编辑，内部连接不增加默认界面概念；会破坏来源、构造引用或局部赋值的结构调整明确拒绝，不回退到旧模型。
 
-V4 宿主中的原“底图对应宽度”使用同一源比例命令更新轮廓、空间关系和参考图，偏移、厚度和接合容差仍按毫米解释。源画布比例随工程保存与撤销；视图缩放和平移不写入这个坐标框。默认入口切换与指定 Sandrone 工程的本机验收见[收尾快照](docs/qa/v4-default-cutover-2026-09-20.md)。
+共享宿主中的原“底图对应宽度”使用同一源比例命令更新轮廓、空间关系和参考图，偏移、厚度和接合容差仍按毫米解释。源画布比例随工程保存与撤销；视图缩放和平移不写入这个坐标框。先前默认入口切换的本机验收见[收尾快照](docs/qa/v4-default-cutover-2026-09-20.md)。

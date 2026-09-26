@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import { createDocument } from '../../../src/lib/document/schema.mjs';
 import { createEditorSession } from '../../../src/lib/editing/dispatcher.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
+import {
+  createSourceCommand,
+  createSourceCommandBatch,
+} from '../../../src/lib/editing/commands/source.mjs';
 import { projectSourceView } from '../../../src/lib/editor/source-view.mjs';
 import { createSourceIntent } from '../../../src/lib/editor/source-intents.mjs';
 
 let sequence = 0;
 const idFactory = () => `source-batch-${++sequence}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>
@@ -57,6 +61,84 @@ const main = mainPath(captured);
 const alias = aliasPath(captured);
 assert.equal(main.identity.anchorIds[0], alias.identity.anchorIds[0]);
 const baseline = structuredClone(editor.state.document);
+const freeze = (value) => {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value))
+    return value;
+  Object.freeze(value);
+  Object.values(value).forEach(freeze);
+  return value;
+};
+const frozenBaseline = freeze(structuredClone(baseline));
+const frozenDisplayed = {
+  epoch: 'frozen-source-batch',
+  revision: 0,
+  source: projectSourceView(frozenBaseline, frame),
+};
+const frozenPath = mainPath(frozenDisplayed);
+const frozenMove = createSourceIntent(
+  {
+    kind: 'move-anchors',
+    items: [
+      {
+        identityId: frozenPath.identity.anchorIds[0],
+        pixelPoint: movedPoint(frozenPath.anchors[0], 3, -2),
+      },
+      {
+        identityId: frozenPath.identity.anchorIds[1],
+        pixelPoint: movedPoint(frozenPath.anchors[1], 3, -2),
+      },
+    ],
+  },
+  frozenDisplayed,
+)(frozenBaseline, {
+  epoch: frozenDisplayed.epoch,
+  revision: frozenDisplayed.revision,
+});
+assert.notEqual(frozenMove.document, frozenBaseline);
+assert.notEqual(frozenMove.document.sketches, frozenBaseline.sketches);
+assert.deepEqual(
+  frozenBaseline,
+  baseline,
+  'a source batch never mutates or freezes through its caller-owned baseline',
+);
+const sealedBatchBefore = structuredClone(editor.state.document);
+const sealedBatch = createSourceCommandBatch(editor.state.document);
+assert.throws(
+  () =>
+    createSourceCommand({
+      kind: 'create-parameter',
+      value: {
+        name: 'must-not-write',
+        ownerNodeId: null,
+        unit: 'mm',
+        value: 1,
+      },
+    })(sealedBatch.document, {
+      idFactory,
+      sourceBatch: sealedBatch,
+    }),
+  /批处理只接受点或控制柄移动/,
+);
+assert.deepEqual(
+  editor.state.document,
+  sealedBatchBefore,
+  'a rejected non-point source batch cannot mutate its caller baseline',
+);
+assert.throws(
+  () =>
+    createSourceCommand({
+      kind: 'set-vertex',
+      sketchId: Object.keys(editor.state.document.sketches)[0],
+      vertexId: Object.keys(
+        Object.values(editor.state.document.sketches)[0].vertices,
+      )[0],
+      value: [1, 2],
+    })(structuredClone(sealedBatch.document), {
+      idFactory,
+      sourceBatch: sealedBatch,
+    }),
+  /当前草稿不一致/,
+);
 const gesture = editor.beginPreview({ expectedRevision: captured.revision });
 for (const [dx, dy] of [
   [8, -5],

@@ -39,6 +39,7 @@ const localCubics = [
 
 const fixture = () => {
   const document = createDocument({
+    version: 4,
     id: 'path-geometry-document',
     idFactory: () => 'path-geometry-part',
   });

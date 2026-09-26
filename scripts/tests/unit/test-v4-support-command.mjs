@@ -10,7 +10,7 @@ import { createStudioSession } from '../../../src/lib/editor/studio-session.mjs'
 
 let serial = 0;
 const idFactory = () => `support-${++serial}`;
-let document = createDocument({ idFactory });
+let document = createDocument({ version: 4, idFactory });
 document.appearances.swatches.gold = {
   id: 'gold',
   name: '金色',

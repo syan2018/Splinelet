@@ -1,4 +1,5 @@
 import { validateJoinParams } from './join-params.mjs';
+import { validateRegionSelector } from './region-selector-schema.mjs';
 
 const topLevelKeys = [
   'version',
@@ -31,7 +32,7 @@ const scalarOps = new Set([
 const domains = new Set(['curves', 'regions']);
 
 const fail = (message) => {
-  throw Error(`V4 文档无效：${message}`);
+  throw Error(`文档无效：${message}`);
 };
 const isRecord = (value) =>
   typeof value === 'object' &&
@@ -299,7 +300,7 @@ const validateNode = (key, node, seen) => {
   else if (node.kind !== 'group' || Object.hasOwn(node, 'programId'))
     fail('Node.kind 无效');
 };
-const validateSketch = (key, sketch, seen) => {
+const validateSketch = (key, sketch, seen, version = 4) => {
   recordId(key, sketch, 'Sketch', seen);
   exactKeys(
     sketch,
@@ -343,15 +344,85 @@ const validateSketch = (key, sketch, seen) => {
       'handleModes',
       'startVertexId',
       'order',
+      ...(version === 5 ? ['basisPeriod', 'basisCatalog'] : []),
     ]);
     text(path.name, 'Path.name');
     if (path.order !== undefined && !finite(path.order))
       fail('Path.order 无效');
     if (!Array.isArray(path.edges)) fail('Path.edges 无效');
     for (const use of path.edges) {
-      exactKeys(use, ['edgeId', 'reversed'], 'Path.edges[]');
+      exactKeys(
+        use,
+        [
+          'edgeId',
+          'reversed',
+          ...(version === 5
+            ? [use.basisPieces ? 'basisPieces' : 'basisSpan']
+            : []),
+        ],
+        'Path.edges[]',
+        version === 5 && !use.basisPieces ? ['basisId'] : [],
+      );
       id(use.edgeId, 'Path.edges[].edgeId');
       bool(use.reversed, 'Path.edges[].reversed');
+      if (version === 5) {
+        if (use.basisPieces) {
+          if (!Array.isArray(use.basisPieces) || !use.basisPieces.length)
+            fail('Path basisPieces 无效');
+          let end = 0;
+          for (const piece of use.basisPieces) {
+            exactKeys(piece, ['t', 'basisId', 'span'], 'Path basis piece');
+            vec2(piece.t, 'Path basis t');
+            vec2(piece.span, 'Path basis span');
+            id(piece.basisId);
+            if (
+              piece.t[0] !== end ||
+              piece.t[0] >= piece.t[1] ||
+              piece.t[1] > 1 ||
+              piece.span[0] === piece.span[1]
+            )
+              fail('Path basisPieces 必须连续覆盖整个 use');
+            if (!Object.hasOwn(path.basisCatalog || {}, piece.basisId))
+              fail('Path 缺少 piece basis 定义');
+            end = piece.t[1];
+          }
+          if (end !== 1) fail('Path basisPieces 没有覆盖整个 use');
+        } else {
+          vec2(use.basisSpan, 'Path.edges[].basisSpan');
+          if (use.basisSpan[0] === use.basisSpan[1])
+            fail('Path basisSpan 不能为空');
+          if (use.basisId !== undefined) {
+            id(use.basisId, 'Path.edges[].basisId');
+            if (!Object.hasOwn(path.basisCatalog || {}, use.basisId))
+              fail('Path 缺少显式 basis 的定义');
+          }
+        }
+      }
+    }
+    if (
+      path.basisPeriod !== undefined &&
+      (!finite(path.basisPeriod) || path.basisPeriod <= 0)
+    )
+      fail('Path.basisPeriod 必须是正有限数');
+    if (path.basisCatalog !== undefined) {
+      for (const [basisId, basis] of Object.entries(
+        table(path.basisCatalog, 'Path.basisCatalog'),
+      )) {
+        id(basisId, 'Path.basisCatalog ID');
+        exactKeys(basis, [], 'Path.basisCatalog[]', ['period']);
+        if (
+          basis.period !== undefined &&
+          (!finite(basis.period) || basis.period <= 0)
+        )
+          fail('Path basis period 无效');
+      }
+      if (
+        path.edges.some(
+          (use) =>
+            use.basisId && !Object.hasOwn(path.basisCatalog, use.basisId),
+        )
+      )
+        fail('Path 缺少显式 basis 的定义');
     }
     bool(path.visible, 'Path.visible');
     if (path.startVertexId !== undefined) {
@@ -1068,16 +1139,20 @@ const assertExistingReferenceTypes = (document) => {
 };
 
 export function createDocument(options = {}) {
+  const version = options.version ?? 5;
   const makeId =
     options.idFactory ||
     (() =>
       globalThis.crypto?.randomUUID?.() ||
-      `v4-${Math.random().toString(36).slice(2)}`);
+      `v5-${Math.random().toString(36).slice(2)}`);
   if (typeof makeId !== 'function') fail('idFactory 必须是函数');
   const documentId = options.id || makeId();
   const defaultPartId = makeId();
   const document = {
-    version: 4,
+    version,
+    ...(version === 5
+      ? { evaluationSemanticsVersion: 1, regionDefinitions: {} }
+      : {}),
     id: documentId,
     units: 'mm',
     nodes: {},
@@ -1115,6 +1190,9 @@ export function validateDocument(value) {
   exactKeys(value, topLevelKeys, 'DocumentV4', [
     'sourceFrame',
     'regionPresentations',
+    ...(value.version === 5
+      ? ['evaluationSemanticsVersion', 'regionDefinitions']
+      : []),
   ]);
   if (value.sourceFrame !== undefined) {
     exactKeys(value.sourceFrame, ['width', 'height', 'widthMM'], 'sourceFrame');
@@ -1125,7 +1203,7 @@ export function validateDocument(value) {
     )
       fail('sourceFrame 必须是正有限尺寸');
   }
-  if (value.version !== 4 || value.units !== 'mm')
+  if (![4, 5].includes(value.version) || value.units !== 'mm')
     fail('DocumentV4 版本或单位无效');
   const seen = new Set();
   id(value.id, 'DocumentV4.id');
@@ -1135,7 +1213,7 @@ export function validateDocument(value) {
   for (const [sketchId, sketch] of Object.entries(
     table(value.sketches, 'sketches'),
   ))
-    validateSketch(sketchId, sketch, seen);
+    validateSketch(sketchId, sketch, seen, value.version);
   for (const [datumId, datum] of Object.entries(table(value.datums, 'datums')))
     validateDatum(datumId, datum, seen);
   for (const [parameterId, parameter] of Object.entries(
@@ -1150,6 +1228,43 @@ export function validateDocument(value) {
     table(value.programs, 'programs'),
   ))
     validateProgram(programId, program, seen);
+  if (value.version === 5) {
+    if (value.evaluationSemanticsVersion !== 1)
+      fail('不支持的区域求值语义版本');
+    for (const program of Object.values(value.programs))
+      if (
+        Object.values(program.operators).some(
+          (operator) => operator.outputContract !== undefined,
+        )
+      )
+        fail('V5 不允许保存旧 outputContract');
+    for (const [definitionId, definition] of Object.entries(
+      table(value.regionDefinitions, 'regionDefinitions'),
+    )) {
+      recordId(definitionId, definition, 'RegionDefinition', seen);
+      exactKeys(definition, ['id', 'context', 'selector'], 'RegionDefinition');
+      const context = definition.context;
+      exactKeys(
+        context,
+        ['ownerNodeId', 'operatorId', 'port', 'instances'],
+        'RegionDefinition.context',
+      );
+      validateOutputRef(
+        { kind: 'output', ...context, key: definitionId, lineage: [] },
+        'RegionDefinition.context',
+      );
+      if (context.port !== 'regions') fail('RegionDefinition 必须指向区域端口');
+      validateRegionSelector(definition.selector, {
+        exactKeys,
+        id,
+        finite,
+        vec2,
+        validateOutputRef,
+        validateEntityRef,
+        fail,
+      });
+    }
+  }
   exactKeys(
     value.geometrySettings,
     ['curveToleranceMM', 'joinToleranceMM', 'numericTolerance'],

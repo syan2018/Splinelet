@@ -2,6 +2,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type PointerEvent,
   type KeyboardEvent,
 } from 'react';
@@ -9,10 +10,17 @@ import { beginV4PointGesture } from '@/lib/source-editor/point-gesture.mjs';
 import { beginV4PathGesture } from '@/lib/source-editor/path-gesture.mjs';
 import { nodeSelection, selectedNode } from '@/lib/source-editor/node-edit.mjs';
 import { snapEndpoint } from '@/lib/source-editor/endpoint-snap.mjs';
+import type { StudioDisplayPath } from '@/lib/editor/studio-display-types';
 
 type Point = { x: number; y: number };
 type Selection = { curve: number; point: number } | null;
 type SourceInput = Parameters<typeof beginV4PointGesture>[0];
+type SourceRuntime = NonNullable<SourceInput['runtime']>;
+type SourcePreview = Readonly<{
+  identity: string;
+  runtime: SourceRuntime;
+  paths: readonly StudioDisplayPath[];
+}>;
 type Active = {
   gesture: Pick<
     ReturnType<typeof beginV4PointGesture>,
@@ -22,6 +30,8 @@ type Active = {
   target: Element;
   client: Point;
   origin: Point;
+  identity: string;
+  runtime: SourceRuntime;
   moved: boolean;
   snapContext?: ReturnType<SourceInput['runtime']['readEndpointSnapContext']>;
   snapId?: string;
@@ -34,6 +44,7 @@ export function useSourceDrag({
   runtime,
   project,
   pathId,
+  sourceIdentity,
   nodes,
   disabled = false,
   isPanning = () => false,
@@ -47,6 +58,7 @@ export function useSourceDrag({
   onSnapFeedback = () => {},
 }: Pick<SourceInput, 'project' | 'pathId'> & {
   runtime: SourceInput['runtime'] | null;
+  sourceIdentity: string;
   nodes: number[];
   disabled?: boolean;
   isPanning?: () => boolean;
@@ -60,6 +72,30 @@ export function useSourceDrag({
   onSnapFeedback?: (feedback: ReturnType<typeof snapEndpoint>) => void;
 }) {
   const active = useRef<Active | null>(null);
+  const onActiveChangeRef = useRef(onActiveChange);
+  const [sourcePreview, setSourcePreview] = useState<SourcePreview | null>(
+    null,
+  );
+  useEffect(() => {
+    onActiveChangeRef.current = onActiveChange;
+  }, [onActiveChange]);
+  useEffect(() => {
+    const current = active.current;
+    if (
+      current &&
+      (current.identity !== sourceIdentity || current.runtime !== runtime)
+    ) {
+      active.current = null;
+      try {
+        current.gesture.cancel();
+      } catch {
+        /* Replacing an editor can invalidate its display-only gesture first. */
+      }
+      if (current.target.hasPointerCapture(current.pointerId))
+        current.target.releasePointerCapture(current.pointerId);
+      onActiveChangeRef.current(false);
+    }
+  }, [runtime, sourceIdentity]);
   const finish = (commit: boolean) => {
     const current = active.current;
     if (!current) return;
@@ -77,6 +113,7 @@ export function useSourceDrag({
       }
       onError(error);
     } finally {
+      setSourcePreview(null);
       onActiveChange(false);
       if (current.target.hasPointerCapture(current.pointerId))
         current.target.releasePointerCapture(current.pointerId);
@@ -104,6 +141,7 @@ export function useSourceDrag({
     gesture: Active['gesture'],
     snapContext?: Active['snapContext'],
   ) => {
+    if (!runtime) throw Error('源编辑运行时不可用');
     active.current = {
       gesture,
       pointerId: event.pointerId,
@@ -111,6 +149,8 @@ export function useSourceDrag({
       origin,
       client: { x: event.clientX, y: event.clientY },
       moved: false,
+      identity: sourceIdentity,
+      runtime,
       snapContext,
     };
     target.setPointerCapture(event.pointerId);
@@ -118,25 +158,27 @@ export function useSourceDrag({
   };
   return {
     onPathPointerDown(event: PointerEvent, pathIds: string[]) {
-      if (!runtime) return;
+      if (!runtime) return false;
       if (active.current || disabled || isPanning() || event.button !== 0)
-        return;
+        return false;
       event.stopPropagation();
       event.preventDefault();
       const target = getCaptureTarget();
       const origin = toPoint(event);
-      if (!target || !origin) return;
+      if (!target || !origin) return false;
       target.focus({ preventScroll: true });
       try {
         start(
           event,
           target,
           origin,
-          beginV4PathGesture({ runtime, project, pathIds }),
+          beginV4PathGesture({ runtime, project, pathIds, displayOnly: true }),
         );
+        return true;
       } catch (error) {
         finish(false);
         onError(error);
+        return false;
       }
     },
     onPointPointerDown(event: PointerEvent, curve: number, point: number) {
@@ -188,6 +230,7 @@ export function useSourceDrag({
           curve,
           point,
           nodes: selected,
+          displayOnly: true,
         });
         start(event, target, origin, gesture, snapContext);
       } catch (error) {
@@ -237,7 +280,15 @@ export function useSourceDrag({
         }
         current.snapId = snap?.id;
         onSnapFeedback(snap);
-        current.gesture.update({ x, y });
+        setSourcePreview({
+          identity: current.identity,
+          runtime: current.runtime,
+          paths: (
+            current.gesture.update({ x, y }) as {
+              paths: readonly StudioDisplayPath[];
+            }
+          ).paths,
+        });
       } catch (error) {
         finish(false);
         onError(error);
@@ -264,6 +315,11 @@ export function useSourceDrag({
       }
     },
     isActive: () => !!active.current,
+    sourcePreview:
+      sourcePreview?.identity === sourceIdentity &&
+      sourcePreview.runtime === runtime
+        ? sourcePreview
+        : null,
     cancel: () => finish(false),
   };
 }

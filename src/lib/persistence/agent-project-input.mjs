@@ -24,7 +24,9 @@ export function readAgentProjectInput(input) {
       typeof input.project !== 'object' ||
       Array.isArray(input.project)
     )
-      throw Error('project 必须为旧版工程对象；V4 请提供完整 .spl 的 base64');
+      throw Error(
+        'project 必须为旧版工程对象；V4/V5 请提供完整 .spl 的 base64',
+      );
     return { bytes: JSON.stringify(input.project), name };
   }
   const encoded = input.base64;

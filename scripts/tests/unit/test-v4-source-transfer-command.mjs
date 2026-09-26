@@ -18,7 +18,10 @@ import {
 
 let documentId = 0;
 const fixture = () => {
-  const document = createDocument({ idFactory: () => `base-${++documentId}` });
+  const document = createDocument({
+    version: 4,
+    idFactory: () => `base-${++documentId}`,
+  });
   document.nodes['owner-a'] = {
     id: 'owner-a',
     kind: 'shape',

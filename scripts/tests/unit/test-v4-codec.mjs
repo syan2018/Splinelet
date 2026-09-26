@@ -144,7 +144,7 @@ assert.throws(
         copy['manifest.json'] = strToU8(JSON.stringify(manifest));
       }),
     ),
-  /文档版本/,
+  /工程版本与清单不一致/,
 );
 
 console.log(

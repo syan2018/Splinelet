@@ -15,7 +15,7 @@ import { evaluatePlanar } from '../../../src/lib/construction/document-evaluatio
 
 let serial = 0;
 const idFactory = () => `membership-${++serial}`;
-let document = createDocument({ idFactory });
+let document = createDocument({ version: 4, idFactory });
 const draw = (points, ownerNodeId) => {
   const result = createAuthoringCommand({
     kind: 'draw-path',

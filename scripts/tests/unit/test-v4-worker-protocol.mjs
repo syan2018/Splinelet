@@ -69,6 +69,225 @@ assert.equal(
 );
 frameSession.dispose();
 
+const replaceCalls = [];
+const replaceSession = createEvaluationSession({
+  capabilities: ['curves', 'regions'],
+  evaluate: (request) => {
+    const gate = deferred();
+    replaceCalls.push({ request, ...gate });
+    return gate.promise;
+  },
+  idFactory: () => 'replace-interactive',
+});
+replaceSession.update(editorState('replace-interactive', 0, 'drag'));
+const replaceActive = replaceSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+const replaceQueued = replaceSession.request({
+  domains: ['regions'],
+  purpose: 'interactive',
+});
+const replaceLatest = replaceSession.request({
+  domains: ['curves', 'regions'],
+  purpose: 'interactive',
+});
+await assert.rejects(replaceQueued, /最新请求替换/);
+assert.deepEqual(
+  Object.values(replaceSession.state.failures),
+  [],
+  'replacing unsent interactive work is not an evaluator failure',
+);
+replaceCalls[0].resolve(snapshot('replace-active'));
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(replaceCalls.length, 2);
+assert.deepEqual(replaceCalls[1].request.domains, ['curves', 'regions']);
+replaceCalls[1].resolve(snapshot('replace-latest'));
+await replaceActive;
+await replaceLatest;
+
+// Interactive display work keeps one active evaluation and only its newest
+// unsent successor. The next epoch must never receive a stale queued request.
+const interactiveCalls = [];
+const interactiveSession = createEvaluationSession({
+  capabilities: ['curves', 'regions'],
+  evaluate: (request) => {
+    const gate = deferred();
+    interactiveCalls.push({ request, ...gate });
+    return gate.promise;
+  },
+  idFactory: () => 'interactive',
+});
+const interactiveFirst = editorState('interactive-old', 0, 'drag');
+interactiveFirst.preview.document.frame = 1;
+interactiveSession.update(interactiveFirst);
+const activeInteractive = interactiveSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+assert.equal(interactiveCalls.length, 1);
+
+const interactiveMiddle = structuredClone(interactiveFirst);
+interactiveMiddle.preview.document.frame = 2;
+interactiveSession.update(interactiveMiddle);
+const replacedInteractive = interactiveSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+assert.equal(
+  interactiveCalls.length,
+  1,
+  'the successor waits while the old interactive request is in flight',
+);
+
+const interactiveLatest = editorState('interactive-new', 0, 'drag');
+interactiveLatest.preview.document.frame = 3;
+interactiveSession.update(interactiveLatest);
+const latestInteractive = interactiveSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+await assert.rejects(activeInteractive, /作废/);
+await assert.rejects(replacedInteractive, /作废/);
+interactiveCalls[0].resolve(snapshot('old-interactive'));
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  interactiveCalls.length,
+  2,
+  'only the latest interactive request is launched after the old one settles',
+);
+assert.equal(interactiveCalls[1].request.epoch, 'interactive-new');
+assert.equal(interactiveCalls[1].request.document.frame, 3);
+interactiveCalls[1].resolve(snapshot('latest-interactive'));
+await latestInteractive;
+assert.equal(
+  Object.values(interactiveSession.state.results)[0].snapshot.name,
+  'latest-interactive',
+);
+
+const errorCalls = [];
+const errorSession = createEvaluationSession({
+  capabilities: ['curves', 'regions'],
+  evaluate: () => {
+    const gate = deferred();
+    errorCalls.push(gate);
+    return gate.promise;
+  },
+  idFactory: () => 'interactive-error',
+});
+errorSession.update(editorState('interactive-error', 0, 'drag'));
+const failedInteractive = errorSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+const afterFailure = errorSession.request({
+  domains: ['regions'],
+  purpose: 'interactive',
+});
+errorCalls[0].reject(Error('interactive service failed'));
+await assert.rejects(failedInteractive, /interactive service failed/);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  errorCalls.length,
+  2,
+  'an interactive error drains to latest work',
+);
+errorCalls[1].resolve(snapshot('after-interactive-error'));
+await afterFailure;
+
+// A normal committed request remains exact even while a stale interactive
+// request occupies the replaceable lane; capture/export can therefore await it.
+const mixedCalls = [];
+const mixedSession = createEvaluationSession({
+  capabilities: ['curves'],
+  evaluate: (request) => {
+    const gate = deferred();
+    mixedCalls.push({ request, ...gate });
+    return gate.promise;
+  },
+  idFactory: () => 'mixed',
+});
+mixedSession.update(editorState('mixed', 1, 'drag'));
+const staleInteractive = mixedSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+mixedSession.update(editorState('mixed', 2));
+await assert.rejects(staleInteractive, /作废/);
+const committedExact = mixedSession.request({ domains: ['curves'] });
+const committedCapture = mixedSession.awaitCommittedSnapshot({
+  epoch: 'mixed',
+  revision: 2,
+  domains: ['curves'],
+});
+assert.equal(
+  mixedCalls.length,
+  2,
+  'a committed exact request is neither coalesced nor held behind preview work',
+);
+mixedCalls[1].resolve(snapshot('committed-exact'));
+await committedExact;
+assert.equal((await committedCapture).snapshot.name, 'committed-exact');
+mixedCalls[0].resolve(snapshot('stale-interactive'));
+
+const sameRevisionCalls = [];
+const sameRevisionSession = createEvaluationSession({
+  capabilities: ['curves'],
+  evaluate: () => {
+    const gate = deferred();
+    sameRevisionCalls.push(gate);
+    return gate.promise;
+  },
+  idFactory: () => 'same-revision',
+});
+sameRevisionSession.update(editorState('same-revision', 3));
+const sameRevisionInteractive = sameRevisionSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+const sameRevisionExact = sameRevisionSession.request({ domains: ['curves'] });
+const sameRevisionCapture = sameRevisionSession.awaitCommittedSnapshot({
+  epoch: 'same-revision',
+  revision: 3,
+  domains: ['curves'],
+});
+assert.equal(
+  sameRevisionCalls.length,
+  2,
+  'an exact capture request never shares a replaceable interactive promise',
+);
+sameRevisionCalls[1].resolve(snapshot('same-revision-exact'));
+await sameRevisionExact;
+assert.equal((await sameRevisionCapture).snapshot.name, 'same-revision-exact');
+sameRevisionCalls[0].resolve(snapshot('same-revision-interactive'));
+await sameRevisionInteractive;
+
+const closingCalls = [];
+const closingSession = createEvaluationSession({
+  capabilities: ['curves', 'regions'],
+  evaluate: () => {
+    const gate = deferred();
+    closingCalls.push(gate);
+    return gate.promise;
+  },
+  idFactory: () => 'closing',
+});
+closingSession.update(editorState('closing', 0, 'drag'));
+const closingActive = closingSession.request({
+  domains: ['curves'],
+  purpose: 'interactive',
+});
+const closingNext = closingSession.request({
+  domains: ['regions'],
+  purpose: 'interactive',
+});
+closingSession.dispose();
+await assert.rejects(closingActive, /关闭/);
+await assert.rejects(closingNext, /关闭/);
+closingCalls[0].resolve(snapshot('closed'));
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(closingCalls.length, 1, 'close never launches a queued preview');
+
 const late = deferred();
 const currentGate = deferred();
 const delayedSession = createEvaluationSession({
@@ -294,6 +513,7 @@ const worker = new Worker(
 );
 let workerIds = 0;
 const document = createDocument({
+  version: 4,
   idFactory: () => `worker-id-${++workerIds}`,
 });
 document.nodes.shape = {
@@ -355,6 +575,50 @@ console.log(
 );
 
 // Plain immutable result DTOs are shared; mutable buffers remain isolated.
+{
+  const listeners = new Map();
+  let delivered;
+  let received;
+  const client = createWorkerClient({
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: (type) => listeners.delete(type),
+    postMessage(request) {
+      delivered = { ...request, kind: 'result', snapshot: { values: [1, 2] } };
+      queueMicrotask(() => listeners.get('message')({ data: delivered }));
+    },
+  });
+  const broker = createEvaluationSession({
+    capabilities: ['curves'],
+    evaluate: async (request) => {
+      received = await client.request(request);
+      return received.snapshot;
+    },
+  });
+  broker.update(editorState('client-sharing', 0));
+  const value = await broker.evaluate({
+    epoch: 'client-sharing',
+    revision: 0,
+    previewId: null,
+    domains: ['curves'],
+  });
+  assert.equal(
+    value,
+    received.snapshot,
+    'client and broker share one isolated immutable plain snapshot',
+  );
+  delivered.snapshot.values[0] = 99;
+  assert.equal(
+    value.values[0],
+    1,
+    'transport-owned input cannot mutate the accepted snapshot',
+  );
+  assert.throws(() => {
+    value.values[0] = 10;
+  }, TypeError);
+  broker.dispose();
+  client.close();
+}
+
 for (const typed of [false, true]) {
   const broker = createEvaluationSession({
     capabilities: ['curves'],

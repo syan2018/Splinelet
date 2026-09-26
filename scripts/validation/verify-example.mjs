@@ -1,4 +1,4 @@
-// Read-only validation for a committed V4 example project.
+// Read-only validation for a committed native example project.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -39,12 +39,12 @@ const roundtrip = encodeDocument(decoded.document, { assets: decoded.assets });
 assert.deepEqual(
   decodeDocument(roundtrip),
   decoded,
-  'V4 codec roundtrip 必须保留文档和全部资源',
+  'codec roundtrip 必须保留文档和全部资源',
 );
 assert.deepEqual(
   encodeDocument(decoded.document, { assets: decoded.assets }),
   roundtrip,
-  'V4 codec roundtrip 必须稳定',
+  'codec roundtrip 必须稳定',
 );
 
 const document = decoded.document;
@@ -223,7 +223,7 @@ assert.deepEqual(
 const report = {
   input: inputPath,
   sha256: sha256(input),
-  nativeV4: true,
+  documentVersion: document.version,
   authorityStableAfterEvaluationAndExport: true,
   roundtrip: {
     bytes: roundtrip.byteLength,

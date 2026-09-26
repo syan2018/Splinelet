@@ -12,7 +12,7 @@ import { projectStudioDisplay } from '../../../src/lib/editor/studio-display.mjs
 
 let sequence = 0;
 const idFactory = () => `studio-display-${++sequence}`;
-const document = createDocument({ idFactory });
+const document = createDocument({ version: 4, idFactory });
 const frame = { width: 800, height: 600, widthMM: 100 };
 const pixelToWorld = [0.125, 0, 0, -0.125, -50, 37.5];
 document.assets['reference-asset'] = {
@@ -174,9 +174,12 @@ assert.throws(
   /完整的 V4 workspace view/,
 );
 
-const noReferenceEditor = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const noReferenceEditor = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 noReferenceEditor.dispatch(
   createAuthoringCommand({
     kind: 'draw-path',

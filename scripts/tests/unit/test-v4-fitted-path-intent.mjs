@@ -11,7 +11,7 @@ import {
 
 let serial = 0;
 const idFactory = () => `fitted-path-${++serial}`;
-const session = createEditorSession(createDocument({ idFactory }), {
+const session = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const frame = { width: 800, height: 600, widthMM: 160 };

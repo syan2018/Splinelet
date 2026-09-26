@@ -2665,6 +2665,7 @@ function compile(context) {
     assets = {};
   context.wholeOutputs = new Set();
   const document = createDocument({
+    version: 4,
     id: context.id('document', `legacy-v${p.version}`),
     idFactory: () => context.id('generated', 'default-part'),
   });

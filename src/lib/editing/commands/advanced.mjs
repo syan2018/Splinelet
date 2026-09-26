@@ -1,5 +1,6 @@
 import {
   defaultConstructionRegistry,
+  declarativeConstructionRegistry,
   evaluateProgram,
 } from '../../construction/document-evaluation.mjs';
 import {
@@ -25,6 +26,12 @@ import {
   remapCanonicalRegionOutputReference,
   remapPartitionOperator,
 } from '../../construction/operators/regions/partition-identity.mjs';
+import {
+  copyV5RegionDefinitions,
+  planV5RegionDefinitionCopy,
+  remapCopiedPathBases,
+  remapV5RegionOutputRef,
+} from '../../construction/region-definition-remap.mjs';
 
 const clone = (value) => structuredClone(value);
 
@@ -92,6 +99,16 @@ const collectIds = (value, result = new Set(), seen = new Set()) => {
 const allocator = (document, idFactory) => {
   if (typeof idFactory !== 'function') throw Error('idFactory 必须是函数');
   const ids = collectIds(document);
+  for (const sketch of Object.values(document.sketches))
+    for (const path of Object.values(sketch.paths))
+      for (const basisId of [
+        ...Object.keys(path.basisCatalog || {}),
+        ...path.edges.flatMap((use) => [
+          ...(use.basisId ? [use.basisId] : []),
+          ...(use.basisPieces || []).map((piece) => piece.basisId),
+        ]),
+      ])
+        ids.add(basisId);
   return () => {
     const id = idFactory();
     if (typeof id !== 'string' || !id.trim() || ids.has(id))
@@ -410,22 +427,28 @@ const remapEncoded = (value, idMap) => {
     return remapRawString(value, idMap);
   }
 };
-function remapStructured(value, idMap) {
+function remapStructured(value, idMap, options = {}) {
   if (typeof value === 'string') return remapEncoded(value, idMap);
   if (Array.isArray(value))
-    return value.map((item) => remapStructured(item, idMap));
+    return value.map((item) => remapStructured(item, idMap, options));
   if (!value || typeof value !== 'object') return value;
-  if (value.kind === 'output') return remapOutputReference(value, idMap);
+  if (value.kind === 'output')
+    return remapOutputReference(value, idMap, options);
   const result = {};
   for (const [key, child] of Object.entries(value))
     result[key] =
       ['id', 'ownerNodeId', 'operatorId', 'sketchId', 'edgeId'].includes(key) &&
       typeof child === 'string'
         ? mapId(child, idMap)
-        : remapStructured(child, idMap);
+        : remapStructured(child, idMap, options);
   return result;
 }
-function remapOutputReference(ref, idMap) {
+function remapOutputReference(ref, idMap, options = {}) {
+  if (options.version === 5)
+    return remapV5RegionOutputRef(ref, {
+      idMap,
+      definitionIdMap: options.definitionIdMap,
+    });
   return isCanonicalRegionOutputKey(ref.key)
     ? remapCanonicalRegionOutputReference(ref, idMap)
     : {
@@ -440,11 +463,23 @@ function remapOutputReference(ref, idMap) {
         })),
       };
 }
-const copyOperator = (value, { idMap }) => {
-  const specification = defaultConstructionRegistry.get(value.type);
+const copyOperator = (value, { idMap, version, definitionIdMap }) => {
+  const specification = (
+    version === 5
+      ? declarativeConstructionRegistry
+      : defaultConstructionRegistry
+  ).get(value.type);
   if (!specification) throw Error(`未知算子不可复制：${value.type}`);
-  if (specification.copy) return specification.copy(value, { idMap });
-  const copied = clone(value);
+  const copied = specification.copy
+    ? specification.copy(value, { idMap })
+    : clone(value);
+  if (version === 5) {
+    copied.params = remapStructured(copied.params, idMap, {
+      version,
+      definitionIdMap,
+    });
+    return copied;
+  }
   copied.params = remapStructured(copied.params, idMap);
   if (value.type === 'partition') return remapPartitionOperator(copied, idMap);
   if (copied.outputContract)
@@ -878,7 +913,11 @@ export function createAdvancedCommand(action) {
       writable(document, request.nodeId);
       return planNodeRebase(document, request.nodeId, request.pose, {
         rebaseOperator: (value, context) => {
-          const specification = defaultConstructionRegistry.get(value.type);
+          const specification = (
+            document.version === 5
+              ? declarativeConstructionRegistry
+              : defaultConstructionRegistry
+          ).get(value.type);
           if (!specification?.rebase)
             throw Error(`算子 ${value.id} 缺少安全坐标重表达访问器`);
           return specification.rebase(value, context);
@@ -895,11 +934,44 @@ export function createAdvancedCommand(action) {
     }
     if (request?.kind === ADVANCED_ACTIONS.copyNodes) {
       writableNodes(document, request.nodeIds, true);
+      const owned = ownedEntities(document, request.nodeIds);
+      const copiedDefinitions = planV5RegionDefinitionCopy(
+        document,
+        owned.nodes,
+        allocate,
+      );
       const result = copyNodes(document, request.nodeIds, {
         idFactory: allocate,
-        copyOperator,
-        remapOutputReference,
+        copyOperator: (value, context) =>
+          copyOperator(value, {
+            ...context,
+            version: document.version,
+            definitionIdMap: copiedDefinitions.definitionIdMap,
+          }),
+        remapOutputReference: (ref, idMap) =>
+          remapOutputReference(ref, idMap, {
+            version: document.version,
+            definitionIdMap: copiedDefinitions.definitionIdMap,
+          }),
       });
+      if (copiedDefinitions.definitions.length) {
+        const bases = remapCopiedPathBases(
+          document,
+          result.document,
+          owned.sketches,
+          result.idMap,
+          allocate,
+        );
+        copyV5RegionDefinitions(
+          result.document,
+          copiedDefinitions.definitions,
+          {
+            idMap: result.idMap,
+            definitionIdMap: copiedDefinitions.definitionIdMap,
+            ...bases,
+          },
+        );
+      }
       return {
         document: result.document,
         changedRefs: result.roots.map(nodeRef),

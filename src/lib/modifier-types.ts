@@ -39,6 +39,8 @@ export type ModifierControls = {
     operation?: string;
     connections?: JoinConnection[];
     rule?: string;
+    anchors?: [number, number][];
+    toleranceMM?: number;
   };
   editableFields: readonly string[];
   drivenFields: readonly string[];

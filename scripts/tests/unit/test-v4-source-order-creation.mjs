@@ -7,6 +7,7 @@ import { orderedSourcePaths } from '../../../src/lib/geometry/source-order.mjs';
 
 function fixture() {
   const document = createDocument({
+    version: 4,
     id: 'source-order-creation-document',
     idFactory: () => 'source-order-creation-part',
   });

@@ -22,6 +22,7 @@ const close = (actual, expected, epsilon = 1e-9) => {
 };
 
 const document = createDocument({
+  version: 4,
   id: 'mode-document',
   idFactory: () => 'part',
 });

@@ -3,9 +3,14 @@ import { pathNodes } from './node-edit.mjs';
 /** Translate selected raw paths in the captured display frame. Appearance and
  * relief follow output refs when the construction contract remains valid.
  * Owner poses and fixed operator parameters are not changed by source movement.
- * @param {{runtime: ReturnType<typeof import('../editor/creation-runtime.mjs').createV4CreationRuntime>, project: object, pathIds: string[]}} input
+ * @param {{runtime: ReturnType<typeof import('../editor/creation-runtime.mjs').createV4CreationRuntime>, project: object, pathIds: string[], displayOnly?: boolean}} input
  */
-export function beginV4PathGesture({ runtime, project, pathIds }) {
+export function beginV4PathGesture({
+  runtime,
+  project,
+  pathIds,
+  displayOnly = false,
+}) {
   if (!Array.isArray(pathIds) || !pathIds.length)
     throw Error('移动线条需要非空选区');
   const source = runtime.readSourceView(project).source;
@@ -21,7 +26,9 @@ export function beginV4PathGesture({ runtime, project, pathIds }) {
     });
   }
   if (!items.size) throw Error('线条没有可移动的源节点');
-  const gesture = runtime.beginSourceGesture(project);
+  const gesture = displayOnly
+    ? runtime.beginSourceDisplayGesture(project)
+    : runtime.beginSourceGesture(project);
   return Object.freeze({
     update(delta) {
       if (!Number.isFinite(delta?.x) || !Number.isFinite(delta?.y))

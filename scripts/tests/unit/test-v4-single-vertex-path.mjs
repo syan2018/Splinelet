@@ -13,6 +13,7 @@ import {
 } from '../../../src/lib/scene/transforms.mjs';
 
 const document = createDocument({
+  version: 4,
   id: 'single-path-document',
   idFactory: () => 'single-path-part',
 });

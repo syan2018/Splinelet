@@ -1,6 +1,13 @@
 import { createEvaluationSession } from './session.mjs';
 import { evaluateDocument } from './evaluate-document.mjs';
 import { sameDocument } from '../editing/history.mjs';
+import { createChainSnapshotStore } from './chain-snapshots.mjs';
+import { createPlanarStageCache } from './planar-stage-cache.mjs';
+import {
+  createPostStageCache,
+  postPlanComponentIds,
+} from './post-evaluation-plan.mjs';
+import { worldMatrix } from '../scene/transforms.mjs';
 
 export const documentEvaluationDomains = Object.freeze([
   'curves',
@@ -28,7 +35,15 @@ export function createDocumentEvaluationSession({
   // while the broker still validates each caller's full revision/preview identity.
   let geometryKey = null;
   const geometryResults = new Map();
+  let cacheEpoch = null;
+  let planarStageCache = createPlanarStageCache();
+  let postStageCache = createPostStageCache();
   const evaluateCurrent = (request) => {
+    if (cacheEpoch !== request.epoch) {
+      cacheEpoch = request.epoch;
+      planarStageCache = createPlanarStageCache();
+      postStageCache = createPostStageCache();
+    }
     const {
       references: _references,
       assets: _assets,
@@ -47,6 +62,8 @@ export function createDocumentEvaluationSession({
         evaluate(request.document, {
           ...request,
           requestedDomains: request.domains,
+          planarStageCache,
+          postStageCache,
         }),
       );
       geometryResults.set(domains, pending);
@@ -62,6 +79,18 @@ export function createDocumentEvaluationSession({
     evaluate: evaluateCurrent,
   });
   const detach = session.attach(editorSession);
+  const chainSnapshots = createChainSnapshotStore();
+  const updateChain = (state) => {
+    chainSnapshots.update(identity(state));
+    chainSnapshots.prune([
+      ...Object.values(state.document.programs).flatMap((program) =>
+        Object.keys(program.operators).map((id) => `operator:${id}`),
+      ),
+      ...postPlanComponentIds(state.document),
+    ]);
+  };
+  updateChain(editorSession.state);
+  const detachChain = editorSession.subscribe(updateChain);
   let disposed = false;
   const assertCurrent = (state) => {
     if (disposed) throw Error('求值会话已关闭');
@@ -74,10 +103,39 @@ export function createDocumentEvaluationSession({
   };
   return Object.freeze({
     session,
-    async snapshot(state, domains) {
+    readChainSnapshot(componentId, port) {
+      assertCurrent(editorSession.state);
+      return chainSnapshots.read(componentId, port);
+    },
+    readChainStatus(componentId, port) {
+      assertCurrent(editorSession.state);
+      return chainSnapshots.readStatus(componentId, port);
+    },
+    async snapshot(state, domains, { purpose = 'exact' } = {}) {
       assertCurrent(state);
       try {
-        return await session.evaluate({ ...identity(state), domains });
+        const snapshot = await session.evaluate({
+          ...identity(state),
+          domains,
+          purpose,
+        });
+        assertCurrent(state);
+        if (snapshot.planar)
+          chainSnapshots.accept(identity(state), snapshot.planar, {
+            worldMatrices: Object.fromEntries(
+              Object.values(documentOf(state).nodes)
+                .filter((node) => node.kind === 'shape')
+                .map((node) => [
+                  node.id,
+                  worldMatrix(documentOf(state), node.id),
+                ]),
+            ),
+          });
+        if (snapshot.postPlan?.components)
+          chainSnapshots.accept(identity(state), {
+            components: snapshot.postPlan.components,
+          });
+        return snapshot;
       } finally {
         assertCurrent(state);
       }
@@ -95,6 +153,12 @@ export function createDocumentEvaluationSession({
       if (disposed) return;
       disposed = true;
       detach();
+      detachChain();
+      chainSnapshots.clear();
+      geometryResults.clear();
+      geometryKey = null;
+      postStageCache.clear();
+      planarStageCache = createPlanarStageCache();
       session.dispose();
     },
   });

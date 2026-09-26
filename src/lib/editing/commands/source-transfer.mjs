@@ -258,12 +258,22 @@ const allIds = (document) => {
     document.assets,
     document.references,
     document.collections,
+    document.regionDefinitions || {},
     document.regionPresentations?.overrides || {},
   ])
     Object.keys(table).forEach((id) => result.add(id));
   for (const sketch of Object.values(document.sketches))
     for (const table of [sketch.vertices, sketch.edges, sketch.paths])
       Object.keys(table).forEach((id) => result.add(id));
+  for (const sketch of Object.values(document.sketches))
+    for (const path of Object.values(sketch.paths))
+      [
+        ...Object.keys(path.basisCatalog || {}),
+        ...path.edges.flatMap((use) => [
+          ...(use.basisId ? [use.basisId] : []),
+          ...(use.basisPieces || []).map((piece) => piece.basisId),
+        ]),
+      ].forEach((id) => result.add(id));
   for (const program of Object.values(document.programs))
     Object.keys(program.operators).forEach((id) => result.add(id));
   return result;

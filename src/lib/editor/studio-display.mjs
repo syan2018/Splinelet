@@ -32,6 +32,8 @@ const validateWorkspace = (workspaceView) => {
     !workspaceView.creation.creation
   )
     throw Error('studio display 需要完整的 V4 workspace view');
+  if (![4, 5].includes(workspaceView.documentVersion))
+    throw Error('studio display 需要当前文档版本');
   if (
     typeof workspaceView.canUndo !== 'boolean' ||
     typeof workspaceView.canRedo !== 'boolean'
@@ -125,7 +127,7 @@ export function projectStudioDisplay(workspaceView, presentation) {
   };
   const { groups, memberships } = projectPathGroups(source);
   const project = {
-    version: 4,
+    version: workspaceView.documentVersion,
     image: reference?.url ?? '',
     imageName: reference?.name ?? '',
     width: frame.width,

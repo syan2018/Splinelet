@@ -6,6 +6,12 @@ import {
   worldMatrix,
 } from '../../scene/transforms.mjs';
 import { createCommandIdAllocator } from '../command-ids.mjs';
+import {
+  basisPiecesForSourceInterval,
+  basisPiecesForUse,
+  hasPathBasis,
+  withBasisPieces,
+} from '../../geometry/path-basis.mjs';
 
 export const PATH_REPLACEMENT_ACTIONS = Object.freeze([
   'replace-path-geometry',
@@ -15,6 +21,79 @@ const vec = (v) =>
 const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-9;
 const ref = (kind, sketchId, id) => ({ kind, sketchId, id });
 const vector = (a, b) => [b[0] - a[0], b[1] - a[1]];
+const interval = (value) =>
+  Array.isArray(value) &&
+  value.length === 2 &&
+  value.every(Number.isFinite) &&
+  value[0] >= 0 &&
+  value[1] <= 1 &&
+  value[0] !== value[1];
+const sameJson = (left, right) =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+const replacementPieces = (path, mapping, count) => {
+  if (!Array.isArray(mapping) || mapping.length !== count)
+    throw Error(
+      'changed-topology replacement 需要逐 cubic 的 basisPieceMapping',
+    );
+  const coverage = path.edges.map(() => []);
+  return mapping
+    .map((items, outputIndex) => {
+      if (!Array.isArray(items) || !items.length)
+        throw Error(`basisPieceMapping[${outputIndex}] 不能为空`);
+      let cursor = 0;
+      const pieces = [];
+      for (const item of items) {
+        if (
+          !item ||
+          !Number.isInteger(item.sourceUseIndex) ||
+          item.sourceUseIndex < 0 ||
+          item.sourceUseIndex >= path.edges.length ||
+          !interval(item.sourceT) ||
+          !interval(item.t) ||
+          item.t[0] !== cursor ||
+          item.t[0] >= item.t[1]
+        )
+          throw Error(`basisPieceMapping[${outputIndex}] 无效`);
+        cursor = item.t[1];
+        coverage[item.sourceUseIndex].push([
+          Math.min(...item.sourceT),
+          Math.max(...item.sourceT),
+        ]);
+        for (const source of basisPiecesForSourceInterval(
+          path,
+          path.edges[item.sourceUseIndex],
+          item.sourceT,
+        ))
+          pieces.push({
+            t: [
+              item.t[0] + (item.t[1] - item.t[0]) * source.t[0],
+              item.t[0] + (item.t[1] - item.t[0]) * source.t[1],
+            ],
+            basisId: source.basisId,
+            span: source.span,
+          });
+      }
+      if (cursor !== 1)
+        throw Error(`basisPieceMapping[${outputIndex}] 没有覆盖 cubic`);
+      return pieces;
+    })
+    .map((pieces, outputIndex, all) => {
+      if (outputIndex !== all.length - 1) return pieces;
+      for (const intervals of coverage) {
+        intervals.sort((left, right) => left[0] - right[0]);
+        let cursor = 0;
+        for (const value of intervals) {
+          if (value[0] !== cursor || value[0] >= value[1])
+            throw Error('basisPieceMapping 必须完整且不重叠地覆盖原 Path uses');
+          cursor = value[1];
+        }
+        if (cursor !== 1)
+          throw Error('basisPieceMapping 必须完整且不重叠地覆盖原 Path uses');
+      }
+      return pieces;
+    });
+};
 
 /** Exact source replacement keeps the Path/owner/Program. Equal topology keeps
  * Vertex/Edge IDs (including reversed uses); changed topology gets fresh IDs.
@@ -36,6 +115,7 @@ export function createPathReplacementCommand(request) {
             'cubics',
             'closed',
             'handleModes',
+            'basisPieceMapping',
           ].includes(key),
       )
     )
@@ -61,9 +141,20 @@ export function createPathReplacementCommand(request) {
       action.expectedEdges.some(
         (use, i) =>
           !use ||
-          Object.keys(use).length !== 2 ||
+          ![
+            hasPathBasis(document) ? 3 : 2,
+            hasPathBasis(document) ? 4 : 2,
+          ].includes(Object.keys(use).length) ||
           use.edgeId !== original.edges[i].edgeId ||
-          use.reversed !== original.edges[i].reversed,
+          use.reversed !== original.edges[i].reversed ||
+          (hasPathBasis(document) &&
+            (use.basisPieces
+              ? !sameJson(use.basisPieces, original.edges[i].basisPieces)
+              : !Array.isArray(use.basisSpan) ||
+                use.basisSpan[0] !== original.edges[i].basisSpan?.[0] ||
+                use.basisSpan[1] !== original.edges[i].basisSpan?.[1] ||
+                use.basisId !== original.edges[i].basisId ||
+                original.edges[i].basisPieces !== undefined)),
       )
     )
       throw Error('Path 拓扑已变化，请重新读取样条');
@@ -160,6 +251,10 @@ export function createPathReplacementCommand(request) {
       ...(action.closed ? [] : [converted.at(-1)[3]]),
     ];
     const removedRefs = [];
+    const mappedPieces =
+      hasPathBasis(document) && !sameTopology
+        ? replacementPieces(original, action.basisPieceMapping, cubics.length)
+        : null;
     if (!sameTopology) {
       for (const id of edgeIds) {
         delete sketch.edges[id];
@@ -179,7 +274,14 @@ export function createPathReplacementCommand(request) {
     path.edges = converted.map((cubic, i) => {
       const use = sameTopology
         ? original.edges[i]
-        : { edgeId: allocate(), reversed: false };
+        : hasPathBasis(document)
+          ? withBasisPieces(
+              document,
+              path,
+              { edgeId: allocate(), reversed: false },
+              mappedPieces[i],
+            )
+          : { edgeId: allocate(), reversed: false };
       const first = desiredIds[i],
         last = desiredIds[(i + 1) % desiredIds.length];
       const start = use.reversed ? last : first,
@@ -200,6 +302,35 @@ export function createPathReplacementCommand(request) {
       };
       return { ...use };
     });
+    if (hasPathBasis(document)) {
+      if (action.closed) {
+        const outputBases = new Set(
+          path.edges.flatMap((use) =>
+            basisPiecesForUse(path, use).map((piece) => piece.basisId),
+          ),
+        );
+        if (outputBases.size > 1 || path.edges.some((use) => use.basisPieces)) {
+          delete path.basisPeriod;
+        } else {
+          const start = path.edges[0].basisSpan[0];
+          const end = path.edges.at(-1).basisSpan[1];
+          const period = Math.abs(end - start);
+          if (!(period > 0)) throw Error('闭合 Path basisPeriod 无法确定');
+          const [replacementBasisId] = outputBases;
+          if (replacementBasisId === path.id) path.basisPeriod = period;
+          else {
+            path.basisCatalog = {
+              ...path.basisCatalog,
+              [replacementBasisId]: {
+                ...path.basisCatalog?.[replacementBasisId],
+                period,
+              },
+            };
+            delete path.basisPeriod;
+          }
+        }
+      } else delete path.basisPeriod;
+    }
     delete path.startVertexId;
     if (action.handleModes !== undefined) {
       path.handleModes = Object.fromEntries(

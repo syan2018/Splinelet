@@ -16,7 +16,7 @@ import {
 
 let serial = 0;
 const idFactory = () => `role-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>
@@ -275,7 +275,7 @@ const solo = createAuthoringCommand({
     [2, 2],
     [0, 2],
   ],
-})(createDocument({ idFactory }), { idFactory });
+})(createDocument({ version: 4, idFactory }), { idFactory });
 const soloPath = solo.changedRefs.find((ref) => ref.kind === 'path');
 const soloOwner = solo.document.sketches[soloPath.sketchId].ownerNodeId;
 const soloBoundary = createAuthoringCommand({

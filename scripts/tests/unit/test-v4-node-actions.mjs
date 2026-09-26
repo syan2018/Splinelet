@@ -12,9 +12,12 @@ let serial = 0;
 const idFactory = () => `node-actions-${++serial}`;
 
 const fixture = ({ single = false } = {}) => {
-  const editor = createEditorSession(createDocument({ idFactory }), {
-    idFactory,
-  });
+  const editor = createEditorSession(
+    createDocument({ version: 4, idFactory }),
+    {
+      idFactory,
+    },
+  );
   const dispatch = (action) =>
     editor.dispatch(createAuthoringCommand(action), {
       expectedRevision: editor.state.revision,

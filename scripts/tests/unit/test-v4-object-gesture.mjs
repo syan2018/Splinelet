@@ -6,7 +6,7 @@ import { createStudioSession } from '../../../src/lib/editor/studio-session.mjs'
 
 let serial = 0;
 const idFactory = () => `object-gesture-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (request) =>

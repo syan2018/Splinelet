@@ -87,7 +87,7 @@ assert.notEqual(regionOutlineOperator.copy(operator), operator);
 // Resolve through the registered document graph, then edit the actual source.
 let serial = 0;
 const idFactory = () => `outline-${++serial}`;
-let document = createDocument({ idFactory });
+let document = createDocument({ version: 4, idFactory });
 const drawn = createAuthoringCommand({
   kind: 'draw-path',
   closed: true,

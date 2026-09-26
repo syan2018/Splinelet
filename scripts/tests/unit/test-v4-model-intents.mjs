@@ -9,7 +9,7 @@ import { createModelIntent } from '../../../src/lib/editor/model-intents.mjs';
 
 let serial = 0;
 const idFactory = () => `model-intent-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

@@ -1,5 +1,6 @@
 import { evaluateDocument } from './evaluate-document.mjs';
 import { createPlanarStageCache } from './planar-stage-cache.mjs';
+import { createPostStageCache } from './post-evaluation-plan.mjs';
 import { assertEvaluationIdentity, canonicalDomains } from './worker-protocol';
 import type {
   WorkerEvaluationRequest,
@@ -9,6 +10,8 @@ import wasmURL from 'manifold-3d/manifold.wasm?url';
 
 let cacheEpoch: string | null = null;
 let planarStageCache = createPlanarStageCache();
+let postStageCache = createPostStageCache();
+const solidOptions = { locateFile: () => wasmURL };
 
 self.onmessage = async ({ data }: MessageEvent<WorkerEvaluationRequest>) => {
   try {
@@ -19,11 +22,13 @@ self.onmessage = async ({ data }: MessageEvent<WorkerEvaluationRequest>) => {
     if (cacheEpoch !== data.epoch) {
       cacheEpoch = data.epoch;
       planarStageCache = createPlanarStageCache();
+      postStageCache = createPostStageCache();
     }
     const snapshot = await evaluateDocument(data.document, {
       planarStageCache,
+      postStageCache,
       requestedDomains: domains,
-      solidOptions: { locateFile: () => wasmURL },
+      solidOptions,
     });
     const response: WorkerEvaluationResponse = {
       kind: 'result',

@@ -19,7 +19,7 @@ const commandContext = () => ({ idFactory });
 const draw = (document, action) =>
   createAuthoringCommand(action)(document, commandContext()).document;
 
-const empty = createDocument({ idFactory });
+const empty = createDocument({ version: 4, idFactory });
 assert.equal(
   empty.regionPresentations,
   undefined,

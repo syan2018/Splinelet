@@ -12,7 +12,7 @@ import {
 
 let sequence = 0;
 const nextId = () => `generated-${++sequence}`;
-const document = createDocument({ idFactory: nextId });
+const document = createDocument({ version: 4, idFactory: nextId });
 for (const [nodeId, programId] of [
   ['shape-a', 'program-a'],
   ['shape-b', 'program-b'],

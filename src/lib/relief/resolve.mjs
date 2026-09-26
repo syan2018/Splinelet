@@ -97,7 +97,12 @@ function invalidAssignments(document, regions) {
  * per-output color, thickness authority, mode, and placement intent; T10 owns
  * layer/mm conversion and all placement/manufacturing solving.
  */
-function resolveReliefBranch(document, regionResults, queries) {
+export function resolveReliefBranch(
+  document,
+  regionResults,
+  queries,
+  appearanceResult = null,
+) {
   const inputs = normalizeResults(regionResults);
   const dependencies = [];
   const diagnostics = [];
@@ -117,6 +122,11 @@ function resolveReliefBranch(document, regionResults, queries) {
       );
     dependencies.push(...(input.dependencies || []));
     diagnostics.push(...(input.diagnostics || []));
+    if (
+      document.version === 5 &&
+      input.diagnostics?.some((item) => item.severity === 'error')
+    )
+      return blocked(diagnostics, dependencies);
     if (input.status === 'blocked')
       return blocked(
         [...diagnostics, diagnostic('blocked-input', '上游 RegionSet 被阻断')],
@@ -140,6 +150,38 @@ function resolveReliefBranch(document, regionResults, queries) {
   const invalid = invalidAssignments(document, regions);
   if (invalid.length)
     return blocked([...diagnostics, ...invalid], dependencies);
+  const resolvedAppearances = new Map();
+  if (appearanceResult) {
+    if (appearanceResult.domain !== 'appearance')
+      return blocked(
+        [
+          ...diagnostics,
+          diagnostic('invalid-input', 'Relief 需要 AppearanceSet'),
+        ],
+        dependencies,
+      );
+    dependencies.push(...(appearanceResult.dependencies || []));
+    diagnostics.push(...(appearanceResult.diagnostics || []));
+    if (appearanceResult.status === 'blocked')
+      return blocked(
+        [
+          ...diagnostics,
+          diagnostic('blocked-input', '上游 AppearanceSet 被阻断'),
+        ],
+        dependencies,
+      );
+    if (
+      appearanceResult.status === 'ready' &&
+      Array.isArray(appearanceResult.value?.appearances)
+    )
+      for (const appearance of appearanceResult.value.appearances)
+        resolvedAppearances.set(JSON.stringify(appearance.ref), appearance);
+    else if (regions.length)
+      return blocked(
+        [...diagnostics, diagnostic('invalid-input', 'AppearanceSet DTO 无效')],
+        dependencies,
+      );
+  }
   if (!regions.length) {
     if (sawAbsent && !sawEmpty)
       return stage('absent', undefined, diagnostics, dependencies);
@@ -182,12 +224,12 @@ function resolveReliefBranch(document, regionResults, queries) {
         ],
         dependencies,
       );
-    const appearance = resolveAppearance(
-      document,
-      shape.id,
-      region.ref,
-      queries,
-    );
+    const cachedAppearance = appearanceResult
+      ? resolvedAppearances.get(JSON.stringify(region.ref))
+      : null;
+    const appearance = cachedAppearance
+      ? { status: 'ready', value: cachedAppearance }
+      : resolveAppearance(document, shape.id, region.ref, queries);
     if (appearance.status !== 'ready')
       return blocked([...diagnostics, ...appearance.diagnostics], dependencies);
     const definition = resolveReliefDefinition(
@@ -226,11 +268,14 @@ function resolveReliefBranch(document, regionResults, queries) {
     })),
     // Proposals are informational and never affect the effective values above.
     assignmentProposals: {
-      appearance: proposeOutputAssignmentInheritance(
-        regions,
-        appearanceAssignments,
-      ),
-      relief: proposeOutputAssignmentInheritance(regions, reliefAssignments),
+      appearance:
+        document.version === 5
+          ? []
+          : proposeOutputAssignmentInheritance(regions, appearanceAssignments),
+      relief:
+        document.version === 5
+          ? []
+          : proposeOutputAssignmentInheritance(regions, reliefAssignments),
     },
   };
   return stage(

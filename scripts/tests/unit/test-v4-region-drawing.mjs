@@ -16,7 +16,7 @@ import { compileModifierUpdate } from '../../../src/lib/editor/modifier-intents.
 
 let sequence = 0;
 const idFactory = () => `drawing-${++sequence}`;
-const create = (document = createDocument({ idFactory })) =>
+const create = (document = createDocument({ version: 4, idFactory })) =>
   createEditorSession(document, { idFactory });
 const run = (session, action) =>
   session.dispatch(createAuthoringCommand(action), {

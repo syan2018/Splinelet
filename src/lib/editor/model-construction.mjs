@@ -163,6 +163,22 @@ const referenceSource = (ref) => {
 const sameLineage = (left, right) =>
   JSON.stringify(left) === JSON.stringify(right);
 
+const selectedOutputOrigin = (document, region, source) => {
+  if (document.version === 5) {
+    const selector = region.selector;
+    return Boolean(
+      (selector?.kind === 'result' &&
+        selector.role === 'reference' &&
+        sameOutputRef(selector.parent, source)) ||
+      region.parents?.some((parent) => sameOutputRef(parent, source)),
+    );
+  }
+  const origin = referenceSource(region.ref);
+  return (
+    origin?.key === source.key && sameLineage(origin.lineage, source.lineage)
+  );
+};
+
 const selectedOutput = (document, ownerNodeId, refs, context) => {
   const { program } = writableShape(document, ownerNodeId);
   const before = readyRegions(document, ownerNodeId);
@@ -204,13 +220,9 @@ const selectedOutput = (document, ownerNodeId, refs, context) => {
   const mapped = new Map();
   if (selected.length)
     for (const source of selected) {
-      const matches = after.value.regions.filter((region) => {
-        const origin = referenceSource(region.ref);
-        return (
-          origin?.key === source.key &&
-          sameLineage(origin.lineage, source.lineage)
-        );
-      });
+      const matches = after.value.regions.filter((region) =>
+        selectedOutputOrigin(document, region, source),
+      );
       if (matches.length !== 1) throw Error('所选区域引用无法唯一映射到新输出');
       mapped.set(outputIdentity(source), [clone(matches[0].ref)]);
     }
@@ -315,11 +327,67 @@ export function inspectModelRegionDeletion(document, targets) {
   return clone({ targets: refs, ...outputReferenceConsumers(document, refs) });
 }
 
-const sameConsumerOutput = (left, right) =>
-  left.operatorId === right.operatorId &&
-  left.port === right.port &&
-  sameLineage(left.lineage, right.lineage) &&
-  JSON.stringify(left.instances) === JSON.stringify(right.instances);
+const sameConsumerOutput = (document, left, right) =>
+  document.version === 5
+    ? left.ownerNodeId === right.ownerNodeId &&
+      left.operatorId === right.operatorId &&
+      left.port === right.port &&
+      left.key === right.key
+    : left.operatorId === right.operatorId &&
+      left.port === right.port &&
+      sameLineage(left.lineage, right.lineage) &&
+      JSON.stringify(left.instances) === JSON.stringify(right.instances);
+
+const remapV5ConsumerDefinitionParents = (
+  document,
+  operatorId,
+  replacements,
+) => {
+  if (document.version !== 5 || !replacements.size) return;
+  const remap = (ref) =>
+    ref?.kind === 'output' ? replacements.get(outputIdentity(ref)) || ref : ref;
+  for (const definition of Object.values(document.regionDefinitions)) {
+    if (definition.context.operatorId !== operatorId) continue;
+    if (definition.selector.kind === 'result') {
+      const parent = remap(definition.selector.parent);
+      if (parent !== definition.selector.parent) {
+        const priorInstances = definition.selector.parent.instances || [];
+        if (
+          ['reference', 'array'].includes(definition.selector.role) &&
+          !sameLineage(
+            definition.context.instances.slice(0, priorInstances.length),
+            priorInstances,
+          )
+        )
+          throw Error('V5 区域定义的实例上下文不能显式重绑');
+        if (['reference', 'array'].includes(definition.selector.role))
+          definition.context.instances = [
+            ...clone(parent.instances || []),
+            ...definition.context.instances.slice(priorInstances.length),
+          ];
+        definition.selector = { ...definition.selector, parent: clone(parent) };
+      }
+      continue;
+    }
+    const remapRing = (ring) =>
+      ring.map((run) => ({
+        ...run,
+        sources: run.sources.map((source) =>
+          source.use?.kind === 'generated-offset'
+            ? {
+                ...source,
+                use: { ...source.use, parent: clone(remap(source.use.parent)) },
+              }
+            : source,
+        ),
+      }));
+    definition.selector = {
+      ...definition.selector,
+      outer: remapRing(definition.selector.outer),
+      holes: definition.selector.holes.map(remapRing),
+    };
+  }
+};
 
 const migrateOutputConsumers = (
   document,
@@ -347,6 +415,7 @@ const migrateOutputConsumers = (
         const refs = operator.params?.scope?.refs;
         if (!Array.isArray(refs)) continue;
         const sourceOwners = new Set();
+        const replacements = new Map();
         refs.forEach((ref, index) => {
           if (program.ownerNodeId === ref?.ownerNodeId) return;
           const replacement = ref?.kind === 'output' ? resolve(ref) : null;
@@ -361,9 +430,11 @@ const migrateOutputConsumers = (
             affectedOwners.add(program.ownerNodeId);
             sourceOwners.add(ref.ownerNodeId);
             refs[index] = clone(replacement);
+            replacements.set(outputIdentity(ref), replacement);
           }
         });
         if (!sourceOwners.size) continue;
+        remapV5ConsumerDefinitionParents(document, operator.id, replacements);
         for (const inputs of Object.values(operator.inputs || {})) {
           if (!Array.isArray(inputs)) continue;
           inputs.forEach((entry, index) => {
@@ -402,7 +473,7 @@ const migrateOutputConsumers = (
     const nextByPrevious = new Map();
     for (const oldRef of previous) {
       const matches = next.filter((newRef) =>
-        sameConsumerOutput(oldRef, newRef),
+        sameConsumerOutput(document, oldRef, newRef),
       );
       if (matches.length !== 1)
         throw Error('外部区域消费者输出无法唯一重绑，未修改作者态');
@@ -694,7 +765,13 @@ const applyBoolean = (document, draft, refs, context) => {
             },
           ],
         },
-        { operation, scope: { kind: 'selected', refs: [baseReference] } },
+        {
+          operation,
+          scope:
+            document.version === 5
+              ? { kind: 'all' }
+              : { kind: 'selected', refs: [baseReference] },
+        },
       ),
     },
     outputs: { regions: port(nodeId, booleanId, 'regions') },
@@ -817,7 +894,10 @@ const applySplit = (document, draft, refs, context) => {
       ],
     },
     {
-      scope: { kind: 'selected', refs: [baseReference] },
+      scope:
+        document.version === 5
+          ? { kind: 'all' }
+          : { kind: 'selected', refs: [baseReference] },
       ...(draft.joinMM === undefined
         ? {}
         : {

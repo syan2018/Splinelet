@@ -7,7 +7,7 @@ import {
 
 let sequence = 0;
 const fresh = () => `id-${++sequence}`;
-const document = createDocument({ idFactory: fresh });
+const document = createDocument({ version: 4, idFactory: fresh });
 assert.equal(document.version, 4);
 assert.equal(document.units, 'mm');
 assert.equal(document.manufacturing.layerHeightMM, 0.2);

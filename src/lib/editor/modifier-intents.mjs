@@ -32,6 +32,8 @@ const TYPE_FIELDS = Object.freeze({
   partition: new Set(),
   join: new Set(['connections']),
   fill: new Set(['rule']),
+  'region-select': new Set(['anchors']),
+  'curve-endpoint-attach': new Set(['toleranceMM']),
 });
 const BOOLEAN_OPERATIONS = new Set(['difference', 'intersection', 'union']);
 const degreesToRadians = (value) => (value * Math.PI) / 180;
@@ -110,13 +112,14 @@ const ownedOperator = (document, objectId, modifierId) => {
 };
 
 /**
- * Compiles one legacy Creation modifier_update payload to a V4 set-operator
+ * Compiles one legacy Creation modifier_update payload to a current set-operator
  * action. The returned action is inert until dispatched by the caller.
  * sourceFeatureId is a legacy view routing hint; stable owner/operator IDs are
- * the authoritative V4 address.
+ * the authoritative Document address.
  */
 export function compileModifierUpdate(document, request) {
-  if (document?.version !== 4) throw Error('修改器写入需要 V4 Document');
+  if (![4, 5].includes(document?.version))
+    throw Error('修改器写入需要当前 Document');
   if (!record(request)) throw Error('modifier_update request 必须是 object');
   exactKeys(request, REQUEST_KEYS, 'modifier_update request');
   if (request.sourceFeatureId !== undefined)
@@ -159,6 +162,28 @@ export function compileModifierUpdate(document, request) {
   if (!parameterFields.length) return action;
   if (!record(operator.params)) throw Error('修改器 params 无效');
   const params = structuredClone(operator.params);
+  if (Object.hasOwn(changes, 'toleranceMM')) {
+    params.endpointJoin.toleranceMM = bounded(
+      changes.toleranceMM,
+      'toleranceMM',
+      0,
+      10000,
+    );
+  }
+  if (Object.hasOwn(changes, 'anchors')) {
+    if (
+      !Array.isArray(changes.anchors) ||
+      !changes.anchors.length ||
+      changes.anchors.some(
+        (point) =>
+          !Array.isArray(point) ||
+          point.length !== 2 ||
+          point.some((value) => !Number.isFinite(value)),
+      )
+    )
+      throw Error('选择锚点必须是非空的局部坐标点数组');
+    params.anchors = structuredClone(changes.anchors);
+  }
   if (Object.hasOwn(changes, 'connections')) {
     if (!Array.isArray(changes.connections)) throw Error('接合对应必须是数组');
     params.connections = structuredClone(changes.connections);
@@ -211,7 +236,8 @@ export function compileModifierUpdate(document, request) {
 
 /** Insert in the unique published curve chain, immediately before Fill. */
 export function compileModifierAdd(document, request) {
-  if (document?.version !== 4) throw Error('修改器写入需要 V4 Document');
+  if (![4, 5].includes(document?.version))
+    throw Error('修改器写入需要当前 Document');
   if (!record(request)) throw Error('modifier_add request 必须是 object');
   if (!['curve_mirror', 'curve_array', 'join', 'fill'].includes(request.type))
     throw Error(`modifier_add 尚不支持类型：${request.type}`);

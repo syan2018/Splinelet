@@ -84,6 +84,27 @@ const requireCutter = (document, ownerNodeId, cutter) => {
 
 const descendantsForAssignments = (regions, assignments, label) => {
   if (!assignments.length) return new Map();
+  if (regions.some((region) => Object.hasOwn(region, 'parents'))) {
+    const descendants = new Map(
+      assignments.map((assignment) => [
+        assignment.id,
+        regions
+          .filter((region) =>
+            [region.ref, ...(region.parents || [])].some(
+              (ref) =>
+                outputIdentity(ref) === outputIdentity(assignment.target),
+            ),
+          )
+          .map((region) => region.ref),
+      ]),
+    );
+    if ([...descendants.values()].some((refs) => !refs.length))
+      throw Error(`${label} 没有明确的构造继承关系，未修改文档`);
+    const targets = [...descendants.values()].flat().map(outputIdentity);
+    if (new Set(targets).size !== targets.length)
+      throw Error(`${label} 同一区域有多个父赋值，未修改文档`);
+    return descendants;
+  }
   const proposal = proposeAssignmentInheritance(regions, assignments);
   if (proposal.conflicts.length)
     throw Error(`${label} 继承存在冲突，未修改文档`);
@@ -308,7 +329,7 @@ export function finishRegionBranch(
   delete resultOperator.authoring;
   resultOperator.enabled = true;
   program.outputs.regions = publishedPort(ownerNodeId, operatorId, 'regions');
-  if (resultOperator.type === 'partition') {
+  if (resultOperator.type === 'partition' && document.version === 4) {
     const proposalStage = requireReadyResult(
       document,
       ownerNodeId,

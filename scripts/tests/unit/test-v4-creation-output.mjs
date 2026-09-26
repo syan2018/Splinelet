@@ -9,7 +9,7 @@ import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.
 let sequence = 0,
   bodies = 0;
 const idFactory = () => `output-${++sequence}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 editor.dispatch(

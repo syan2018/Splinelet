@@ -7,7 +7,7 @@ import { resolveRelief } from '../../../src/lib/relief/resolve.mjs';
 import { repeatedRingDocument } from '../fixtures/v4-programs.mjs';
 let serial = 0;
 const idFactory = () => `author-${++serial}`;
-const document = createDocument({ idFactory });
+const document = createDocument({ version: 4, idFactory });
 document.appearances.swatches.red = {
   id: 'red',
   name: '红色',
@@ -115,7 +115,7 @@ for (const [id, operator] of Object.entries(
 advanced.undo({ expectedRevision: 1 });
 assert.deepEqual(advanced.state.document, advancedBefore);
 // Closed drawing is one atomic history entry, including its implicit Source/Fill.
-const simple = createEditorSession(createDocument({ idFactory }), {
+const simple = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 simple.dispatch(

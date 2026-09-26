@@ -8,7 +8,7 @@ import { evaluateProgram } from '../../../src/lib/construction/document-evaluati
 
 let serial = 0;
 const idFactory = () => `control-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

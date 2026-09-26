@@ -5,6 +5,14 @@ import {
   transformVector,
 } from '../scene/transforms.mjs';
 import { reversePathUses } from './sketch.mjs';
+import {
+  hasPathBasis,
+  pathIsClosed,
+  sequentialBasisUses,
+  splitBasisPieces,
+  withBasisPieces,
+  withBasisSpan,
+} from './path-basis.mjs';
 import { nextSourcePathOrder } from './source-order.mjs';
 import {
   cleanPathHandleModes,
@@ -46,6 +54,16 @@ const newId = (factory, ids, label) => {
     throw Error(`${label} ID 无效或重复`);
   ids.add(value);
   return value;
+};
+const sourceBatchSketch = (batch, sketchId) => {
+  if (!batch?.document || !(batch.ownedSketches instanceof WeakSet))
+    throw Error('源批处理草稿无效');
+  const current = requireSketch(batch.document, sketchId);
+  if (batch.ownedSketches.has(current)) return current;
+  const owned = clone(current);
+  batch.document.sketches[sketchId] = owned;
+  batch.ownedSketches.add(owned);
+  return owned;
 };
 const requireSketch = (document, sketchId) => {
   const sketch = document.sketches?.[sketchId];
@@ -110,10 +128,37 @@ const freeCubic = (sketch, edge) => {
 export function editSketch(document, edit, options = {}) {
   if (!edit || typeof edit !== 'object' || typeof edit.kind !== 'string')
     throw Error('Sketch edit 无效');
-  validateDocument(document);
-  const next = clone(document);
-  const sketch = requireSketch(next, edit.sketchId);
-  const ids = collectIds(next);
+  // Pointer feedback only changes free source coordinates. Keep the immutable
+  // author document shared; the release command still validates a full edit.
+  const sourceDelta = options.sourceDelta === true;
+  const sourceBatch = options.sourceBatch;
+  if (
+    sourceBatch &&
+    !['set-vertex', 'set-handle', 'move-path-handle'].includes(edit.kind)
+  )
+    throw Error('源批处理只接受点或控制柄移动');
+  if (
+    sourceDelta &&
+    !['set-vertex', 'set-handle', 'move-path-handle'].includes(edit.kind)
+  )
+    throw Error('源预览只接受点或控制柄移动');
+  if (!sourceDelta && !sourceBatch) validateDocument(document);
+  const next = sourceBatch
+    ? sourceBatch.document
+    : sourceDelta
+      ? {
+          ...document,
+          sketches: {
+            ...document.sketches,
+            [edit.sketchId]: clone(requireSketch(document, edit.sketchId)),
+          },
+        }
+      : clone(document);
+  if (sourceBatch && next !== document) throw Error('源批处理与当前草稿不一致');
+  const sketch = sourceBatch
+    ? sourceBatchSketch(sourceBatch, edit.sketchId)
+    : requireSketch(next, edit.sketchId);
+  const ids = sourceDelta || sourceBatch ? null : collectIds(next);
   const factory = idFactory(options);
   let result;
   if (edit.kind === 'set-vertex') {
@@ -210,16 +255,51 @@ export function editSketch(document, edit, options = {}) {
       const uses = [];
       for (const use of path.edges) {
         if (use.edgeId !== edge.id) uses.push(use);
-        else if (use.reversed)
+        else if (use.reversed) {
+          const pieces = hasPathBasis(next)
+            ? splitBasisPieces(path, use, t)
+            : null;
           uses.push(
-            { edgeId: secondEdgeId, reversed: true },
-            { edgeId: edge.id, reversed: true },
+            hasPathBasis(next)
+              ? withBasisPieces(
+                  next,
+                  path,
+                  { edgeId: secondEdgeId, reversed: true },
+                  pieces.first,
+                )
+              : withBasisSpan(next, { edgeId: secondEdgeId, reversed: true }),
+            hasPathBasis(next)
+              ? withBasisPieces(
+                  next,
+                  path,
+                  { edgeId: edge.id, reversed: true },
+                  pieces.second,
+                )
+              : withBasisSpan(next, { edgeId: edge.id, reversed: true }),
           );
-        else
+        } else {
+          const pieces = hasPathBasis(next)
+            ? splitBasisPieces(path, use, t)
+            : null;
           uses.push(
-            { edgeId: edge.id, reversed: false },
-            { edgeId: secondEdgeId, reversed: false },
+            hasPathBasis(next)
+              ? withBasisPieces(
+                  next,
+                  path,
+                  { edgeId: edge.id, reversed: false },
+                  pieces.first,
+                )
+              : withBasisSpan(next, { edgeId: edge.id, reversed: false }),
+            hasPathBasis(next)
+              ? withBasisPieces(
+                  next,
+                  path,
+                  { edgeId: secondEdgeId, reversed: false },
+                  pieces.second,
+                )
+              : withBasisSpan(next, { edgeId: secondEdgeId, reversed: false }),
           );
+        }
       }
       path.edges = uses;
       if (uses.some((use) => use.edgeId === secondEdgeId)) {
@@ -296,16 +376,20 @@ export function editSketch(document, edit, options = {}) {
       )
     )
       throw Error('add-path 无效');
+    const uses = sequentialBasisUses(next, structuredClone(edit.edges));
     sketch.paths[pathId] = {
       id: pathId,
       name: edit.name,
       order: nextSourcePathOrder(next),
-      edges: structuredClone(edit.edges),
+      edges: uses,
       visible: edit.visible ?? true,
+      ...(hasPathBasis(next) && pathIsClosed(sketch, uses)
+        ? { basisPeriod: uses.length }
+        : {}),
     };
     result = changed(sketch.id, [ref('path', sketch.id, pathId)]);
   } else throw Error(`不支持的 Sketch edit：${edit.kind}`);
-  validateDocument(next);
+  if (!sourceDelta && !sourceBatch) validateDocument(next);
   return { document: next, ...result };
 }
 

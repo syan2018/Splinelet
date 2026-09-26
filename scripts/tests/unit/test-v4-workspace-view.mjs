@@ -9,7 +9,7 @@ import { createCreationIntent } from '../../../src/lib/editor/creation-intents.m
 
 let sequence = 0;
 const idFactory = () => `workspace-${++sequence}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 editor.dispatch(

@@ -14,6 +14,7 @@ import {
 import { editSketch } from '../../../src/lib/geometry/sketch-edit.mjs';
 
 const document = createDocument({
+  version: 4,
   id: 'source-view-document',
   idFactory: () => 'default-part',
 });

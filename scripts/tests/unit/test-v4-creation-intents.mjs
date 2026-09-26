@@ -12,7 +12,7 @@ import { resolveRelief } from '../../../src/lib/relief/resolve.mjs';
 
 let serial = 0;
 const idFactory = () => `intent-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

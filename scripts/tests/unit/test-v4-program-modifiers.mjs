@@ -17,7 +17,7 @@ import { projectCreationView } from '../../../src/lib/editor/creation-view.mjs';
 
 let serial = 0;
 const idFactory = () => `program-modifier-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

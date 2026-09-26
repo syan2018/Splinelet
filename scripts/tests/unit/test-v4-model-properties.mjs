@@ -13,7 +13,7 @@ const context = (revision = 4) => ({
 const commit = (document, action) =>
   createAuthoringCommand(action)(document, context()).document;
 
-let document = createDocument();
+let document = createDocument({ version: 4 });
 document.appearances.swatches.red = {
   id: 'red',
   name: '红色',

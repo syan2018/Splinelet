@@ -2,6 +2,14 @@ import { validateDocument } from '../../document/schema.mjs';
 import { resolveRelation } from '../../geometry/relations.mjs';
 import { effectiveNodeState } from '../../scene/hierarchy.mjs';
 import { removeNode } from '../../source-editor/node-edit.mjs';
+import {
+  basisIdForUse,
+  basisPeriodForUse,
+  concatenateBasisPieces,
+  hasPathBasis,
+  mergeBasisSpans,
+  withBasisPieces,
+} from '../../geometry/path-basis.mjs';
 
 export const PATH_NODE_DELETION_ACTIONS = Object.freeze([
   'delete-path-vertices',
@@ -23,15 +31,22 @@ const edgeEndRef = (sketchId, edgeId, end) => ({
   end,
 });
 
-const validateUses = (uses) => {
+const validateUses = (uses, expectsBasis) => {
   if (
     !Array.isArray(uses) ||
     !uses.every(
       (use) =>
         record(use) &&
-        Object.keys(use).length === 2 &&
+        [expectsBasis ? 3 : 2, expectsBasis ? 4 : 2].includes(
+          Object.keys(use).length,
+        ) &&
         typeof use.edgeId === 'string' &&
-        typeof use.reversed === 'boolean',
+        typeof use.reversed === 'boolean' &&
+        (!expectsBasis ||
+          Array.isArray(use.basisPieces) ||
+          (Array.isArray(use.basisSpan) &&
+            use.basisSpan.length === 2 &&
+            use.basisSpan.every(Number.isFinite))),
     )
   )
     throw Error('expectedEdges 必须是完整 Path.edges');
@@ -41,7 +56,15 @@ const sameUses = (left, right) =>
   left.every(
     (use, index) =>
       use.edgeId === right[index].edgeId &&
-      use.reversed === right[index].reversed,
+      use.reversed === right[index].reversed &&
+      (use.basisPieces !== undefined
+        ? JSON.stringify(use.basisPieces) ===
+          JSON.stringify(right[index].basisPieces)
+        : use.basisSpan === undefined ||
+          (use.basisSpan[0] === right[index].basisSpan?.[0] &&
+            use.basisSpan[1] === right[index].basisSpan?.[1] &&
+            use.basisId === right[index].basisId &&
+            right[index].basisPieces === undefined)),
   );
 
 const resolvePath = (document, pathRef) => {
@@ -121,6 +144,11 @@ const directedEntry = (document, sketch, use) => {
     startId: use.reversed ? edge.endVertexId : edge.startVertexId,
     endId: use.reversed ? edge.startVertexId : edge.endVertexId,
     cubic: use.reversed ? cubic.reverse() : cubic,
+    ...(use.basisSpan === undefined ? {} : { basisSpan: [...use.basisSpan] }),
+    ...(use.basisId === undefined ? {} : { basisId: use.basisId }),
+    ...(use.basisPieces === undefined
+      ? {}
+      : { basisPieces: structuredClone(use.basisPieces) }),
     isNew: false,
   };
 };
@@ -156,7 +184,49 @@ const legacyDto = (path, entries, nodeIds, closed, modes, sketch) => ({
   ...(modes ? { nodeModes: [...modes] } : {}),
 });
 
-const applyTopologyDeletion = (entries, nodeIds, closed, index, sequence) => {
+const mergedEntry = (document, path, left, right, sequence) => {
+  const leftBasisId = basisIdForUse(path, left);
+  const rightBasisId = basisIdForUse(path, right);
+  const entry = {
+    edgeId: `__new_edge_${sequence}`,
+    reversed: false,
+    startId: left.startId,
+    endId: right.endId,
+    cubic: null,
+    isNew: true,
+  };
+  if (left.basisSpan === undefined && left.basisPieces === undefined)
+    return entry;
+  if (!left.basisPieces && !right.basisPieces && leftBasisId === rightBasisId)
+    return {
+      ...entry,
+      basisSpan: mergeBasisSpans(
+        left.basisSpan,
+        right.basisSpan,
+        basisPeriodForUse(path, left),
+      ),
+      ...(leftBasisId === path.id ? {} : { basisId: leftBasisId }),
+    };
+  return {
+    ...entry,
+    ...withBasisPieces(
+      document,
+      path,
+      {},
+      concatenateBasisPieces(path, left, right),
+    ),
+  };
+};
+
+const applyTopologyDeletion = (
+  document,
+  entries,
+  nodeIds,
+  closed,
+  index,
+  sequence,
+  path,
+) => {
   if (nodeIds.length === 1) return { entries: null, nodeIds: [] };
   if (nodeIds.length === 2)
     return {
@@ -169,14 +239,7 @@ const applyTopologyDeletion = (entries, nodeIds, closed, index, sequence) => {
     const right = entries[0];
     next = [
       ...entries.slice(1, -1),
-      {
-        edgeId: `__new_edge_${sequence}`,
-        reversed: false,
-        startId: left.startId,
-        endId: right.endId,
-        cubic: null,
-        isNew: true,
-      },
+      mergedEntry(document, path, left, right, sequence),
     ];
   } else if (closed || (index > 0 && index < nodeIds.length - 1)) {
     const leftIndex = index - 1;
@@ -184,14 +247,7 @@ const applyTopologyDeletion = (entries, nodeIds, closed, index, sequence) => {
     const right = entries[index];
     next = [
       ...entries.slice(0, leftIndex),
-      {
-        edgeId: `__new_edge_${sequence}`,
-        reversed: false,
-        startId: left.startId,
-        endId: right.endId,
-        cubic: null,
-        isNew: true,
-      },
+      mergedEntry(document, path, left, right, sequence),
       ...entries.slice(index + 1),
     ];
   } else next = index === 0 ? entries.slice(1) : entries.slice(0, -1);
@@ -242,7 +298,7 @@ const edgeUsedElsewhere = (sketch, path, edgeId) =>
 const planDeletion = (document, action, idFactory) => {
   validateDocument(document);
   const { sketch, path } = resolvePath(document, action.pathRef);
-  validateUses(action.expectedEdges);
+  validateUses(action.expectedEdges, hasPathBasis(document));
   if (!sameUses(action.expectedEdges, path.edges))
     throw Error('Path 拓扑已变化，请重新选择节点');
   if (!Number.isFinite(action.toleranceMM) || action.toleranceMM <= 0)
@@ -286,11 +342,13 @@ const planDeletion = (document, action, idFactory) => {
     );
     const result = removeNode(dto, index, action.toleranceMM);
     const next = applyTopologyDeletion(
+      document,
       entries,
       state.nodeIds,
       state.closed,
       index,
       ++deletedSequence,
+      path,
     );
     if (!result.path) {
       entries = null;
@@ -389,9 +447,17 @@ const planDeletion = (document, action, idFactory) => {
     nextPath.edges = entries.map((entry) => ({
       edgeId: entry.isNew ? newIdMap.get(entry.edgeId) : entry.edgeId,
       reversed: entry.isNew ? false : entry.reversed,
+      ...(entry.basisSpan === undefined
+        ? {}
+        : { basisSpan: [...entry.basisSpan] }),
+      ...(entry.basisId === undefined ? {} : { basisId: entry.basisId }),
+      ...(entry.basisPieces === undefined
+        ? {}
+        : { basisPieces: structuredClone(entry.basisPieces) }),
     }));
     if (!entries.length) nextPath.startVertexId = state.nodeIds[0];
     else delete nextPath.startVertexId;
+    if (!state.closed) delete nextPath.basisPeriod;
     const nextModes = Object.fromEntries(
       state.nodeIds.flatMap((vertexId, index) =>
         modes?.[index] && modes[index] !== 'corner'

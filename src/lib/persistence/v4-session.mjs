@@ -12,6 +12,8 @@ const freeze = (value) => {
 };
 const readonly = (value) => freeze(clone(value));
 const DRAFT_KEY = 'v4-session';
+const OPEN_KINDS = new Set(['v4', 'v5', 'legacy', 'migrated']);
+const requiresSaveAs = (kind) => kind === 'legacy' || kind === 'migrated';
 
 /** File/draft coordinator. Platform reads and writes are injected by I00. */
 export function createV4PersistenceSession(options = {}) {
@@ -47,7 +49,7 @@ export function createV4PersistenceSession(options = {}) {
       dirty,
     });
   const requireCurrent = () => {
-    if (!document || !epoch) throw Error('尚未打开 V4 文档');
+    if (!document || !epoch) throw Error('尚未打开文档');
   };
   const capture = ({
     expectedEpoch,
@@ -76,10 +78,10 @@ export function createV4PersistenceSession(options = {}) {
       return state();
     },
     open(project) {
-      if (project?.kind !== 'v4' && project?.kind !== 'legacy')
-        throw Error('打开结果必须标明 V4 或旧工程');
+      if (!OPEN_KINDS.has(project?.kind))
+        throw Error('打开结果必须标明 v4、v5、migrated 或旧工程');
       if (!project.document || typeof project.document !== 'object')
-        throw Error('打开结果缺少 V4 Document');
+        throw Error('打开结果缺少 Document');
       if (
         project.epoch !== undefined &&
         (typeof project.epoch !== 'string' || !project.epoch)
@@ -97,7 +99,7 @@ export function createV4PersistenceSession(options = {}) {
       const nextDocument = clone(project.document);
       const nextAssets = clone(project.assets || {});
       const nextTarget = clone(project.target ?? null);
-      const nextLegacySource = project.kind === 'legacy';
+      const nextLegacySource = requiresSaveAs(project.kind);
       const nextDirty = nextLegacySource || project.dirty === true;
 
       epoch = nextEpoch;
@@ -127,7 +129,7 @@ export function createV4PersistenceSession(options = {}) {
       )
         throw Error('编辑会话 epoch 不匹配');
       if (!editorState.document || typeof editorState.document !== 'object')
-        throw Error('编辑会话缺少 V4 Document');
+        throw Error('编辑会话缺少 Document');
       if (editorState.revision < revision)
         throw Error('编辑会话 revision 已过期');
       if (editorState.revision === revision) {
@@ -176,7 +178,7 @@ export function createV4PersistenceSession(options = {}) {
     } = {}) {
       const saved = capture({ expectedEpoch, expectedRevision, previewId });
       const destination = saveAsTarget || saved.target;
-      if (!destination) throw Error('旧工程首次保存必须选择新的 V4 文件');
+      if (!destination) throw Error('迁移工程首次保存必须选择新的文件');
       const bytes = encode(saved.document, { assets: saved.assets });
       return enqueue(async () => {
         await writer(destination, bytes);

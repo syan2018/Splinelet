@@ -13,7 +13,7 @@ const domains = ['curves', 'regions', 'relief', 'placed-relief'];
 const frame = { width: 100, height: 100, widthMM: 100 };
 let serial = 0;
 const idFactory = () => `model-view-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (action) =>
@@ -211,11 +211,13 @@ const sampleView = projectModelWorkspaceView(
   await capture(sampleEditor.state),
   opened.document.sourceFrame,
 );
-assert.equal(sampleView.regions.length, 73);
+// The repaired sample publishes seven explicit hair property groups instead of
+// twelve transient partition faces; the other published regions are unchanged.
+assert.equal(sampleView.regions.length, 68);
 assert.equal(sampleView.source.paths.length, 82);
 assert.equal(
   sampleView.regions.filter((item) => item.authoredRelief.value.enabled).length,
-  73,
+  68,
 );
 assert.equal(sampleView.creation.errors.length, 0);
 assert.deepEqual(sampleView.unresolved, {

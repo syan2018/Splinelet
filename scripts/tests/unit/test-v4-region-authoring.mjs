@@ -40,7 +40,7 @@ const byMinimumX = (regions) =>
         readGeometry(right.geometry).getEnvelopeInternal().getMinX(),
     );
 const configuredDocument = () => {
-  const document = createDocument({ idFactory });
+  const document = createDocument({ version: 4, idFactory });
   document.appearances.swatches.red = {
     id: 'red',
     name: '红色',

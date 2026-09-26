@@ -13,7 +13,7 @@ import { findRegionDrawing } from '../../../src/lib/editing/region-drawing.mjs';
 let serial = 0;
 const idFactory = () => `region-drawing-copy-${++serial}`;
 const create = () =>
-  createEditorSession(createDocument({ idFactory }), { idFactory });
+  createEditorSession(createDocument({ version: 4, idFactory }), { idFactory });
 const dispatch = (session, command) =>
   session.dispatch(command, { expectedRevision: session.state.revision });
 const author = (session, action) =>

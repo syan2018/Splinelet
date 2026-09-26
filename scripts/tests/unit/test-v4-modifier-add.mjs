@@ -10,7 +10,7 @@ import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.
 
 let serial = 0;
 const idFactory = () => `add-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>
@@ -201,9 +201,12 @@ assert.equal(
   'an incomplete Fill remains repairable from its ready curve input',
 );
 
-const filledEditor = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const filledEditor = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 filledEditor.dispatch(
   createAuthoringCommand({
     kind: 'draw-path',

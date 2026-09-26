@@ -4,7 +4,7 @@ import { nodeSelection, pathNodes, selectedNode } from './node-edit.mjs';
  * owns pointer capture, drag threshold, axis constraint and snap feedback;
  * update receives the final pixel delta from the original pointer-down point.
  * Only the captured source identities are sent to the V4 preview session.
- * @param {{runtime: ReturnType<typeof import('../editor/creation-runtime.mjs').createV4CreationRuntime>, project: object, pathId: string, curve: number, point: number, nodes?: number[]}} input
+ * @param {{runtime: ReturnType<typeof import('../editor/creation-runtime.mjs').createV4CreationRuntime>, project: object, pathId: string, curve: number, point: number, nodes?: number[], displayOnly?: boolean}} input
  */
 export function beginV4PointGesture({
   runtime,
@@ -13,6 +13,7 @@ export function beginV4PointGesture({
   curve,
   point,
   nodes = [],
+  displayOnly = false,
 }) {
   const path = runtime
     .readSourceView(project)
@@ -54,7 +55,9 @@ export function beginV4PointGesture({
     selection = { curve, point };
   }
   const origin = index === null ? path.curves[curve][point] : positions[index];
-  const gesture = runtime.beginSourceGesture(project);
+  const gesture = displayOnly
+    ? runtime.beginSourceDisplayGesture(project)
+    : runtime.beginSourceGesture(project);
   return Object.freeze({
     kind: index === null ? 'handle' : 'nodes',
     selection: Object.freeze(selection),

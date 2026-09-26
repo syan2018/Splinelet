@@ -18,7 +18,7 @@ import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.
 const makeEditor = (prefix) => {
   let sequence = 0;
   const idFactory = () => `${prefix}-${++sequence}`;
-  const document = createDocument({ idFactory });
+  const document = createDocument({ version: 4, idFactory });
   document.appearances.swatches.red = {
     id: 'red',
     name: '红',
@@ -68,6 +68,7 @@ const api = createV4AgentAPI({
 assert.equal(api.version, '5.0');
 const capabilities = await api.call('capabilities.get');
 assert.equal(capabilities.documentVersion, 4);
+assert.equal(api.capabilities.documentVersion, 4);
 assert.deepEqual(capabilities.evaluationDomains, ['curves', 'regions']);
 assert.equal(capabilities.legacy.write, false);
 assert.equal(capabilities.preparedWrites, false);

@@ -47,7 +47,13 @@ const equalRef = (left, right) =>
   left.end === right.end;
 
 const freeze = (value, seen = new Set()) => {
-  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    seen.has(value) ||
+    Object.isFrozen(value)
+  )
+    return value;
   seen.add(value);
   for (const child of Object.values(value)) freeze(child, seen);
   return Object.freeze(value);
@@ -329,7 +335,13 @@ const projectPath = (document, sketch, pathValue, sourceFrame, identities) => {
     quality: 1,
     anchors,
     nodeModes,
-    identity: { pathId: id, anchorIds, edgeIds, handleIds },
+    identity: {
+      pathId: id,
+      anchorIds,
+      edgeIds,
+      handleIds,
+      uses: structuredClone(pathValue.edges),
+    },
   };
 };
 
@@ -415,6 +427,36 @@ export function projectSourceView(document, frame) {
     diagnostics,
     unavailablePaths,
   });
+}
+
+/** Pointer deltas cannot change source topology or identity. Re-project only
+ * changed sketches, retaining immutable display objects for the rest. Relation
+ * graphs can cross sketches, so they use the complete projection until a source
+ * dependency index is available. */
+export function projectSourceDisplayDelta(document, baseline, source) {
+  if (
+    document.nodes !== baseline.nodes ||
+    document.relations !== baseline.relations ||
+    Object.keys(document.relations).length ||
+    source.unavailablePaths.length
+  )
+    return projectSourceView(document, source.frame);
+  try {
+    const paths = source.paths.map((path) => {
+      const sketch = document.sketches[path.ref.sketchId];
+      if (sketch === baseline.sketches[path.ref.sketchId]) return path;
+      return projectPath(
+        document,
+        sketch,
+        sketch.paths[path.ref.id],
+        source.frame,
+        identityTables(),
+      );
+    });
+    return freeze({ ...source, paths });
+  } catch {
+    return projectSourceView(document, source.frame);
+  }
 }
 
 export function sourceViewToPixel(sourceFrame, worldPoint) {

@@ -39,12 +39,31 @@ export function createPathIntent(request, displayed) {
     return ref;
   };
   const expectedEdges = (path) =>
-    path.identity.edgeIds.map((id, index) => ({
-      edgeId: view.source.identities.byId[id].id,
-      reversed:
-        view.source.identities.byId[path.identity.handleIds[index][0]].end ===
-        'end',
-    }));
+    path.identity.uses
+      ? structuredClone(path.identity.uses)
+      : path.identity.edgeIds.map((id, index) => ({
+          edgeId: view.source.identities.byId[id].id,
+          reversed:
+            view.source.identities.byId[path.identity.handleIds[index][0]]
+              .end === 'end',
+        }));
+  const uniformBasisPieceMapping = (uses, outputCount) => {
+    const sourceCount = uses.length;
+    return Array.from({ length: outputCount }, (_, outputIndex) => {
+      const start = (outputIndex * sourceCount) / outputCount;
+      const end = ((outputIndex + 1) * sourceCount) / outputCount;
+      return Array.from({ length: sourceCount }, (_, sourceUseIndex) => {
+        const from = Math.max(start, sourceUseIndex);
+        const to = Math.min(end, sourceUseIndex + 1);
+        if (!(from < to)) return null;
+        return {
+          sourceUseIndex,
+          sourceT: [from - sourceUseIndex, to - sourceUseIndex],
+          t: [(from - start) / (end - start), (to - start) / (end - start)],
+        };
+      }).filter(Boolean);
+    });
+  };
   let command;
   if (action.kind === 'draw-path') {
     if (!Array.isArray(action.pixelCubics) || !action.pixelCubics.length)
@@ -185,6 +204,17 @@ export function createPathIntent(request, displayed) {
           );
         }),
       };
+      if (
+        action.kind === 'replace-path-geometry' &&
+        (path.identity.uses?.[0]?.basisSpan !== undefined ||
+          path.identity.uses?.[0]?.basisPieces !== undefined) &&
+        (action.pixelCubics.length !== path.curves.length ||
+          action.closed !== path.closed)
+      )
+        command.basisPieceMapping = uniformBasisPieceMapping(
+          path.identity.uses,
+          action.pixelCubics.length,
+        );
     }
   } else {
     const ref = resolve(action.pathId);

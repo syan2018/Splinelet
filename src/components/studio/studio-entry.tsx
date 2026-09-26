@@ -18,7 +18,7 @@ type BrowserStudioHost = ReturnType<typeof createBrowserStudioHost>;
 
 /**
  * The original Studio shell starts from the bundled reference image. Load it
- * as an owned V4 asset so the default editor never keeps a mutable legacy
+ * as an owned V5 asset so the default editor never keeps a mutable legacy
  * project in React state.
  */
 async function createDefaultProject() {

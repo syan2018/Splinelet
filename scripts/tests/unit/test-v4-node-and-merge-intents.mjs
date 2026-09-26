@@ -10,7 +10,7 @@ import { evaluateProgram } from '../../../src/lib/construction/document-evaluati
 
 let serial = 0;
 const idFactory = () => `node-merge-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>
@@ -145,7 +145,7 @@ assert.equal(view().source.paths[0].name, expectedMerge.path.name);
 compareCurves(view().source.paths[0].curves, expectedMerge.path.curves);
 editor.undo({ expectedRevision: editor.state.revision });
 assert.deepEqual(editor.state.document, beforeMerge);
-const drawing = createEditorSession(createDocument({ idFactory }), {
+const drawing = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const run = (action) =>

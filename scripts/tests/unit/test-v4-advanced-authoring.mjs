@@ -63,9 +63,12 @@ assert.equal(ADVANCED_ACTIONS.fillCurves, 'fill-curves');
 assert.equal(ADVANCED_ACTIONS.repeatPattern, 'repeat-pattern');
 assert.equal(ADVANCED_ACTIONS.cutReferenceRegions, 'cut-reference-regions');
 
-const curveSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const curveSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 author(curveSession, {
   kind: 'draw-path',
   points: [
@@ -214,9 +217,12 @@ assert.equal(
 );
 assert.notEqual(joinId, activeJoinId);
 
-const blockedFillSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const blockedFillSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 author(blockedFillSession, {
   kind: 'draw-path',
   points: [
@@ -264,7 +270,7 @@ assert.equal(
   'empty',
 );
 
-const readyFillDocument = createDocument({ idFactory });
+const readyFillDocument = createDocument({ version: 4, idFactory });
 readyFillDocument.appearances.swatches['fill-red'] = {
   id: 'fill-red',
   name: '红色',
@@ -317,9 +323,12 @@ assert.throws(
 assert.equal(readyFillSession.state.revision, rejectedFillRevision);
 assert.deepEqual(readyFillSession.state.document, beforeRejectedFill);
 
-const patternSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const patternSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 const diagonal = Math.SQRT1_2;
 author(patternSession, {
   kind: 'draw-path',
@@ -392,9 +401,12 @@ assert.ok(
 patternSession.undo({ expectedRevision: patternSession.state.revision });
 assert.deepEqual(patternSession.state.document, beforePattern);
 
-const referenceSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const referenceSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 author(referenceSession, {
   kind: 'draw-path',
   points: [
@@ -438,7 +450,7 @@ near(
   [10, 0],
 );
 
-const referenceCutDocument = createDocument({ idFactory });
+const referenceCutDocument = createDocument({ version: 4, idFactory });
 referenceCutDocument.appearances.swatches.red = {
   id: 'red',
   name: '红色',
@@ -598,7 +610,7 @@ referenceCutSession.undo({
 });
 assert.deepEqual(referenceCutSession.state.document, beforeCompleteCut);
 
-const manufacturingDocument = createDocument({ idFactory });
+const manufacturingDocument = createDocument({ version: 4, idFactory });
 manufacturingDocument.appearances.swatches.red = {
   id: 'red',
   name: '红色',
@@ -737,9 +749,12 @@ manufacturingSession.undo({
 });
 assert.deepEqual(manufacturingSession.state.document, beforeCopy);
 
-const sceneSession = createEditorSession(createDocument({ idFactory }), {
-  idFactory,
-});
+const sceneSession = createEditorSession(
+  createDocument({ version: 4, idFactory }),
+  {
+    idFactory,
+  },
+);
 author(sceneSession, {
   kind: 'draw-path',
   points: square(5, 0, 1),

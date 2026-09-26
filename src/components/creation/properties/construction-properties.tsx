@@ -18,7 +18,9 @@ function ConstructionProperties({ context: c }: { context: PropertyContext }) {
         cellKeys={c.scope === 'local' ? c.cellKeys : []}
         onLocate={c.locateSources}
         onCommand={c.command}
+        renderRecovery={c.renderModifierRecovery}
       />
+      {c.current && c.renderPostChain?.(c.current.id)}
       {c.connections}
     </>
   );

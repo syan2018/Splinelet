@@ -45,13 +45,14 @@ export function projectWorkspaceView(editorState, evaluated, frame) {
     identity.previewId === null
       ? editorState.document
       : editorState.preview?.document;
-  if (!document || document.version !== 4)
-    throw Error('工作区缺少当前 V4 文档');
+  if (!document || ![4, 5].includes(document.version))
+    throw Error('工作区缺少当前文档');
   const source = projectSourceView(document, frame);
   const creation = projectCreationView(document, evaluated.snapshot);
   return freeze({
     ...identity,
     source,
+    documentVersion: document.version,
     creation: { ...identity, ...creation },
     canUndo: Boolean(editorState.canUndo),
     canRedo: Boolean(editorState.canRedo),

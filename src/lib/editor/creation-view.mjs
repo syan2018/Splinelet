@@ -109,6 +109,29 @@ const stageDiagnostics = (stage, objectId, source) =>
     status: stage.status,
   }));
 
+// Diagnostics without an explicit error severity describe evaluation state
+// (for example, an open path or a connected partition endpoint). Keep them in
+// the view diagnostics, but do not present them as creation failures.
+const stageErrors = (stage) =>
+  (stage?.diagnostics || []).filter((item) => item?.severity === 'error');
+
+const stageErrorMessage = (stage, fallback) =>
+  [...new Set(stageErrors(stage).map((item) => item.message))]
+    .filter(Boolean)
+    .join('；') || fallback;
+
+const blockedStageErrors = (stage, { objectId, fallback, kind }) => {
+  const errors = stageErrors(stage);
+  if (!errors.length)
+    return [{ objectId, message: fallback, kind, pending: false }];
+  return errors.map((item) => ({
+    objectId: item?.ref?.ownerNodeId || objectId,
+    message: item.message || fallback,
+    kind: item.kind || item.code || kind,
+    pending: false,
+  }));
+};
+
 const indexMembers = (stage, label, diagnostics) => {
   const result = new Map();
   const ambiguous = new Set();
@@ -201,10 +224,12 @@ const operatorStatus = (document, snapshot, node) => {
       const component =
         snapshot?.planar?.components?.[`operator:${operator.id}`];
       const stages = Object.values(component?.ports || {});
-      const diagnostics = stages
-        .flatMap((stage) => stage.diagnostics || [])
-        .filter((item) => item.severity !== 'info');
-      const message = [...new Set(diagnostics.map((item) => item.message))]
+      const errors = stages.flatMap((stage) =>
+        stage.status === 'blocked'
+          ? stage.diagnostics || []
+          : stageErrors(stage),
+      );
+      const message = [...new Set(errors.map((item) => item.message))]
         .filter(Boolean)
         .join('；');
       const blocked = stages.some((stage) => stage.status === 'blocked');
@@ -241,6 +266,14 @@ const operatorStatus = (document, snapshot, node) => {
       };
     });
 };
+
+/** Current author parameters and graph addresses, without geometric evaluation. */
+export const projectModifierStatus = (document, snapshot = {}) =>
+  freeze(
+    shapesInSceneOrder(document).flatMap((node) =>
+      operatorStatus(document, snapshot, node),
+    ),
+  );
 
 const objectManufacturing = (document, node, diagnostics, errors) => {
   const excluded = document.manufacturing.excluded.some(
@@ -280,12 +313,13 @@ const objectManufacturing = (document, node, diagnostics, errors) => {
 };
 
 /**
- * Project a current V4 evaluation into a read-only CreationWorkspace-shaped
+ * Project a current Document evaluation into a read-only CreationWorkspace-shaped
  * view. This is a view DTO only: it contains no writable legacy Project and
  * never compiles or substitutes legacy geometry.
  */
 export function projectCreationView(document, snapshot) {
-  if (document?.version !== 4) throw Error('creation view 需要 V4 Document');
+  if (![4, 5].includes(document?.version))
+    throw Error('creation view 需要当前 Document');
   if (!snapshot || typeof snapshot !== 'object')
     throw Error('creation view 需要当前 evaluateDocument snapshot');
 
@@ -309,13 +343,13 @@ export function projectCreationView(document, snapshot) {
   ]) {
     diagnostics.push(...stageDiagnostics(stage, null, name));
     if (stage?.status === 'blocked')
-      for (const item of stage.diagnostics || [])
-        errors.push({
-          objectId: item?.ref?.ownerNodeId || null,
-          message: item.message || `${name} 求值被阻断`,
-          kind: item.kind || item.code || 'evaluation',
-          pending: false,
-        });
+      errors.push(
+        ...blockedStageErrors(stage, {
+          objectId: null,
+          fallback: `${name} 求值被阻断`,
+          kind: 'evaluation',
+        }),
+      );
   }
 
   const objectStages = new Map();
@@ -336,11 +370,7 @@ export function projectCreationView(document, snapshot) {
       if (stage.status === 'blocked')
         errors.push({
           objectId: node.id,
-          message:
-            (stage.diagnostics || [])
-              .map((item) => item.message)
-              .filter(Boolean)
-              .join('；') || `${domain} 求值被阻断`,
+          message: stageErrorMessage(stage, `${domain} 求值被阻断`),
           kind: 'evaluation',
           pending: false,
         });
@@ -364,12 +394,11 @@ export function projectCreationView(document, snapshot) {
       diagnostics.push(...stageDiagnostics(appearance, node.id, 'appearance'));
       if (appearance.status === 'blocked')
         errors.push(
-          ...appearance.diagnostics.map((item) => ({
+          ...blockedStageErrors(appearance, {
             objectId: node.id,
-            message: item.message,
-            kind: item.kind || 'appearance',
-            pending: false,
-          })),
+            fallback: 'appearance 求值被阻断',
+            kind: 'appearance',
+          }),
         );
       if (Object.hasOwn(identities.cells, key)) {
         diagnostics.push({

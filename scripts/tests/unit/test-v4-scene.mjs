@@ -21,7 +21,10 @@ import {
 } from '../../../src/lib/scene/ownership.mjs';
 
 let counter = 0;
-const document = createDocument({ idFactory: () => `fixture-${++counter}` });
+const document = createDocument({
+  version: 4,
+  idFactory: () => `fixture-${++counter}`,
+});
 for (const [id, kind, parentId, x, y, rotation] of [
   ['group', 'group', null, 10, 4, Math.PI / 2],
   ['a', 'shape', 'group', 3, 7, 0],

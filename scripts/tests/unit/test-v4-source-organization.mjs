@@ -10,6 +10,7 @@ const pathRef = (sketchId, id) => ({ kind: 'path', sketchId, id });
 
 function fixture() {
   const document = createDocument({
+    version: 4,
     id: 'source-organization-document',
     idFactory: () => 'source-organization-part',
   });

@@ -7,6 +7,7 @@ const domains = new Set([
   'placed-relief',
   'bodies',
 ]);
+const purposes = new Set(['interactive', 'exact']);
 const clone = (value) => structuredClone(value);
 // Only plain, deeply frozen DTOs can be shared. Typed buffers still cross a
 // copy boundary, since Object.freeze cannot protect their contents.
@@ -34,6 +35,85 @@ const ownedSnapshot = (value) => readonly(freeze(value));
 const sort = (a, b) => a.localeCompare(b);
 const errorMessage = (error) =>
   error instanceof Error ? error.message : String(error);
+const purposeFor = (input) => {
+  const purpose = input?.purpose ?? 'exact';
+  if (!purposes.has(purpose))
+    throw Error('求值 purpose 必须为 interactive 或 exact');
+  return purpose;
+};
+const supersededInteractiveError = () => {
+  const error = Error('交互求值已被最新请求替换');
+  error.name = 'InteractiveEvaluationSupersededError';
+  return error;
+};
+const isSupersededInteractiveError = (error) =>
+  error instanceof Error &&
+  error.name === 'InteractiveEvaluationSupersededError';
+
+/**
+ * Interactive display requests are replaceable. Exact requests deliberately
+ * bypass this gate: inspection, capture and export must retain their request.
+ */
+const createInteractiveScheduler = () => {
+  let active = null;
+  let queued = null;
+  let closed = false;
+  const finish = (entry) => {
+    if (active !== entry) return;
+    active = null;
+    if (closed || !queued) return;
+    const next = queued;
+    queued = null;
+    launch(next);
+  };
+  const launch = (entry) => {
+    active = entry;
+    let task;
+    try {
+      task = entry.run();
+    } catch (error) {
+      entry.reject(error);
+      finish(entry);
+      return;
+    }
+    Promise.resolve(task).then(
+      (value) => {
+        entry.resolve(value);
+        finish(entry);
+      },
+      (error) => {
+        entry.reject(error);
+        finish(entry);
+      },
+    );
+  };
+  const rejectQueued = (error) => {
+    if (!queued) return;
+    const entry = queued;
+    queued = null;
+    entry.reject(error);
+  };
+  return Object.freeze({
+    schedule(run) {
+      if (closed) return Promise.reject(Error('Evaluation session 已关闭'));
+      return new Promise((resolve, reject) => {
+        const entry = { run, resolve, reject };
+        if (!active) launch(entry);
+        else {
+          rejectQueued(supersededInteractiveError());
+          queued = entry;
+        }
+      });
+    },
+    discard(reason) {
+      rejectQueued(Error(reason));
+    },
+    close(reason) {
+      closed = true;
+      rejectQueued(Error(reason));
+    },
+  });
+};
 
 export function canonicalDomains(input) {
   if (!Array.isArray(input) || !input.length)
@@ -63,6 +143,7 @@ export function assertIdentity(value) {
 
 const keyFor = (identity, requestedDomains) =>
   `${identity.epoch}\u0000${identity.revision}\u0000${identity.previewId || ''}\u0000${identity.previewVersion ?? 0}\u0000${requestedDomains.join(',')}`;
+const pendingKeyFor = (key, purpose) => `${key}\u0000${purpose}`;
 const sameIdentity = (a, b) =>
   a?.epoch === b?.epoch &&
   a?.revision === b?.revision &&
@@ -111,7 +192,10 @@ export function createWorkerClient(endpoint) {
       if (!responseMatches(entry.request, response))
         throw Error('Worker response 的身份、requestId 或 domains 不匹配');
       if (response.kind === 'error') entry.reject(Error(response.error));
-      else entry.resolve(clone(response));
+      // One isolated immutable DTO crosses the client/session boundary. Plain
+      // snapshots can then be shared instead of cloning the entire planar graph
+      // again in execute(); mutable typed buffers still require a later copy.
+      else entry.resolve(readonly(response));
     } catch (error) {
       entry.reject(error);
     }
@@ -188,6 +272,7 @@ export function createEvaluationSession(options = {}) {
   const results = new Map();
   const failures = new Map();
   const pending = new Map();
+  const interactive = createInteractiveScheduler();
   const listeners = new Set();
   const notify = () => {
     if (!listeners.size) return;
@@ -216,6 +301,7 @@ export function createEvaluationSession(options = {}) {
           previewVersion: entry.request.previewVersion,
         }),
         domains: entry.request.domains,
+        purpose: entry.purpose,
       })),
     });
   const requireCurrent = () => {
@@ -224,6 +310,7 @@ export function createEvaluationSession(options = {}) {
     return current;
   };
   const invalidate = (reason) => {
+    interactive.discard(reason);
     for (const entry of pending.values()) {
       options.workerClient?.cancel?.(entry.request.requestId, reason);
       entry.reject(Error(reason));
@@ -242,18 +329,21 @@ export function createEvaluationSession(options = {}) {
       domains: requestedDomains,
       document: capture.document,
     });
-  const execute = async (request) => {
-    const raw = options.workerClient
-      ? await options.workerClient.request(request)
-      : await options.evaluate(clone(request));
-    const response =
-      raw?.kind === 'result' || raw?.kind === 'error'
-        ? raw
-        : { ...request, kind: 'result', snapshot: raw };
-    if (!responseMatches(request, response))
-      throw Error('Worker response 的身份、requestId 或 domains 不匹配');
-    if (response.kind === 'error') throw Error(response.error);
-    return readonly(response.snapshot);
+  const execute = (request, purpose) => {
+    const run = async () => {
+      const raw = options.workerClient
+        ? await options.workerClient.request(request)
+        : await options.evaluate(clone(request));
+      const response =
+        raw?.kind === 'result' || raw?.kind === 'error'
+          ? raw
+          : { ...request, kind: 'result', snapshot: raw };
+      if (!responseMatches(request, response))
+        throw Error('Worker response 的身份、requestId 或 domains 不匹配');
+      if (response.kind === 'error') throw Error(response.error);
+      return readonly(response.snapshot);
+    };
+    return purpose === 'interactive' ? interactive.schedule(run) : run();
   };
   const accept = (request, snapshot) => {
     const key = keyFor(request, request.domains);
@@ -306,7 +396,9 @@ export function createEvaluationSession(options = {}) {
     request(input) {
       const capture = requireCurrent();
       const requestedDomains = canonicalDomains(input?.domains);
+      const purpose = purposeFor(input);
       const key = keyFor(capture, requestedDomains);
+      const pendingKey = pendingKeyFor(key, purpose);
       const unavailable = requestedDomains.filter(
         (domain) => !available.has(domain),
       );
@@ -328,7 +420,7 @@ export function createEvaluationSession(options = {}) {
         notify();
         return Promise.resolve(state());
       }
-      if (pending.has(key)) return pending.get(key).promise;
+      if (pending.has(pendingKey)) return pending.get(pendingKey).promise;
       if (results.has(key)) return Promise.resolve(state());
       const request = createRequest(capture, requestedDomains);
       let resolvePending;
@@ -337,13 +429,18 @@ export function createEvaluationSession(options = {}) {
         resolvePending = resolve;
         rejectPending = reject;
       });
-      pending.set(key, { request, promise, reject: rejectPending });
+      pending.set(pendingKey, {
+        request,
+        purpose,
+        promise,
+        reject: rejectPending,
+      });
       notify();
-      execute(request).then(
+      execute(request, purpose).then(
         (snapshot) => {
-          const entry = pending.get(key);
+          const entry = pending.get(pendingKey);
           if (!entry || entry.request.requestId !== request.requestId) return;
-          pending.delete(key);
+          pending.delete(pendingKey);
           try {
             accept(request, snapshot);
             resolvePending(state());
@@ -353,10 +450,13 @@ export function createEvaluationSession(options = {}) {
           notify();
         },
         (error) => {
-          const entry = pending.get(key);
+          const entry = pending.get(pendingKey);
           if (!entry || entry.request.requestId !== request.requestId) return;
-          pending.delete(key);
-          if (sameIdentity(current, request))
+          pending.delete(pendingKey);
+          if (
+            sameIdentity(current, request) &&
+            !isSupersededInteractiveError(error)
+          )
             failures.set(
               key,
               readonly({
@@ -378,8 +478,9 @@ export function createEvaluationSession(options = {}) {
     },
     async evaluate(input) {
       const requestedDomains = canonicalDomains(input?.domains);
+      const purpose = purposeFor(input);
       if (!sameIdentity(requireCurrent(), input)) throw Error('求值身份已过期');
-      await this.request({ domains: requestedDomains });
+      await this.request({ domains: requestedDomains, purpose });
       if (!sameIdentity(requireCurrent(), input)) throw Error('求值身份已过期');
       const result = results.get(keyFor(input, requestedDomains));
       if (result?.status !== 'ready') throw Error('请求的求值阶段不可用');
@@ -418,7 +519,7 @@ export function createEvaluationSession(options = {}) {
       const result = results.get(key);
       if (result?.status === 'ready')
         return this.capture({ epoch, revision, domains: requestedDomains });
-      const entry = pending.get(key);
+      const entry = pending.get(pendingKeyFor(key, 'exact'));
       if (!entry) throw Error('指定 revision 没有待完成的求值请求');
       await entry.promise;
       return this.capture({ epoch, revision, domains: requestedDomains });
@@ -426,6 +527,7 @@ export function createEvaluationSession(options = {}) {
     dispose() {
       if (disposed) return;
       disposed = true;
+      interactive.close('Evaluation session 已关闭');
       invalidate('Evaluation session 已关闭');
       listeners.clear();
     },

@@ -11,7 +11,7 @@ import { sourcePathId } from '../../../src/lib/editor/source-view.mjs';
 
 let serial = 0;
 const idFactory = () => `connection-${++serial}`;
-let document = createDocument({ idFactory });
+let document = createDocument({ version: 4, idFactory });
 for (const [closed, points] of [
   [
     true,

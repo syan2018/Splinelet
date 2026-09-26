@@ -1,17 +1,8 @@
 import { evaluatePlanar } from '../construction/document-evaluation.mjs';
-import { resolveRelief } from '../relief/resolve.mjs';
-import { resolveManufacturing } from '../manufacturing/placement.mjs';
-import { worldMatrix } from '../scene/transforms.mjs';
-import { buildBodies } from '../solid/bodies.mjs';
+import { evaluatePostPlan } from './post-evaluation-plan.mjs';
 import { evaluateExportViews } from '../export/views.mjs';
 import { createOutputQueries } from '../relief/output-queries.mjs';
 
-const absent = (domain) => ({
-  domain,
-  status: 'absent',
-  diagnostics: [],
-  dependencies: [],
-});
 const wants = (requested, ...domains) =>
   domains.some((domain) => requested.has(domain));
 const published = (planar, domain) =>
@@ -28,16 +19,20 @@ export async function evaluateDocument(document, options = {}) {
     options.requestedDomains || [
       'curves',
       'regions',
+      'appearance',
       'relief',
       'placed-relief',
+      'cleanup',
       'bodies',
     ],
   );
   const needRegions = wants(
     requested,
     'regions',
+    'appearance',
     'relief',
     'placed-relief',
+    'cleanup',
     'bodies',
   );
   const planar = (options.planarStageCache?.evaluate || evaluatePlanar)(
@@ -57,25 +52,13 @@ export async function evaluateDocument(document, options = {}) {
   const curves = wants(requested, 'curves') ? published(planar, 'curves') : [];
   const regions = needRegions ? published(planar, 'regions') : [];
   const queries = createOutputQueries(document);
-  const relief = wants(requested, 'relief', 'placed-relief', 'bodies')
-    ? resolveRelief(document, regions, queries)
-    : absent('relief');
-  const placedRelief = wants(requested, 'placed-relief', 'bodies')
-    ? resolveManufacturing(
-        document,
-        relief,
-        options.worldMatrices || ((id) => worldMatrix(document, id)),
-        queries,
-      )
-    : absent('placed-relief');
-  const bodies = requested.has('bodies')
-    ? await buildBodies(
-        placedRelief,
-        options.solidOptions,
-        Math.min(document.geometrySettings.curveToleranceMM / 3, 0.005),
-        document.manufacturing.cleanupRadiusMM ?? 0,
-      )
-    : absent('bodies');
+  const post = await evaluatePostPlan(document, planar, {
+    requestedDomains: [...requested],
+    postStageCache: options.postStageCache,
+    solidOptions: options.solidOptions,
+    worldMatrices: options.worldMatrices,
+    queries,
+  });
   return Object.freeze({
     ...evaluateExportViews(document, {
       source: requested.has('curves'),
@@ -84,9 +67,12 @@ export async function evaluateDocument(document, options = {}) {
     }),
     curves,
     regions,
-    relief,
-    placedRelief,
-    bodies,
+    appearance: post.appearance,
+    relief: post.relief,
+    placedRelief: post.placedRelief,
+    cleanup: post.cleanup,
+    bodies: post.bodies,
+    postPlan: post,
     planar,
   });
 }

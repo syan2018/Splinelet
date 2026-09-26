@@ -1,4 +1,7 @@
-import { createSourceCommand } from '../editing/commands/source.mjs';
+import {
+  createSourceCommand,
+  createSourceCommandBatch,
+} from '../editing/commands/source.mjs';
 import {
   inverseTransform,
   transformPoint,
@@ -44,7 +47,9 @@ const uniqueChangedRefs = (refs) => [
 /** Source gestures resolve stable identities in their captured view, never array indices. */
 export function createSourceIntent(request, displayed) {
   const action = structuredClone(request);
-  const view = structuredClone(displayed);
+  const view = Object.isFrozen(displayed)
+    ? displayed
+    : structuredClone(displayed);
   if (!intentKinds.has(action?.kind)) throw Error('源编辑动作尚未适配');
   if (
     typeof view?.epoch !== 'string' ||
@@ -108,14 +113,23 @@ export function createSourceIntent(request, displayed) {
         sourceViewToWorld(view.source.frame, pixelPoint),
       );
     };
-    const runBatch = (commands) => {
-      let current = document;
+    const runBatch = (commands, { pointBatch = false } = {}) => {
+      const batch = pointBatch
+        ? createSourceCommandBatch(document, {
+            sourceDelta: context.sourceDelta === true,
+          })
+        : null;
+      let current = batch?.document || document;
       const changedRefs = [];
       for (const command of commands) {
-        const result = createSourceCommand(command)(current, context);
+        const result = createSourceCommand(command)(current, {
+          ...context,
+          ...(batch ? { sourceBatch: batch } : {}),
+        });
         current = result.document;
         changedRefs.push(...(result.changedRefs || []));
       }
+      if (batch) current = batch.finish();
       return {
         document: current,
         changedRefs: uniqueChangedRefs(changedRefs),
@@ -129,6 +143,7 @@ export function createSourceIntent(request, displayed) {
           vertexId: itemTarget.id,
           value: localPoint(itemTarget, item.pixelPoint),
         })),
+        { pointBatch: true },
       );
     if (action.kind === 'set-handle-modes')
       return runBatch(

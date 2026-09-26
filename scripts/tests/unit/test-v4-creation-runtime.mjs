@@ -7,7 +7,7 @@ import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.
 
 let serial = 0;
 const idFactory = () => `runtime-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 editor.dispatch(

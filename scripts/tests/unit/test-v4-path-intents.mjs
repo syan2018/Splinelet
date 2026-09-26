@@ -8,7 +8,7 @@ import { straightCubic } from '../../../src/lib/source-editor/connect.mjs';
 
 let serial = 0;
 const idFactory = () => `path-intent-${++serial}`;
-const editor = createEditorSession(createDocument({ idFactory }), {
+const editor = createEditorSession(createDocument({ version: 4, idFactory }), {
   idFactory,
 });
 const dispatch = (command) =>

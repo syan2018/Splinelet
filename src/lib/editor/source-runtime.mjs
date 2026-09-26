@@ -1,6 +1,10 @@
 import { createVectorImportCommand } from '../editing/commands/vector-import.mjs';
 import { beginRuntimeGesture } from './runtime-gesture.mjs';
-import { projectSourceView, sourcePathId } from './source-view.mjs';
+import {
+  projectSourceView,
+  projectSourceDisplayDelta,
+  sourcePathId,
+} from './source-view.mjs';
 import { createSourceIntent } from './source-intents.mjs';
 import { createPathIntent } from './path-intents.mjs';
 import { createGroupIntent } from './group-intents.mjs';
@@ -137,6 +141,57 @@ export function createSourceRuntime({
         issueProject,
         captured,
         compile: (request) => createSourceIntent(request, captured),
+      });
+    },
+    /** Canvas-only delta. No EditorSession preview, dirty change, history entry,
+     * full display publication or region request occurs before release. */
+    beginSourceDisplayGesture(project) {
+      const entry = current(project);
+      const captured = view(entry);
+      let finished = false;
+      let command = null;
+      const assertActive = () => {
+        if (finished) throw Error('编辑手势已结束或失效');
+        current(project);
+      };
+      return Object.freeze({
+        update(request) {
+          assertActive();
+          if (
+            !['move-anchor', 'move-anchors', 'move-handle'].includes(
+              request.kind,
+            )
+          )
+            throw Error('源预览只接受点或控制柄移动');
+          const nextCommand = createSourceIntent(request, captured);
+          const result = nextCommand(entry.state.document, {
+            epoch: captured.epoch,
+            revision: captured.revision,
+            sourceDelta: true,
+          });
+          const source = projectSourceDisplayDelta(
+            result.document,
+            entry.state.document,
+            captured.source,
+          );
+          command = nextCommand;
+          return source;
+        },
+        commit() {
+          assertActive();
+          const state = command
+            ? editorSession.dispatch(command, {
+                expectedRevision: captured.revision,
+              })
+            : editorSession.state;
+          finished = true;
+          return issueProject(state);
+        },
+        cancel() {
+          assertActive();
+          finished = true;
+          return project;
+        },
       });
     },
   };
