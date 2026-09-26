@@ -54,6 +54,13 @@ module.exports = async (page, outputDirectory, inputFile) => {
     await overlay.getAttribute('data-curve-preview-stage'),
     program.outputs.curves ? /^final$/ : /^fill-input:/,
   );
+  const controls = page.locator('[data-curve-preview-controls]');
+  assert.equal(
+    await controls.count(),
+    0,
+    'unselected objects have no preview controls',
+  );
+  assert.equal(await page.locator('[data-curve-junction]').count(), 0);
   if (outputDirectory) {
     await mkdir(outputDirectory, { recursive: true });
     await page.screenshot({ path: resolve(outputDirectory, 'initial.png') });
@@ -61,6 +68,71 @@ module.exports = async (page, outputDirectory, inputFile) => {
   await page
     .locator(`[data-tree-object="${target.id}"]`)
     .click({ position: { x: 60, y: 12 } });
+  await controls.waitFor();
+  await controls.locator('summary').click();
+  const stages = controls.getByRole('combobox', { name: '样条预览阶段' });
+  const stageIds = await stages
+    .locator('option')
+    .evaluateAll((options) => options.map((option) => option.value));
+  const intermediate = stageIds.find(
+    (id) => id !== 'final' && !id.startsWith('fill-input:'),
+  );
+  assert(intermediate, 'emblem has intermediate curve stages');
+  await stages.selectOption(intermediate);
+  assert.equal(
+    await overlay.getAttribute('data-curve-preview-stage'),
+    intermediate,
+  );
+  assert(
+    Number(
+      await overlay
+        .locator('[data-derived-curves]')
+        .getAttribute('data-derived-curves'),
+    ) < expectedCurves,
+  );
+  await call('select_paths', { pathIds: [] });
+  assert.equal(await controls.count(), 0);
+  assert.equal(
+    Number(
+      await overlay
+        .locator('[data-derived-curves]')
+        .getAttribute('data-derived-curves'),
+    ),
+    expectedCurves,
+  );
+  assert.equal(await page.locator('[data-curve-junction]').count(), 0);
+  await page
+    .locator(`[data-tree-object="${target.id}"]`)
+    .click({ position: { x: 60, y: 12 } });
+  await controls
+    .getByRole('checkbox', { name: '派生样条', exact: true })
+    .uncheck();
+  assert.equal(await overlay.count(), 0);
+  await call('select_paths', { pathIds: [] });
+  assert.equal(await controls.count(), 0);
+  assert.equal(
+    Number(
+      await overlay
+        .locator('[data-derived-curves]')
+        .getAttribute('data-derived-curves'),
+    ),
+    expectedCurves,
+  );
+  assert.deepEqual(
+    await call('document.get'),
+    original,
+    'preview controls never edit the document',
+  );
+  await page
+    .locator(`[data-tree-object="${target.id}"]`)
+    .click({ position: { x: 60, y: 12 } });
+  await controls
+    .getByRole('checkbox', { name: '派生样条', exact: true })
+    .check();
+  await controls.locator('summary').click();
+  await stages.selectOption(
+    stageIds.find((id) => id.startsWith('fill-input:')) || 'final',
+  );
   await page.keyboard.press('g');
   const source = page
     .locator(`[data-source-id="${target.pathIds[0]}"] path`)

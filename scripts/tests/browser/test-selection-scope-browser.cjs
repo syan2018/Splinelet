@@ -34,7 +34,7 @@ module.exports = async (page, fixture) => {
   await page
     .getByRole('button', { name: '编辑线条 右肩内', exact: true })
     .click();
-  await page.getByRole('button', { name: '当前选区属性', exact: true }).click();
+  await page.getByRole('button', { name: '当前源线属性', exact: true }).click();
   await choose('path', [path.id]);
   assert.equal(await page.getByLabel('凸起厚度', { exact: true }).count(), 0);
   assert.equal(
@@ -139,17 +139,24 @@ module.exports = async (page, fixture) => {
   checks.push(
     'one-click activation keeps the default thickness and chest support plane, with one undo',
   );
+  await page
+    .getByRole('button', { name: '当前选区浮雕厚度', exact: true })
+    .click();
   await page.getByLabel('凸起厚度', { exact: true }).fill('3.25');
   await page.getByLabel('凸起厚度', { exact: true }).press('Enter');
   await settle();
   let next = await verify();
   assert.equal(next.cells.find((c) => c.key === target.key).heightMM, 3.25);
   assert.equal(next.cells.find((c) => c.key === target.key).painted, true);
+  await page.getByRole('button', { name: '当前选区颜色', exact: true }).click();
   await page.getByLabel('选区颜色 HEX').fill('#e46e7f');
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await settle();
   next = await verify();
   assert.equal(next.cells.find((c) => c.key === target.key).color, '#e46e7f');
+  await page
+    .getByRole('button', { name: '当前选区浮雕厚度', exact: true })
+    .click();
   await page.getByLabel('凸起厚度', { exact: true }).fill('2.65');
   await page.getByLabel('凸起厚度', { exact: true }).press('Enter');
   await settle();

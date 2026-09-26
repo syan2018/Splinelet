@@ -37,6 +37,7 @@ pnpm desktop:check
 - `test-v4-path-roles.mjs`：原 roles 适配为规范成员/构造命令，覆盖边界、参考、挖洞、分区往返，新边界加入普通 even-odd 输入，无构面时建立边界，过期视图、批量失败回滚和预备命令；复杂派生来源不误报为参考线。
 - `test-v4-region-path-membership.mjs`：暂停/恢复构面输入成员时保留 even-odd 孔洞、源几何及区域身份；覆盖一次撤销/重做、共享输入隔离、多用途拒绝、空输入、复制重映射、缺失引用阻断及默认界面不展开内部筛选；用途往返后继续普通绘制、暂停成员改为开放路径并重新闭合仍保持原输入关系。
 - `test-v4-support-command.mjs`：承托命令保留原来源并引用外形、边距与厚度，检查顶面依附/新最底打印层、制造零件归属、原子拒绝、预备命令确认/失效和一次撤销。原根浏览器另检查实际预览、取消、确认、撤销重做及保存回读。
+- `test-property-contributions.mjs`：选区目标分类、静态属性贡献的排序与回退，以及选中部件的派生曲线阶段选择和取消选择后的完整预览。`test-print-placement.mjs`：制造层位置的单层、混合、未分配和不可确定聚合，以及同一 Shape 的分区域制造层投影。
 - `test-curve-pipeline.mjs`：镜像、四向阵列、显式构面、中心留空、对称性、阶段顺序、失效隔离与恢复；`test-radial-array.mjs` 检查构面后的阵列、孔与实体。
 - `test-endpoint-snap.mjs`：组合变换接缝、精确接合、自由端点、分叉目标排除、屏幕距离与吸附滞回、非原点轴、停用修改器和源数据不变性。
 - `pnpm format:check`：只检查格式，不修改文件。
@@ -63,7 +64,7 @@ V4 原工作区源操作的模块回归：`tests/unit/test-v4-source-intent-batc
 
 `scripts/tests/browser/smoke/test-sandrone-restored-ui.cjs` 用于原工作区的实际 Sandrone 回归，可传 `--target web` 或 `--target desktop-frontend`、独立 `--port` 和 `--output`。它需要内置样例及本地补充 gold 样例；具体本地范围、命令和证据见[恢复验收快照](../docs/qa/studio-ui-restoration-2026-09-19.md)，不作为通用 hermetic suite。
 
-`tests/browser/test-property-navigation.cjs` 接收隔离 `page` 和 `tests/fixtures/shoulder-region.json` 工程对象，检查顶栏主菜单、左右栏入口归属、竖排属性分组、全局分类不随选区跳转、工具与选区属性范围、高级构造编辑器及源曲线导出入口。`test-selection-scope-browser.cjs` 同样使用此 fixture，覆盖区域属性提交、切换选区时的输入草稿、源线选择与恢复后实体导出；选择工具拖动不修改几何。
+`tests/browser/test-property-navigation.cjs` 接收隔离 `page` 和 `tests/fixtures/shoulder-region.json` 工程对象，检查顶栏主菜单、左右栏入口归属、竖排属性分组、全局分类不随选区跳转、工具与选区属性范围、高级构造编辑器及源曲线导出入口。`test-selection-scope-browser.cjs` 同样使用此 fixture，覆盖形状、颜色、浮雕、叠放等分开的选区页中的区域属性提交、切换选区时的输入草稿、源线页选择与恢复后实体导出；选择工具拖动不修改几何。`test-hair-partition-browser.cjs` 覆盖区域颜色和浮雕页在分区后的独立写入；`test-spline-endpoints.cjs` 覆盖源线页中的端点续画。Studio 的 `original-studio` case 还覆盖源线用途页与承托页。
 
 旧可写命令仅保留在 [tests/legacy](tests/legacy/README.md) 供历史基线使用，产品不得引用；旧 Worker、旧数据库与候选 UI 使用不可执行的 `.retired` 扩展名保存。
 

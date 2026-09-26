@@ -1,31 +1,26 @@
 'use client';
 import { Fragment } from 'react';
 import {
-  Box,
   Layers,
   PaintBucket,
   Settings2,
-  SlidersHorizontal,
   Download,
   Wrench,
   SquareDashed,
 } from 'lucide-react';
+import type { PropertyContribution } from './properties/property-context';
 
 export const globalPropertyPages = ['project', 'palette', 'print', 'make'];
 
 export default function PropertyNavigation({
   page,
   onPage,
-  pathsSelected,
-  hasSelection,
-  canEditModifiers,
+  contributions,
   transforming = false,
 }: {
   page: string;
   onPage: (page: string) => void;
-  pathsSelected: boolean;
-  hasSelection: boolean;
-  canEditModifiers: boolean;
+  contributions: readonly PropertyContribution[];
   transforming?: boolean;
 }) {
   const groups = [
@@ -64,28 +59,11 @@ export default function PropertyNavigation({
         },
       ],
     },
-    ...(hasSelection
+    ...(contributions.length
       ? [
           {
             label: '选区',
-            entries: [
-              {
-                id: pathsSelected ? 'lines' : 'object',
-                label: '属性',
-                title: '当前选区属性',
-                icon: Box,
-              },
-              ...(canEditModifiers
-                ? [
-                    {
-                      id: 'modifiers',
-                      label: '构造',
-                      title: '当前部件构造与修改器',
-                      icon: SlidersHorizontal,
-                    },
-                  ]
-                : []),
-            ],
+            entries: contributions,
           },
         ]
       : []),

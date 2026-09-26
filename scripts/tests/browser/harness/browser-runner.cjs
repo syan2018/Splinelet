@@ -838,7 +838,12 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
     if (entry.adapter === 'page') return await test(page);
     if (entry.adapter === 'page-output')
       return await test(page, resolve(outputDirectory, entry.name));
-    if (entry.adapter === 'page-fixture') return await test(page, fixtureValue);
+    if (entry.adapter === 'page-fixture')
+      return await test(
+        page,
+        fixtureValue,
+        resolve(outputDirectory, entry.name),
+      );
     if (entry.adapter === 'studio-fixture')
       return await test(page, resolve(outputDirectory, entry.name));
     throw Error(`${entry.name} 的 adapter 未实现：${entry.adapter}`);

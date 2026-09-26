@@ -7,8 +7,6 @@ import {
   Eye,
   EyeOff,
   X,
-  PaintBucket,
-  Layers,
   ArrowUpFromLine,
   Pencil,
   Pipette,
@@ -44,15 +42,23 @@ import {
 } from '@/lib/source-editor/object-transform-preview';
 import { useCurvePreview, CurvePreviewOverlay } from './creation-curve-preview';
 import PropertyNavigation, { globalPropertyPages } from './property-navigation';
+import {
+  isSelectionPropertyPage,
+  selectionPropertiesFor,
+} from './properties/property-registry';
+import type {
+  PropertyContext,
+  PropertyTarget,
+} from './properties/property-context';
+import {
+  resolvePropertyPage,
+  selectionPropertyTarget,
+} from '@/lib/editor/property-contributions.mjs';
 import CreationConnections from './creation-connections';
-import CreationModifiers from './creation-modifiers';
 import ConstructionPipeline from './construction-pipeline';
-import CreationColor from './creation-color';
 import CreationIssue from './creation-issue';
-import CreationSelectionDetails from './creation-selection-details';
 import CreationSwatchDelete from './creation-swatch-delete';
-import NumberEdit from '../shared/creation-number';
-import PrintStack, { PrintPlacement } from './creation-print-stack';
+import PrintStack from './creation-print-stack';
 import { printCount, printMM, resolvePrintStack } from '@/lib/print-stack.mjs';
 import {
   creationEditTargets,
@@ -64,143 +70,18 @@ import { sceneGroupSelection } from '@/lib/editor/scene-group-selection.mjs';
 import { sceneTreeRows } from '@/lib/editor/scene-tree.mjs';
 import type { OutputRef } from '@/lib/document/types';
 import type {
-  ModifierObject,
-  ModifierScene,
-  SurfaceModifier,
-} from '@/lib/modifier-types';
+  CreationDocument,
+  SceneRow,
+  CreationScene,
+  SceneError,
+  ConnectionHighlight,
+  Diagnostic,
+} from './creation-types';
 import type {
   CreationRuntime,
   CreationRuntimeContext,
   PreparedCreationCommand,
 } from './creation-runtime';
-type Swatch = { id: string; name: string; color: string };
-type CreationObject = ModifierObject & {
-  id: string;
-  name: string;
-  pathIds: string[];
-  roles: Record<string, string>;
-  visible: boolean;
-  swatchId: string;
-  heightMM: number;
-  zMM: number;
-  printable: boolean;
-  attachId?: string;
-  printLayerId?: string;
-  joinMM?: number;
-  disabledClosureFeatureIds?: string[];
-  modifiers?: SurfaceModifier[];
-  surfaceGraph?: { outputs: { key: string; signature: string }[] };
-};
-type CreationDocument = {
-  tree?: SceneNode[];
-  objects: CreationObject[];
-  swatches: Swatch[];
-  swatchOwners: Record<string, { id: string; name: string }[]>;
-  printStack?: {
-    layerHeightMM: number;
-    layers: { id: string; name: string }[];
-  };
-};
-type SceneNode = {
-  id: string;
-  kind: 'group' | 'shape';
-  name: string;
-  parentId: string | null;
-  visible: boolean;
-  locked: boolean;
-  ownVisible: boolean;
-  ownLocked: boolean;
-  hiddenBy: string[];
-  lockedBy: string[];
-  children: SceneNode[];
-};
-type SceneRow = CreationObject &
-  SceneNode & { depth: number; ancestors: string[] };
-type RegionGeometry = {
-  type: 'Polygon' | 'MultiPolygon';
-  coordinates: Point[][] | Point[][][];
-};
-type CreationCell = {
-  outputRef?: OutputRef;
-  key: string;
-  objectId: string;
-  name?: string;
-  painted: boolean;
-  color: string;
-  geometry: RegionGeometry;
-  heightMM: number;
-  bottomMM?: number;
-  zMM?: number;
-  printLayerId?: string;
-  mode?: string;
-  enabled?: boolean;
-  conflict?: boolean;
-  from?: Point;
-  to?: Point;
-  flatOnly?: boolean;
-  featureId?: string;
-  regionId?: string;
-  boundaryPathIds?: string[];
-  modifierResult?: { id: string };
-  targetTopology?: string;
-};
-type Point = [number, number];
-type SceneError = {
-  objectId: string;
-  message: string;
-  kind?: string;
-  modifierId?: string;
-  pathIds?: string[];
-  pending?: boolean;
-};
-type Connection = {
-  objectId: string;
-  pathId: string;
-  endpoint: number;
-  from?: Point;
-  to?: Point;
-  coordinates?: Point[];
-  featureId?: string;
-};
-type ConnectionHighlight = {
-  objectId: string;
-  pathId?: string;
-  featureId?: string;
-  from?: Point;
-  to?: Point;
-  coordinates?: Point[];
-};
-type Diagnostic = {
-  objectId: string;
-  pathId?: string;
-  status?: string;
-  message?: string;
-};
-type CreationScene = Omit<
-  ModifierScene,
-  'creation' | 'cells' | 'errors' | 'modifierStatus'
-> & {
-  identities?: {
-    paths: Record<string, unknown>;
-    cells: Record<string, unknown>;
-  };
-  creation: CreationDocument;
-  cells: CreationCell[];
-  errors: SceneError[];
-  connections?: Connection[];
-  diagnostics: Diagnostic[];
-  printLevels?: {
-    id: string;
-    state: string;
-    bottomLayers: number;
-    topLayers: number;
-    heightLayers: number;
-    bottomMM: number;
-    topMM: number;
-    message?: string;
-  }[];
-  modifierStatus?: ModifierScene['modifierStatus'];
-};
 type SolidReport = {
   valid: boolean;
   components: number;
@@ -460,6 +341,7 @@ export default function CreationWorkspace(p: Props) {
     onTab: (next) =>
       setTab((previous) =>
         globalPropertyPages.includes(previous) ||
+        isSelectionPropertyPage(previous) ||
         (previous === 'tool' && ref.current.tool === 'move')
           ? previous
           : next,
@@ -504,19 +386,22 @@ export default function CreationWorkspace(p: Props) {
     rootGroups: SceneRow[];
     singleGroup: SceneRow | null;
   };
-  const selectedGroup = groupSelection.singleGroup;
   const hasSelectedGroups = groupSelection.groups.length > 0;
-  const canEditModifiers =
-    selection.kind !== 'path' && objects.length === 1 && !hasSelectedGroups;
-  const tab = ['object', 'lines', 'modifiers'].includes(requestedPage)
-    ? !selection.ids.length
-      ? 'tool'
-      : requestedPage === 'modifiers' && canEditModifiers
-        ? 'modifiers'
-        : selection.kind === 'path'
-          ? 'lines'
-          : 'object'
-    : requestedPage;
+  const propertyTarget = selectionPropertyTarget(
+    selection,
+    sceneRows,
+    objects,
+  ) as PropertyTarget;
+  const propertyContributions = selectionPropertiesFor(propertyTarget);
+  const tab = resolvePropertyPage(
+    requestedPage,
+    propertyContributions,
+    globalPropertyPages,
+  );
+  const activeContribution = propertyContributions.find(
+    (entry) => entry.id === tab,
+  );
+  const SelectionPanel = activeContribution?.Panel;
   useEffect(
     () => ref.current.onSelectionKind(selection.kind),
     [selection.kind],
@@ -1279,7 +1164,7 @@ export default function CreationWorkspace(p: Props) {
       : editedDraft;
   const curvePreview = useCurvePreview(
     p.project,
-    current?.id,
+    objects.length === 1 && !hasSelectedGroups ? current?.id : undefined,
     p.runtime,
     evaluatedProject,
     p.tool === 'edit' || p.tool === 'trace',
@@ -1322,6 +1207,187 @@ export default function CreationWorkspace(p: Props) {
     p.objectMoveCommit,
     transformNodeIds,
   ]);
+  const connectionControls = current && objects.length === 1 && (
+    <CreationConnections
+      key={current.id}
+      object={current}
+      scene={scene as never}
+      project={p.project}
+      preview={joinPreview as never}
+      onCancel={clearConnectionPreview}
+      onModifiers={() => setTab('modifiers')}
+      onPreview={(joinMM) =>
+        safely(async () => {
+          const snapshot = p.project,
+            id = current.id,
+            token = ++connectionRequest.current;
+          const prepared = await ref.current.runtime.prepare(
+            'join',
+            { objectId: id, joinMM },
+            {
+              project: snapshot,
+              scene: revision.current === snapshot ? sceneRef.current : null,
+            },
+          );
+          const result = await call('creation', {}, prepared.project);
+          if (
+            token !== connectionRequest.current ||
+            focusedObject.current !== id
+          )
+            return;
+          if (ref.current.project !== snapshot)
+            throw Error('来源已变化，请重新预览');
+          setJoinPreview(result);
+          setConnectionHighlight([]);
+        })
+      }
+      onApply={(joinMM) =>
+        safely(() => run('join', { objectId: current.id, joinMM }))
+      }
+      onCommand={(action, args) => safely(() => run(action, args))}
+      onLocate={(ids, connections = []) => {
+        selectionState.selectPaths(ids);
+        p.onView('flat');
+        p.onFramePaths(ids, { force: true });
+        setConnectionHighlight(connections);
+      }}
+    />
+  );
+  const propertyDisabled =
+    calculating ||
+    evaluationFailed ||
+    p.busy ||
+    sceneRows.some((row) => objects.includes(row.id) && row.locked);
+  const propertyContext: PropertyContext = {
+    target: propertyTarget,
+    selection,
+    objects,
+    cellKeys,
+    scope: scope as PropertyContext['scope'],
+    project: p.project,
+    doc,
+    scene,
+    current,
+    rows: sceneRows,
+    groups: groupSelection,
+    disabled: propertyDisabled,
+    sourceOnly: !!sourceOnly,
+    surfaceDisabled: propertyDisabled || !!failedSelection,
+    command: (action, args) => safely(() => run(action, args)),
+    select: (next) => selectionState.commit(next),
+    editSources: () => {
+      const ids =
+        selection.kind === 'cell'
+          ? pathsForRegions(p.project, scene, cellKeys)
+          : current?.pathIds || [];
+      selectionState.selectPaths(ids);
+      p.onTool('edit');
+      setTab('tool');
+    },
+    draw: (role) =>
+      safely(() => {
+        nextRole.current = role;
+        p.onView('flat');
+        p.onNewPath();
+        setTab('tool');
+      }),
+    newPath: p.onNewPath,
+    ungroup: (ids) =>
+      safely(() => {
+        run('scene_ungroup', { nodeIds: ids });
+        selectionState.commit(
+          {
+            kind: 'object',
+            ids: selection.ids.filter((id) => !ids.includes(id)),
+          },
+          false,
+        );
+      }),
+    managePrint: () => setTab('print'),
+    locateSources: (ids) => {
+      selectionState.selectPaths(ids);
+      p.onView('flat');
+      p.onTool('edit');
+      p.onFramePaths(ids, { force: true });
+    },
+    connections: connectionControls,
+    color: {
+      colors:
+        sourceOnly && current
+          ? [
+              doc.swatches.find((s) => s.id === current.swatchId)?.color ||
+                swatch?.color ||
+                null,
+            ]
+          : (scene?.cells || [])
+              .filter((c) =>
+                scope === 'local'
+                  ? cellKeys.includes(c.key)
+                  : objects.includes(c.objectId),
+              )
+              .map((c) => c.color),
+      paint: (args) => safely(() => run('paint', { ...targets(), ...args })),
+    },
+    height: {
+      value: displayedHeight,
+      min: heightMinimum,
+      max: heightMaximum,
+      layerHeight: printHeight,
+      active: p.tool === 'height',
+      activate: () => p.onTool('height'),
+      commit: (n) => safely(() => applyHeight(n)),
+      begin: () => {
+        heightDrag.current = { slider: true };
+      },
+      preview: setDraftHeight,
+      finish: () => {
+        heightDrag.current = null;
+        const value = draftHeight;
+        setDraftHeight(null);
+        if (value !== null) safely(() => applyHeight(value));
+      },
+      cancel,
+    },
+    support: {
+      margin: baseMargin,
+      heightMM: baseHeight,
+      setMargin: (n) => {
+        setBaseMargin(n);
+        setBasePreview(null);
+      },
+      setHeight: (n) => {
+        setBaseHeight(n);
+        setBasePreview(null);
+      },
+      preview: () =>
+        safely(async () => {
+          const snapshot = p.project;
+          const result = await call('creation_base', {
+            objectIds: objects,
+            offsetMM: baseMargin,
+            ...(printHeight
+              ? { heightLayers: printCount(baseHeight, printHeight) }
+              : { heightMM: baseHeight }),
+            swatchId: swatch?.id,
+          });
+          if (ref.current.project !== snapshot)
+            throw Error('来源已变化，请重新预览');
+          setBasePreview({
+            ...result,
+            project: result.project,
+            revision: snapshot,
+          });
+        }),
+    },
+    source: {
+      inspector: p.sourceInspector,
+      selectedPaths: p.selectedPaths,
+      checking: checkingRole,
+      result:
+        roleResult?.objectId === current?.id ? roleResult?.message : undefined,
+      chooseRole,
+    },
+  };
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.
@@ -2361,158 +2427,54 @@ export default function CreationWorkspace(p: Props) {
           <PropertyNavigation
             page={tab}
             onPage={setTab}
-            pathsSelected={selection.kind === 'path'}
-            hasSelection={selection.ids.length > 0}
-            canEditModifiers={canEditModifiers}
+            contributions={propertyContributions}
             transforming={p.tool === 'move'}
           />
           <div className="property-content">
-            {selectedGroup && tab === 'object' && (
-              <section className="creation-section">
-                <h3>{selectedGroup.name} · 场景组</h3>
-                <p>
-                  移动此组会带动全部子对象；源线坐标和修改器局部锚点保持不变。
-                </p>
-                <label>
-                  父对象
-                  <select
-                    aria-label="场景组父对象"
-                    value={selectedGroup.parentId || ''}
-                    onChange={(event) =>
-                      safely(() =>
-                        run('scene_reparent', {
-                          nodeIds: [selectedGroup.id],
-                          parentId: event.target.value || null,
-                        }),
-                      )
-                    }
-                  >
-                    <option value="">作品根</option>
-                    {sceneRows
-                      .filter(
-                        (row) =>
-                          row.kind === 'group' &&
-                          row.id !== selectedGroup.id &&
-                          !row.ancestors.includes(selectedGroup.id),
-                      )
-                      .map((row) => (
-                        <option key={row.id} value={row.id}>
-                          {row.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <button
-                  onClick={() =>
-                    safely(() => {
-                      run('scene_ungroup', { nodeIds: [selectedGroup.id] });
-                      selectionState.commit(
-                        {
-                          kind: 'object',
-                          ids: selection.ids.filter(
-                            (id) => id !== selectedGroup.id,
-                          ),
-                        },
-                        false,
-                      );
-                    })
-                  }
-                >
-                  解散场景组
-                </button>
-              </section>
-            )}
-            {hasSelectedGroups && !selectedGroup && tab === 'object' && (
-              <section className="creation-section" aria-live="polite">
-                <h3>场景组选区</h3>
-                <p>
-                  已选 {groupSelection.groups.length} 个场景组
-                  {groupSelection.shapes.length
-                    ? `、${groupSelection.shapes.length} 个部件`
-                    : ''}
-                  。
-                </p>
-                {groupSelection.rootGroups.length !==
-                  groupSelection.groups.length && (
-                  <p className="creation-muted">
-                    已选内层组由外层组涵盖；解组按{' '}
-                    {groupSelection.rootGroups.length} 个根场景组执行。
-                  </p>
-                )}
-                <p className="creation-muted">
-                  父级只能单选场景组后修改；部件属性请单选部件。
-                </p>
-                <button
-                  onClick={() =>
-                    safely(() => {
-                      const groupIds = groupSelection.rootGroups.map(
-                        (group) => group.id,
-                      );
-                      run('scene_ungroup', { nodeIds: groupIds });
-                      selectionState.commit(
-                        {
-                          kind: 'object',
-                          ids: selection.ids.filter(
-                            (id) => !groupIds.includes(id),
-                          ),
-                        },
-                        false,
-                      );
-                    })
-                  }
-                >
-                  解散选中的 {groupSelection.rootGroups.length} 个根场景组
-                </button>
-              </section>
-            )}
-            {!(selectedGroup && tab === 'object') && (
-              <div className="property-context" aria-live="polite">
-                <b>
-                  {tab === 'project'
-                    ? '工程设置'
-                    : tab === 'palette'
-                      ? '项目色卡'
-                      : tab === 'print'
-                        ? '打印方案'
-                        : tab === 'make'
-                          ? '检查与导出'
-                          : tab === 'tool'
-                            ? p.tool === 'move'
-                              ? '变换'
-                              : '当前工具'
-                            : tab === 'modifiers'
-                              ? '构造与修改器'
-                              : '选区属性'}
-                </b>
-                <span>
-                  {globalPropertyPages.includes(tab)
-                    ? '整个工程 · 不随选区改变'
-                    : tab === 'tool'
-                      ? {
-                          trace: '描线 · 拟合与吸附',
-                          edit: '节点 · 编辑当前线条',
-                          select: '选择 · 不改变形状',
-                          paint: '上色 · 使用当前画笔色',
-                          height: '高低 · 调整选中区域',
-                          pan: '平移 · 只移动视图',
-                          move: '移动 · 旋转 · 等比缩放',
-                        }[p.tool] || p.tool
-                      : selection.ids.length
-                        ? selection.kind === 'path'
-                          ? selection.ids.length + ' 条线条'
-                          : selection.kind === 'cell'
-                            ? selection.ids.length + ' 个区域'
-                            : hasSelectedGroups
-                              ? `${groupSelection.groups.length} 个场景组${
-                                  groupSelection.shapes.length
-                                    ? `、${groupSelection.shapes.length} 个部件`
-                                    : ''
-                                }`
-                              : selection.ids.length + ' 个部件'
-                        : '未选择对象'}
-                </span>
-              </div>
-            )}
+            <div className="property-context" aria-live="polite">
+              <b>
+                {tab === 'project'
+                  ? '工程设置'
+                  : tab === 'palette'
+                    ? '项目色卡'
+                    : tab === 'print'
+                      ? '打印方案'
+                      : tab === 'make'
+                        ? '检查与导出'
+                        : tab === 'tool'
+                          ? p.tool === 'move'
+                            ? '变换'
+                            : '当前工具'
+                          : activeContribution?.heading || '选区属性'}
+              </b>
+              <span>
+                {globalPropertyPages.includes(tab)
+                  ? '整个工程 · 不随选区改变'
+                  : tab === 'tool'
+                    ? {
+                        trace: '描线 · 拟合与吸附',
+                        edit: '节点 · 编辑当前线条',
+                        select: '选择 · 不改变形状',
+                        paint: '上色 · 使用当前画笔色',
+                        height: '高低 · 调整选中区域',
+                        pan: '平移 · 只移动视图',
+                        move: '移动 · 旋转 · 等比缩放',
+                      }[p.tool] || p.tool
+                    : selection.ids.length
+                      ? selection.kind === 'path'
+                        ? selection.ids.length + ' 条线条'
+                        : selection.kind === 'cell'
+                          ? selection.ids.length + ' 个区域'
+                          : hasSelectedGroups
+                            ? `${groupSelection.groups.length} 个场景组${
+                                groupSelection.shapes.length
+                                  ? `、${groupSelection.shapes.length} 个部件`
+                                  : ''
+                              }`
+                            : selection.ids.length + ' 个部件'
+                      : '未选择对象'}
+              </span>
+            </div>
             <div
               className="creation-properties"
               key={
@@ -2540,7 +2502,7 @@ export default function CreationWorkspace(p: Props) {
               {tab === 'palette' && (
                 <>
                   <p className="creation-muted">
-                    修改项目色会更新所有引用它的区域。仅给选区换色，请使用选区属性。
+                    修改项目色会更新所有引用它的区域。仅给选区换色，请打开选区的“颜色”分类。
                   </p>
                   <div className="property-swatches">
                     {doc.swatches.map((color) => (
@@ -2695,56 +2657,19 @@ export default function CreationWorkspace(p: Props) {
                         : p.tool === 'paint'
                           ? '点击区域上色；拖过多个区域完成一笔。画笔色在画布底部选择。'
                           : p.tool === 'height'
-                            ? '选择区域后使用高度柄，或在选区属性中输入厚度。'
+                            ? '选择区域后使用高度柄，或在选区的“浮雕”分类中输入厚度。'
                             : p.tool === 'move'
                               ? '先点击选中部件，再按住其面或线整体移动；Shift 限制方向。右键、空格或中键拖动只平移视图。'
                               : '右键、空格或中键拖动画布移动视图。'}
                     </p>
                   </div>
                 ))}
-              {['object', 'lines'].includes(tab) &&
-                current &&
-                !hasSelectedGroups && (
-                  <CreationSelectionDetails
-                    selection={selection}
-                    objects={objects}
-                    project={p.project}
-                    scene={scene}
-                    onSelect={(next) => selectionState.commit(next)}
-                    onEnable={() => safely(() => applyHeight(displayedHeight))}
-                    onEdit={() => {
-                      const ids =
-                        selection.kind === 'cell'
-                          ? pathsForRegions(p.project, scene, cellKeys)
-                          : current.pathIds;
-                      selectionState.selectPaths(ids);
-                      p.onTool('edit');
-                      setTab('tool');
-                    }}
-                  />
-                )}
-              {tab === 'modifiers' &&
-                selection.kind !== 'path' &&
-                objects.length === 1 && (
-                  <CreationModifiers
-                    key={current?.id || 'none'}
-                    object={current}
-                    project={p.project}
-                    scene={scene || undefined}
-                    busy={calculating || evaluationFailed}
-                    cellKeys={selection.kind === 'cell' ? selection.ids : []}
-                    onLocate={(ids) => {
-                      selectionState.selectPaths(ids);
-                      p.onView('flat');
-                      p.onTool('edit');
-                      p.onFramePaths(ids, { force: true });
-                    }}
-                    onCommand={(
-                      action: string,
-                      args: Record<string, unknown>,
-                    ) => safely(() => run(action, args))}
-                  />
-                )}
+              {SelectionPanel && (
+                <SelectionPanel
+                  key={JSON.stringify(selection)}
+                  context={propertyContext}
+                />
+              )}
               {error && (
                 <div role="alert" className="creation-error">
                   {error}
@@ -2870,494 +2795,6 @@ export default function CreationWorkspace(p: Props) {
                     />
                   );
                 })}
-              {tab === 'object' && !hasSelectedGroups && (
-                <>
-                  {current ? (
-                    <>
-                      {scope === 'object' && (
-                        <div className="creation-draw-actions">
-                          <button
-                            onClick={() => {
-                              nextRole.current = 'boundary';
-                              p.onView('flat');
-                              p.onNewPath();
-                              setTab('tool');
-                            }}
-                          >
-                            画轮廓
-                          </button>
-                          <button
-                            disabled={p.busy || (!!p.runtime && calculating)}
-                            onClick={() =>
-                              safely(() => {
-                                nextRole.current = 'divider';
-                                p.onView('flat');
-                                p.onNewPath();
-                                setTab('tool');
-                              })
-                            }
-                          >
-                            画分区线
-                          </button>
-                          <button
-                            disabled={p.busy || (!!p.runtime && calculating)}
-                            onClick={() =>
-                              safely(() => {
-                                nextRole.current = 'hole';
-                                p.onView('flat');
-                                p.onNewPath();
-                                setTab('tool');
-                              })
-                            }
-                          >
-                            画挖洞轮廓
-                          </button>
-                        </div>
-                      )}
-                      {scope === 'object' && objects.length > 1 && (
-                        <p className="creation-muted">
-                          颜色、厚度和所属层应用到全部选中部件。位置、依附和成品开关请单选部件后设置。
-                        </p>
-                      )}
-                      {sourceOnly && (
-                        <p className="creation-source-note">
-                          仅有线条 · 尚未构面。开放样条不会单独产生色块；
-                          可以继续闭合轮廓，或移入已有部件作分区、参考。
-                        </p>
-                      )}
-                      {selection.kind === 'object' && objects.length > 1 && (
-                        <button
-                          onClick={() =>
-                            safely(() =>
-                              run('combine_objects', { objectIds: objects }),
-                            )
-                          }
-                        >
-                          整理为一个部件
-                        </button>
-                      )}
-                      {scope !== 'source' && (
-                        <>
-                          {scope === 'object' ? (
-                            <PrintPlacement
-                              doc={doc}
-                              scene={scene}
-                              objectIds={objects}
-                              disabled={
-                                calculating || evaluationFailed || p.busy
-                              }
-                              onCommand={(a, args) =>
-                                safely(() => run(a, args))
-                              }
-                              onManage={() => setTab('print')}
-                            />
-                          ) : (
-                            printHeight && (
-                              <p className="creation-muted">
-                                {
-                                  doc.printStack!.layers.find(
-                                    (l) => l.id === current?.printLayerId,
-                                  )?.name
-                                }{' '}
-                                · 从 {cell?.bottomMM ?? 0} mm 开始，跟随下层抬升
-                              </p>
-                            )
-                          )}
-                          <CreationColor
-                            key={JSON.stringify(selection)}
-                            label={
-                              sourceOnly
-                                ? '默认颜色'
-                                : scope === 'local'
-                                  ? `区域颜色 · ${cellKeys.length} 区`
-                                  : '部件颜色'
-                            }
-                            colors={
-                              sourceOnly
-                                ? [
-                                    doc.swatches.find(
-                                      (s) => s.id === current.swatchId,
-                                    )?.color ||
-                                      swatch?.color ||
-                                      null,
-                                  ]
-                                : (scene?.cells || [])
-                                    .filter((c) =>
-                                      scope === 'local'
-                                        ? cellKeys.includes(c.key)
-                                        : objects.includes(c.objectId),
-                                    )
-                                    .map((c) => c.color)
-                            }
-                            swatches={doc.swatches}
-                            disabled={
-                              calculating || p.busy || !!failedSelection
-                            }
-                            onPaint={(args) =>
-                              safely(() =>
-                                run('paint', { ...targets(), ...args }),
-                              )
-                            }
-                          />
-                          <div className="creation-property-block">
-                            <label>
-                              {scope === 'object' ? '部件统一厚度' : '区域厚度'}{' '}
-                              <span>{printHeight ? '打印层' : 'mm'}</span>
-                            </label>
-                            <div className="creation-height-input">
-                              <NumberEdit
-                                key={JSON.stringify(selection)}
-                                label={
-                                  printHeight ? '厚度打印层数' : '凸起厚度'
-                                }
-                                disabled={calculating || failedSelection}
-                                value={displayedHeight}
-                                min={heightMinimum}
-                                max={heightMaximum}
-                                step={printHeight ? 1 : 0.1}
-                                onCommit={(n) => safely(() => applyHeight(n))}
-                              />
-                              <button
-                                aria-pressed={p.tool === 'height'}
-                                disabled={calculating || failedSelection}
-                                onClick={() => p.onTool('height')}
-                              >
-                                <ArrowUpFromLine size={17} />
-                                拖动调高
-                              </button>
-                            </div>
-                            <input
-                              aria-label="调整凸起厚度"
-                              disabled={calculating || failedSelection}
-                              type="range"
-                              min={printHeight ? 1 : 0.1}
-                              max={Math.max(
-                                printHeight ? 30 : 6,
-                                displayedHeight,
-                              )}
-                              step={printHeight ? 1 : 0.1}
-                              value={displayedHeight}
-                              onPointerDown={() => {
-                                heightDrag.current = { slider: true };
-                              }}
-                              onChange={(e) => setDraftHeight(+e.target.value)}
-                              onPointerUp={() => {
-                                heightDrag.current = null;
-                                const value = draftHeight;
-                                setDraftHeight(null);
-                                if (value !== null)
-                                  safely(() => applyHeight(value));
-                              }}
-                              onPointerCancel={cancel}
-                              onKeyUp={(e) => {
-                                if (e.key === 'Escape') {
-                                  cancel();
-                                  return;
-                                }
-                                if (draftHeight !== null) {
-                                  const n = draftHeight;
-                                  setDraftHeight(null);
-                                  safely(() => applyHeight(n));
-                                }
-                              }}
-                            />
-                            {printHeight && (
-                              <small>
-                                {displayedHeight} × {printHeight} mm ={' '}
-                                {printMM(displayedHeight, printHeight)} mm
-                              </small>
-                            )}
-                          </div>
-                        </>
-                      )}
-                      {scope === 'object' && (
-                        <details className="creation-base">
-                          <summary>生成承托部件 · 可选</summary>
-                          <p className="creation-muted">
-                            已有完整底层轮廓时无需添加。此工具只根据所选部件的外形生成新的承托部件，可在普通修改器中继续编辑。
-                          </p>
-                          <div>
-                            外扩边距 mm
-                            <NumberEdit
-                              label="底板外扩边距"
-                              value={baseMargin}
-                              min={0}
-                              max={20}
-                              onCommit={(n) => {
-                                setBaseMargin(n);
-                                setBasePreview(null);
-                              }}
-                            />
-                          </div>
-                          <label>
-                            底板厚度 {printHeight ? '打印层' : 'mm'}
-                            <NumberEdit
-                              label="底板厚度"
-                              value={
-                                printHeight
-                                  ? printCount(baseHeight, printHeight)
-                                  : baseHeight
-                              }
-                              min={printHeight ? 1 : 0.1}
-                              max={heightMaximum}
-                              step={printHeight ? 1 : 0.1}
-                              onCommit={(n) => {
-                                setBaseHeight(
-                                  printHeight ? printMM(n, printHeight) : n,
-                                );
-                                setBasePreview(null);
-                              }}
-                            />
-                          </label>
-                          <button
-                            disabled={
-                              !objects.length || calculating || evaluationFailed
-                            }
-                            onClick={() =>
-                              safely(async () => {
-                                const snapshot = p.project;
-                                const result = await call('creation_base', {
-                                  objectIds: objects,
-                                  offsetMM: baseMargin,
-                                  ...(printHeight
-                                    ? {
-                                        heightLayers: printCount(
-                                          baseHeight,
-                                          printHeight,
-                                        ),
-                                      }
-                                    : { heightMM: baseHeight }),
-                                  swatchId: swatch?.id,
-                                });
-                                if (ref.current.project !== snapshot)
-                                  throw Error('来源已变化，请重新预览');
-                                setBasePreview({
-                                  ...result,
-                                  project: result.project,
-                                  revision: snapshot,
-                                });
-                              })
-                            }
-                          >
-                            预览底板
-                          </button>
-                          <small>
-                            {printHeight
-                              ? '采用当前画笔色。底板会占据新的最底层，现有层整体抬升。'
-                              : '采用当前画笔色。确认后所选部件放到底板顶面。'}
-                          </small>
-                        </details>
-                      )}
-                      {scope === 'object' && objects.length === 1 && (
-                        <details className="creation-position">
-                          <summary>
-                            {printHeight ? '成品选项' : '部件位置与叠放'}
-                          </summary>
-                          {!printHeight && (
-                            <>
-                              <div>
-                                起始高度 mm
-                                <NumberEdit
-                                  label="对象起始高度"
-                                  value={current.zMM}
-                                  onCommit={(n) =>
-                                    safely(() =>
-                                      run('object', {
-                                        id: current.id,
-                                        changes: { zMM: n },
-                                      }),
-                                    )
-                                  }
-                                />
-                              </div>
-                              <label>
-                                放到对象上
-                                <select
-                                  aria-label="放到对象上"
-                                  value={current.attachId || ''}
-                                  onChange={(e) =>
-                                    safely(() =>
-                                      run('object', {
-                                        id: current.id,
-                                        changes: { attachId: e.target.value },
-                                      }),
-                                    )
-                                  }
-                                >
-                                  <option value="">平台 · Z = 0</option>
-                                  {doc.objects
-                                    .filter((o) => o.id !== current.id)
-                                    .map((o) => (
-                                      <option key={o.id} value={o.id}>
-                                        {o.name}
-                                      </option>
-                                    ))}
-                                </select>
-                              </label>
-                              <small>
-                                列表拖动只调整顺序；这里才会改变物理高度。
-                              </small>
-                            </>
-                          )}
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={current.printable}
-                              onChange={(e) =>
-                                safely(() =>
-                                  run('object', {
-                                    id: current.id,
-                                    changes: { printable: e.target.checked },
-                                  }),
-                                )
-                              }
-                            />
-                            参与成品导出
-                          </label>
-                        </details>
-                      )}
-                    </>
-                  ) : (
-                    <div className="creation-empty">
-                      <Layers size={24} />
-                      <b>描轮廓，填颜色，调高低</b>
-                      <p>
-                        点击面选区域，点击线选样条。右侧同步定位；空白处或 Esc
-                        取消选择。
-                      </p>
-                      <button onClick={() => p.onTool('paint')}>
-                        <PaintBucket size={16} />
-                        给闭合轮廓上色
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-              {tab === 'lines' && (
-                <>
-                  <div className="creation-property-title">
-                    <b>线条编辑</b>
-                    <button onClick={p.onNewPath}>
-                      <Plus size={14} />
-                      新线条
-                    </button>
-                  </div>
-                  <div className="creation-source-settings">
-                    {p.sourceInspector}
-                  </div>
-                  {current &&
-                    selection.kind === 'path' &&
-                    p.selectedPaths.some((id) =>
-                      current.pathIds.includes(id),
-                    ) && (
-                      <div className="creation-role">
-                        <span>选中线条的用途</span>
-                        <div>
-                          {[
-                            ['boundary', '轮廓'],
-                            ['divider', '分区'],
-                            ['hole', '挖洞'],
-                            ['guide', '参考'],
-                          ].map(([role, label]) => (
-                            <button
-                              key={role}
-                              disabled={checkingRole || calculating || p.busy}
-                              aria-pressed={p.selectedPaths
-                                .filter((id) => current.pathIds.includes(id))
-                                .every(
-                                  (id) =>
-                                    (current.roles[id] ||
-                                      (scene?.modifierModel === 'program'
-                                        ? undefined
-                                        : p.project.paths.find(
-                                              (path) => path.id === id,
-                                            )?.closed
-                                          ? 'boundary'
-                                          : 'guide')) === role,
-                                )}
-                              onClick={() => chooseRole(role)}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        <small>
-                          分区保留共享边界；挖洞使用闭合线。参考线不参与填色。
-                        </small>
-                        {checkingRole && (
-                          <output>正在检查分区，完成后应用…</output>
-                        )}
-                        {roleResult?.objectId === current.id && (
-                          <output className="creation-role-result">
-                            {roleResult.message}
-                          </output>
-                        )}
-                      </div>
-                    )}
-                </>
-              )}
-              {['lines', 'modifiers'].includes(tab) && (
-                <>
-                  {' '}
-                  {current && objects.length === 1 && (
-                    <CreationConnections
-                      key={current.id}
-                      object={current}
-                      scene={scene as never}
-                      project={p.project}
-                      preview={joinPreview as never}
-                      onCancel={clearConnectionPreview}
-                      onModifiers={() => setTab('modifiers')}
-                      onPreview={(joinMM) =>
-                        safely(async () => {
-                          const snapshot = p.project,
-                            id = current.id,
-                            token = ++connectionRequest.current;
-                          const prepared = await ref.current.runtime.prepare(
-                            'join',
-                            { objectId: id, joinMM },
-                            {
-                              project: snapshot,
-                              scene:
-                                revision.current === snapshot
-                                  ? sceneRef.current
-                                  : null,
-                            },
-                          );
-                          const result = await call(
-                            'creation',
-                            {},
-                            prepared.project,
-                          );
-                          if (
-                            token !== connectionRequest.current ||
-                            focusedObject.current !== id
-                          )
-                            return;
-                          if (ref.current.project !== snapshot)
-                            throw Error('来源已变化，请重新预览');
-                          setJoinPreview(result);
-                          setConnectionHighlight([]);
-                        })
-                      }
-                      onApply={(joinMM) =>
-                        safely(() =>
-                          run('join', { objectId: current.id, joinMM }),
-                        )
-                      }
-                      onCommand={(action, args) =>
-                        safely(() => run(action, args))
-                      }
-                      onLocate={(ids, connections = []) => {
-                        selectionState.selectPaths(ids);
-                        p.onView('flat');
-                        p.onFramePaths(ids, { force: true });
-                        setConnectionHighlight(connections);
-                      }}
-                    />
-                  )}
-                </>
-              )}
               {tab === 'make' && (
                 <>
                   <p className="creation-muted">

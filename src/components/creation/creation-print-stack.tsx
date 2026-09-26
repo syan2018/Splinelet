@@ -1,9 +1,23 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
+import { aggregatePrintPlacements } from '@/lib/editor/print-placement.mjs';
 import NumberEdit from '../shared/creation-number';
 type Layer = { id: string; name: string };
-type ObjectInfo = { id: string; name: string; printLayerId?: string };
+type PrintPlacementValue =
+  | { kind: 'layer'; layerId: string }
+  | {
+      kind: 'mixed';
+      layerIds: string[];
+      includesUnassigned: boolean;
+    }
+  | { kind: 'unassigned' | 'unavailable' };
+type ObjectInfo = {
+  id: string;
+  name: string;
+  printLayerId?: string;
+  printPlacement?: PrintPlacementValue;
+};
 type Level = {
   id: string;
   state: string;
@@ -19,6 +33,17 @@ type Doc = {
   objects: ObjectInfo[];
 };
 type Command = (action: string, args: Record<string, unknown>) => void;
+
+const compatiblePlacement = (object: ObjectInfo): PrintPlacementValue =>
+  object.printPlacement ||
+  (object.printLayerId
+    ? { kind: 'layer', layerId: object.printLayerId }
+    : { kind: 'unassigned' });
+
+const selectedPlacement = (members: ObjectInfo[]) =>
+  aggregatePrintPlacements(
+    members.map(compatiblePlacement),
+  ) as PrintPlacementValue;
 
 export function PrintPlacement({
   doc,
@@ -43,9 +68,19 @@ export function PrintPlacement({
       </button>
     );
   const members = doc.objects.filter((o) => objectIds.includes(o.id));
-  const values = new Set(members.map((o) => o.printLayerId));
-  const id = values.size === 1 ? members[0]?.printLayerId : '';
+  const placement = selectedPlacement(members);
+  const id = placement.kind === 'layer' ? placement.layerId : '';
   const level = scene?.printLevels?.find((l) => l.id === id);
+  const mixedLabel =
+    members.length === 1
+      ? '部件内区域的叠放位置不同'
+      : '所选部件的叠放位置不同';
+  const placeholder =
+    placement.kind === 'mixed'
+      ? mixedLabel
+      : placement.kind === 'unassigned'
+        ? '未分配堆叠层'
+        : '无法确定堆叠层';
   return (
     <div className="creation-print-placement">
       <label>
@@ -58,9 +93,11 @@ export function PrintPlacement({
             onCommand('print_assign', { objectIds, layerId: e.target.value })
           }
         >
-          <option value="" disabled>
-            多个堆叠层
-          </option>
+          {placement.kind !== 'layer' && (
+            <option value="" disabled>
+              {placeholder}
+            </option>
+          )}
           {stack.layers.map((l, i) => (
             <option key={l.id} value={l.id}>
               {i + 1} · {l.name}
@@ -72,7 +109,11 @@ export function PrintPlacement({
         <small>
           {level?.state === 'ready'
             ? `起点 ${level.bottomLayers} 打印层 · ${level.bottomMM} mm`
-            : level?.message || '同层部件共享起始平面'}
+            : placement.kind === 'mixed'
+              ? '选择一个层会统一选中部件的全部区域'
+              : placement.kind === 'unassigned'
+                ? '选择一个层会统一选中部件的全部区域'
+                : level?.message || '同层部件共享起始平面'}
         </small>
         <button onClick={onManage}>管理层</button>
       </div>
@@ -172,9 +213,13 @@ export default function PrintStack({
             {[...stack.layers].reverse().map((layer, ri) => {
               const index = stack.layers.length - 1 - ri;
               const level = scene?.printLevels?.find((l) => l.id === layer.id);
-              const members = doc.objects.filter(
-                (o) => o.printLayerId === layer.id,
-              );
+              const members = doc.objects.filter((o) => {
+                const placement = compatiblePlacement(o);
+                return placement.kind === 'layer'
+                  ? placement.layerId === layer.id
+                  : placement.kind === 'mixed' &&
+                      placement.layerIds.includes(layer.id);
+              });
               return (
                 <div
                   key={layer.id}
@@ -272,10 +317,26 @@ export default function PrintStack({
                   </div>
                   <p
                     className="creation-print-members"
-                    title={members.map((o) => o.name).join('、')}
+                    title={members
+                      .map(
+                        (o) =>
+                          o.name +
+                          (compatiblePlacement(o).kind === 'mixed'
+                            ? '（部分区域）'
+                            : ''),
+                      )
+                      .join('、')}
                   >
                     {members.length
-                      ? members.map((o) => o.name).join(' · ')
+                      ? members
+                          .map(
+                            (o) =>
+                              o.name +
+                              (compatiblePlacement(o).kind === 'mixed'
+                                ? '（部分区域）'
+                                : ''),
+                          )
+                          .join(' · ')
                       : '空层 · 选择部件后移入'}
                   </p>
                   {!!objectIds.length && (
@@ -284,7 +345,11 @@ export default function PrintStack({
                       disabled={
                         disabled ||
                         objectIds.every((id) =>
-                          members.some((o) => o.id === id),
+                          members.some(
+                            (o) =>
+                              o.id === id &&
+                              compatiblePlacement(o).kind === 'layer',
+                          ),
                         )
                       }
                       onClick={() =>

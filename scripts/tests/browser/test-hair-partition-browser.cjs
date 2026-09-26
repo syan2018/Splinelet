@@ -98,6 +98,7 @@ module.exports = async (page, fixture) => {
   );
   const shapes = (s) => s.cells.map((c) => [c.key, c.geometry, c.areaMM2]);
   const baseShapes = shapes(scene);
+  await page.getByRole('button', { name: '当前选区颜色', exact: true }).click();
   await page.getByLabel('选区颜色 HEX').fill('#cc4488');
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await settle();
@@ -117,6 +118,9 @@ module.exports = async (page, fixture) => {
   checks.push(
     'local colour changes only its target, without changing region geometry or creating conflicts',
   );
+  await page
+    .getByRole('button', { name: '当前选区浮雕厚度', exact: true })
+    .click();
   await page.getByLabel('凸起厚度', { exact: true }).fill('3.15');
   await page.getByLabel('凸起厚度', { exact: true }).press('Enter');
   await settle();
@@ -143,6 +147,7 @@ module.exports = async (page, fixture) => {
   checks.push('colour and height each undo in one step');
 
   await pick(left);
+  await page.getByRole('button', { name: '当前选区颜色', exact: true }).click();
   await page.getByLabel('选区颜色 HEX').fill('#cc4488');
   await page.getByRole('button', { name: '应用', exact: true }).click();
   await settle();

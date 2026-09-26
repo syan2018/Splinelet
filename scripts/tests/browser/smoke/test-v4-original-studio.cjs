@@ -954,7 +954,7 @@ async function test(page, output) {
       { objectId: boundaryOwner.id, pathId: exactBatch.pathIds[1] },
     );
     await page
-      .getByRole('button', { name: '当前选区属性', exact: true })
+      .getByRole('button', { name: '当前源线属性', exact: true })
       .click();
     const roleControls = page.locator('.creation-role');
     const beforeRolesRevision = (await evidence()).revision;
@@ -1020,7 +1020,7 @@ async function test(page, output) {
       supportSource,
     );
     await page
-      .getByRole('button', { name: '当前选区属性', exact: true })
+      .getByRole('button', { name: '为选中部件生成承托', exact: true })
       .click();
     await page.getByText('生成承托部件 · 可选', { exact: true }).click();
     await page.getByRole('button', { name: '预览底板', exact: true }).click();

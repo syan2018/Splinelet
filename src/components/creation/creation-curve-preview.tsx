@@ -6,34 +6,10 @@ import {
 import { useMemo, useState } from 'react';
 import { evaluateCurveProgram } from '@/lib/curve-modifiers.mjs';
 import { creationDocument } from '@/lib/creation-schema.mjs';
+import { selectCurvePreviews } from '@/lib/editor/curve-preview-selection.mjs';
 import type { Project } from '@/lib/project';
 import type { CurvePreview } from '@/lib/modifier-types';
 import type { CreationRuntime } from './creation-runtime';
-
-function selectPreviews(
-  all: CurvePreview[],
-  enabled: boolean,
-  focusedId: string | undefined,
-  stageId: string,
-) {
-  if (!enabled) return [];
-  const latest = new Map<string, CurvePreview>();
-  for (const stage of all) latest.set(stage.objectId, stage);
-  for (const stage of all)
-    if (stage.defaultPreview) latest.set(stage.objectId, stage);
-  const chosen = all.find(
-    (s) => s.objectId === focusedId && s.stageId === stageId,
-  );
-  if (chosen) latest.set(chosen.objectId, chosen);
-  return [...latest.values()].filter(
-    (stage) =>
-      !(
-        stage.stageId === 'final' &&
-        !stage.curves.length &&
-        stage.diagnostic === '未发布曲线输出'
-      ),
-  );
-}
 
 export function useCurvePreview(
   project: Project,
@@ -45,7 +21,8 @@ export function useCurvePreview(
   evaluatedProject?: Project | null,
   live = true,
 ) {
-  const [enabled, setEnabled] = useState(true);
+  const [visibility, setVisibility] = useState({ objectId: '', enabled: true });
+  const enabled = visibility.objectId === objectId ? visibility.enabled : true;
   const [choice, setChoice] = useState({ objectId: '', stageId: 'final' });
   // Browsing and rigid moves reuse the worker's evaluated scene. Only source
   // editing needs synchronous curve previews before the surface result arrives.
@@ -64,12 +41,7 @@ export function useCurvePreview(
         (o) => evaluateCurveProgram(project, o).stages,
       ) as CurvePreview[];
   }, [project, runtime, evaluatedProject, live]);
-  const focusedId =
-    objectId ||
-    all.find((stage) => stage.defaultPreview)?.objectId ||
-    all.find((stage) => stage.stageId === 'final' && stage.curves.length)
-      ?.objectId ||
-    all[0]?.objectId;
+  const focusedId = objectId;
   const stages = all.filter((s) => s.objectId === focusedId);
   const defaultStage =
     stages.find((stage) => stage.defaultPreview)?.stageId || 'final';
@@ -78,23 +50,34 @@ export function useCurvePreview(
   const stageId = stages.some((s) => s.stageId === requested)
     ? requested
     : defaultStage;
-  const previews = selectPreviews(all, enabled, focusedId, stageId);
-  const endpoints = previews.reduce(
+  const previews = selectCurvePreviews(
+    all,
+    focusedId,
+    enabled,
+    stageId,
+  ) as CurvePreview[];
+  const focusedPreviews = previews.filter(
+    (stage) => stage.objectId === focusedId,
+  );
+  const endpoints = focusedPreviews.reduce(
     (n, s) =>
       n + s.junctions.filter((junction) => junction.degree === 1).length,
     0,
   );
-  const branches = previews.reduce(
+  const branches = focusedPreviews.reduce(
     (n, s) => n + s.junctions.filter((junction) => junction.degree > 2).length,
     0,
   );
   const diagnostics = [
-    ...new Set(previews.flatMap((s) => (s.diagnostic ? [s.diagnostic] : []))),
+    ...new Set(
+      focusedPreviews.flatMap((s) => (s.diagnostic ? [s.diagnostic] : [])),
+    ),
   ];
   return {
     previews,
-    controls: all.length > 0 && (
+    controls: focusedId && stages.length > 0 && (
       <div
+        key={focusedId}
         className="curve-preview-controls"
         data-curve-preview-controls
         onPointerDown={(e) => e.stopPropagation()}
@@ -103,7 +86,9 @@ export function useCurvePreview(
           <input
             type="checkbox"
             checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
+            onChange={(e) =>
+              setVisibility({ objectId: focusedId, enabled: e.target.checked })
+            }
           />
           派生样条
         </label>
@@ -133,7 +118,7 @@ export function useCurvePreview(
                     ))}
                 </select>
               )}
-              <span>青色线显示修改器处理后的曲线。关闭勾选可隐藏。</span>
+              <span>仅预览当前部件的曲线阶段；取消选择后恢复完整结果。</span>
               {(endpoints > 0 || branches > 0) && (
                 <output>
                   {endpoints > 0 &&

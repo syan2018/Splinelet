@@ -196,7 +196,9 @@ async function selectSourceAndRegion(page, scene, objectName) {
 
 async function editAndUndo(page) {
   const before = await call(page, 'get_project');
-  await page.getByRole('button', { name: '当前选区属性', exact: true }).click();
+  await page
+    .getByRole('button', { name: '当前选区浮雕厚度', exact: true })
+    .click();
   const input = page.getByLabel('厚度打印层数', { exact: true });
   await input.waitFor();
   const oldValue = Number(await input.inputValue());

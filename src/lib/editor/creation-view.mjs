@@ -17,6 +17,10 @@ import {
   curveModifierAddCapability,
   programModifierCapabilities,
 } from '../editing/commands/program-modifiers.mjs';
+import {
+  aggregatePrintPlacements,
+  printPlacementFor,
+} from './print-placement.mjs';
 
 const clone = (value) => structuredClone(value);
 const absent = (domain) => ({
@@ -463,6 +467,10 @@ export function projectCreationView(document, snapshot) {
       placements.push(
         clone(document.reliefDefinitions.defaults[node.id].placement),
       );
+    const printPlacement = aggregatePrintPlacements(
+      placements.map(printPlacementFor),
+      document.manufacturing.layerOrder,
+    );
     const manufacturing = objectManufacturing(
       document,
       node,
@@ -539,12 +547,12 @@ export function projectCreationView(document, snapshot) {
               : '',
           ),
         ) ?? '',
+      // Keep the historical scalar for consumers that have not adopted the
+      // explicit summary. It intentionally remains blank for every non-single
+      // state, as it did before this projection gained printPlacement.
       printLayerId:
-        uniqueValue(
-          placements.map((placement) =>
-            placement.kind === 'layer' ? placement.layerId : '',
-          ),
-        ) ?? '',
+        printPlacement.kind === 'layer' ? printPlacement.layerId : '',
+      printPlacement,
       printable: manufacturing.printable,
       partId: manufacturing.partId,
       evaluation: clone(objectStages.get(node.id)),
