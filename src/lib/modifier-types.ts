@@ -92,7 +92,7 @@ export type ModifierObject = {
   sources?: Record<string, { regionId: string; modifiers: SurfaceModifier[] }>;
 };
 export type ModifierProject = {
-  paths: { id: string; name: string; closed: boolean }[];
+  paths: readonly { id: string; name: string; closed: boolean }[];
   model?: {
     regions: { id: string; name: string }[];
     features: { id: string; name: string }[];

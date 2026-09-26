@@ -10,7 +10,12 @@ import { translatePaths } from '../../../src/lib/source-editor/selection.mjs';
 import { readGeometry } from '../../../src/lib/region-engine.mjs';
 
 const samples = [
-  ['Sandrone', decodeProject(fs.readFileSync('public/sandrone-example.spl'))],
+  [
+    'Sandrone',
+    decodeProject(
+      fs.readFileSync('scripts/tests/fixtures/legacy-sandrone.spl'),
+    ),
+  ],
   [
     'partition paint',
     JSON.parse(

@@ -12,9 +12,7 @@ import { evaluateProgram } from '../../../src/lib/construction/document-evaluati
 import { findRegionDrawing } from '../../../src/lib/editing/region-drawing.mjs';
 import { repeatedRingDocument } from '../fixtures/v4-programs.mjs';
 
-const files = [
-  new URL('../../../public/sandrone-example.spl', import.meta.url),
-];
+const files = [new URL('../fixtures/legacy-sandrone.spl', import.meta.url)];
 if (process.argv[2]) files.push(process.argv[2]);
 const fixtures = files.map((file) =>
   importLegacy(decodeProject(readFileSync(file))),

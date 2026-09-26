@@ -44,7 +44,7 @@ const ownedPathRef = (project, migrated, legacyPathId) => {
 };
 
 const sandroneProject = decodeProject(
-  fs.readFileSync('public/sandrone-example.spl'),
+  fs.readFileSync('scripts/tests/fixtures/legacy-sandrone.spl'),
 );
 const sandrone = importLegacy(sandroneProject);
 assert.equal(validateDocument(sandrone.document), sandrone.document);

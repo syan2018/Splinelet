@@ -42,6 +42,7 @@ import {
   Box,
 } from 'lucide-react';
 import StudioFileMenu from '@/components/studio/studio-file-menu';
+import { StudioImportNotice } from '@/components/studio/studio-import-notice';
 import NumberEdit from '@/components/shared/creation-number';
 import { modelTools } from '@/lib/model-api';
 import ModelWorkspace from '@/components/modeling/model-workspace';
@@ -113,13 +114,10 @@ import {
 import {
   type Point,
   type Cubic,
-  type Project,
   type TracePath,
   palette,
   download,
   d,
-  svg,
-  blender,
 } from '@/lib/project';
 import { SPL_MIME } from '@/lib/project-format.mjs';
 import {
@@ -159,6 +157,14 @@ import { transformPoint, multiplyTransforms } from '@/lib/scene/transforms.mjs';
 import { createReferenceCommand } from '@/lib/editing/commands/references.mjs';
 import { readReferenceImage } from '@/lib/editor/reference-images.mjs';
 import { createReferenceProject } from '@/lib/editor/new-reference-project.mjs';
+import type {
+  StudioDisplayPath,
+  StudioDisplayProject,
+} from '@/lib/editor/studio-display-types';
+import {
+  exportStudioDisplayBlender,
+  exportStudioDisplaySvg,
+} from '@/lib/editor/studio-display-export';
 
 type ModelApi = {
   state: (input?: unknown) => unknown;
@@ -176,6 +182,23 @@ type TraceResponse = {
   fitError: number;
 };
 type SnapResponse = { point: Point };
+const mutableTracePath = (path: StudioDisplayPath): TracePath => ({
+  id: path.id,
+  name: path.name,
+  color: path.color,
+  curves: path.curves.map(
+    (curve) => curve.map((point) => ({ ...point })) as Cubic,
+  ),
+  start: { ...path.start },
+  closed: path.closed,
+  visible: path.visible,
+  quality: path.quality,
+  anchors: path.anchors.map((point) => ({ ...point })),
+  ...(path.groupId === undefined ? {} : { groupId: path.groupId }),
+  ...(path.nodeModes === undefined ? {} : { nodeModes: [...path.nodeModes] }),
+  ...(path.fitting === undefined ? {} : { fitting: path.fitting }),
+  ...(path.fitError === undefined ? {} : { fitError: path.fitError }),
+});
 type DetectCandidatesArgs = {
   limit?: number;
   spacing?: number;
@@ -351,9 +374,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     [opacity, setOpacity] = useState(85),
     [vectorsOnly, setVectorsOnly] = useState(false),
     [fill, setFill] = useState(false);
-  const proposedCommit = useRef<{ id: string; commit: () => TracePath } | null>(
-    null,
-  );
+  const proposedCommit = useRef<{
+    id: string;
+    commit: () => StudioDisplayPath;
+  } | null>(null);
   useEffect(() => {
     if (!proposed) proposedCommit.current = null;
   }, [proposed]);
@@ -404,7 +428,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const vectorFile = useRef<HTMLInputElement>(null);
   const pendingVectorFocus = useRef<string | null>(null);
   const [vectorInput, setVectorInput] = useState<
-    (SvgImportResult & { name: string; project: Project }) | null
+    (SvgImportResult & { name: string; project: StudioDisplayProject }) | null
   >(null);
   const importVector = async (file: File) => {
     if (
@@ -422,7 +446,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     setVectorInput({
       ...parsed,
       name: file.name.replace(/\.svg$/i, ''),
-      project: captured as Project,
+      project: captured as StudioDisplayProject,
     });
   };
   const file = useRef<HTMLInputElement>(null),
@@ -464,7 +488,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     id: string;
     name: string;
     segments: number;
-    snapshot: Project;
+    snapshot: StudioDisplayProject;
   } | null>(null);
   const propertyTab =
     tool === 'edit' ? 'node' : tool === 'trace' ? 'trace' : 'paths';
@@ -492,7 +516,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const [transformMode, setTransformMode] =
     useState<ObjectTransformMode>('translate');
   const [objectMoveCommit, setObjectMoveCommit] = useState<{
-    project: Project;
+    project: StudioDisplayProject;
     nodeIds: string[];
     delta: ObjectTransformDelta;
   } | null>(null);
@@ -608,7 +632,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     const captured = host.getSnapshot();
     const next = captured.runtime
       .commandGroup(request, { project: captured.project })
-      .commit() as Project;
+      .commit() as StudioDisplayProject;
     pr.current = next;
     return next;
   };
@@ -764,7 +788,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           ? { frame: host.getSnapshot().presentation.frame }
           : {}),
       });
-      pr.current = next.project as Project;
+      pr.current = next.project as StudioDisplayProject;
       finish();
       setProposed(null);
       setPendingRefit(null);
@@ -836,7 +860,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     createV4NodeActions({
       runtime: host.getSnapshot().runtime,
       project: host.getSnapshot().project,
-      onCommit: (next: Project) => {
+      onCommit: (next: StudioDisplayProject) => {
         pr.current = next;
       },
     });
@@ -1000,7 +1024,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       studioDrag.cancel();
       transformGizmo.current?.cancel();
       host.undo();
-      const p = host.getSnapshot().project as Project;
+      const p = host.getSnapshot().project as StudioDisplayProject;
       pr.current = p;
       setPreview([]);
       setProposed(null);
@@ -1025,7 +1049,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       studioDrag.cancel();
       transformGizmo.current?.cancel();
       host.redo();
-      const p = host.getSnapshot().project as Project;
+      const p = host.getSnapshot().project as StudioDisplayProject;
       pr.current = p;
       setSelection(null);
       setMergeSource(null);
@@ -1069,7 +1093,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             { kind: 'finish-path', pathId: ar.current },
             { project: captured.project },
           )
-          .commit() as Project;
+          .commit() as StudioDisplayProject;
       } catch (error) {
         issue = `${errorMessage(error)} · 线条已保留，可从端点续画`;
       }
@@ -1193,7 +1217,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           traceTarget.current || creationApi.current?.trace_target();
         const start = await snapped(p, config);
         const beforeIds = new Set(
-          captured.project.paths.map((path: TracePath) => path.id),
+          captured.project.paths.map((path: StudioDisplayPath) => path.id),
         );
         const next = captured.runtime
           .commandPath(
@@ -1207,7 +1231,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             },
             { project: captured.project },
           )
-          .commit() as Project;
+          .commit() as StudioDisplayProject;
         const path = next.paths.find((path) => !beforeIds.has(path.id));
         if (!path) throw Error('新线条未出现在源视图');
         pr.current = next;
@@ -1233,7 +1257,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           },
           { project: captured.project },
         )
-        .commit() as Project;
+        .commit() as StudioDisplayProject;
       setStatus(
         config.mode === 'manual'
           ? '已直连 · 未吸附、未拟合 · 可拖动控制柄调整'
@@ -1269,7 +1293,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           },
           { project: captured.project },
         )
-        .commit() as Project;
+        .commit() as StudioDisplayProject;
       finish();
       setStatus(
         r.fitError > sr.current.tolerance
@@ -1300,7 +1324,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       [nodeIndex],
       sr.current.tolerance,
     );
-    const next = host.getSnapshot().project as Project;
+    const next = host.getSnapshot().project as StudioDisplayProject;
     const path = next.paths.find((item) => item.id === pathId);
     finish();
     setActiveNow(path ? pathId : null);
@@ -1574,7 +1598,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       commit(delta) {
         gesture.update(delta);
         try {
-          const next = gesture.commit() as Project;
+          const next = gesture.commit() as StudioDisplayProject;
           setObjectMoveCommit({
             project: next,
             nodeIds: selected.nodeIds,
@@ -2122,7 +2146,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         fileName: null,
         blenderExtrusionMM: host.getSnapshot().presentation.blenderExtrusionMM,
       });
-      pr.current = next.project as Project;
+      pr.current = next.project as StudioDisplayProject;
       finish();
       setActiveNow(null);
       setProposed(null);
@@ -2157,7 +2181,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         images.push(image);
       }
       const result = host.addReferenceImages(images, identity);
-      pr.current = result.project as Project;
+      pr.current = result.project as StudioDisplayProject;
       finish();
       setReferencePanelOpen(true);
       setSelectedReferenceId(null);
@@ -2177,7 +2201,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       )
         throw Error('请先完成当前操作');
       host.dispatch(createReferenceCommand(request));
-      pr.current = host.getSnapshot().project as Project;
+      pr.current = host.getSnapshot().project as StudioDisplayProject;
       setReferenceDraft(null);
     } catch (error) {
       setStatus(errorMessage(error));
@@ -2231,7 +2255,9 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       return;
     }
     download(
-      format === 'svg' ? svg(p) : blender(p),
+      format === 'svg'
+        ? exportStudioDisplaySvg(p)
+        : exportStudioDisplayBlender(p),
       format === 'svg' ? '角色轮廓.svg' : '角色曲线_blender.py',
       format === 'svg' ? 'image/svg+xml' : 'text/x-python',
     );
@@ -2359,9 +2385,9 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       );
       const commit = () => {
         const beforeIds = new Set(
-          captured.project.paths.map((item: TracePath) => item.id),
+          captured.project.paths.map((item: StudioDisplayPath) => item.id),
         );
-        const next: Project = plan.commit();
+        const next: StudioDisplayProject = plan.commit();
         pr.current = next;
         const added = next.paths.find((item) => !beforeIds.has(item.id));
         if (!added) throw Error('新增源路径无法显示');
@@ -2528,7 +2554,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const refitPath = async (args: { id?: string } = {}) =>
     lock(async () => {
       const captured = host.getSnapshot();
-      const sourceProject = captured.project as Project;
+      const sourceProject = captured.project as StudioDisplayProject;
       const original = sourceProject.paths.find(
         (p) => p.id === (args.id || ar.current),
       );
@@ -2539,7 +2565,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       if (!original.closed && original.curves.length)
         points.push(original.curves.at(-1)![3]);
       if (points.length < 2) throw Error('这条路径没有足够的原落点记录');
-      const path = cloneTraceValue(original);
+      const path = mutableTracePath(original);
       path.curves = [];
       path.quality = 1;
       path.fitError = 0;
@@ -2740,7 +2766,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         const result = captured.runtime
           .commandSplines(a, { project: captured.project })
           .commit();
-        pr.current = result.project as Project;
+        pr.current = result.project as StudioDisplayProject;
         finish();
         setProposed(null);
         setStatus(`已提交 ${result.pathIds.length} 条精确样条 · Ctrl+Z 撤销`);
@@ -2828,11 +2854,14 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       },
       export: (a: AgentExportArgs) => {
         if (a.format === 'svg')
-          return { filename: '角色轮廓.svg', content: svg(pr.current) };
+          return {
+            filename: '角色轮廓.svg',
+            content: exportStudioDisplaySvg(pr.current),
+          };
         if (a.format === 'blender')
           return {
             filename: '角色曲线_blender.py',
-            content: blender(pr.current),
+            content: exportStudioDisplayBlender(pr.current),
           };
         if (a.format === 'json' && host) {
           const bytes = host.exportBytes();
@@ -3425,6 +3454,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           }}
         />
       </header>
+      <StudioImportNotice report={studioSnapshot.importReport} />
       <nav
         className="workspace-switch creation-workspace-switch"
         aria-label="视图"
@@ -3644,7 +3674,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                   (p) =>
                     p.visible &&
                     !project.creation?.objects.some(
-                      (o: { pathIds: string[]; visible: boolean }) =>
+                      (o: { pathIds: readonly string[]; visible: boolean }) =>
                         o.pathIds.includes(p.id) && !o.visible,
                     ),
                 )}
@@ -4196,7 +4226,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                   { project: captured.project },
                 )
                 .commit();
-              pr.current = imported as Project;
+              pr.current = imported as StudioDisplayProject;
               pendingVectorFocus.current =
                 captured.runtime.readCreationDocument(imported).tree.at(-1)
                   ?.id || null;

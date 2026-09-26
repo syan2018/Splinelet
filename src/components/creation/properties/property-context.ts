@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import type { Project } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
 import type { CreationSelection } from '@/hooks/use-creation-selection';
 import type {
   CreationDocument,
@@ -31,7 +31,7 @@ export type PropertyContext = {
   objects: string[];
   cellKeys: string[];
   scope: 'object' | 'local' | 'source';
-  project: Project;
+  project: StudioDisplayProject;
   doc: CreationDocument;
   scene: CreationScene | null;
   current?: CreationObject;

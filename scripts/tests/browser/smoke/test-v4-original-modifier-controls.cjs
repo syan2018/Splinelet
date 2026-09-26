@@ -349,7 +349,7 @@ async function main() {
       JSON.parse(await page.locator('#reference-evidence').textContent());
     await page.locator('#reference-image').evaluate((img) => img.decode());
     const loaded = await referenceState();
-    assert.equal(loaded.paths, 76);
+    assert.equal(loaded.paths, 82);
     assert.equal(loaded.dirty, true);
     assert.equal(loaded.targetKind, null);
     assert.deepEqual(
@@ -612,7 +612,7 @@ async function main() {
     const reopened = await referenceState();
     assert.equal(reopened.restored, true);
     assert.equal(reopened.targetKind, 'web');
-    assert.equal(reopened.paths, 76);
+    assert.equal(reopened.paths, 82);
     assert.equal(reopened.created, 2);
     assert.deepEqual(reopened.revoked, [loaded.image]);
     assert.notEqual(reopened.image, loaded.image);

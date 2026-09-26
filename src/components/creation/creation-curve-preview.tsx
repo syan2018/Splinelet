@@ -4,21 +4,19 @@ import {
   type ObjectTransformDelta,
 } from '@/lib/source-editor/object-transform-preview';
 import { useMemo, useState } from 'react';
-import { evaluateCurveProgram } from '@/lib/curve-modifiers.mjs';
-import { creationDocument } from '@/lib/creation-schema.mjs';
 import { selectCurvePreviews } from '@/lib/editor/curve-preview-selection.mjs';
-import type { Project } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
 import type { CurvePreview } from '@/lib/modifier-types';
 import type { CreationRuntime } from './creation-runtime';
 
 export function useCurvePreview(
-  project: Project,
-  objectId?: string,
-  runtime?: Pick<
+  project: StudioDisplayProject,
+  objectId: string | undefined,
+  runtime: Pick<
     CreationRuntime,
     'readCurvePreviews' | 'readEvaluatedCurvePreviews'
   >,
-  evaluatedProject?: Project | null,
+  evaluatedProject?: StudioDisplayProject | null,
   live = true,
 ) {
   const [visibility, setVisibility] = useState({ objectId: '', enabled: true });
@@ -27,19 +25,11 @@ export function useCurvePreview(
   // Browsing and rigid moves reuse the worker's evaluated scene. Only source
   // editing needs synchronous curve previews before the surface result arrives.
   const all = useMemo(() => {
-    if (runtime) {
-      if (!live && runtime.readEvaluatedCurvePreviews)
-        return (
-          runtime.readEvaluatedCurvePreviews(evaluatedProject || project) || []
-        );
-      return runtime.readCurvePreviews(project);
-    }
-    const doc = creationDocument(project) as NonNullable<Project['creation']>;
-    return doc.objects
-      .filter((o) => o.visible)
-      .flatMap(
-        (o) => evaluateCurveProgram(project, o).stages,
-      ) as CurvePreview[];
+    if (!live && runtime.readEvaluatedCurvePreviews)
+      return (
+        runtime.readEvaluatedCurvePreviews(evaluatedProject || project) || []
+      );
+    return runtime.readCurvePreviews(project);
   }, [project, runtime, evaluatedProject, live]);
   const focusedId = objectId;
   const stages = all.filter((s) => s.objectId === focusedId);
@@ -106,9 +96,7 @@ export function useCurvePreview(
                     setChoice({ objectId: focusedId!, stageId: e.target.value })
                   }
                 >
-                  <option value="final">
-                    {runtime ? '最终曲线' : '最终曲线 / 构面输入'}
-                  </option>
+                  <option value="final">最终曲线</option>
                   {stages
                     .filter((stage) => stage.stageId !== 'final')
                     .map((s) => (
@@ -144,7 +132,7 @@ export function CurvePreviewOverlay({
   move,
 }: {
   previews: CurvePreview[];
-  project: Project;
+  project: StudioDisplayProject;
   scale: number;
   move?: { nodeIds: string[]; delta: ObjectTransformDelta };
 }) {

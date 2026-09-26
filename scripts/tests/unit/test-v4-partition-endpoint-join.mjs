@@ -110,6 +110,11 @@ assert.ok(joins(initial)[1].extended[0] > 10);
 assert.equal(area(initial), 100);
 
 const outputContract = { version: 1, members: proposal(initial) };
+assert.ok(
+  initial.diagnostics.some(
+    (item) => item.code === 'partition-contract-proposal',
+  ),
+);
 const movedDivider = evaluate({
   cutter: cutterStage(6, 0.3, 9.7),
   outputContract,
@@ -118,6 +123,12 @@ assert.equal(
   movedDivider.status,
   'ready',
   JSON.stringify(movedDivider.diagnostics),
+);
+assert.equal(
+  movedDivider.diagnostics.some(
+    (item) => item.code === 'partition-contract-proposal',
+  ),
+  false,
 );
 assert.deepEqual(proposal(movedDivider), outputContract.members);
 assert.deepEqual(
@@ -167,6 +178,37 @@ assert.equal(disabled.value.regions.length, 1);
 assert.equal(joins(disabled).length, 1);
 
 const missingIdentity = cutterStage();
+const crossingCutter = cutterStage(5, 0.2, 11);
+const crossingBefore = structuredClone(crossingCutter);
+const crossing = evaluate({ cutter: crossingCutter });
+assert.equal(crossing.status, 'ready');
+assert.equal(crossing.value.regions.length, 2);
+assert.equal(area(crossing), 100);
+assert.ok(
+  crossing.diagnostics.some(
+    (item) =>
+      item.code === 'partition-endpoint-crosses-boundary' &&
+      item.endpoint === 1,
+  ),
+);
+assert.deepEqual(
+  crossingCutter,
+  crossingBefore,
+  'diagnostic classification must not edit source',
+);
+const interiorGap = evaluate({ cutter: cutterStage(5, 0.2, 9) });
+assert.equal(interiorGap.value.regions.length, 1);
+assert.ok(
+  interiorGap.diagnostics.some(
+    (item) =>
+      item.code === 'partition-endpoint-unconnected' && item.endpoint === 1,
+  ),
+);
+assert.ok(
+  disabled.diagnostics.some(
+    (item) => item.code === 'partition-endpoint-disabled',
+  ),
+);
 delete missingIdentity.value.curves[0].pathRef;
 assert.equal(evaluate({ cutter: missingIdentity }).status, 'blocked');
 const duplicateIdentity = cutterStage();

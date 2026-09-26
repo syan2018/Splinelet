@@ -1,5 +1,5 @@
 'use client';
-import type { TracePath } from '@/lib/project';
+import type { StudioDisplayPath } from '@/lib/editor/studio-display-types';
 type TraceActivationEvent = React.PointerEvent | React.MouseEvent;
 
 export default function SplineEndpoints({
@@ -12,7 +12,7 @@ export default function SplineEndpoints({
   onClose,
   isPanning,
 }: {
-  path: TracePath;
+  path: StudioDisplayPath;
   scale: number;
   drawing: boolean;
   end: 'start' | 'end';

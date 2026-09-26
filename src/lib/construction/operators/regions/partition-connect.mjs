@@ -175,12 +175,23 @@ export function connectPartitionCutters({
         });
         if (end === 0) coordinates.unshift(extended);
         else coordinates.push(extended);
-      } else if (gapMM > 1e-7)
+      } else if (gapMM > 1e-7) {
+        // A sampled end segment from inside to outside already cuts the base.
+        // Classify this separately from an interior gap, without changing any
+        // coordinates or relaxing the user's attachment tolerance.
+        const crossesBoundary =
+          !isDisabled &&
+          !base.covers(point(from)) &&
+          base.contains(point(coordinates.at(end === 0 ? 1 : -2)));
         diagnostics.push({
           code: isDisabled
             ? 'partition-endpoint-disabled'
-            : 'partition-endpoint-unconnected',
-          message: `分区线 ${cutter.id} 端点 ${endpoint} 未连接`,
+            : crossesBoundary
+              ? 'partition-endpoint-crosses-boundary'
+              : 'partition-endpoint-unconnected',
+          message: `分区线 ${cutter.id} 端点 ${endpoint} ${
+            crossesBoundary ? '已穿过底面边界，无需自动接边' : '未自动接边'
+          }`,
           pathId: cutter.id,
           endpoint,
           from: from.slice(),
@@ -188,6 +199,7 @@ export function connectPartitionCutters({
           gapMM,
           toleranceMM: endpointJoin.toleranceMM,
         });
+      }
     }
     return {
       ...structuredClone(cutter),

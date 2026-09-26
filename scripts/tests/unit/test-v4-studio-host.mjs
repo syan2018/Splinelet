@@ -10,9 +10,7 @@ import { decodeProject } from '../../../src/lib/project-format.mjs';
 import { createAuthoringCommand } from '../../../src/lib/editing/commands/authoring.mjs';
 
 const fixtureBytes = new Uint8Array(
-  fs.readFileSync(
-    new URL('../../../public/sandrone-example.spl', import.meta.url),
-  ),
+  fs.readFileSync(new URL('../fixtures/legacy-sandrone.spl', import.meta.url)),
 );
 const legacyProject = decodeProject(fixtureBytes);
 const frame = { width: 4, height: 2, widthMM: 2 };

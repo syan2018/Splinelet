@@ -12,6 +12,10 @@ import {
 } from '../../../src/lib/document/codec.mjs';
 import { resolveSketch } from '../../../src/lib/geometry/sketch.mjs';
 import { evaluateProgram } from '../../../src/lib/construction/document-evaluation.mjs';
+import { evaluateDocument } from '../../../src/lib/evaluation/evaluate-document.mjs';
+import { evaluateCreation } from '../../../src/lib/creation-engine.mjs';
+import { projectCreationView } from '../../../src/lib/editor/creation-view.mjs';
+import { sameOutputRef } from '../../../src/lib/relief/appearance.mjs';
 import {
   transformPoint,
   worldMatrix,
@@ -187,8 +191,84 @@ for (const entry of Object.values(v3.document.reliefDefinitions.overrides))
     'migrated per-output relief must bind a live V4 output',
   );
 
+// Two features may use the same Region at different heights. Import must
+// preserve both identities and a live attachment, including after save/reopen.
+const sharedRegion = v3ProgramProject();
+delete sharedRegion.creation.printStack;
+const sharedOwner = sharedRegion.creation.objects[0];
+delete sharedOwner.printLayerId;
+delete sharedOwner.surfaceGraph;
+sharedOwner.modifiers = [];
+const attachedBody = sharedRegion.model.features[0];
+delete attachedBody.heightLayers;
+attachedBody.attachId = 'support';
+const support = { ...attachedBody, id: 'support', zMM: 0, heightMM: 5 };
+delete support.attachId;
+sharedRegion.model.features.unshift(support);
+sharedOwner.featureIds = ['support', 'body'];
+const importedShared = importLegacy(sharedRegion);
+assert.equal(importedShared.report.status, 'ok');
+const sharedDocument = decodeDocument(
+  encodeDocument(importedShared.document, { assets: importedShared.assets }),
+).document;
+assert.deepEqual(sharedDocument, importedShared.document);
+const evaluateCells = async (document) => {
+  const snapshot = await evaluateDocument(document, {
+    requestedDomains: ['regions', 'relief', 'placed-relief'],
+  });
+  assert.equal(snapshot.placedRelief.status, 'ready');
+  return projectCreationView(document, snapshot).cells;
+};
+const sharedCells = await evaluateCells(sharedDocument);
+assert.equal(sharedCells.length, 2);
+assert.notEqual(sharedCells[0].key, sharedCells[1].key);
+assert.deepEqual(
+  sharedCells.map(({ bottomMM, heightMM }) => [bottomMM, heightMM]),
+  evaluateCreation(structuredClone(sharedRegion)).cells.map(
+    ({ bottomMM, heightMM }) => [bottomMM, heightMM],
+  ),
+);
+const supportRef = importedShared.idMap['feature-output:support'];
+const supportOverride = Object.values(
+  sharedDocument.reliefDefinitions.overrides,
+).find((entry) => sameOutputRef(entry.target, supportRef));
+supportOverride.value.thickness = { kind: 'mm', value: 7 };
+const updatedCells = await evaluateCells(sharedDocument);
+const updatedBody = updatedCells.find((cell) =>
+  sameOutputRef(cell.outputRef, importedShared.idMap['feature-output:body']),
+);
+assert.ok(
+  Math.abs(updatedBody.bottomMM - 7.4) < 1e-10,
+  'attached feature must continue following its independently identified support',
+);
+const hiddenSupport = structuredClone(sharedRegion);
+hiddenSupport.creation.objects[0].replacedFeatureIds = ['support'];
+const importedHidden = importLegacy(hiddenSupport);
+assert.equal(importedHidden.report.status, 'ok-with-warnings');
+assert.ok(
+  importedHidden.report.issues.some(
+    (issue) => issue.code === 'attachment-flattened-unpublished-target',
+  ),
+);
+assert.equal((await evaluateCells(importedHidden.document)).length, 1);
+
+const cyclicAttachment = structuredClone(sharedRegion);
+cyclicAttachment.model.features.find(
+  (feature) => feature.id === 'body',
+).attachId = 'body';
+const importedCycle = importLegacy(cyclicAttachment);
+assert.equal(importedCycle.report.status, 'ok-with-warnings');
+assert.ok(
+  importedCycle.report.issues.some(
+    (issue) =>
+      issue.code === 'imported-output-blocked' &&
+      issue.domain === 'placed-relief',
+  ),
+  'schema-valid import must surface blocked final placement',
+);
+
 const sandrone = importLegacy(
-  decodeProject(fs.readFileSync('public/sandrone-example.spl')),
+  decodeProject(fs.readFileSync('scripts/tests/fixtures/legacy-sandrone.spl')),
 );
 assert.equal(sandrone.report.sourceVersion, 3);
 assert.ok(Object.keys(sandrone.document.nodes).length > 1);

@@ -1,6 +1,6 @@
 'use client';
 import { CornerDownLeft, Link, MousePointer2, Check } from 'lucide-react';
-import type { TracePath } from '@/lib/project';
+import type { StudioDisplayPath } from '@/lib/editor/studio-display-types';
 import { pathNodes } from '@/lib/source-editor/node-edit.mjs';
 import { nodeModes, nodeSides } from '@/lib/source-editor/continuity.mjs';
 
@@ -40,7 +40,7 @@ export function SplinePathInspector({
   onClear,
   onRefit,
 }: {
-  path?: TracePath;
+  path?: StudioDisplayPath;
   count: number;
   disabled: boolean;
   canRefit: boolean;
@@ -144,7 +144,7 @@ export function SplineNodeInspector({
   onDelete,
   onClear,
 }: {
-  path: TracePath;
+  path: StudioDisplayPath;
   nodes: number[];
   selection: { curve: number; point: number } | null;
   disabled: boolean;
@@ -288,7 +288,7 @@ export function SplineTraceControls({
   onFinish,
   onClose,
 }: {
-  path?: TracePath;
+  path?: StudioDisplayPath;
   drawing: boolean;
   end: End;
   disabled: boolean;

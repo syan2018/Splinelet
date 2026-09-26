@@ -58,13 +58,16 @@ const legacyCases = [
     name: 'live-surfaces',
     module: 'test-live-surfaces-browser.cjs',
     adapter: 'page-fixture',
-    fixture: fixture('spl', 'public/sandrone-example.spl'),
+    fixture: fixture(
+      'legacy-spl',
+      'scripts/tests/fixtures/legacy-sandrone.spl',
+    ),
   },
   {
     name: 'modifiers',
     module: 'test-modifiers-browser.cjs',
     adapter: 'page-fixture',
-    fixture: fixture('file', 'public/sandrone-example.spl'),
+    fixture: fixture('file', 'scripts/tests/fixtures/legacy-sandrone.spl'),
   },
   {
     name: 'object-move-pipeline',
@@ -91,7 +94,10 @@ const legacyCases = [
     name: 'restore-race',
     module: 'test-restore-race.cjs',
     adapter: 'browser-url-fixture',
-    fixture: fixture('spl', 'public/sandrone-example.spl'),
+    fixture: fixture(
+      'legacy-spl',
+      'scripts/tests/fixtures/legacy-sandrone.spl',
+    ),
   },
   { name: 'saving', module: 'test-saving-browser.cjs', adapter: 'page' },
   {
@@ -486,11 +492,18 @@ async function loadFixture(entry) {
       throw Error(`${entry.name} fixture 未导出 ${entry.fixture.exportName}`);
     return normalizeFixtureProject(create());
   }
-  if (entry.fixture.kind === 'spl') {
+  if (entry.fixture.kind === 'legacy-spl') {
     const { decodeProject } = await import(
       pathToFileURL(resolve(ROOT, 'src/lib/project-format.mjs')).href
     );
     return decodeProject(new Uint8Array(await readFile(path)));
+  }
+  if (entry.fixture.kind === 'spl') {
+    const { openProject } = await import(
+      pathToFileURL(resolve(ROOT, 'src/lib/persistence/open-project.mjs')).href
+    );
+    return openProject({ bytes: new Uint8Array(await readFile(path)) })
+      .document;
   }
   throw Error(`${entry.name} 的 fixture 类型未知：${entry.fixture.kind}`);
 }
@@ -838,6 +851,20 @@ async function runCase(entry, browser, url, outputDirectory, timeoutMs) {
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
     });
+    if (entry.adapter === 'studio-fixture') {
+      await wait(250);
+      if (
+        browserErrors.some((message) =>
+          message.includes('504 (Outdated Optimize Dep)'),
+        )
+      ) {
+        const unrelatedErrors = browserErrors.filter(
+          (message) => !message.includes('504 (Outdated Optimize Dep)'),
+        );
+        browserErrors.splice(0, browserErrors.length, ...unrelatedErrors);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+      }
+    }
 
     if (entry.adapter !== 'studio-fixture')
       await page.waitForFunction(() => window.traceStudio);

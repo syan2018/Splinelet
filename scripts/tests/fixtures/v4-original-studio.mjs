@@ -3,15 +3,38 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import StudioApp from '../../../src/components/studio/studio-app.tsx';
 import { openProject } from '../../../src/lib/persistence/open-project.mjs';
+import { encodeProject } from '../../../src/lib/project-format.mjs';
 import { createBrowserStudioHost } from '../../../src/lib/editor/browser-studio-host.ts';
 import { createStudioFileWriter } from '../../../src/lib/platform/studio-file-writer.mjs';
 import { sameDocument } from '../../../src/lib/editing/history.mjs';
+import { v3ProgramProject } from './v4-migration/legacy-projects.mjs';
 
 const originalBytes = new Uint8Array(
   await (await fetch('/sandrone-example.spl')).arrayBuffer(),
 );
 const opened = openProject({ bytes: originalBytes });
 const baseline = structuredClone(opened.document);
+const migrationWarningProject = v3ProgramProject();
+migrationWarningProject.model.slicerTemplate = null;
+delete migrationWarningProject.creation.printStack;
+const migrationWarningOwner = migrationWarningProject.creation.objects[0];
+delete migrationWarningOwner.printLayerId;
+delete migrationWarningOwner.surfaceGraph;
+migrationWarningOwner.modifiers = [];
+const migrationWarningBody = migrationWarningProject.model.features[0];
+delete migrationWarningBody.heightLayers;
+migrationWarningBody.attachId = 'support';
+const migrationWarningSupport = {
+  ...migrationWarningBody,
+  id: 'support',
+  zMM: 0,
+  heightMM: 5,
+};
+delete migrationWarningSupport.attachId;
+migrationWarningProject.model.features.unshift(migrationWarningSupport);
+migrationWarningOwner.featureIds = ['support', 'body'];
+migrationWarningOwner.replacedFeatureIds = ['support'];
+const migrationWarningBytes = encodeProject(migrationWarningProject);
 let draft = null;
 const host = createBrowserStudioHost({
   opened,
@@ -36,7 +59,7 @@ const handle = await directory.getFileHandle('sandrone-original-studio.spl', {
 await host.save({ kind: 'web', handle });
 const pickerFiles = { saved: handle };
 for (const [key, bytes] of Object.entries({
-  legacy: originalBytes,
+  'legacy-warning': migrationWarningBytes,
   invalid: new Uint8Array([1, 2, 3]),
 })) {
   const file = await directory.getFileHandle(`${key}.spl`, { create: true });

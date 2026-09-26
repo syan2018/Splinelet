@@ -18,6 +18,14 @@ Sketch 的 Vertex、Edge、Path 有稳定身份。Program 的算子显式声明�
 
 OutputRef 的 owner、operator、port、key、instances、lineage 共同参与身份；不能用 key 或数组下标代替。默认值和覆盖值分别保存；覆盖缺失的字段继续继承默认。整体 Z 编辑只改变默认放置和显式放置覆盖，不把厚度覆盖物化为独立放置。
 
+## 编辑、显示与导入边界
+
+`.spl` 中的 V4 Document 是编辑和保存的权威。命令产生新修订，当前修订求值后投影为只读 `StudioDisplayProject` 供原工作区使用；其 `version` 固定为 4，不得断言为旧 V1–V3 `Project` 后交回旧编译器。像素/世界坐标适配位于明确的投影与编辑意图边界，显示投影不保存为文档。
+
+旧工程只在 `openProject → importLegacy` 边界转换。多个旧 Feature 共用 Region 时，用独立 `region-reference` 实例表达各自输出与浮雕绑定；不合并其厚度或把动态区域烘焙成静态几何。迁移后检查发布结果、浮雕解析与制造放置；可修复的失败保留作者态，并进入迁移报告。
+
+迁移报告属于会话，不属于几何或文件 DTO。Studio 显示 warning/error，替换工程时同步替换报告。未发布支撑等无法保持动态关系的旧语义，必须说明已经固定为当前高度以及后续不再联动的影响，不能仅因 schema 通过便静默认为无损。
+
 ## 区域身份查询
 
 `src/lib/construction/output-identity.mjs` 是完整身份的共同实现。稳定序列化继续生成既有六字段身份字符串；精确相等直接比较字段，避免在每次查询时重新转义庞大的 key/lineage。对象属性顺序不影响比较，instances 和 lineage 数组仍按既有顺序比较。构造侧仍拒绝缺失引用，展示侧保留空引用诊断读法。

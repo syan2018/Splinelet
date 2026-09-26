@@ -17,7 +17,9 @@ import {
   Lock,
   Unlock,
 } from 'lucide-react';
-import { type Project, download, blender } from '@/lib/project';
+import { download } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
+import { exportStudioDisplayBlender } from '@/lib/editor/studio-display-export';
 import { regionSVGPath } from '@/lib/geometry-format.mjs';
 import { meshSTL } from '@/lib/mesh-format.mjs';
 import { deliver3MF } from '@/lib/manufacturing-download';
@@ -95,20 +97,20 @@ type ModelResult = CreationScene & {
   bytes: ArrayBuffer;
   mimeType: string;
   filename: string;
-  project: Project;
+  project: StudioDisplayProject;
   scene: CreationScene;
   objectId: string;
 };
-type CommandResult = Project & { creation: CreationDocument };
+type CommandResult = StudioDisplayProject;
 type BasePreview = {
   scene: CreationScene;
-  project: Project;
-  revision: Project;
+  project: StudioDisplayProject;
+  revision: StudioDisplayProject;
   objectId: string;
 };
 type RoleArgs = { objectId: string; pathIds: string[]; role: string };
 type PendingRoleResult = {
-  project: Project;
+  project: StudioDisplayProject;
   message: string;
   objectId: string;
 };
@@ -118,7 +120,7 @@ type MoveState = { paths?: string[]; objects?: string[] };
 type CreationApi = {
   readSelection: () => unknown;
   state: () => unknown;
-  inspect: (getProject?: () => Project) => Promise<unknown>;
+  inspect: (getProject?: () => StudioDisplayProject) => Promise<unknown>;
   command: (
     action: string,
     args: Record<string, unknown>,
@@ -157,7 +159,7 @@ type EyeDropperWindow = Window &
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 type Props = {
-  project: Project;
+  project: StudioDisplayProject;
   runtime: CreationRuntime;
   enabled: boolean;
   viewMode: string;
@@ -187,7 +189,7 @@ type Props = {
   transformPan: boolean;
   transformView: { x: number; y: number; s: number };
   objectMoveCommit: {
-    project: Project;
+    project: StudioDisplayProject;
     nodeIds: string[];
     delta: ObjectTransformDelta;
   } | null;
@@ -270,15 +272,16 @@ export default function CreationWorkspace(p: Props) {
   useEffect(() => {
     ref.current = p;
   });
-  const readCreation = (project: Project, runtime = p.runtime) =>
+  const readCreation = (project: StudioDisplayProject, runtime = p.runtime) =>
     runtime.readCreationDocument(project) as CreationDocument;
   const doc = readCreation(p.project),
     [scene, setScene] = useState<CreationScene | null>(null),
     sceneRef = useRef<CreationScene | null>(null),
-    revision = useRef<Project | null>(null),
-    evaluationFailure = useRef<{ project: Project; message: string } | null>(
-      null,
-    ),
+    revision = useRef<StudioDisplayProject | null>(null),
+    evaluationFailure = useRef<{
+      project: StudioDisplayProject;
+      message: string;
+    } | null>(null),
     roleChecking = useRef(false),
     applyRolesRef = useRef<(args: RoleArgs) => Promise<unknown>>(async () => {
       throw Error('区域引擎尚未准备好');
@@ -287,7 +290,7 @@ export default function CreationWorkspace(p: Props) {
   const [boot, setBoot] = useState(false),
     [engineCalculating, setCalculating] = useState(false),
     [evaluation, setEvaluation] = useState<{
-      project: Project;
+      project: StudioDisplayProject;
       runtime: Props['runtime'];
     } | null>(null),
     [checkingRole, setCheckingRole] = useState(false),
@@ -490,7 +493,7 @@ export default function CreationWorkspace(p: Props) {
           if (binding.project !== snapshot && !ref.current.busy) {
             // Evaluation only projects the committed V4 document; it cannot
             // introduce another writable project behind the command boundary.
-            throw Error('运行时 bindEvaluation 不能返回未提交的 Project');
+            throw Error('运行时 bindEvaluation 不能返回未提交的展示句柄');
           }
           const nextScene = binding.scene as CreationScene;
           setScene(nextScene);
@@ -854,7 +857,7 @@ export default function CreationWorkspace(p: Props) {
       }
       const mesh = JSON.stringify(r.mesh),
         content =
-          blender({
+          exportStudioDisplayBlender({
             ...snapshot,
             paths: snapshot.paths.map((path) => ({ ...path, visible: true })),
           }) +
@@ -1865,9 +1868,10 @@ export default function CreationWorkspace(p: Props) {
             onClick={() =>
               safely(() => {
                 const next = run('scene_group', { nodeIds: objects });
+                const nextDocument = readCreation(next);
                 const created = sceneTreeRows(
-                  next.creation.tree,
-                  next.creation.objects,
+                  nextDocument.tree,
+                  nextDocument.objects,
                 ).find(
                   (row: { id: string }) =>
                     !sceneRows.some((before) => before.id === row.id),

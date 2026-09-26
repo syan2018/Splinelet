@@ -211,11 +211,11 @@ const sampleView = projectModelWorkspaceView(
   await capture(sampleEditor.state),
   opened.document.sourceFrame,
 );
-assert.equal(sampleView.regions.length, 69);
-assert.equal(sampleView.source.paths.length, 76);
+assert.equal(sampleView.regions.length, 73);
+assert.equal(sampleView.source.paths.length, 82);
 assert.equal(
   sampleView.regions.filter((item) => item.authoredRelief.value.enabled).length,
-  69,
+  73,
 );
 assert.equal(sampleView.creation.errors.length, 0);
 assert.deepEqual(sampleView.unresolved, {

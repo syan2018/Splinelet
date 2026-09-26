@@ -20,14 +20,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  type BambuSlicerTemplate,
-  type Project,
-  d,
-  download,
-  blender,
-  palette,
-} from '@/lib/project';
+import { type BambuSlicerTemplate, d, download, palette } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
+import { exportStudioDisplayBlender } from '@/lib/editor/studio-display-export';
 import {
   emptyModel,
   regionDependants,
@@ -127,7 +122,7 @@ type Preview = {
   connections: PreviewConnection[];
   warnings: string[];
   spec: ModelRegionDraft;
-  revision: Project;
+  revision: StudioDisplayProject;
 };
 type ModelRegionDraft = Omit<ModelRegion, 'id' | 'name' | 'color' | 'kind'> & {
   kind: RegionKind;
@@ -178,7 +173,7 @@ const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
 type Props = {
-  project: Project;
+  project: StudioDisplayProject;
   referenceLayer?: Omit<ReferenceLayerProps, 'opacity'>;
   runtime: Pick<
     ReturnType<
@@ -281,7 +276,7 @@ const esc = (s: string) =>
   );
 export default function ModelWorkspace(p: Props) {
   type CanonicalRead = {
-    project: Project;
+    project: StudioDisplayProject;
     view: ReturnType<
       typeof import('@/lib/editor/model-workspace-view.mjs').projectModelWorkspaceView
     >;
@@ -301,7 +296,7 @@ export default function ModelWorkspace(p: Props) {
     ),
     ref = useRef(p);
   ref.current = p;
-  const readModel = (project: Project): Model => {
+  const readModel = (project: StudioDisplayProject): Model => {
     if (canonicalRef.current?.project !== project)
       throw Error('请等待当前工程求值');
     return canonicalRef.current.display.model as Model;
@@ -366,8 +361,8 @@ export default function ModelWorkspace(p: Props) {
       previewPanel.current?.scrollIntoView({ block: 'nearest' });
     else if (propertiesPanel.current) propertiesPanel.current.scrollTop = 0;
   }, [tab, preview]);
-  const resultRevision = useRef<Project | null>(null),
-    regionRevision = useRef<Project | null>(null),
+  const resultRevision = useRef<StudioDisplayProject | null>(null),
+    regionRevision = useRef<StudioDisplayProject | null>(null),
     runGeneration = useRef(0);
   const selectedRegion = regions.find((r) => r.id === selected.at(-1)),
     selectedSpec = model.regions.find((r) => r.id === selected.at(-1)),
@@ -923,7 +918,7 @@ export default function ModelWorkspace(p: Props) {
       if (format !== 'blender') throw Error('格式必须是 svg、stl 或 blender');
       const mesh = JSON.stringify(r.mesh),
         content =
-          blender({
+          exportStudioDisplayBlender({
             ...q,
             depthMM: 0,
             paths: q.paths.map((path) => ({ ...path, visible: true })),

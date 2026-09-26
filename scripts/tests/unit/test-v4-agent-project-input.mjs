@@ -6,7 +6,7 @@ import { decodeProject } from '../../../src/lib/project-format.mjs';
 import { encodeDocument } from '../../../src/lib/document/codec.mjs';
 
 const bytes = readFileSync(
-  new URL('../../../public/sandrone-example.spl', import.meta.url),
+  new URL('../fixtures/legacy-sandrone.spl', import.meta.url),
 );
 const project = decodeProject(bytes);
 const original = structuredClone(project);

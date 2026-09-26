@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useSyncExternalStore } from 'react';
-import type { Project } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
 
 export type StudioHost = ReturnType<
   typeof import('@/lib/editor/studio-host.mjs').createStudioHost
@@ -16,6 +16,6 @@ export function useStudioProject(host: StudioHost) {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return {
     snapshot,
-    project: snapshot.project as Project,
+    project: snapshot.project as StudioDisplayProject,
   };
 }

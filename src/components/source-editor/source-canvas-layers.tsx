@@ -1,5 +1,6 @@
 import type React from 'react';
-import { d, type Point, type TracePath } from '@/lib/project';
+import { d, type Point } from '@/lib/project';
+import type { StudioDisplayPath } from '@/lib/editor/studio-display-types';
 import {
   nodeSelection,
   pathNodes,
@@ -8,7 +9,7 @@ import {
 import { nodeModes } from '@/lib/source-editor/continuity.mjs';
 
 type SourcePathLayersProps = {
-  paths: TracePath[];
+  paths: readonly StudioDisplayPath[];
   scale: number;
   tool: string;
   selectedPaths: string[];
@@ -89,7 +90,7 @@ export function SourcePathLayers({
 }
 
 type SourceNodeHandlesProps = {
-  path: TracePath;
+  path: StudioDisplayPath;
   scale: number;
   selectedNodes: number[];
   selection: { curve: number; point: number } | null;

@@ -1,7 +1,7 @@
 'use client';
 import { regionLabel, regionsForPaths } from '@/lib/creation-selection.mjs';
 import type { CreationSelection } from '@/hooks/use-creation-selection';
-import type { Project } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
 
 type CreationCell = {
   key: string;
@@ -25,7 +25,7 @@ export default function CreationSelectionDetails({
 }: {
   selection: CreationSelection;
   objects: string[];
-  project: Project;
+  project: StudioDisplayProject;
   scene: CreationScene | null;
   onSelect: (selection: CreationSelection) => void;
   onEdit: () => void;

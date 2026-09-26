@@ -47,6 +47,7 @@ export function createStudioSession({
   let layout;
   let openedLayout;
   let storage;
+  let importReport;
   let selectionReader = () => null;
   const alive = () => {
     if (disposed) throw Error('Studio 会话已关闭');
@@ -101,6 +102,7 @@ export function createStudioSession({
   };
   const initial = prepareOpen(opened, presentation);
   layout = initial.nextLayout;
+  importReport = freeze(initial.next.report ?? null);
   openedLayout = layout;
   const editor = createEditorSession(initial.next.document, { idFactory });
   const evaluation = createDocumentEvaluationSession({
@@ -135,6 +137,7 @@ export function createStudioSession({
       editorState: state,
       storage,
       presentation: layout,
+      importReport,
     });
     const currentListeners = [...listeners];
     for (const listener of currentListeners) {
@@ -207,6 +210,7 @@ export function createStudioSession({
       });
       storage = openStorage(prepared.next, state);
       layout = prepared.nextLayout;
+      importReport = freeze(prepared.next.report ?? null);
       openedLayout = layout;
       runtime.dispose();
       runtime = makeRuntime();

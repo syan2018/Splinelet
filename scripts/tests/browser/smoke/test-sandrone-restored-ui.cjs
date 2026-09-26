@@ -254,6 +254,12 @@ async function smoke(page, output) {
     timeout: 60_000,
   });
   await settle(page);
+  await call(page, 'load_project', {
+    project: await project(
+      resolve(ROOT, 'scripts/tests/fixtures/legacy-sandrone.spl'),
+    ),
+  });
+  await settle(page);
   await verifyFlatLayout(page, {
     paths: 76,
     objects: ['外框', '头饰', '头发', '杯子', '胸前'],

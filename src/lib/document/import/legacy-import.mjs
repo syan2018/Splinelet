@@ -1,5 +1,8 @@
 import { sha256 } from '../../project-container.mjs';
 import { evaluatePlanar } from '../../construction/document-evaluation.mjs';
+import { resolveRelief } from '../../relief/resolve.mjs';
+import { resolveManufacturing } from '../../manufacturing/placement.mjs';
+import { worldMatrix } from '../../scene/transforms.mjs';
 import {
   creationDocument,
   dividerGraphCohorts,
@@ -1319,14 +1322,17 @@ function bindEvaluatedOutputs(context, document) {
   const actualByOperator = new Map();
   const actualItemsByOperator = new Map();
   const proposedContracts = new Map();
+  const operators = new Map(
+    Object.values(document.programs).flatMap((program) =>
+      Object.values(program.operators).map((op) => [op.id, op]),
+    ),
+  );
   for (const component of Object.values(evaluation.components)) {
     const stage = component.ports?.regions;
     const componentOperatorId = component.id.startsWith('operator:')
       ? component.id.slice('operator:'.length)
       : component.id;
-    const op = Object.values(document.programs)
-      .flatMap((program) => Object.values(program.operators))
-      .find((candidate) => candidate.id === componentOperatorId);
+    const op = operators.get(componentOperatorId);
     const members = op?.outputContract?.members;
     const actual =
       stage?.status === 'ready'
@@ -1500,9 +1506,7 @@ function bindEvaluatedOutputs(context, document) {
           ),
         },
       );
-    const op = Object.values(document.programs)
-      .flatMap((program) => Object.values(program.operators))
-      .find((candidate) => candidate.id === operatorId);
+    const op = operators.get(operatorId);
     if (op)
       op.outputContract = {
         version: 1,
@@ -1851,6 +1855,13 @@ function compileOwner(context, document, state) {
   const automaticPartition =
     (dividerPathIds.length > 0 || state.owner.legacyPartition === true) &&
     replacedFeatures.size === 0;
+  const regionUses = new Map();
+  for (const featureId of state.owner.featureIds || []) {
+    const regionId =
+      state.owner.sources?.[featureId]?.regionId ||
+      features.get(featureId)?.regionId;
+    regionUses.set(regionId, (regionUses.get(regionId) || 0) + 1);
+  }
   for (const featureId of state.owner.featureIds || []) {
     const feature = features.get(featureId);
     if (!feature)
@@ -1860,11 +1871,9 @@ function compileOwner(context, document, state) {
         'creation object 引用的 feature 不存在',
         { kind: 'feature', id: featureId },
       );
-    let featureResult = region(
-      context,
-      state,
-      state.owner.sources?.[featureId]?.regionId || feature.regionId,
-    );
+    const regionId =
+      state.owner.sources?.[featureId]?.regionId || feature.regionId;
+    let featureResult = region(context, state, regionId);
     if (state.owner.sources?.[featureId])
       featureResult = modifiers(
         context,
@@ -1872,6 +1881,29 @@ function compileOwner(context, document, state) {
         featureResult,
         state.owner.sources[featureId].modifiers,
       );
+    // A shared source Region is still a distinct legacy Feature at each Z.
+    // Give every use an explicit instance; never deduplicate its geometry or
+    // let two placements/style assignments alias the same output identity.
+    if (regionUses.get(regionId) > 1) {
+      const instance = operator(
+        context,
+        state,
+        'feature-instance',
+        feature.id,
+        {
+          type: 'region-reference',
+          name: feature.name || feature.id,
+          enabled: true,
+          inputs: { input: [inputPort(featureResult.port)] },
+          params: {},
+        },
+      );
+      featureResult = {
+        domain: 'regions',
+        operator: instance,
+        port: port(state.shape.id, instance.id, 'regions'),
+      };
+    }
     if (feature.enabled !== false) featureResults.push(featureResult);
     const target =
       featureResult.target ||
@@ -2827,6 +2859,37 @@ function compile(context) {
   }
   bindEvaluatedOutputs(context, document);
   validateDocument(document);
+  // Schema validity and intermediate bindings do not prove that the published
+  // graph is usable. Keep repairable authoring state, but never report it as a
+  // clean import when final output/relief evaluation is blocked.
+  const finalPlanar = evaluatePlanar(document);
+  const finalRegions = Object.entries(finalPlanar.published)
+    .filter(([, stage]) => stage.domain === 'regions')
+    .map(([key, stage]) => ({
+      ...stage,
+      ownerNodeId: key.slice(0, -':regions'.length),
+    }));
+  const finalRelief = resolveRelief(document, finalRegions);
+  const finalPlacement = resolveManufacturing(document, finalRelief, (id) =>
+    worldMatrix(document, id),
+  );
+  const reported = new Set();
+  for (const stage of [
+    ...finalRegions,
+    ...(finalRelief.branches || []),
+    ...(finalPlacement.branches || []),
+  ])
+    if (stage.status === 'blocked' && !reported.has(stage.ownerNodeId)) {
+      reported.add(stage.ownerNodeId);
+      addIssue(
+        context.report,
+        'warning',
+        'imported-output-blocked',
+        '迁移后的发布结果无法求值；已保留工程，请根据诊断修复后再输出',
+        { kind: 'node', id: stage.ownerNodeId },
+        { domain: stage.domain, diagnostics: clone(stage.diagnostics || []) },
+      );
+    }
   context.report.status = context.report.issues.some(
     (entry) => entry.severity === 'warning',
   )

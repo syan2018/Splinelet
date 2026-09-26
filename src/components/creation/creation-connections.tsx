@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import type { Project } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
 
 type Connection = {
   objectId: string;
@@ -35,7 +35,7 @@ type CreationScene = {
 type ConnectionProps = {
   object: CreationObject;
   scene: CreationScene;
-  project: Project;
+  project: StudioDisplayProject;
   preview?: CreationScene;
   onPreview: (distance: number) => void;
   onCancel: () => void;
@@ -80,10 +80,7 @@ export default function CreationConnections(p: ConnectionProps) {
   const disabledFeatures: string[] = o.disabledClosureFeatureIds || [];
   const name = (id: string) =>
     p.project.paths.find((path) => path.id === id)?.name || '线条';
-  const featureName = (id: string) =>
-    p.project.model?.features.find(
-      (f: { id: string; name: string }) => f.id === id,
-    )?.name || '带状面';
+  const featureName = (_id: string) => '带状面';
   const existing = diagnostics.filter((d) => d.status === 'existing_boundary');
   const divider = Object.entries(o.roles).some(
     ([id, role]) =>
@@ -234,14 +231,7 @@ export default function CreationConnections(p: ConnectionProps) {
                   封口方式
                   <select
                     aria-label={'封口方式 ' + featureName(id)}
-                    value={
-                      closure.boundaryRegionId ||
-                      p.project.model?.regions.find(
-                        (r: { id: string; boundaryRegionId?: string }) =>
-                          r.id === closure.regionId,
-                      )?.boundaryRegionId ||
-                      ''
-                    }
+                    value={closure.boundaryRegionId || ''}
                     onChange={(e) =>
                       p.onCommand('closure_boundary', {
                         objectId: o.id,

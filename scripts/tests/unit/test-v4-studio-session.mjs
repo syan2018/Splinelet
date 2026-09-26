@@ -69,6 +69,7 @@ const session = makeSession({
   },
 });
 const initial = session.getSnapshot();
+assert.equal(initial.importReport, null);
 assert.equal(initial.storage.dirty, false);
 assert.equal(initial.storage.target, 'a.spl');
 assert.equal(initial.editorState.revision, 0);
@@ -381,6 +382,42 @@ assert.deepEqual(
   uncalibrated.project.paths,
 );
 calibration.dispose();
+
+const report = {
+  status: 'ok-with-warnings',
+  issues: [
+    {
+      severity: 'warning',
+      code: 'attachment-flattened-unpublished-target',
+      message: '旧附着已转换为固定高度，不再跟随目标编辑',
+    },
+  ],
+};
+const importedSession = createStudioSession({
+  opened: { ...opened(documentWithPath()), kind: 'legacy', report },
+  presentation: presentation(),
+  persistence: { writeFile: async () => {} },
+});
+assert.deepEqual(importedSession.getSnapshot().importReport, report);
+assert.ok(Object.isFrozen(importedSession.getSnapshot().importReport.issues));
+report.issues[0].message = 'changed outside session';
+assert.notEqual(
+  importedSession.getSnapshot().importReport.issues[0].message,
+  report.issues[0].message,
+);
+importedSession.dispatch(draw());
+assert.equal(importedSession.getSnapshot().importReport.issues.length, 1);
+assert.equal(
+  'importReport' in decodeDocument(importedSession.exportBytes()).document,
+  false,
+);
+importedSession.open(opened(documentWithPath()), presentation());
+assert.equal(
+  importedSession.getSnapshot().importReport,
+  null,
+  'opening a native document clears the previous migration report',
+);
+importedSession.dispose();
 
 console.log(
   'PASS: Studio session owns real V4 editor/runtime snapshots, storage lifecycle, replacement and persistence races.',

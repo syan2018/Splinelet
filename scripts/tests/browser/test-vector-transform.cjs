@@ -64,8 +64,12 @@ module.exports = async (page, outputDirectory) => {
   await settled();
   const current = await call('document.get');
   assert.equal(current.revision, original.revision + 1);
+  const originalNodeIds = new Set(Object.keys(original.document.nodes));
   const group = Object.values(current.document.nodes).find(
-    (n) => n.name === 'sandrone-signature' && n.kind === 'group',
+    (n) =>
+      n.name === 'sandrone-signature' &&
+      n.kind === 'group' &&
+      !originalNodeIds.has(n.id),
   );
   assert(group);
   for (const [id, node] of Object.entries(original.document.nodes))
@@ -131,6 +135,10 @@ module.exports = async (page, outputDirectory) => {
   await call('undo');
   await settled();
   assert.deepEqual((await call('document.get')).document, beforeWidth.document);
+  if (!(await inkWidth.isVisible()))
+    await inkCard
+      .getByRole('button', { name: '参数 ' + inkOperator.name, exact: true })
+      .click();
   assert.equal(Number(await inkWidth.inputValue()), inkOperator.params.widthMM);
   await page.keyboard.press('Control+Shift+z');
   await settled();

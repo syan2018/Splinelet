@@ -19,6 +19,7 @@ pnpm desktop:check
 
 - `pnpm test:core`：构造链、修改器和打印分层回归。
 - `pnpm test:export`：通用 3MF 与 Bambu 3MF 回归。
+- `node scripts/validation/verify-example.mjs`：验证当前原生 V4 内置示例的容器往返、引用绑定、完整求值、有效实体与通用/Bambu 分色导出；可传入其他示例副本路径。验证不会修改输入工程。
 - `pnpm test`：运行 `tests/unit/` 中全部不依赖私有工程或历史产物的测试。
 - `pnpm test:browser:all`：完整浏览器门禁，顺序运行既有 `legacy` suite 和 Studio suite；每个 suite 都得到独立的默认 `outputs/v4-qa/<run>/` 证据目录。它不包含在 `check:all` 中。
 - `pnpm test:browser:studio`：Studio 子门禁。它为每个已注册的 Vite fixture 建立临时 localhost 端口与全新 Playwright browser/context，并把 manifest、截图和结果写入独立的 `outputs/v4-qa/<run>/`。当前覆盖默认最终面，以及完整原 Studio 的 Sandrone 打开、编辑、保存和重开旅程；最终面用例还通过原 GUI 覆盖 Mirror/Array、Join/Fill 与嵌套场景组交互。
@@ -100,7 +101,7 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 
 `node scripts/tests/browser/smoke/test-v4-original-modifier-controls.cjs` 在临时端口和全新浏览器 context 中加载原 `CreationModifiers`、原样式与真实 V4 会话，检查实际数值提交、一次撤销、参数驱动、缺失参数和锁定，并断言卡片样式加载。最小 fixture 为 `tests/fixtures/v4-modifier-controls.mjs`，不读取应用草稿或用户文件；结果与截图位于 `output/playwright/v4-original-modifier-controls/`。这是组件接线验证，不能代替默认根工作区或原生文件旅程。浏览器 CommonJS 脚本使用单独 lint override：允许 require 和 Node 模块导出函数的解构，不将其误判为需要绑定 this 的实例方法；产品 TypeScript 规则保持不变。
 
-`test-v4-import-source-identity.mjs` 严格比较实际旧工程与全部 V4 可写来源，检查路径/边总集合、独立边使用、孤立节点及源列表次序；默认只读内置 Sandrone，可用首个参数指定额外工程。`test-v4-partition-endpoint-join.mjs` 验证分区接边在端点/底面变化后重新求值、禁用与空输入行为。派生接边不能保存为隐藏可写来源。
+`test-v4-import-source-identity.mjs` 严格比较实际旧工程与全部 V4 可写来源，检查路径/边总集合、独立边使用、孤立节点及源列表次序；默认只读 `tests/fixtures/legacy-sandrone.spl`，可用首个参数指定额外旧工程。该历史 fixture 同时服务迁移差分回归，当前原生 V4 产品示例仍位于 `public/sandrone-example.spl`。`test-v4-partition-endpoint-join.mjs` 验证分区接边在端点/底面变化后重新求值、禁用与空输入行为。派生接边不能保存为隐藏可写来源。
 
 `tests/unit/test-v4-source-order.mjs` 覆盖导入/容器重开后的源路径与集合顺序、新线追加、排序意图和过期视图；`test-v4-source-organization.mjs` 覆盖整理集合及全局源顺序的原子命令、重叠成员、锁定和一次撤销。它们不替代原树拖放的 UI 接线验收。
 

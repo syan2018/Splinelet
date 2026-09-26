@@ -1,15 +1,16 @@
-import type { Project, BambuSlicerTemplate } from '@/lib/project';
+import type { BambuSlicerTemplate } from '@/lib/project';
+import type { StudioDisplayProject } from '@/lib/editor/studio-display-types';
 import type { CurvePreview } from '@/lib/modifier-types';
 
 export type CreationRuntimeContext = {
-  project: Project;
+  project: StudioDisplayProject;
   scene: unknown;
 };
 
 /** A normal command is committed only when the workspace calls commit(). */
 export type CreationCommandPlan = {
-  project: Project;
-  commit: () => Project;
+  project: StudioDisplayProject;
+  commit: () => StudioDisplayProject;
 };
 
 /**
@@ -17,35 +18,40 @@ export type CreationCommandPlan = {
  * token belongs to the runtime and must never be interpreted by the UI.
  */
 export type PreparedCreationCommand = {
-  project: Project;
+  project: StudioDisplayProject;
   token: unknown;
 };
 
 export type BoundCreationEvaluation = {
-  project: Project;
+  project: StudioDisplayProject;
   scene: unknown;
 };
 
 /**
- * Injectable data boundary for the unchanged CreationWorkspace UI. Project
- * values returned here are read-only display projections; callers must never
+ * Injectable data boundary for the unchanged CreationWorkspace UI. Display
+ * values returned here are read-only projections; callers must never
  * treat them as an alternate writable source model.
  */
 export type CreationRuntime = {
-  readOutputSettings: (project: Project) => {
+  readOutputSettings: (project: StudioDisplayProject) => {
     parts: { id: string; name: string }[];
     defaultPartId: string;
     slicerTemplate: BambuSlicerTemplate | null;
   };
-  readCurvePreviews: (project: Project) => CurvePreview[];
-  readEvaluatedCurvePreviews?: (project: Project) => CurvePreview[] | null;
-  readCreationDocument: (project: Project) => unknown;
+  readCurvePreviews: (project: StudioDisplayProject) => CurvePreview[];
+  readEvaluatedCurvePreviews?: (
+    project: StudioDisplayProject,
+  ) => CurvePreview[] | null;
+  readCreationDocument: (project: StudioDisplayProject) => unknown;
   evaluate: (
     action: string,
     args: Record<string, unknown>,
-    project: Project,
+    project: StudioDisplayProject,
   ) => Promise<unknown>;
-  bindEvaluation: (project: Project, scene: unknown) => BoundCreationEvaluation;
+  bindEvaluation: (
+    project: StudioDisplayProject,
+    scene: unknown,
+  ) => BoundCreationEvaluation;
   command: (
     action: string,
     args: Record<string, unknown>,
@@ -59,15 +65,15 @@ export type CreationRuntime = {
   commitPrepared: (
     prepared: PreparedCreationCommand,
     context: CreationRuntimeContext,
-  ) => Project;
+  ) => StudioDisplayProject;
   commitPreparedDisplay: (
-    project: Project,
+    project: StudioDisplayProject,
     context: CreationRuntimeContext,
-  ) => Project;
+  ) => StudioDisplayProject;
   setSlicerTemplate: (
     template: unknown,
     context: CreationRuntimeContext,
-  ) => Project;
+  ) => StudioDisplayProject;
   attachNewPath: (
     path: { id: string },
     context: CreationRuntimeContext,

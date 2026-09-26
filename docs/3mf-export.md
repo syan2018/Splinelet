@@ -20,7 +20,9 @@
 
 ## 几何链路
 
-导出沿用 `compileCreation → buildSolid`，实时轮廓、修改器、分层、切削和制造清理来自同一条链路。在各高度区间按预览覆盖次序划分二维截面，拉伸成互不重叠的分色实体，校验闭合性以及分色体积之和。`material-solids` 管截面，`solid-engine` 管实体，`three-mf` 管标准包，`bambu-3mf` 管切片适配，worker 管计算，`manufacturing-download` 管下载/API base64。
+当前 Studio 沿用 V4 单一求值链：`Document → evaluateDocument → RegionSet → ReliefSet → PlacedReliefSet → BodySet`。`creationOutput` 将当前 BodySet 交给 `pack3MF`，不会把显示投影重新编译为旧 Project。实时轮廓、修改器、分层、切削和制造清理来自同一份文档与当前求值结果；旧 `compileCreation` 仅服务兼容路径及旧引擎回归。
+
+在各高度区间按预览覆盖次序划分二维截面，拉伸成互不重叠的分色实体，校验闭合性以及分色体积之和。`material-solids` 管截面，`solid/bodies` 装配规范实体结果，`solid-engine` 管实体运算，`three-mf` 管标准包，`bambu-3mf` 管切片适配，worker 管计算，`manufacturing-download` 管下载/API base64。
 
 独立色块保留毫米坐标、名称、颜色和源对象关联。无效分色实体停止导出，不回退到丢色整体网格。多个分离实体允许导出，连通数量供用户检查。原 STL API 保留兼容。
 

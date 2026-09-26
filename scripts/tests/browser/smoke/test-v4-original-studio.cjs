@@ -44,7 +44,7 @@ async function test(page, output) {
     await page.locator('.studio.creation-studio').waitFor({ timeout: 60000 });
     await page.locator('.source-path-layer').first().waitFor();
     const evidence = () => page.evaluate(() => window.originalStudioEvidence());
-    assert.equal((await evidence()).paths, 76);
+    assert.equal((await evidence()).paths, 82);
     assert.match(
       await page.locator('.project-name').innerText(),
       /sandrone-original-studio/,
@@ -110,8 +110,8 @@ async function test(page, output) {
     const advancedModelView = await page.evaluate(() =>
       window.originalStudioModelView(),
     );
-    assert.equal(advancedModelView.regions.length, 69);
-    assert.equal(advancedModelView.source.paths.length, 76);
+    assert.equal(advancedModelView.regions.length, 73);
+    assert.equal(advancedModelView.source.paths.length, 82);
     assert.equal(advancedModelView.creation.errors.length, 0);
     assert.ok(
       advancedModelView.regions.every(
@@ -313,17 +313,25 @@ async function test(page, output) {
       .getByText(/打开工程失败/)
       .waitFor();
     assert.deepEqual(await evidence(), reopened);
-    await openFile('legacy');
+    await openFile('legacy-warning');
     await waitForCondition(
       (epoch) => window.originalStudioEvidence().epoch !== epoch,
       reopened.epoch,
     );
     const legacyOpened = await evidence();
-    assert.equal(legacyOpened.paths, 76);
-    assert.equal(legacyOpened.objects, 11);
+    assert.equal(legacyOpened.paths, 1);
+    assert.equal(legacyOpened.objects, 1);
     assert.equal(legacyOpened.canUndo, false);
     assert.equal(legacyOpened.dirty, true);
     assert.equal(legacyOpened.targetKind, null);
+    const importNotice = page.getByLabel('工程迁移注意事项', {
+      exact: true,
+    });
+    await importNotice.waitFor();
+    await importNotice.locator('summary').click();
+    await importNotice
+      .getByText('attachment-flattened-unpublished-target', { exact: true })
+      .waitFor();
     await page.getByRole('button', { name: 'Splinelet 主菜单' }).click();
     await page
       .getByRole('menuitem', { name: '载入示例工程', exact: true })
@@ -334,6 +342,7 @@ async function test(page, output) {
     );
     assert.equal((await evidence()).baselineRestored, true);
     assert.equal((await evidence()).targetKind, null);
+    assert.equal(await importNotice.count(), 0);
     assert.match(
       await page.locator('.project-name').innerText(),
       /sandrone-example/,
@@ -1102,14 +1111,15 @@ async function test(page, output) {
       beforeApiDocument,
     );
     const concurrentLoads = await page.evaluate(async (base64) => {
-      const { decodeProject } = await import('/src/lib/project-format.mjs');
+      const { openProject } =
+        await import('/src/lib/persistence/open-project.mjs');
       const bytes = new Uint8Array(
         await (await fetch('/sandrone-example.spl')).arrayBuffer(),
       );
       return Promise.allSettled([
         window.reviewCall('load_project', { base64 }),
         window.reviewCall('load_project', {
-          project: decodeProject(bytes),
+          project: openProject({ bytes }).document,
         }),
       ]);
     }, savedApiCopy.base64);
@@ -1117,23 +1127,25 @@ async function test(page, output) {
     assert.equal(concurrentLoads[0].value.paths, beforeApiLoad.paths);
     assert.equal(concurrentLoads[1].status, 'rejected');
     const reloadedAfterConflict = await page.evaluate(async () => {
-      const { decodeProject } = await import('/src/lib/project-format.mjs');
       const bytes = new Uint8Array(
         await (await fetch('/sandrone-example.spl')).arrayBuffer(),
       );
+      let binary = '';
+      for (let start = 0; start < bytes.length; start += 0x8000)
+        binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
       return window.reviewCall('load_project', {
-        project: decodeProject(bytes),
+        base64: btoa(binary),
       });
     });
-    assert.equal(reloadedAfterConflict.paths, 76);
+    assert.equal(reloadedAfterConflict.paths, 82);
     assert.equal((await evidence()).targetKind, null);
-    assert.equal((await evidence()).dirty, true);
+    assert.equal((await evidence()).dirty, false);
     assert.equal((await evidence()).canUndo, false);
     await page.getByText('底图就绪', { exact: true }).waitFor();
     await batch(false);
-    assert.equal((await evidence()).paths, 77);
+    assert.equal((await evidence()).paths, 83);
     await page.getByRole('button', { name: '撤销', exact: true }).click();
-    assert.equal((await evidence()).paths, 76);
+    assert.equal((await evidence()).paths, 82);
     const beforeAdvanced = await page.evaluate(() =>
       window.originalStudioDocument(),
     );
@@ -1146,13 +1158,13 @@ async function test(page, output) {
     });
     await advancedDialog.waitFor();
     await waitForCondition(
-      () => document.querySelectorAll('[data-region-row]').length === 69,
+      () => document.querySelectorAll('[data-region-row]').length === 73,
     );
     const inspectedModel = await page.evaluate(() =>
       window.reviewCall('inspect_model'),
     );
-    assert.equal(inspectedModel.regions.length, 69);
-    assert.equal(inspectedModel.model.features.length, 69);
+    assert.equal(inspectedModel.regions.length, 73);
+    assert.equal(inspectedModel.model.features.length, 73);
     assert.ok(
       inspectedModel.model.regions.every((region) => region.kind === 'output'),
     );
@@ -1160,7 +1172,7 @@ async function test(page, output) {
       .getByRole('button', { name: '体块与零件', exact: true })
       .click();
     await waitForCondition(
-      () => document.querySelectorAll('[data-feature-row]').length === 69,
+      () => document.querySelectorAll('[data-feature-row]').length === 73,
     );
     let advancedState;
     for (let attempt = 0; attempt < 120; attempt++) {

@@ -114,7 +114,11 @@ assert.equal(
 );
 assert.deepEqual(
   registered.find((entry) => entry.name === 'live-surfaces').fixture,
-  { kind: 'spl', path: 'public/sandrone-example.spl', exportName: undefined },
+  {
+    kind: 'legacy-spl',
+    path: 'scripts/tests/fixtures/legacy-sandrone.spl',
+    exportName: undefined,
+  },
 );
 assert.equal(
   harness.selectCases({ suite: 'legacy', caseName: 'saving' }).length,

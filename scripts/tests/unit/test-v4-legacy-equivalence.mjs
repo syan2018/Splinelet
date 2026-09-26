@@ -175,7 +175,7 @@ const verifyEvaluatedEquivalence = async (label, project, migrated) => {
 // The real sample checks the legacy pixel frame against each uniquely owned V4
 // path. Cross-object consumers reference that one writable source.
 const sandroneProject = decodeProject(
-  fs.readFileSync('public/sandrone-example.spl'),
+  fs.readFileSync('scripts/tests/fixtures/legacy-sandrone.spl'),
 );
 const sandrone = importLegacy(sandroneProject);
 const repeatedSandrone = importLegacy(sandroneProject);

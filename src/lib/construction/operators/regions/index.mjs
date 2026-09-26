@@ -937,10 +937,15 @@ export const partitionOperator = {
           ]),
           ownerNodeId,
           [
-            {
-              code: 'partition-contract-proposal',
-              message: '首次分区返回来源轮廓候选，命令可绑定 outputContract',
-            },
+            ...(operator.outputContract?.members
+              ? []
+              : [
+                  {
+                    code: 'partition-contract-proposal',
+                    message:
+                      '首次分区返回来源轮廓候选，命令可绑定 outputContract',
+                  },
+                ]),
             ...connected.diagnostics,
           ],
           [...source.dependencies, ...cutter.dependencies],

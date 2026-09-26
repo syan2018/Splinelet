@@ -7,9 +7,7 @@ import {
   sourcePathId,
 } from '../../../src/lib/editor/source-view.mjs';
 
-const files = [
-  new URL('../../../public/sandrone-example.spl', import.meta.url),
-];
+const files = [new URL('../fixtures/legacy-sandrone.spl', import.meta.url)];
 // Unit runs only require the tracked fixture. Explicit extra files remain read-only.
 if (process.argv[2]) files.push(process.argv[2]);
 const key = (sketchId, id) => JSON.stringify([sketchId, id]);

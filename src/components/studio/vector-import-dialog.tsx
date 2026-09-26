@@ -17,7 +17,7 @@ export default function VectorImportDialog({
 }: {
   input: SvgImportResult & { name: string };
   widthMM: number;
-  objects: { id: string; name: string }[];
+  objects: readonly { id: string; name: string }[];
   onClose: () => void;
   onImport: (options: {
     widthMM: number;
