@@ -44,7 +44,7 @@ pnpm desktop:check
 - `pnpm check:all`：上述检查、Rust 格式与编译检查、双端前端构建；需要 Rust 和当前平台 Tauri 系统依赖。
 - `pnpm desktop:release`：构建免安装原生发布程序，跳过安装包生成；Windows 输出 `src-tauri/target/release/splinelet.exe`，运行时需要 WebView2。`desktop:build` 只构建前端，不能代替该发布检查。
 
-交互回归使用隔离浏览器与独立开发端口。`tests/browser/test-pointer-lifecycle.cjs` 接收一个 Playwright `page`，自建工程并验证选择工具不改几何、节点多选／全选移动、拖动释放、取消、失焦和撤销；`tests/browser/test-saving-browser.cjs` 验证手动写文件与自动恢复草稿的边界。`tests/browser/test-object-move-browser.cjs` 自建多源编组与独立部件，验证 H 先选后拖、拖动预览不发布工程且面与源线同步、整组／多部件移动、V 禁移、单次撤销、阈值与取消生命周期，以及面／线／节点／空白右键平移保持工程和选区。不要在日常工程标签页注入这些脚本。
+交互回归使用隔离浏览器与独立开发端口。`tests/browser/test-pointer-lifecycle.cjs` 接收一个 Playwright `page`，自建工程并验证选择工具不改几何、节点多选／全选移动、拖动释放、取消、失焦和撤销；`tests/browser/test-saving-browser.cjs` 验证手动写文件与自动恢复草稿的边界。`tests/browser/test-object-move-browser.cjs` 自建多源编组与独立部件，验证 G 先选后拖、拖动预览不发布工程且面与源线同步、整组／多部件移动、V 禁移、单次撤销、阈值与取消生命周期，以及多选修饰键穿透移动选框、面／线／节点／空白右键平移保持工程和选区。不要在日常工程标签页注入这些脚本。
 
 后续 V4 验收按[编辑模型重构方案](../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)扩展：U01–U06 验证普通描线、分区、编组无需技术配置，A 项验证对象身份和各数据域转换。它们目前是设计目标，现有回归通过不代表已覆盖 V4；各工作包实现时再加入对应最小 fixture 与测试。
 
@@ -177,6 +177,8 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 `tests/unit/test-v4-planar-stage-cache.mjs` 用最小构造工程逐项对照冷求值，覆盖局部平面结果复用及世界坐标引用、祖先变换、请求域和设置的失效边界，随 `pnpm test` 执行。
 
 `node scripts/examples/add-sandrone-signature.mjs <input.spl> <output.spl>` 在独立服务和隔离浏览器中给 Sandrone 杯身导入已提交的手写签名，另存工程和 PNG 预览。输入工程需包含「杯子」；输出必须另命名。参数和本次产物见 [签名验收](../docs/qa/vector-objects-2026-09-22.md)。
+
+`tests/unit/test-object-transform-frame.mjs` 检查 gizmo 的世界旋转选框与缩放基点。`tests/browser/test-vector-transform.cjs` 除 SVG 导入和快捷键外，还直接拖拽 Moveable 的移动区域、旋转柄和四角缩放柄，对比轮廓与选框预览矩阵、松手后的几何与选框、单次撤销、Esc 取消、Alt 中心缩放、Shift 步进及缩放平移视图后的定位。
 
 ## 参考图叠放回归
 

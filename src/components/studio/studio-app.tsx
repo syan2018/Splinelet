@@ -7,6 +7,11 @@ import {
   type ObjectTransformMode,
 } from '@/components/creation/object-transform-controls';
 import type { ObjectTransformDelta } from '@/lib/source-editor/object-transform-preview';
+import { objectMovePreview } from '@/lib/source-editor/object-move-preview';
+import type {
+  TransformGizmoApi,
+  TransformTransaction,
+} from '@/components/shared/transform-gizmo';
 import {
   useState,
   useRef,
@@ -268,6 +273,16 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const highlightSourceSelection = creationSelectionKind !== 'cell';
   const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
+  const [transformLayer, setTransformLayer] = useState<SVGGElement | null>(
+    null,
+  );
+  const transformGizmo = useRef<TransformGizmoApi | null>(null);
+  const registerTransformGizmo = useCallback(
+    (api: TransformGizmoApi | null) => {
+      transformGizmo.current = api;
+    },
+    [],
+  );
   const { project, snapshot: studioSnapshot } = useStudioProject(host);
   const [referencePanelOpen, setReferencePanelOpen] = useState(false);
   const [selectedReferenceId, setSelectedReferenceId] = useState<string | null>(
@@ -391,7 +406,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     (SvgImportResult & { name: string; project: Project }) | null
   >(null);
   const importVector = async (file: File) => {
-    if (busyRef.current || fileBusyRef.current || studioDrag.isActive())
+    if (
+      busyRef.current ||
+      fileBusyRef.current ||
+      studioDrag.isActive() ||
+      transformGizmo.current?.isDragging()
+    )
       throw Error('请先完成当前操作');
     if (file.size > 5 * 1024 * 1024) throw Error('SVG 文件不能超过 5 MB');
     const captured = host.getSnapshot().project;
@@ -460,6 +480,14 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     height: number;
   } | null>(null);
   const [gesturing, setGesturing] = useState(false);
+  const [objectTransforming, setObjectTransforming] = useState(false);
+  const setObjectTransformActive = useCallback(
+    (active: boolean) => {
+      setObjectTransforming(active);
+      setGesturing(active);
+    },
+    [setGesturing],
+  );
   const [transformMode, setTransformMode] =
     useState<ObjectTransformMode>('translate');
   const [objectMoveCommit, setObjectMoveCommit] = useState<{
@@ -493,6 +521,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
+    transformGizmo.current?.cancel();
     setSelectedReferenceId(null);
     setReferenceDraft(null);
     studioDrag.cancel();
@@ -968,6 +997,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     {
       if (busyRef.current || drag.current) return;
       studioDrag.cancel();
+      transformGizmo.current?.cancel();
       host.undo();
       const p = host.getSnapshot().project as Project;
       pr.current = p;
@@ -992,6 +1022,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     {
       if (busyRef.current || drag.current) return;
       studioDrag.cancel();
+      transformGizmo.current?.cancel();
       host.redo();
       const p = host.getSnapshot().project as Project;
       pr.current = p;
@@ -1411,7 +1442,6 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const inside = (p: Point) =>
     p.x >= 0 && p.y >= 0 && p.x < pr.current.width && p.y < pr.current.height;
   const studioDrag = useSourceDrag({
-    transformMode,
     runtime: studioSnapshot.runtime,
     project,
     pathId: active ?? '',
@@ -1426,13 +1456,13 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     },
     onError: (error) => setStatus(errorMessage(error)),
     onActiveChange: setGesturing,
-    onObjectCommit: setObjectMoveCommit,
     snapEnabled: settings.snap,
     scale: view.s,
     onSnapFeedback: (feedback) =>
       setSnapFeedback(feedback as EndpointSnapFeedback | null),
   });
   const cancelGesture = () => {
+    transformGizmo.current?.cancel();
     studioDrag.cancel();
     const g = drag.current;
     if (!g) return;
@@ -1449,7 +1479,11 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     event.preventDefault();
     // Capture targets the stage, including drags begun on portal-rendered faces.
     // Some browsers dispatch contextmenu before the right pointer is released.
-    if (studioDrag.isActive() || (drag.current && drag.current.button !== 2))
+    if (
+      studioDrag.isActive() ||
+      transformGizmo.current?.isDragging() ||
+      (drag.current && drag.current.button !== 2)
+    )
       cancelGesture();
   });
   useEffect(() => {
@@ -1499,7 +1533,6 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   ) => {
     if (drag.current || busyRef.current || tool !== 'move' || e.button !== 0)
       return;
-    e.preventDefault();
     e.stopPropagation();
     stage.current?.focus({ preventScroll: true });
     const toggle = e.shiftKey || e.ctrlKey || e.metaKey;
@@ -1509,15 +1542,61 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       setStatus('已选中 ' + selected.label + ' · 再次按住拖动可整体移动');
       return;
     }
-    studioDrag.onObjectPointerDown(
-      e,
+    transformGizmo.current?.dragStart(e.nativeEvent);
+  };
+  const beginObjectTransform = (
+    mode: ObjectTransformMode,
+    center: Point,
+  ): TransformTransaction => {
+    if (busyRef.current || space.current || fileBusyRef.current)
+      throw Error('请先完成当前操作');
+    const selected = creationApi.current?.prepare_move();
+    if (!selected?.nodeIds.length || !stage.current)
+      throw Error('请先选择对象');
+    const captured = host.getSnapshot();
+    const gesture = captured.runtime.beginObjectGesture(
+      captured.project,
+      selected.nodeIds,
+      { displayOnly: true, mode, center },
+    );
+    const preview = objectMovePreview(
+      stage.current,
       selected.nodeIds,
       selected.pathIds,
-      selected.center,
     );
+    setTransformMode(mode);
+    return {
+      update(delta) {
+        preview.update(delta);
+        preview.flush();
+      },
+      commit(delta) {
+        gesture.update(delta);
+        try {
+          const next = gesture.commit() as Project;
+          setObjectMoveCommit({
+            project: next,
+            nodeIds: selected.nodeIds,
+            delta,
+          });
+          setStatus('变换已应用 · Ctrl+Z 撤销');
+        } finally {
+          preview.clear();
+        }
+      },
+      cancel() {
+        gesture.cancel();
+        preview.clear();
+      },
+    };
   };
   const pointerDown = (e: React.PointerEvent) => {
-    if (drag.current || studioDrag.isActive()) return;
+    if (
+      drag.current ||
+      studioDrag.isActive() ||
+      transformGizmo.current?.isDragging()
+    )
+      return;
     if (
       (e.target as HTMLElement).closest?.('button,input,select') &&
       (e.button === 0 || !(e.target as HTMLElement).closest('.drawing-canvas'))
@@ -1855,7 +1934,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         cancelGesture();
         return;
       }
-      if (drag.current || studioDrag.isActive()) return;
+      if (
+        drag.current ||
+        studioDrag.isActive() ||
+        transformGizmo.current?.isDragging()
+      )
+        return;
       if (e.code === 'Space') {
         // Remember the modifier even when a toolbar button still has focus.
         // A subsequent canvas press can pan; keyboard button activation remains native.
@@ -2545,7 +2629,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         model: modelApi.current?.state(),
         creation: creationApi.current?.state(),
         selectedNodes: nodesRef.current,
-        gesturing: !!drag.current || studioDrag.isActive(),
+        gesturing:
+          !!drag.current ||
+          studioDrag.isActive() ||
+          !!transformGizmo.current?.isDragging(),
         nodeSnapping: { enabled: nodeSnap, keepSeams, target: snapFeedback },
         view: vr.current,
         modifiers: modifierRef.current,
@@ -2815,6 +2902,13 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     traceWindow.traceStudio = {
       version: '5.0',
       call: async (action: string, args: unknown = {}) => {
+        if (
+          transformGizmo.current?.isDragging() &&
+          (!studioAgentTools[action]?.readOnly ||
+            action === 'export' ||
+            action === 'export.run')
+        )
+          throw Error('请先完成或取消当前拖动');
         if (
           action.includes('.') ||
           (['undo', 'redo'].includes(action) &&
@@ -3441,6 +3535,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           data-reference-adjusting={adjustingReference ? 'true' : undefined}
           className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
           onPointerMove={(e) => {
+            if (transformGizmo.current?.isDragging()) return;
             if (studioDrag.isActive()) studioDrag.onPointerMove(e);
             else pointerMove(e);
           }}
@@ -3763,6 +3858,9 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                   </g>
                 ))}
             </g>
+            <g transform={`translate(${view.x},${view.y}) scale(${view.s})`}>
+              <g ref={setTransformLayer} />
+            </g>
             {adjustingReference && creationView === 'flat' && (
               <g transform={`translate(${view.x},${view.y}) scale(${view.s})`}>
                 <ReferenceHandles
@@ -3944,6 +4042,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               }
             }}
             layer={creationLayer}
+            transformLayer={transformLayer}
             stage={stageElement}
             scale={view.s}
             width={inspectorWidth}
@@ -3956,7 +4055,12 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             objectMoveCommit={objectMoveCommit}
             transformMode={transformMode}
             onTransformMode={chooseTransformMode}
-            objectMoving={studioDrag.isObjectActive()}
+            onTransformApi={registerTransformGizmo}
+            onTransformBegin={beginObjectTransform}
+            onTransformActive={setObjectTransformActive}
+            transformPan={isSpaceDown || !!adjustingReference}
+            transformView={view}
+            objectMoving={objectTransforming}
             sourceInspector={sourceInspector}
             onSourceExport={() => {
               setDialog('export');
@@ -4056,7 +4160,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               if (
                 busyRef.current ||
                 fileBusyRef.current ||
-                studioDrag.isActive()
+                studioDrag.isActive() ||
+                transformGizmo.current?.isDragging()
               )
                 throw Error('请先完成当前操作');
               const captured = host.getSnapshot();

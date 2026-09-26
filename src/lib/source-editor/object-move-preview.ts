@@ -25,20 +25,23 @@ export function objectMovePreview(
   );
   let frame = 0;
   let delta: ObjectTransformDelta = { x: 0, y: 0 };
+  const flush = () => {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    elements.forEach((element, index) => {
+      element.setAttribute(
+        'transform',
+        `${objectTransformAttribute(delta)} ${originals[index] || ''}`,
+      );
+    });
+  };
   return {
     update(next: ObjectTransformDelta) {
       delta = next;
       if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        elements.forEach((element, index) => {
-          element.setAttribute(
-            'transform',
-            `${objectTransformAttribute(delta)} ${originals[index] || ''}`,
-          );
-        });
-      });
+      frame = requestAnimationFrame(flush);
     },
+    flush,
     clear() {
       cancelAnimationFrame(frame);
       frame = 0;

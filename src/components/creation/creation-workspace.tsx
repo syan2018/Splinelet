@@ -26,6 +26,15 @@ import { deliver3MF } from '@/lib/manufacturing-download';
 import SlicerTemplate from '../shared/slicer-template';
 import CreationView from './creation-view';
 import { objectTransformCenter } from '@/lib/source-editor/object-transform-center.mjs';
+import {
+  framePoint,
+  objectTransformFrame,
+  transformFrame,
+} from '@/lib/source-editor/object-transform-frame.mjs';
+import TransformGizmo, {
+  type TransformGizmoApi,
+  type TransformTransaction,
+} from '@/components/shared/transform-gizmo';
 import ObjectTransformControls, {
   type ObjectTransformMode,
 } from './object-transform-controls';
@@ -277,6 +286,7 @@ type Props = {
   onStatus: (s: string) => void;
   onApi: (a: CreationApi) => void;
   layer: SVGGElement | null;
+  transformLayer: SVGGElement | null;
   stage: HTMLDivElement | null;
   scale: number;
   width: number;
@@ -287,6 +297,14 @@ type Props = {
   objectMoving: boolean;
   transformMode: ObjectTransformMode;
   onTransformMode: (mode: ObjectTransformMode) => void;
+  onTransformApi: (api: TransformGizmoApi | null) => void;
+  onTransformBegin: (
+    mode: ObjectTransformMode,
+    center: { x: number; y: number },
+  ) => TransformTransaction;
+  onTransformActive: (active: boolean) => void;
+  transformPan: boolean;
+  transformView: { x: number; y: number; s: number };
   objectMoveCommit: {
     project: Project;
     nodeIds: string[];
@@ -387,11 +405,16 @@ export default function CreationWorkspace(p: Props) {
     pendingRoleResult = useRef<PendingRoleResult | null>(null);
   const [boot, setBoot] = useState(false),
     [engineCalculating, setCalculating] = useState(false),
-    [evaluatedProject, setEvaluatedProject] = useState<Project | null>(null),
+    [evaluation, setEvaluation] = useState<{
+      project: Project;
+      runtime: Props['runtime'];
+    } | null>(null),
     [checkingRole, setCheckingRole] = useState(false),
     [roleIssue, setRoleIssue] = useState<SceneError | null>(null),
     [roleResult, setRoleResult] = useState<PendingRoleResult | null>(null),
     [error, setError] = useState('');
+  const evaluatedProject =
+    evaluation?.runtime === p.runtime ? evaluation.project : null;
   const calculating = engineCalculating || evaluatedProject !== p.project;
   const evaluationFailed = !calculating && !scene;
   const [outputPart, setOutputPartId] = useState('');
@@ -467,7 +490,10 @@ export default function CreationWorkspace(p: Props) {
     if (p.tool === 'move' && selection.kind !== 'object')
       commitSelection({ kind: 'object', ids: objects });
   }, [p.tool, selection.kind, objects, commitSelection]);
-  const sceneRows = sceneTreeRows(doc.tree, doc.objects) as SceneRow[];
+  const sceneRows = useMemo(
+    () => sceneTreeRows(doc.tree, doc.objects) as SceneRow[],
+    [doc],
+  );
   const groupSelection = sceneGroupSelection(
     sceneRows,
     selection.kind === 'object' ? selection.ids : [],
@@ -563,6 +589,7 @@ export default function CreationWorkspace(p: Props) {
     if (!boot || p.objectMoving) return;
     let cancelled = false;
     const snapshot = p.project;
+    const runtime = p.runtime;
     const timer = setTimeout(() => {
       setRoleIssue(null);
       setRoleResult(null);
@@ -582,7 +609,7 @@ export default function CreationWorkspace(p: Props) {
           }
           const nextScene = binding.scene as CreationScene;
           setScene(nextScene);
-          setEvaluatedProject(snapshot);
+          setEvaluation({ project: snapshot, runtime });
           sceneRef.current = nextScene;
           revision.current = snapshot;
           evaluationFailure.current = null;
@@ -590,7 +617,7 @@ export default function CreationWorkspace(p: Props) {
         })
         .catch((error: unknown) => {
           if (!cancelled) {
-            setEvaluatedProject(snapshot);
+            setEvaluation({ project: snapshot, runtime });
             setScene(null);
             sceneRef.current = null;
             revision.current = null;
@@ -609,7 +636,7 @@ export default function CreationWorkspace(p: Props) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [p.project, p.busy, p.objectMoving, boot]);
+  }, [p.project, p.runtime, p.busy, p.objectMoving, boot]);
   const notify = (message: string) => {
     setError('');
     p.onStatus(message);
@@ -1257,6 +1284,44 @@ export default function CreationWorkspace(p: Props) {
     evaluatedProject,
     p.tool === 'edit' || p.tool === 'trace',
   );
+  const transformNodeIds = useMemo(
+    () =>
+      sceneRows
+        .filter((row) =>
+          objects.some((id) => id === row.id || row.ancestors.includes(id)),
+        )
+        .map((row) => row.id),
+    [sceneRows, objects],
+  );
+  const transformIdentity = `${objects.join('|')}:${p.tool}:${p.viewMode}`;
+  const transformBox = useMemo(() => {
+    // A reopened file owns a new runtime. Its transform frame must wait for
+    // that runtime's evaluation instead of reading the previous file's facade.
+    if (!evaluatedProject) return null;
+    const pending =
+      p.objectMoveCommit?.project === p.project &&
+      evaluatedProject !== p.project;
+    const base = evaluatedProject;
+    const source = p.runtime.readCreationDocument(base) as CreationDocument;
+    const rows = sceneTreeRows(source.tree, source.objects);
+    const box = objectTransformFrame(
+      transformNodeIds,
+      rows,
+      base.paths,
+      scene?.cells,
+      base,
+    );
+    return box && pending
+      ? transformFrame(box, p.objectMoveCommit!.delta)
+      : box;
+  }, [
+    p.project,
+    p.runtime,
+    evaluatedProject,
+    scene,
+    p.objectMoveCommit,
+    transformNodeIds,
+  ]);
   if (!p.enabled) return null;
   const rendered = basePreview?.scene || joinPreview || scene;
   // Display choices affect only the canvas; saved colours and exports stay intact.
@@ -1264,6 +1329,37 @@ export default function CreationWorkspace(p: Props) {
   const fillAlpha = displayMode === 'color' ? 1 : 0.24;
   return (
     <>
+      {p.tool === 'move' &&
+        p.viewMode === 'flat' &&
+        p.transformLayer &&
+        p.stage &&
+        transformBox && (
+          <TransformGizmo
+            frame={transformBox}
+            stage={p.stage}
+            layer={p.transformLayer}
+            scale={p.scale}
+            camera={p.transformView}
+            mode={p.transformMode}
+            panning={p.transformPan}
+            identity={p.project}
+            key={transformIdentity}
+            disabled={
+              p.transformPan ||
+              (!p.objectMoving &&
+                (p.busy || calculating || evaluatedProject !== p.project)) ||
+              sceneRows.some(
+                (row) => transformNodeIds.includes(row.id) && row.locked,
+              )
+            }
+            mmPerPixel={p.project.widthMM / p.project.width}
+            onBegin={p.onTransformBegin}
+            onApi={p.onTransformApi}
+            onActiveChange={p.onTransformActive}
+            onCanvasPointerDown={p.onCanvasPointerDown}
+            onError={(cause) => p.onStatus(errorMessage(cause))}
+          />
+        )}
       {p.layer &&
         rendered &&
         createPortal(
@@ -2569,9 +2665,22 @@ export default function CreationWorkspace(p: Props) {
                           : null
                     }
                     onApply={(args) =>
-                      safely(() =>
-                        run('scene_transform', { ...args, nodeIds: objects }),
-                      )
+                      safely(() => {
+                        const center = transformBox && framePoint(transformBox);
+                        const mm = p.project.widthMM / p.project.width;
+                        run('scene_transform', {
+                          ...args,
+                          nodeIds: objects,
+                          ...(center && args.mode !== 'translate'
+                            ? {
+                                centerMM: [
+                                  (center.x - p.project.width / 2) * mm,
+                                  (p.project.height / 2 - center.y) * mm,
+                                ],
+                              }
+                            : {}),
+                        });
+                      })
                     }
                   />
                 ) : ['trace', 'edit'].includes(p.tool) ? (
@@ -2749,7 +2858,10 @@ export default function CreationWorkspace(p: Props) {
                                 );
                                 if (ref.current.project !== snapshot) return;
                                 setScene(result);
-                                setEvaluatedProject(snapshot);
+                                setEvaluation({
+                                  project: snapshot,
+                                  runtime: ref.current.runtime,
+                                });
                                 sceneRef.current = result;
                                 revision.current = snapshot;
                               })

@@ -239,6 +239,19 @@ module.exports = async (page) => {
       ids: [pair, other],
     });
     checks.push(`${modifier} drag only changes selection`);
+    // A selected object's move area must not swallow modifier selection clicks.
+    await choose([pair, other]);
+    await page.keyboard.down(modifier);
+    await drag(await at(440, 210));
+    await page.mouse.up();
+    await page.keyboard.up(modifier);
+    await idle();
+    assert.deepEqual(await paths(), before);
+    assert.deepEqual((await call('state')).creation.selection, {
+      kind: 'object',
+      ids: [pair],
+    });
+    checks.push(`${modifier} removes an object through the shared move area`);
   }
 
   for (const [kind, x, y] of [
@@ -323,8 +336,6 @@ module.exports = async (page) => {
         const stage = document.querySelector('.stage');
         const pointerId = window.__objectMovePointerId;
         if (name === 'blur') window.dispatchEvent(new Event('blur'));
-        else if (name === 'lostpointercapture')
-          stage.releasePointerCapture(pointerId);
         else
           stage.dispatchEvent(
             new PointerEvent(name, { bubbles: true, pointerId }),
@@ -361,9 +372,9 @@ module.exports = async (page) => {
   checks.push('release outside the canvas ends the move and remains one undo');
 
   for (const [label, x, y, tool] of [
-    ['face', 170, 210, 'h'],
+    ['face', 170, 210, 'g'],
     ['source', 170, 130, 'v'],
-    ['blank', 80, 350, 'h'],
+    ['blank', 80, 350, 'g'],
     ['node', 120, 130, 'a'],
   ]) {
     await call('set_view', { fit: true });

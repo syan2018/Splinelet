@@ -166,13 +166,13 @@ export default function ObjectTransformControls({
         </fieldset>
       </form>
       <div className="object-transform-guide">
-        <b>也可以直接拖动</b>
+        <b>画布变换控件</b>
         <p>
           {mode === 'translate'
-            ? '按住选中对象的面或线，拖到目标位置。'
+            ? '拖动对象或选框移动；四角缩放，顶部圆柄旋转。'
             : mode === 'rotate'
-              ? '按住选中对象的面或线，围绕选区中心拖动。'
-              : '按住选中对象的面或线，向外放大、向内缩小。'}
+              ? '拖动选框顶部的圆柄，围绕选区中心旋转。'
+              : '拖动选框四角等比缩放，对角保持固定。'}
         </p>
         <span>
           <kbd>Shift</kbd>
@@ -187,7 +187,9 @@ export default function ObjectTransformControls({
         <span>
           <kbd>Esc</kbd>取消拖动
         </span>
-        {mode === 'scale' && <p>保持宽高比，不改变浮雕厚度。</p>}
+        {mode === 'scale' && (
+          <p>按住 Alt 以中心缩放。保持宽高比，不改变浮雕厚度。</p>
+        )}
       </div>
     </section>
   );

@@ -1,0 +1,62 @@
+.transform-gizmo {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+  --moveable-color: #c6ed96;
+}
+.transform-gizmo .moveable-control-box {
+  --moveable-color: #c6ed96;
+}
+.stage .transform-gizmo .moveable-control {
+  pointer-events: auto;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  border: 2px solid #192b29;
+  box-shadow: 0 0 0 1px #c6ed96;
+}
+.stage .transform-gizmo .moveable-direction {
+  border-radius: 3px;
+}
+.transform-gizmo[data-mode='scale'] .moveable-direction,
+.transform-gizmo[data-mode='rotate'] .moveable-rotation-control {
+  background: #efffd7;
+  box-shadow:
+    0 0 0 2px #c6ed96,
+    0 0 0 5px #c6ed9626;
+}
+.transform-gizmo .moveable-area {
+  pointer-events: auto;
+  cursor: move;
+}
+.stage .transform-gizmo[data-select-through] .moveable-area {
+  pointer-events: none;
+}
+.transform-gizmo[data-disabled] .moveable-control-box {
+  --moveable-color: #879b96;
+  opacity: 0.6;
+}
+.transform-gizmo-readout {
+  position: absolute;
+  right: 20px;
+  bottom: 116px;
+  padding: 7px 12px;
+  border: 1px solid #c6ed9660;
+  border-radius: 6px;
+  background: #142321ed;
+  color: #e8f8d7;
+  font: 12px/1.4 monospace;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.stage .transform-gizmo .moveable-control.moveable-origin {
+  border: 1px solid #e8f8d7;
+  background: #192b29;
+  width: 8px;
+  height: 8px;
+  margin: -4px;
+  pointer-events: none;
+}
