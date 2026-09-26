@@ -26,7 +26,8 @@ import {
   PenTool,
   MousePointer2,
   SquareDashed,
-  Download,
+  ArrowUpRight,
+  Images,
   Spline,
   Plus,
   Scan,
@@ -3364,32 +3365,22 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         </span>
         <div className="header-actions">
           <button
-            aria-label="参考图面板"
-            aria-pressed={referencePanelOpen}
-            onClick={() => {
-              setReferencePanelOpen(!referencePanelOpen);
-              setSelectedReferenceId(null);
-              setReferenceDraft(null);
-            }}
-          >
-            <Plus size={16} />
-            参考图
-          </button>
-          <button
             className="header-save"
             aria-label="保存工程"
             title={saved + ' · Ctrl S 保存到同一文件'}
             disabled={fileBusy}
             onClick={() => void saveProject()}
           >
-            <Save size={16} />
+            <Save size={15} aria-hidden="true" />
+            <span>保存</span>
           </button>
           <button
             className="header-export"
+            title="打开检查与导出面板"
             onClick={() => creationApi.current?.show_output()}
           >
-            <Download size={16} />
             导出
+            <ArrowUpRight size={15} aria-hidden="true" />
           </button>
         </div>
         <DesktopWindowControls />
@@ -3554,6 +3545,16 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         >
           {referencePanelOpen && creationView === 'flat' && (
             <ReferencePanel
+              onClose={() => {
+                setReferencePanelOpen(false);
+                setSelectedReferenceId(null);
+                setReferenceDraft(null);
+                stage.current
+                  ?.querySelector<HTMLElement>(
+                    '.canvas-display-options summary',
+                  )
+                  ?.focus();
+              }}
               references={referenceImages}
               baseId={studioSnapshot.presentation.reference?.id || null}
               selectedId={selectedReferenceId}
@@ -4086,6 +4087,23 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                     />
                   </label>
                 </section>
+                <button
+                  type="button"
+                  className="canvas-reference-action"
+                  aria-label="管理参考图"
+                  aria-expanded={referencePanelOpen}
+                  aria-controls="reference-panel"
+                  onClick={(event) => {
+                    event.currentTarget
+                      .closest('details')
+                      ?.removeAttribute('open');
+                    setReferencePanelOpen(true);
+                  }}
+                >
+                  <Images size={16} aria-hidden="true" />
+                  <span>管理参考图</span>
+                  <ArrowUpRight size={14} aria-hidden="true" />
+                </button>
               </>
             }
             projectSettings={projectSettings}

@@ -18,8 +18,34 @@ module.exports = async (page, fixture) => {
   const original = await call('get_project');
   const header = page.getByRole('banner');
   const mainMenu = header.getByRole('button', { name: 'Splinelet 主菜单' });
-  assert.equal(await header.getByRole('button').count(), 4);
-  assert(await header.getByRole('button', { name: '参考图面板' }).isVisible());
+  assert.equal(await header.getByRole('button').count(), 3);
+  await page.locator('.canvas-display-options summary').click();
+  await page.getByRole('button', { name: '管理参考图', exact: true }).click();
+  const references = page.getByRole('complementary', {
+    name: '参考图',
+    exact: true,
+  });
+  await references.waitFor();
+  assert(await references.evaluate((el) => el === document.activeElement));
+  await references.getByRole('button', { name: '关闭参考图面板' }).click();
+  await references.waitFor({ state: 'hidden' });
+  assert(
+    await page
+      .locator('.canvas-display-options summary')
+      .evaluate((el) => el === document.activeElement),
+  );
+  await header.getByRole('button', { name: '导出', exact: true }).click();
+  assert.equal(
+    await page
+      .getByRole('button', { name: '检查与导出 · 全局', exact: true })
+      .getAttribute('aria-pressed'),
+    'true',
+  );
+  assert.deepEqual(
+    await call('get_project'),
+    original,
+    'opening references and export does not edit the document',
+  );
   const tools = page.getByRole('navigation', { name: '绘图工具' });
   assert.equal(await tools.getByRole('button').count(), 8);
   await mainMenu.click();

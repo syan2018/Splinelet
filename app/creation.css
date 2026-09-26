@@ -6,6 +6,7 @@
 .creation-studio header {
   height: 52px;
   padding: 0 18px;
+  gap: 16px;
   background: #20282d;
 }
 .creation-studio .brand b {
@@ -18,8 +19,10 @@
 .creation-studio .project-name {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
+  padding-left: 16px;
+  border-left: 1px solid #3b454b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -42,27 +45,30 @@
   border-radius: 50%;
   background: #829084;
 }
-.creation-studio .header-actions .header-save {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
+.creation-studio .header-actions > button {
+  height: 30px;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
-  color: #aab6bd;
+  color: #b4c0c7;
+  font-size: 13px;
+  font-weight: 400;
 }
-.creation-studio .header-actions .header-save:hover {
-  background: #354049;
-  color: #e7ecef;
+.creation-studio .header-actions > button:hover:not(:disabled) {
+  background: #ffffff09;
+  color: #edf2f5;
+}
+.creation-studio .header-actions > button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .creation-studio .header-actions .header-export {
-  padding: 6px 12px;
-  border: 1px solid #52634a;
-  background: #c6ed9614;
-  color: #d4efb1;
-  font-size: 13px;
+  color: #d6dfe4;
 }
-.creation-studio .header-actions .header-export:hover {
-  background: #c6ed9626;
+.creation-studio .header-export > svg {
+  color: #8c9ca5;
 }
 @media (max-width: 700px) {
   .creation-studio header {
@@ -73,7 +79,7 @@
   }
 }
 .creation-studio .header-actions {
-  gap: 7px;
+  gap: 3px;
 }
 .creation-studio .desktop-window-controls {
   margin-right: -18px;
@@ -188,6 +194,26 @@
   display: flex;
   justify-content: space-between;
   margin: 8px 0;
+}
+.canvas-display-options .canvas-reference-action {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px 0 0;
+  border: 0;
+  border-top: 1px solid #3e4b51;
+  border-radius: 0;
+  background: transparent;
+  color: #c0cdd3;
+  font-size: 12px;
+}
+.canvas-reference-action > span {
+  flex: 1;
+  text-align: left;
+}
+.canvas-display-options .canvas-reference-action:hover {
+  color: #f0f5f7;
 }
 .creation-studio .toolrail {
   width: 68px;
@@ -1710,11 +1736,11 @@
   .creation-studio header .header-actions {
     gap: 4px;
   }
-  .creation-studio header button svg {
+  .creation-studio .header-save > span {
     display: none;
   }
-  .creation-studio header button[aria-label='保存工程'] svg {
-    display: block;
+  .creation-studio .project-name {
+    padding-left: 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

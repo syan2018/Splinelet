@@ -69,6 +69,20 @@ module.exports = async (page, outputDirectory) => {
   };
 
   await page.locator('.creation-sidebar').waitFor();
+  await page.locator('.creation-updating').waitFor({ state: 'hidden' });
+  const viewport = page.viewportSize();
+  for (const [name, width, height] of [
+    ['desktop', 1440, 900],
+    ['compact', 1000, 720],
+    ['narrow', 540, 720],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({
+      path: resolve(outputDirectory, `header-${name}.png`),
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize(viewport);
   const before = await documentState();
   const baseId = Object.keys(before.references)[0];
   assert.ok(baseId, 'original fixture supplies its base reference');
@@ -102,12 +116,19 @@ module.exports = async (page, outputDirectory) => {
     JSON.stringify(before),
   );
   // Adding a batch opens the panel; restore the initial state for picker coverage.
-  await page.getByRole('button', { name: '参考图面板' }).click();
+  await page.getByRole('button', { name: '关闭参考图面板' }).click();
 
-  const panelButton = page.getByRole('button', { name: '参考图面板' });
-  await panelButton.click();
+  await page.locator('.canvas-display-options summary').click();
+  await page.screenshot({
+    path: resolve(outputDirectory, 'reference-menu.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: '管理参考图', exact: true }).click();
   await page.getByRole('complementary', { name: '参考图' }).waitFor();
-  assert.equal(await panelButton.getAttribute('aria-pressed'), 'true');
+  await page.screenshot({
+    path: resolve(outputDirectory, 'reference-panel.png'),
+    fullPage: true,
+  });
   await page
     .locator('input[type="file"][aria-label="添加参考图"]')
     .setInputFiles([

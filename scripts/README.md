@@ -185,4 +185,4 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 - `tests/unit/test-reference-commands.mjs`：图层命令、锁定、顺序、共享资源与单步撤销。
 - `tests/unit/test-reference-host.mjs`：批量添加、文件绑定、保存重开、草稿恢复、删除后撤销与资源 URL 生命周期。
 - `tests/unit/test-reference-evaluation.mjs`：图片修改复用几何结果，几何变化重新求值。
-- `pnpm test:browser:studio --case reference-images --port 4187 --inspector-port 9247`：批量图片拖入、单步撤销、文件选择、隔离画布交互和文件重开；证据由测试框架写入 `outputs/v4-qa/`。
+- `pnpm test:browser:studio --case reference-images --port 4187 --inspector-port 9247`：批量图片拖入、单步撤销、画布显示菜单的参考图入口、文件选择、隔离画布交互和文件重开，并记录宽窄窗口的顶栏布局；证据由测试框架写入 `outputs/v4-qa/`。

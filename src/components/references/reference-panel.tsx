@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import type { Reference } from '@/lib/document/types';
 import './reference.css';
 
@@ -22,6 +23,7 @@ export type ReferencePanelProps = {
   onAdd: (files: File[]) => void;
   onCommand: (request: ReferenceRequest) => void;
   onLocate: (id: string) => void;
+  onClose: () => void;
   disabled: boolean;
 };
 
@@ -138,8 +140,13 @@ export function ReferencePanel({
   onAdd,
   onCommand,
   onLocate,
+  onClose,
   disabled,
 }: ReferencePanelProps) {
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    panel.current?.focus({ preventScroll: true });
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const selected =
     references.find((reference) => reference.id === selectedId) ?? null;
@@ -195,6 +202,9 @@ export function ReferencePanel({
 
   return (
     <aside
+      ref={panel}
+      tabIndex={-1}
+      id="reference-panel"
       className="reference-panel"
       aria-label="参考图"
       onPointerDown={(event) => event.stopPropagation()}
@@ -207,14 +217,25 @@ export function ReferencePanel({
           <h2>参考图</h2>
           <p>图片独立于作品对象；自动描线仅分析基准底图</p>
         </div>
-        <button
-          aria-label="添加参考图"
-          disabled={disabled}
-          type="button"
-          onClick={() => fileInput.current?.click()}
-        >
-          添加
-        </button>
+        <div className="reference-panel-actions">
+          <button
+            aria-label="添加参考图"
+            disabled={disabled}
+            type="button"
+            onClick={() => fileInput.current?.click()}
+          >
+            添加
+          </button>
+          <button
+            className="reference-icon-button"
+            aria-label="关闭参考图面板"
+            title="关闭参考图面板"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
         <input
           ref={fileInput}
           aria-label="添加参考图"
