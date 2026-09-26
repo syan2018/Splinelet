@@ -76,6 +76,68 @@ module.exports = async (page, outputDirectory) => {
   await page.keyboard.press('Control+Shift+z');
   await settled();
   const row = page.locator(`[data-tree-object="${group.id}"]`);
+  const ink = Object.values(current.document.nodes).find(
+    (node) => node.parentId === group.id && node.kind === 'shape',
+  );
+  const inkOperator = Object.values(
+    current.document.programs[ink.programId].operators,
+  ).find((operator) => operator.type === 'stroke');
+  if ((await row.getAttribute('aria-expanded')) !== 'true')
+    await row
+      .getByRole('button', { name: '展开' + group.name, exact: true })
+      .click();
+  await page
+    .locator(`[data-tree-object="${ink.id}"]`)
+    .click({ position: { x: 60, y: 12 } });
+  await page
+    .getByRole('button', { name: '当前部件构造与修改器', exact: true })
+    .click();
+  const inkCard = page.locator(`[data-modifier-id="${inkOperator.id}"]`);
+  await inkCard
+    .getByRole('button', { name: '参数 ' + inkOperator.name, exact: true })
+    .click();
+  const inkWidth = inkCard.getByRole('spinbutton', {
+    name: '笔画宽度',
+    exact: true,
+  });
+  assert.equal(Number(await inkWidth.inputValue()), inkOperator.params.widthMM);
+  assert.equal(await inkCard.getByText(/Path 未闭合/).count(), 0);
+  const beforeWidth = await call('document.get');
+  const inkCells = async () =>
+    (await call('creation_inspect')).cells.filter(
+      (cell) => cell.objectId === ink.id,
+    );
+  const beforeCells = await inkCells();
+  await inkWidth.fill('0.65');
+  await inkWidth.press('Enter');
+  await settled();
+  const afterWidth = await call('document.get');
+  assert.equal(afterWidth.revision, beforeWidth.revision + 1);
+  assert.equal(
+    afterWidth.document.programs[ink.programId].operators[inkOperator.id].params
+      .widthMM,
+    0.65,
+  );
+  assert.deepEqual(afterWidth.document.sketches, beforeWidth.document.sketches);
+  assert.deepEqual(
+    afterWidth.document.reliefDefinitions,
+    beforeWidth.document.reliefDefinitions,
+  );
+  assert.notDeepEqual(await inkCells(), beforeCells);
+  await page.screenshot({
+    path: resolve(outputDirectory, 'stroke-width.png'),
+    fullPage: true,
+  });
+  await call('undo');
+  await settled();
+  assert.deepEqual((await call('document.get')).document, beforeWidth.document);
+  assert.equal(Number(await inkWidth.inputValue()), inkOperator.params.widthMM);
+  await page.keyboard.press('Control+Shift+z');
+  await settled();
+  assert.deepEqual((await call('document.get')).document, afterWidth.document);
+  await call('undo');
+  await settled();
+  await row.click({ position: { x: 60, y: 12 } });
   await row.locator('.creation-name').dblclick();
   const input = row.locator('input');
   await input.pressSequentially('Sandrone', { delay: 20 });

@@ -79,13 +79,24 @@ export function useCurvePreview(
     ? requested
     : defaultStage;
   const previews = selectPreviews(all, enabled, focusedId, stageId);
+  const endpoints = previews.reduce(
+    (n, s) =>
+      n + s.junctions.filter((junction) => junction.degree === 1).length,
+    0,
+  );
+  const branches = previews.reduce(
+    (n, s) => n + s.junctions.filter((junction) => junction.degree > 2).length,
+    0,
+  );
+  const diagnostics = [
+    ...new Set(previews.flatMap((s) => (s.diagnostic ? [s.diagnostic] : []))),
+  ];
   return {
     previews,
     controls: all.length > 0 && (
       <div
         className="curve-preview-controls"
         data-curve-preview-controls
-        title="修改源节点，派生曲线即时更新；橙点表示当前仍未接合的端点"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <label>
@@ -96,36 +107,45 @@ export function useCurvePreview(
           />
           派生样条
         </label>
-        {enabled && stages.length > 0 && (
-          <select
-            aria-label="样条预览阶段"
-            value={stageId}
-            onChange={(e) =>
-              setChoice({ objectId: focusedId!, stageId: e.target.value })
-            }
-          >
-            <option value="final">
-              {runtime ? '最终曲线' : '最终曲线 / 构面输入'}
-            </option>
-            {stages
-              .filter((stage) => stage.stageId !== 'final')
-              .map((s) => (
-                <option key={s.stageId} value={s.stageId}>
-                  {s.name}
-                </option>
-              ))}
-          </select>
-        )}
         {enabled && (
-          <output>
-            青线：预览 · 橙点：未接合{' '}
-            {previews.reduce((n, s) => n + s.junctions.length, 0)}
-          </output>
-        )}
-        {enabled && previews.some((s) => s.diagnostic) && (
-          <small role="alert">
-            {previews.find((s) => s.diagnostic)?.diagnostic}
-          </small>
+          <details className="curve-preview-details">
+            <summary>
+              {diagnostics.length ? '查看预览问题' : '预览设置'}
+            </summary>
+            <div className="curve-preview-options">
+              {stages.length > 0 && (
+                <select
+                  aria-label="样条预览阶段"
+                  value={stageId}
+                  onChange={(e) =>
+                    setChoice({ objectId: focusedId!, stageId: e.target.value })
+                  }
+                >
+                  <option value="final">
+                    {runtime ? '最终曲线' : '最终曲线 / 构面输入'}
+                  </option>
+                  {stages
+                    .filter((stage) => stage.stageId !== 'final')
+                    .map((s) => (
+                      <option key={s.stageId} value={s.stageId}>
+                        {s.name}
+                      </option>
+                    ))}
+                </select>
+              )}
+              <span>青色线显示修改器处理后的曲线。关闭勾选可隐藏。</span>
+              {(endpoints > 0 || branches > 0) && (
+                <output>
+                  {endpoints > 0 &&
+                    `橙点：${endpoints} 个开放端点。笔画无需闭合。`}
+                  {branches > 0 && `红点：${branches} 处曲线分叉。`}
+                </output>
+              )}
+              {diagnostics.map((diagnostic) => (
+                <small key={diagnostic}>{diagnostic}</small>
+              ))}
+            </div>
+          </details>
         )}
       </div>
     ),

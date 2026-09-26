@@ -108,11 +108,13 @@ function ProgramModifierCard({
     ? `${operationNames[type]}：${display(values.count)} 份 · 每 ${display(values.angleDeg)}° · 中心 (${display(center?.x)}, ${display(center?.y)}) mm`
     : type === 'curve_mirror'
       ? `曲线镜像：轴 ${display(values.angleDeg)}° · 中心 (${display(center?.x)}, ${display(center?.y)}) mm`
-      : type === 'offset'
-        ? `轮廓偏移 ${display(values.distanceMM)} mm`
-        : type === 'boolean'
-          ? operationNames[values.operation || ''] || '运算未解析'
-          : values.name;
+      : type === 'stroke'
+        ? `笔画宽度 ${display(values.widthMM)} mm`
+        : type === 'offset'
+          ? `轮廓偏移 ${display(values.distanceMM)} mm`
+          : type === 'boolean'
+            ? operationNames[values.operation || ''] || '运算未解析'
+            : values.name;
   return (
     <article
       aria-label={values.name}
@@ -252,6 +254,23 @@ function ProgramModifierCard({
             </label>
           )}
           {type === 'offset' && number('distanceMM', '轮廓偏移距离', -20, 20)}
+          {type === 'stroke' && (
+            <>
+              <ModifierNumber
+                label="笔画宽度"
+                value={values.widthMM}
+                min={0.01}
+                max={Number.MAX_VALUE}
+                step={0.01}
+                disabled={!editable('widthMM')}
+                note={reason('widthMM')}
+                onChange={(widthMM) => update({ widthMM })}
+              />
+              <p className="modifier-hint">
+                调整中心线两侧的总宽度；浮雕厚度在“颜色与高低”中设置。
+              </p>
+            </>
+          )}
           {isRadial && number('count', '阵列数量', 1, 64, 1, '份')}
           {(isRadial || type === 'curve_mirror') && (
             <>

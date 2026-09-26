@@ -198,6 +198,23 @@ assert.match(
   /不存在/,
 );
 assert.ok(snapshot.components[componentId(source.id)]);
+const diagnosed = structuredClone(snapshot);
+diagnosed.published[`${owner.id}:curves`].diagnostics = [
+  { severity: 'info', kind: 'open-path', message: 'Path 未闭合' },
+  { severity: 'info', kind: 'open-path', message: 'Path 未闭合' },
+];
+assert.equal(
+  projectCurvePreviews(document, diagnosed).at(-1).diagnostic,
+  undefined,
+);
+diagnosed.published[`${owner.id}:curves`].diagnostics.push(
+  { severity: 'warning', message: '连接缺失' },
+  { severity: 'warning', message: '连接缺失' },
+);
+assert.equal(
+  projectCurvePreviews(document, diagnosed).at(-1).diagnostic,
+  '连接缺失',
+);
 assert.throws(() => projectCurvePreviews(document, {}), /完整当前/);
 console.log('V4 curve preview projection passed');
 

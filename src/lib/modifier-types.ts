@@ -35,6 +35,7 @@ export type ModifierControls = {
     centerMM?: { x: number; y: number };
     count?: number;
     distanceMM?: number;
+    widthMM?: number;
     operation?: string;
     connections?: JoinConnection[];
     rule?: string;

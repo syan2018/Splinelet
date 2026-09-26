@@ -308,6 +308,23 @@
 .curve-preview-controls small {
   color: #b9d8df;
 }
+.curve-preview-details {
+  min-width: 0;
+}
+.curve-preview-details summary {
+  cursor: pointer;
+}
+.curve-preview-options {
+  display: grid;
+  gap: 8px;
+  width: 280px;
+  max-width: 100%;
+  max-height: 180px;
+  margin-top: 8px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
 .inspector .endpoint-snap-settings label {
   display: flex;
   align-items: center;

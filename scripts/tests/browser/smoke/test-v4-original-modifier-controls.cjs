@@ -180,6 +180,13 @@ async function main() {
     );
     assert.equal(added.curveCount, before.curveCount * 3);
     assert.equal(await derived.getAttribute('data-derived-curves'), '6');
+    const previewControls = page.locator('[data-curve-preview-controls]');
+    assert.equal(
+      await previewControls.getByRole('combobox').isVisible(),
+      false,
+    );
+    assert.equal(await previewControls.getByText(/Path 未闭合/).count(), 0);
+    await previewControls.locator('summary').click();
     await page
       .getByRole('combobox', { name: '样条预览阶段' })
       .selectOption(

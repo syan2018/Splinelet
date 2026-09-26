@@ -27,6 +27,7 @@ const TYPE_FIELDS = Object.freeze({
   'curve-array': new Set(['count', 'angleDeg', 'centerMM']),
   'region-array': new Set(['count', 'angleDeg', 'centerMM']),
   offset: new Set(['distanceMM']),
+  stroke: new Set(['widthMM']),
   boolean: new Set(['operation']),
   partition: new Set(),
   join: new Set(['connections']),
@@ -193,6 +194,11 @@ export function compileModifierUpdate(document, request) {
   if (Object.hasOwn(changes, 'distanceMM')) {
     editableScalar(operator.params.distanceMM, 'distanceMM');
     params.distanceMM = bounded(changes.distanceMM, 'distanceMM', -20, 20);
+  }
+  if (Object.hasOwn(changes, 'widthMM')) {
+    editableScalar(operator.params.widthMM, 'widthMM');
+    params.widthMM = finite(changes.widthMM, 'widthMM');
+    if (params.widthMM <= 0) throw Error('笔画宽度必须大于 0 mm');
   }
   if (Object.hasOwn(changes, 'operation')) {
     if (!BOOLEAN_OPERATIONS.has(changes.operation))

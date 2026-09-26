@@ -77,9 +77,11 @@ function topologyJunctions(value, toWorld) {
 
 function preview(document, objectId, stageId, name, stage, placement) {
   const result = { objectId, stageId, name, curves: [], junctions: [] };
-  const diagnostics = (stage?.diagnostics || []).map(
-    (item) => item.message || item.code || item.kind,
-  );
+  // Open source paths are valid for strokes and guides. Only actionable
+  // diagnostics belong in the canvas UI; informational records stay in stages.
+  const diagnostics = (stage?.diagnostics || [])
+    .filter((item) => item.severity !== 'info')
+    .map((item) => item.message || item.code || item.kind);
   if (stage?.status === 'ready') {
     try {
       const value = stage.value;
@@ -105,7 +107,7 @@ function preview(document, objectId, stageId, name, stage, placement) {
     );
   }
   if (diagnostics.length)
-    result.diagnostic = diagnostics.filter(Boolean).join('；');
+    result.diagnostic = [...new Set(diagnostics.filter(Boolean))].join('；');
   return result;
 }
 

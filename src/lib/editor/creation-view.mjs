@@ -196,7 +196,12 @@ const operatorStatus = (document, snapshot, node) => {
       const component =
         snapshot?.planar?.components?.[`operator:${operator.id}`];
       const stages = Object.values(component?.ports || {});
-      const diagnostics = stages.flatMap((stage) => stage.diagnostics || []);
+      const diagnostics = stages
+        .flatMap((stage) => stage.diagnostics || [])
+        .filter((item) => item.severity !== 'info');
+      const message = [...new Set(diagnostics.map((item) => item.message))]
+        .filter(Boolean)
+        .join('；');
       const blocked = stages.some((stage) => stage.status === 'blocked');
       return {
         objectId: node.id,
@@ -226,12 +231,8 @@ const operatorStatus = (document, snapshot, node) => {
                 ? 'absent'
                 : 'disabled',
         inputOptions: [],
-        ...(diagnostics.length
-          ? { note: diagnostics.map((item) => item.message).join('；') }
-          : {}),
-        ...(blocked
-          ? { error: diagnostics.map((item) => item.message).join('；') }
-          : {}),
+        ...(message ? { note: message } : {}),
+        ...(blocked ? { error: message || '此步骤无法生成结果' } : {}),
       };
     });
 };

@@ -14,6 +14,7 @@ V4 的 Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保�
 | 曲线阵列   | 曲线 → 曲线           | 数量、旋转角度、中心   |
 | 连接边界   | 曲线 → 曲线           | 源边端、实例与重复对应 |
 | 构面       | 曲线 → 区域           | 填充规则与闭合边界     |
+| 笔画构面   | 曲线 → 区域           | 笔画总宽度（mm）       |
 | 区域偏移   | 区域 → 区域           | 偏移距离               |
 | 区域阵列   | 区域 → 区域           | 数量、旋转角度、中心   |
 | 布尔、分区 | 区域及工具输入 → 区域 | 运算、明确作用范围     |
@@ -34,7 +35,7 @@ V4 的 Shape 保持稳定部件身份，Sketch 保存源贝塞尔，Program 保�
 
 ## 派生样条预览
 
-画布下方「派生样条」显示只读曲线阶段；源节点和控制柄仍是编辑入口。未接合端点与分叉保留诊断，构面失败也能看到当前有效曲线。关闭辅助预览不改变工程、撤销或导出。
+画布下方「派生样条」显示只读曲线阶段；源节点和控制柄仍是编辑入口。默认只显示开关和「预览设置」，展开后可选择阶段、查看颜色说明及问题详情。橙点表示开放端点，笔画和辅助线允许开放；红点表示分叉。正常开放路径不作为错误显示，重复诊断合并；构面失败也能看到当前有效曲线。取消勾选可隐藏辅助线，关闭辅助预览不改变工程、撤销或导出。
 
 节点工具的[端点吸附与对称接缝](source-editor.md#端点吸附与对称接缝)继续作用于来源几何。镜像和阵列使用同一变换定义；修复端点无需扩大构面容差。
 
@@ -60,7 +61,7 @@ await traceStudio.call('creation_command', {
 
 - `modifier_add`：镜像/阵列使用 `curve_mirror` / `curve_array`，`objectId`、`targets:{kind:'all'}`、`name?`、`angleDeg?`、`centerMM?`，阵列另有 `count?`。
 - `modifier_add` 还支持 `join` + `connections`（端点选项来自 `modifierAdd.endpoints`），以及 `fill` + `rule`。API 5 的 `repeat-pattern` 可一次建立整条重复构造，见 [Agent API 5](agent-api-2026-09-20.md)。
-- `modifier_update`：`objectId`、`modifierId`、`changes`；按类型支持名称、启用、角度、中心、数量、偏移距离、布尔运算、接合 connections 或构面 rule。`input`、`targets`、`joinMM` 不作为普通参数写入。
+- `modifier_update`：`objectId`、`modifierId`、`changes`；按类型支持名称、启用、角度、中心、数量、偏移距离、笔画宽度 `widthMM`（有限正数）、布尔运算、接合 connections 或构面 rule。笔画宽度独立于浮雕厚度；参数或表达式驱动时只读，不由普通输入解除绑定。`input`、`targets`、`joinMM` 不作为普通参数写入。
 - `modifier_move`：`objectId`、`modifierId`、`direction:-1|1`；不支持旧 `beforeId` 语义。
 - `modifier_remove`：`objectId`、`modifierId`。
 

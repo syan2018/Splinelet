@@ -79,6 +79,7 @@ export function projectModifierControls(document, ownerNodeId, operatorId) {
     if (operator.type !== 'curve-mirror') numeric('count', params.count);
   } else if (operator.type === 'offset')
     numeric('distanceMM', params.distanceMM);
+  else if (operator.type === 'stroke') numeric('widthMM', params.widthMM);
   else if (operator.type === 'boolean') {
     values.operation = params.operation;
     editableFields.push('operation');
