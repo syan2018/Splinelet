@@ -1,21 +1,20 @@
-const stable = (value) => {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stable(value[key])}`)
-    .join(',')}}`;
-};
+import {
+  outputIdentity as identity,
+  stableIdentityValue as stable,
+  createOutputRefIndex,
+} from './output-identity.mjs';
 
-export const outputIdentity = (ref) =>
-  stable([
-    ref.ownerNodeId,
-    ref.operatorId,
-    ref.port,
-    ref.key,
-    ref.instances,
-    ref.lineage,
-  ]);
+const requiredOutputRef = (ref) => {
+  // This construction API has always required a reference; the presentation
+  // adapter separately permits an absent one for diagnostic reads.
+  if (ref === null || ref === undefined)
+    throw TypeError('OutputRef is required');
+  return ref;
+};
+export const outputIdentity = (ref) => identity(requiredOutputRef(ref));
+
+const regionIndex = (regions) =>
+  createOutputRefIndex(regions, (region) => requiredOutputRef(region.ref));
 
 export function makeOutputRef(
   ownerNodeId,
@@ -36,10 +35,13 @@ export function makeOutputRef(
   };
 }
 
-export function resolveOutputReference(regions, reference) {
-  const matches = regions.filter(
-    (region) => outputIdentity(region.ref) === outputIdentity(reference),
-  );
+export function resolveOutputReference(
+  regions,
+  reference,
+  index = regionIndex(regions),
+) {
+  if (regions.length) requiredOutputRef(reference);
+  const matches = index.get(reference);
   if (matches.length === 1) return { status: 'resolved', region: matches[0] };
   return {
     status: matches.length ? 'ambiguous' : 'unresolved',
@@ -52,10 +54,11 @@ export function resolveRegionScope(regions, scope) {
     return { status: 'ready', selected: regions, untouched: [] };
   if (scope?.kind !== 'selected' || !Array.isArray(scope.refs))
     throw Error('区域作用范围必须明确为 all 或 selected');
-  const identities = new Set();
+  const index = regionIndex(regions);
+  const selected = new Set();
   const diagnostics = [];
   for (const reference of scope.refs) {
-    const result = resolveOutputReference(regions, reference);
+    const result = resolveOutputReference(regions, reference, index);
     if (result.status !== 'resolved')
       diagnostics.push({
         code: 'unresolved-scope',
@@ -63,17 +66,13 @@ export function resolveRegionScope(regions, scope) {
         message: '所选区域无法唯一解析',
         candidates: result.candidates,
       });
-    else identities.add(outputIdentity(result.region.ref));
+    else selected.add(result.region);
   }
   if (diagnostics.length) return { status: 'blocked', diagnostics };
   return {
     status: 'ready',
-    selected: regions.filter((region) =>
-      identities.has(outputIdentity(region.ref)),
-    ),
-    untouched: regions.filter(
-      (region) => !identities.has(outputIdentity(region.ref)),
-    ),
+    selected: regions.filter((region) => selected.has(region)),
+    untouched: regions.filter((region) => !selected.has(region)),
   };
 }
 
@@ -84,27 +83,50 @@ export function proposeAssignmentInheritance(regions, assignments) {
     conflicts = [],
     unresolved = [];
   const used = new Set();
+  const exactIndex = createOutputRefIndex(assignments, (item) => item.target);
+  const groups = new Map();
+  const values = new Map();
+  assignments.forEach((assignment, order) => {
+    const target = assignment.target;
+    if (!target.lineage.length) return;
+    if (!groups.has(target.ownerNodeId))
+      groups.set(target.ownerNodeId, new Map());
+    const owner = groups.get(target.ownerNodeId);
+    const instances = stable(target.instances);
+    if (!owner.has(instances)) owner.set(instances, new Map());
+    const tokens = owner.get(instances);
+    // A subset match must contain this token. Index one token to avoid duplicate
+    // candidates; verify the complete lineage after querying the smaller bucket.
+    const token = target.lineage[0];
+    if (!tokens.has(token)) tokens.set(token, []);
+    tokens.get(token).push({ assignment, order });
+  });
   for (const region of regions) {
-    const exact = assignments.filter(
-      (assignment) =>
-        outputIdentity(assignment.target) === outputIdentity(region.ref),
-    );
-    const candidates = exact.length
-      ? exact
-      : assignments.filter(
-          (assignment) =>
-            assignment.target.ownerNodeId === region.ref.ownerNodeId &&
-            stable(assignment.target.instances) ===
-              stable(region.ref.instances) &&
-            assignment.target.lineage.length &&
-            assignment.target.lineage.every((token) =>
-              region.ref.lineage.includes(token),
-            ),
-        );
+    const exact = exactIndex.get(region.ref);
+    let candidates = exact;
+    if (!exact.length) {
+      const group = groups
+        .get(region.ref.ownerNodeId)
+        ?.get(stable(region.ref.instances));
+      const tokens = new Set(region.ref.lineage);
+      candidates = [...tokens]
+        .flatMap((token) => group?.get(token) || [])
+        .filter(({ assignment }) =>
+          assignment.target.lineage.every((token) => tokens.has(token)),
+        )
+        .sort((a, b) => a.order - b.order)
+        .map(({ assignment }) => assignment);
+    }
     if (!candidates.length) continue;
     for (const candidate of candidates) used.add(candidate.id);
     if (
-      new Set(candidates.map((candidate) => stable(candidate.value))).size > 1
+      new Set(
+        candidates.map((candidate) => {
+          if (!values.has(candidate))
+            values.set(candidate, stable(candidate.value));
+          return values.get(candidate);
+        }),
+      ).size > 1
     )
       conflicts.push({
         target: region.ref,

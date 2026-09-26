@@ -1,6 +1,8 @@
 import { resolveThicknessMM } from './dimensions.mjs';
 import { isExcluded, partForRelief } from './parts.mjs';
-import { outputIdentity, sameOutputRef } from '../relief/appearance.mjs';
+import { sameOutputRef } from '../relief/appearance.mjs';
+import { createOutputIdentity } from '../construction/output-identity.mjs';
+import { createOutputQueries } from '../relief/output-queries.mjs';
 import {
   aggregateReliefBranches,
   readyReliefMembers,
@@ -34,7 +36,9 @@ export function resolveManufacturing(
   document,
   reliefResult,
   worldMatrices = {},
+  queries = createOutputQueries(document),
 ) {
+  const outputIdentity = createOutputIdentity();
   if (!reliefResult || reliefResult.domain !== 'relief')
     return aggregateReliefBranches('placed-relief', [
       {
@@ -58,12 +62,12 @@ export function resolveManufacturing(
   const members = [];
   const errors = new Map();
   for (const item of readyReliefMembers(reliefResult)) {
-    if (isExcluded(document, item)) continue;
+    if (isExcluded(document, item, queries)) continue;
     const key = outputIdentity(item.ref);
     const member = { ...structuredClone(item) };
     members.push(member);
     try {
-      member.partId = partForRelief(document, item);
+      member.partId = partForRelief(document, item, queries);
       Object.assign(
         member,
         resolveThicknessMM(
@@ -92,7 +96,7 @@ export function resolveManufacturing(
           (item) =>
             item.target.ownerNodeId === owner &&
             !item.suppressed &&
-            !isExcluded(document, { ref: item.target }),
+            !isExcluded(document, { ref: item.target }, queries),
         )
         .map((item) => ({ ...fallback, ...item.value })),
     ];

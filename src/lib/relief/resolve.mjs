@@ -1,5 +1,6 @@
 import { resolveAppearance, sameOutputRef } from './appearance.mjs';
 import { aggregateReliefBranches } from '../evaluation/branch-stages.mjs';
+import { createOutputQueries } from './output-queries.mjs';
 import {
   assignmentsForTarget,
   proposeOutputAssignmentInheritance,
@@ -48,11 +49,13 @@ function normalizeResults(regionResults) {
 
 /** Authored defaults and overrides, including disabled regions. This read does
  * not depend on successful thickness/placement/body evaluation. */
-export function resolveReliefDefinition(document, shapeId, target) {
-  const matches = assignmentsForTarget(
-    Object.values(document.reliefDefinitions?.overrides || {}),
-    target,
-  );
+export function resolveReliefDefinition(document, shapeId, target, queries) {
+  const matches =
+    queries?.relief(target) ??
+    assignmentsForTarget(
+      Object.values(document.reliefDefinitions?.overrides || {}),
+      target,
+    );
   if (matches.length > 1)
     return {
       status: 'blocked',
@@ -94,7 +97,7 @@ function invalidAssignments(document, regions) {
  * per-output color, thickness authority, mode, and placement intent; T10 owns
  * layer/mm conversion and all placement/manufacturing solving.
  */
-function resolveReliefBranch(document, regionResults) {
+function resolveReliefBranch(document, regionResults, queries) {
   const inputs = normalizeResults(regionResults);
   const dependencies = [];
   const diagnostics = [];
@@ -179,10 +182,20 @@ function resolveReliefBranch(document, regionResults) {
         ],
         dependencies,
       );
-    const appearance = resolveAppearance(document, shape.id, region.ref);
+    const appearance = resolveAppearance(
+      document,
+      shape.id,
+      region.ref,
+      queries,
+    );
     if (appearance.status !== 'ready')
       return blocked([...diagnostics, ...appearance.diagnostics], dependencies);
-    const definition = resolveReliefDefinition(document, shape.id, region.ref);
+    const definition = resolveReliefDefinition(
+      document,
+      shape.id,
+      region.ref,
+      queries,
+    );
     if (definition.status !== 'ready')
       return blocked([...diagnostics, ...definition.diagnostics], dependencies);
     // A default swatch is presentation only. It cannot turn an unpainted
@@ -228,7 +241,11 @@ function resolveReliefBranch(document, regionResults) {
   );
 }
 
-export function resolveRelief(document, regionResults) {
+export function resolveRelief(
+  document,
+  regionResults,
+  queries = createOutputQueries(document),
+) {
   const byOwner = new Map();
   for (const input of normalizeResults(regionResults)) {
     const owners = input?.ownerNodeId
@@ -284,6 +301,7 @@ export function resolveRelief(document, regionResults) {
           reliefDefinitions: scope(document.reliefDefinitions, ownerNodeId),
         },
         inputs,
+        queries,
       ),
     })),
   );

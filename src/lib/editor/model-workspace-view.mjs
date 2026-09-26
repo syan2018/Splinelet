@@ -3,7 +3,7 @@ import { resolveReliefDefinition } from '../relief/resolve.mjs';
 import { unresolvedAssignments } from '../relief/assignments.mjs';
 import { partForRelief } from '../manufacturing/parts.mjs';
 import { readGeometry } from '../region-engine.mjs';
-import { sameOutputRef } from '../relief/appearance.mjs';
+import { createOutputQueries } from '../relief/output-queries.mjs';
 
 const freeze = (value) => {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
@@ -22,14 +22,11 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
   const document = editorState.previewId
     ? editorState.preview.document
     : editorState.document;
+  const queries = createOutputQueries(document);
   const regions = workspace.creation.cells.map((cell) => {
-    const presentation = Object.values(
-      document.regionPresentations?.overrides || {},
-    ).filter((item) => sameOutputRef(item.target, cell.outputRef));
+    const presentation = queries.presentation(cell.outputRef);
     if (presentation.length > 1) throw Error('同一区域存在冲突的展示属性');
-    const reliefOverrides = Object.values(
-      document.reliefDefinitions.overrides,
-    ).filter((assignment) => sameOutputRef(assignment.target, cell.outputRef));
+    const reliefOverrides = queries.relief(cell.outputRef);
     const geometry = readGeometry(cell.geometry);
     let holes = 0;
     for (let index = 0; index < geometry.getNumGeometries(); index++)
@@ -38,7 +35,7 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
     try {
       part = {
         status: 'ready',
-        id: partForRelief(document, { ref: cell.outputRef }),
+        id: partForRelief(document, { ref: cell.outputRef }, queries),
       };
     } catch (error) {
       part = { status: 'blocked', message: error.message };
@@ -61,6 +58,7 @@ export function projectModelWorkspaceView(editorState, evaluated, frame) {
         document,
         cell.objectId,
         cell.outputRef,
+        queries,
       ),
       part,
     };

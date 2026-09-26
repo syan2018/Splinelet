@@ -197,6 +197,8 @@ pnpm build
 
 完整双端检查使用 `pnpm check:all`（需要 Rust 与 Tauri 系统依赖），涵盖类型、lint、单测、格式、原生编译检查及双端前端构建。仅构建两端前端使用 `pnpm build:all`；原生发布程序使用 `pnpm desktop:release`。
 
+区域身份匹配使用统一的六字段规则和单次求值查询索引，保留既有 `.spl` 引用与冲突判断；实现边界见[构造链与失效处理](docs/architecture/construction-pipeline.md#区域身份查询)。可重复性能比较与隔离浏览器计时入口见 [Scripts](scripts/README.md#区域更新性能验证)，本机测量见[优化验收快照](docs/qa/identity-optimization-2026-09-26.md)。
+
 部分历史回归使用本地参考工程，详情见各脚本和专项文档；不要在日常工程标签页运行会替换工程的浏览器测试脚本。
 
 ### Agent 接口（可选）

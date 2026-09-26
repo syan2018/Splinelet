@@ -1,6 +1,6 @@
 # 构造链与失效处理
 
-更新：2026-09-21。本文描述当前 V4 运行链；旧工程经导入边界转换，旧 Project/modifier 数组不再是编辑权威。
+更新：2026-09-26。本文描述当前 V4 运行链；旧工程经导入边界转换，旧 Project/modifier 数组不再是编辑权威。
 
 ## 持久定义与求值结果
 
@@ -17,6 +17,18 @@ Sketch 的 Vertex、Edge、Path 有稳定身份。Program 的算子显式声明�
 | 预览、导出   | src/lib/editor/creation-view.mjs、src/lib/export/snapshot.mjs | 消费同一求值 DTO，不回写派生几何                             |
 
 OutputRef 的 owner、operator、port、key、instances、lineage 共同参与身份；不能用 key 或数组下标代替。默认值和覆盖值分别保存；覆盖缺失的字段继续继承默认。整体 Z 编辑只改变默认放置和显式放置覆盖，不把厚度覆盖物化为独立放置。
+
+## 区域身份查询
+
+`src/lib/construction/output-identity.mjs` 是完整身份的共同实现。稳定序列化继续生成既有六字段身份字符串；精确相等直接比较字段，避免在每次查询时重新转义庞大的 key/lineage。对象属性顺序不影响比较，instances 和 lineage 数组仍按既有顺序比较。构造侧仍拒绝缺失引用，展示侧保留空引用诊断读法。
+
+`createOutputRefIndex` 按 ownerNodeId、operatorId、port、key 的原始字符串建立分层索引，再核对完整六字段。索引不使用有碰撞风险的摘要；匹配结果保留源顺序和重复项，消费者继续报告歧义/冲突。selected scope 中的失效引用仍阻断，空选择不会变成全选。
+
+分裂/合并的赋值继承先查精确匹配。无精确结果时按 owner 和有序 instances 分组，以父 lineage 的首个 token 缩小候选，再核对完整 lineage 子集并恢复原赋值顺序。多个父赋值不一致仍产生冲突；继承只是提案，不在查询时改写文档。
+
+`src/lib/relief/output-queries.mjs` 汇总外观、浮雕、展示、制造归属和排除索引。一次 document 求值中的浮雕、制造、导出视图共用上下文；每次创作/建模视图投影重新创建上下文。索引和身份 memo 只在输入不变的一次操作中有效，命令草案修改后必须重建，不能跨修订、preview、撤销或换工程保留。它们不进入持久化 DTO 或 Worker 消息。
+
+这一运行时优化不改变 `.spl` 协议、嵌套来源 key 或复制重映射规则，也不改变求值域调度、平面缓存失效条件和取消策略。持久化来源表示压缩需要单独的版本迁移设计。
 
 ## 失败范围
 

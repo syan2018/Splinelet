@@ -114,9 +114,26 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 - `tests/fixtures/`：进入版本库的最小可复现测试数据。
 - `examples/`：样例构建与导出工具。
 - `validation/`：Python、Blender 或外部格式验证。
+- `validation/profile-evaluation.mjs`：内置样例的只读求值、投影计时及完整输出等价性验证。
 - 根目录的 `agent-server.mjs`：本机 Agent HTTP 桥接。
 
 移动脚本时必须成组更新相对 import、fixture、输出路径、文档命令和 `package.json`，并用 `node --check` 覆盖 JavaScript 脚本。
+
+## 区域更新性能验证
+
+`tests/unit/test-v4-output-identity.mjs` 随 `pnpm test` 执行，以旧算法为参照验证完整身份、实例/lineage 顺序、重复与冲突、精确匹配优先、继承候选顺序、空/失效 scope 和操作内查询生命周期。
+
+在待比较的旧实现上保存基线，再在新实现上指定同一基线；脚本须在两次比较中保持相同版本：
+
+```sh
+node scripts/validation/profile-evaluation.mjs --iterations 3 --output outputs/identity-baseline.json
+node scripts/validation/profile-evaluation.mjs --iterations 3 --baseline outputs/identity-baseline.json --output outputs/identity-after.json
+pnpm test:browser --suite studio --case identity-performance
+```
+
+Node 脚本只读 `public/sandrone-example.spl`，在内存副本上分别测试原样、颜色、厚度、pose 与源顶点修改。预热后每轮使用新平面缓存，计时覆盖完整求值和创作视图投影，不包含文件解码、输入复制与输出摘要计算；完整 snapshot/view 的 SHA-256 必须与基线相同。`--iterations` 默认 3；未指定 `--output` 时只输出逐次结果，指定时写入该 JSON 路径。基线文件不要复用为输出路径，比较期间不要同时运行构建或其他重任务。
+
+`identity-performance` 使用独立 Studio fixture、真实 Worker 和内置 Sandrone，在私有端口与新 context 中通过原 GUI 修改颜色/厚度并撤销，各三轮；撤销后比较完整文档。它记录提交事件至更新提示消失后两帧、提示持续时间与 Worker 往返时间，写入证据目录的 `identity-performance.json`，不设置依赖机器速度的毫秒门槛。这是开发 fixture 的交互计时，不是生产构建或 Tauri 原生宿主的性能认证，也不能把 Node 耗时当作端到端延迟。具体对比见[验收快照](../docs/qa/identity-optimization-2026-09-26.md)。
 
 `test-v4-path-move-equivalence.mjs` 检查真实 Sandrone 头发部件移动后的 69 个求值区域与旧实现等价，并验证旧分区 fixture 的 11 组涂色在全部边界与源线同移后，按稳定输出引用保持几何、颜色和厚度。旧 fixture 的移动后空间样式匹配本身会报歧义，因此该项以移动前已验证的分区单元进行坐标平移作几何基准；不会把旧 fallback 当成正确输出。
 

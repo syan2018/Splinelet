@@ -1,6 +1,7 @@
 import { childrenOf, effectiveNodeState } from '../scene/hierarchy.mjs';
 import { transformPoint, worldMatrix } from '../scene/transforms.mjs';
 import { outputIdentity, resolveAppearance } from '../relief/appearance.mjs';
+import { createOutputQueries } from '../relief/output-queries.mjs';
 import { isExcluded } from '../manufacturing/parts.mjs';
 import { resolveReliefDefinition } from '../relief/resolve.mjs';
 import { readyReliefMembers } from '../evaluation/branch-stages.mjs';
@@ -289,6 +290,7 @@ export function projectCreationView(document, snapshot) {
     throw Error('creation view 需要当前 evaluateDocument snapshot');
 
   const connectionView = projectPartitionConnections(document, snapshot);
+  const queries = createOutputQueries(document);
   const diagnostics = [...connectionView.diagnostics];
   const errors = [];
   const cells = [];
@@ -348,12 +350,17 @@ export function projectCreationView(document, snapshot) {
     for (const region of regionStage.value?.regions || []) {
       const ref = clone(region.ref);
       const identity = outputIdentity(ref);
-      const key = creationCellKey(ref);
+      const key = `output:${identity}`;
       const relief = reliefMembers.get(identity) || null;
       const placed = placedMembers.get(identity) || null;
-      const definition = resolveReliefDefinition(document, node.id, ref);
-      const appearance = resolveAppearance(document, node.id, ref);
-      const excluded = isExcluded(document, { ref });
+      const definition = resolveReliefDefinition(
+        document,
+        node.id,
+        ref,
+        queries,
+      );
+      const appearance = resolveAppearance(document, node.id, ref, queries);
+      const excluded = isExcluded(document, { ref }, queries);
       diagnostics.push(...stageDiagnostics(appearance, node.id, 'appearance'));
       if (appearance.status === 'blocked')
         errors.push(

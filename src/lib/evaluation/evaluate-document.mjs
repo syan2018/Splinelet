@@ -4,6 +4,7 @@ import { resolveManufacturing } from '../manufacturing/placement.mjs';
 import { worldMatrix } from '../scene/transforms.mjs';
 import { buildBodies } from '../solid/bodies.mjs';
 import { evaluateExportViews } from '../export/views.mjs';
+import { createOutputQueries } from '../relief/output-queries.mjs';
 
 const absent = (domain) => ({
   domain,
@@ -55,14 +56,16 @@ export async function evaluateDocument(document, options = {}) {
   );
   const curves = wants(requested, 'curves') ? published(planar, 'curves') : [];
   const regions = needRegions ? published(planar, 'regions') : [];
+  const queries = createOutputQueries(document);
   const relief = wants(requested, 'relief', 'placed-relief', 'bodies')
-    ? resolveRelief(document, regions)
+    ? resolveRelief(document, regions, queries)
     : absent('relief');
   const placedRelief = wants(requested, 'placed-relief', 'bodies')
     ? resolveManufacturing(
         document,
         relief,
         options.worldMatrices || ((id) => worldMatrix(document, id)),
+        queries,
       )
     : absent('placed-relief');
   const bodies = requested.has('bodies')
@@ -77,6 +80,7 @@ export async function evaluateDocument(document, options = {}) {
     ...evaluateExportViews(document, {
       source: requested.has('curves'),
       regions,
+      queries,
     }),
     curves,
     regions,

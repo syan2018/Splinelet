@@ -1,5 +1,6 @@
 import { proposeAssignmentInheritance } from '../construction/provenance.mjs';
 import { sameOutputRef } from './appearance.mjs';
+import { createOutputRefIndex } from '../construction/output-identity.mjs';
 
 const clone = (value) => structuredClone(value);
 
@@ -10,9 +11,9 @@ export function assignmentsForTarget(assignments, target) {
 }
 
 export function unresolvedAssignments(regions, assignments) {
+  const index = createOutputRefIndex(regions, (region) => region.ref);
   return (assignments || []).filter(
-    (assignment) =>
-      !regions.some((region) => sameOutputRef(region.ref, assignment.target)),
+    (assignment) => !index.has(assignment.target),
   );
 }
 

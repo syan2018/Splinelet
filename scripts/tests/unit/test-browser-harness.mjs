@@ -88,6 +88,7 @@ const studioRegistered = harness.verifyStudioRegistry();
 assert.deepEqual(
   studioRegistered.map((entry) => entry.name),
   [
+    'identity-performance',
     'reference-images',
     'outliner-delete',
     'final-preview',
@@ -136,6 +137,7 @@ assert.deepEqual(
     .selectCases({ suite: 'studio', caseName: null })
     .map((entry) => entry.name),
   [
+    'identity-performance',
     'reference-images',
     'outliner-delete',
     'final-preview',

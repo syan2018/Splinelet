@@ -2,6 +2,7 @@ import { resolveSketch } from '../geometry/sketch.mjs';
 import { resolveRelation } from '../geometry/relations.mjs';
 import { worldMatrix, transformPoint } from '../scene/transforms.mjs';
 import { resolveAppearance } from '../relief/appearance.mjs';
+import { createOutputQueries } from '../relief/output-queries.mjs';
 
 const mapCoordinates = (coordinates, matrix) =>
   coordinates.length === 2 && coordinates.every(Number.isFinite)
@@ -28,7 +29,11 @@ const aggregate = (domain, field, stages, values) => {
 /** Derived export views belong to the same evaluation snapshot, including poses and appearance. */
 export function evaluateExportViews(
   document,
-  { source = false, regions = [] } = {},
+  {
+    source = false,
+    regions = [],
+    queries = createOutputQueries(document),
+  } = {},
 ) {
   const sourceStages = [],
     curves = [],
@@ -59,6 +64,7 @@ export function evaluateExportViews(
         document,
         region.ref.ownerNodeId,
         region.ref,
+        queries,
       );
       appearanceStages.push(appearance);
       const matrix = worldMatrix(document, region.ref.ownerNodeId);

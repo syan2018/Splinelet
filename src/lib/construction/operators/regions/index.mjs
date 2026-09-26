@@ -7,11 +7,11 @@ import {
   validateArea,
 } from '../../../region-engine.mjs';
 import { contourSignatures } from '../../../surface-lineage.mjs';
+import { makeOutputRef, resolveRegionScope } from '../../provenance.mjs';
 import {
-  makeOutputRef,
-  resolveRegionScope,
-  outputIdentity,
-} from '../../provenance.mjs';
+  createOutputRefIndex,
+  createOutputIdentity,
+} from '../../output-identity.mjs';
 import { fillCurves, sampleCubic } from './fill.mjs';
 import {
   connectPartitionCutters,
@@ -97,8 +97,11 @@ const stageRegions = (
   diagnostics = [],
   dependencies = [],
 ) => {
-  const identities = value.regions.map((region) => outputIdentity(region.ref));
-  if (new Set(identities).size !== identities.length)
+  const identities = createOutputRefIndex(
+    value.regions,
+    (region) => region.ref,
+  );
+  if (value.regions.some((region) => identities.get(region.ref).length > 1))
     return blocked(
       'ambiguous-output',
       '分裂结果没有唯一的来源身份；请使用显式分区建立输出契约',
@@ -276,6 +279,7 @@ export const regionOutlineOperator = {
     const source = input(inputs);
     if (!['ready', 'empty'].includes(source.status)) return { regions: source };
     try {
+      const outputIdentity = createOutputIdentity();
       const members = [...source.value.regions].sort((a, b) =>
         compare(outputIdentity(a.ref), outputIdentity(b.ref)),
       );
@@ -976,8 +980,8 @@ export const regionCollectOperator = {
       return {
         regions: blocked('foreign-owner', '请通过区域引用把来源映射到当前部件'),
       };
-    const identities = regions.map((region) => outputIdentity(region.ref));
-    if (new Set(identities).size !== identities.length)
+    const identities = createOutputRefIndex(regions, (region) => region.ref);
+    if (regions.some((region) => identities.get(region.ref).length > 1))
       return {
         regions: blocked('duplicate-output', '集合输入重复发布了同一区域'),
       };

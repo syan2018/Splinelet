@@ -1,16 +1,23 @@
 import { sameOutputRef } from '../relief/appearance.mjs';
 
-export function partForRelief(document, relief) {
-  const assignments = Object.values(document.manufacturing.assignments || {});
-  const exact = assignments.filter(
-    (item) =>
-      item.target.kind === 'output' && sameOutputRef(item.target, relief.ref),
-  );
+export function partForRelief(document, relief, queries) {
+  const assignments = queries
+    ? []
+    : Object.values(document.manufacturing.assignments || {});
+  const exact =
+    queries?.parts(relief.ref) ??
+    assignments.filter(
+      (item) =>
+        item.target.kind === 'output' && sameOutputRef(item.target, relief.ref),
+    );
   if (exact.length > 1) throw Error('同一输出存在多个制造 Part 赋值');
-  const shape = assignments.filter(
-    (item) =>
-      item.target.kind === 'node' && item.target.id === relief.ref.ownerNodeId,
-  );
+  const shape =
+    queries?.nodeParts(relief.ref.ownerNodeId) ??
+    assignments.filter(
+      (item) =>
+        item.target.kind === 'node' &&
+        item.target.id === relief.ref.ownerNodeId,
+    );
   if (shape.length > 1) throw Error('同一 Shape 存在多个制造 Part 赋值');
   const partId =
     exact[0]?.partId ??
@@ -21,7 +28,8 @@ export function partForRelief(document, relief) {
   return partId;
 }
 
-export function isExcluded(document, relief) {
+export function isExcluded(document, relief, queries) {
+  if (queries) return queries.excluded(relief.ref);
   return document.manufacturing.excluded.some(
     (target) =>
       (target.kind === 'node' && target.id === relief.ref.ownerNodeId) ||

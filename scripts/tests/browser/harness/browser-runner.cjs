@@ -118,6 +118,12 @@ const legacyCases = [
 // suite instead of being hidden behind one-off smoke commands.
 const studioCases = [
   {
+    name: 'identity-performance',
+    module: 'studio/test-identity-performance.cjs',
+    adapter: 'studio-fixture',
+    fixture: fixture('file', 'scripts/tests/fixtures/v4-original-studio.mjs'),
+  },
+  {
     name: 'reference-images',
     module: 'studio/test-reference-images.cjs',
     adapter: 'studio-fixture',

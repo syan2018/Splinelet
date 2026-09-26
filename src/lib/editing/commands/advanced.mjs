@@ -479,7 +479,7 @@ const currentTarget = (document, target) => {
 const sameTarget = (left, right) =>
   left.kind === 'node'
     ? right.kind === 'node' && left.id === right.id
-    : right.kind === 'output' && outputIdentity(left) === outputIdentity(right);
+    : right.kind === 'output' && sameOutputRef(left, right);
 const matchingAssignments = (records, target) =>
   Object.values(records).filter((item) => sameTarget(item.target, target));
 
