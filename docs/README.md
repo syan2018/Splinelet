@@ -14,6 +14,7 @@
 - [工程结构与平台边界](architecture/project-structure-2026-09-19.md)
 - [面修改器](modifiers.md)
 - [构造链与失效处理](architecture/construction-pipeline.md)
+- [区域作者模型与求值职责（设计复审，尚未完整落地）](architecture/region-identity-redesign-2026-09-26.md)
 - [打印分层](print-stack.md)
 - [3MF 打印导出](3mf-export.md)
 - [Splinelet `.spl` 工程格式](project-format.md)
@@ -30,6 +31,9 @@
 - [V4 编辑模型重构](../tasks/editor-model-v4-refactor/README.md)：模块工作包、包内检查点及验收记录；历史分发状态不代表当前产品能力。
 
 ## 历史 QA 快照
+
+- [区域选择器、源线响应与示例实验（2026-09-26，非最终验收）](qa/region-repair-2026-09-26.md)
+- [已撤回的 V5 区域选择器设计快照](qa/region-selector-experiment-2026-09-26.md)
 
 - [统一创作验收（2026-09-12）](qa/creation-acceptance-2026-09-12.md)
 - [Crown closure repair（2026-09-12）](qa/crown-closures-2026-09-12.md)

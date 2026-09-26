@@ -2,6 +2,8 @@
 
 脚本按执行环境和用途分目录。所有命令都从仓库根目录运行；新增脚本应放进对应类别，并使用相对当前文件可解析的 import 与 fixture 路径。
 
+`node scripts/validation/prototype-author-regions.mjs` 运行共享边界作者区域的隔离模型试验，检查内部锚点删除、精确拆段、表示反转、共享接点、物理填充范围及合并属性冲突。它不依赖历史面匹配，尚未接入产品 UI、文件迁移或制造导出，不能作为完整修复验收。设计边界见[作者模型复审](../docs/architecture/region-identity-redesign-2026-09-26.md)。
+
 ## 常用入口
 
 在仓库根目录运行：
