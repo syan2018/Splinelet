@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
   Download,
   Wrench,
+  SquareDashed,
 } from 'lucide-react';
 
 export const globalPropertyPages = ['project', 'palette', 'print', 'make'];
@@ -18,18 +19,25 @@ export default function PropertyNavigation({
   pathsSelected,
   hasSelection,
   canEditModifiers,
+  transforming = false,
 }: {
   page: string;
   onPage: (page: string) => void;
   pathsSelected: boolean;
   hasSelection: boolean;
   canEditModifiers: boolean;
+  transforming?: boolean;
 }) {
   const groups = [
     {
       label: '工具',
       entries: [
-        { id: 'tool', label: '工具', title: '当前工具设置', icon: Wrench },
+        {
+          id: 'tool',
+          label: transforming ? '变换' : '工具',
+          title: '当前工具设置',
+          icon: transforming ? SquareDashed : Wrench,
+        },
       ],
     },
     {

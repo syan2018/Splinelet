@@ -30,7 +30,7 @@ const legacyCases = [
   {
     name: 'vector-transform',
     module: 'test-vector-transform.cjs',
-    adapter: 'page',
+    adapter: 'page-output',
   },
   {
     name: 'agent-spline-authoring',
@@ -117,6 +117,12 @@ const legacyCases = [
 // run against source modules and its real workers.  They remain an explicit
 // suite instead of being hidden behind one-off smoke commands.
 const studioCases = [
+  {
+    name: 'reference-images',
+    module: 'studio/test-reference-images.cjs',
+    adapter: 'studio-fixture',
+    fixture: fixture('file', 'scripts/tests/fixtures/v4-original-studio.mjs'),
+  },
   {
     name: 'outliner-delete',
     module: 'studio/test-outliner-delete.cjs',

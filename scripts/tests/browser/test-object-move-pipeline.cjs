@@ -61,7 +61,7 @@ module.exports = async (page, outputDirectory, inputFile) => {
   await page
     .locator(`[data-tree-object="${target.id}"]`)
     .click({ position: { x: 60, y: 12 } });
-  await page.keyboard.press('h');
+  await page.keyboard.press('g');
   const source = page
     .locator(`[data-source-id="${target.pathIds[0]}"] path`)
     .last();

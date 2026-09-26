@@ -1,3 +1,7 @@
+import {
+  createReferenceCommand,
+  orderedReferences,
+} from '../editing/commands/references.mjs';
 import { validateDocument } from '../document/schema.mjs';
 import { createEditorSession } from '../editing/dispatcher.mjs';
 import { createV4PersistenceSession } from '../persistence/v4-session.mjs';
@@ -173,6 +177,20 @@ export function createStudioSession({
       runtime.dispose();
       runtime = makeRuntime();
     }
+    layout = freeze({
+      ...layout,
+      reference: reference
+        ? { ...structuredClone(reference), url: layout.reference.url }
+        : null,
+      references: orderedReferences(document).map((item) => ({
+        ...structuredClone(item),
+        url:
+          layout.assetUrls?.[item.assetId] ||
+          (layout.reference?.assetId === item.assetId
+            ? layout.reference.url
+            : ''),
+      })),
+    });
     if (!state.previewId && state.revision !== storage.revision)
       storage = files.update(state);
     publish(state);
@@ -281,6 +299,28 @@ export function createStudioSession({
       layout = freeze({ ...layout, blenderExtrusionMM: depthMM });
       runtime.refreshDisplay();
       return publish(editor.state);
+    },
+    addReferences(bundle, assetUrls) {
+      alive();
+      if (editor.state.previewId) throw Error('请先完成当前拖动');
+      const previous = layout;
+      const rollback = files.registerAssets(bundle.bytes);
+      layout = freeze({ ...layout, assetUrls: { ...assetUrls } });
+      try {
+        editor.dispatch(
+          createReferenceCommand({
+            kind: 'reference-add',
+            references: bundle.references,
+            assets: bundle.assets,
+          }),
+          { expectedRevision: editor.state.revision },
+        );
+      } catch (error) {
+        layout = previous;
+        rollback();
+        throw error;
+      }
+      return snapshot;
     },
     dispatch(command) {
       alive();

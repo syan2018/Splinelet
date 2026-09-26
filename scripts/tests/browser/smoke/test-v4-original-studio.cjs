@@ -253,9 +253,7 @@ async function test(page, output) {
     assert.equal(edited.nodePosesUnchanged, true);
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     assert.equal((await evidence()).baselineRestored, true);
-    await page
-      .getByRole('button', { name: '移动对象 (H)', exact: true })
-      .click();
+    await page.getByRole('button', { name: '变换', exact: true }).click();
     await page.evaluate(() => window.reviewCall('creation_inspect'));
     const beforeMove = await evidence();
     assert.equal(

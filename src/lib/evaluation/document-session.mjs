@@ -24,13 +24,42 @@ export function createDocumentEvaluationSession({
   editorSession,
   evaluate = evaluateDocument,
 }) {
+  // References never affect geometry. Reuse domain results across image-only edits,
+  // while the broker still validates each caller's full revision/preview identity.
+  let geometryKey = null;
+  const geometryResults = new Map();
+  const evaluateCurrent = (request) => {
+    const {
+      references: _references,
+      assets: _assets,
+      ...geometry
+    } = request.document;
+    const key = JSON.stringify([request.epoch, geometry]);
+    if (key !== geometryKey) {
+      geometryKey = key;
+      geometryResults.clear();
+    }
+    const domains = [...request.domains]
+      .sort((a, b) => a.localeCompare(b))
+      .join(',');
+    if (!geometryResults.has(domains)) {
+      const pending = Promise.resolve(
+        evaluate(request.document, {
+          ...request,
+          requestedDomains: request.domains,
+        }),
+      );
+      geometryResults.set(domains, pending);
+      pending.catch(() => {
+        if (geometryResults.get(domains) === pending)
+          geometryResults.delete(domains);
+      });
+    }
+    return geometryResults.get(domains);
+  };
   const session = createEvaluationSession({
     capabilities: documentEvaluationDomains,
-    evaluate: (request) =>
-      evaluate(request.document, {
-        ...request,
-        requestedDomains: request.domains,
-      }),
+    evaluate: evaluateCurrent,
   });
   const detach = session.attach(editorSession);
   let disposed = false;

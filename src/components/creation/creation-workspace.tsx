@@ -436,7 +436,10 @@ export default function CreationWorkspace(p: Props) {
     root,
     onTab: (next) =>
       setTab((previous) =>
-        globalPropertyPages.includes(previous) ? previous : next,
+        globalPropertyPages.includes(previous) ||
+        (previous === 'tool' && ref.current.tool === 'move')
+          ? previous
+          : next,
       ),
     onChoose: (next) => {
       heightDrag.current = null;
@@ -1683,6 +1686,9 @@ export default function CreationWorkspace(p: Props) {
         )}
       <aside
         className="creation-sidebar"
+        data-transforming={
+          p.tool === 'move' && tab === 'tool' ? 'true' : undefined
+        }
         ref={root}
         style={{ width: p.width }}
         aria-label="作品对象与属性"
@@ -2262,6 +2268,7 @@ export default function CreationWorkspace(p: Props) {
             pathsSelected={selection.kind === 'path'}
             hasSelection={selection.ids.length > 0}
             canEditModifiers={canEditModifiers}
+            transforming={p.tool === 'move'}
           />
           <div className="property-content">
             {selectedGroup && tab === 'object' && (
@@ -2374,7 +2381,9 @@ export default function CreationWorkspace(p: Props) {
                         : tab === 'make'
                           ? '检查与导出'
                           : tab === 'tool'
-                            ? '当前工具'
+                            ? p.tool === 'move'
+                              ? '变换'
+                              : '当前工具'
                             : tab === 'modifiers'
                               ? '构造与修改器'
                               : '选区属性'}
@@ -2390,7 +2399,7 @@ export default function CreationWorkspace(p: Props) {
                           paint: '上色 · 使用当前画笔色',
                           height: '高低 · 调整选中区域',
                           pan: '平移 · 只移动视图',
-                          move: '变换对象 · 移动、旋转、等比缩放',
+                          move: '移动 · 旋转 · 等比缩放',
                         }[p.tool] || p.tool
                       : selection.ids.length
                         ? selection.kind === 'path'
@@ -2551,6 +2560,14 @@ export default function CreationWorkspace(p: Props) {
                     mode={p.transformMode}
                     onMode={p.onTransformMode}
                     disabled={!objects.length || calculating || p.busy}
+                    selectionLabel={
+                      objects.length === 1
+                        ? sceneRows.find((row) => row.id === objects[0])
+                            ?.name || '1 个对象'
+                        : objects.length
+                          ? `${objects.length} 个对象`
+                          : null
+                    }
                     onApply={(args) =>
                       safely(() =>
                         run('scene_transform', { ...args, nodeIds: objects }),

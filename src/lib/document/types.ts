@@ -247,6 +247,10 @@ export type Reference = {
   visible: boolean;
   locked: boolean;
   opacity: number;
+  /** The calibration image is fixed at the bottom of the reference stack. */
+  role?: 'base' | 'overlay';
+  /** Stack order, from bottom to top. Older documents default to zero. */
+  order?: number;
 };
 export type Collection = {
   id: Id;

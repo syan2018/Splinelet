@@ -1,7 +1,11 @@
 'use client';
 import { parseSvgImport, type SvgImportResult } from '@/lib/import/svg-import';
 import VectorImportDialog from './vector-import-dialog';
-import type { ObjectTransformMode } from '@/components/creation/object-transform-controls';
+import {
+  ObjectTransformModes,
+  objectTransformModes,
+  type ObjectTransformMode,
+} from '@/components/creation/object-transform-controls';
 import type { ObjectTransformDelta } from '@/lib/source-editor/object-transform-preview';
 import {
   useState,
@@ -16,7 +20,7 @@ import {
 import {
   PenTool,
   MousePointer2,
-  Move,
+  SquareDashed,
   Download,
   Spline,
   Plus,
@@ -137,6 +141,17 @@ import { useSourceDrag } from '@/hooks/use-source-drag';
 import { openProject } from '@/lib/persistence/open-project.mjs';
 import { readAgentProjectInput } from '@/lib/persistence/agent-project-input.mjs';
 import { encodeDocument } from '@/lib/document/codec.mjs';
+import {
+  ReferencePanel,
+  type ReferenceRequest,
+} from '@/components/references/reference-panel';
+import { ReferenceLayer } from '@/components/references/reference-layer';
+import ReferenceHandles from '@/components/references/reference-handles';
+import type { Reference, Affine2D } from '@/lib/document/types';
+import { createSourceViewFrame } from '@/lib/editor/source-view.mjs';
+import { transformPoint, multiplyTransforms } from '@/lib/scene/transforms.mjs';
+import { createReferenceCommand } from '@/lib/editing/commands/references.mjs';
+import { readReferenceImage } from '@/lib/editor/reference-images.mjs';
 import { createReferenceProject } from '@/lib/editor/new-reference-project.mjs';
 
 type ModelApi = {
@@ -254,6 +269,38 @@ export default function StudioApp({ host }: { host: StudioHost }) {
   const creationViewRef = useRef('flat');
   const [creationLayer, setCreationLayer] = useState<SVGGElement | null>(null);
   const { project, snapshot: studioSnapshot } = useStudioProject(host);
+  const [referencePanelOpen, setReferencePanelOpen] = useState(false);
+  const [selectedReferenceId, setSelectedReferenceId] = useState<string | null>(
+    null,
+  );
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceDraft, setReferenceDraft] = useState<{
+    id: string;
+    matrix: Affine2D;
+    epoch: string;
+    revision: number;
+  } | null>(null);
+  const referenceFrame = createSourceViewFrame(
+    studioSnapshot.presentation.frame,
+  );
+  const referenceImages = (studioSnapshot.presentation.references ||
+    []) as (Reference & { url: string })[];
+  const shownReferences = referenceImages.map((ref) =>
+    referenceDraft?.id === ref.id &&
+    referenceDraft.epoch === studioSnapshot.editorState.epoch &&
+    referenceDraft.revision === studioSnapshot.editorState.revision
+      ? { ...ref, pixelToWorld: referenceDraft.matrix }
+      : ref,
+  );
+  const selectedReference = shownReferences.find(
+    (ref) => ref.id === selectedReferenceId,
+  );
+  const adjustingReference =
+    referencePanelOpen &&
+    selectedReference &&
+    !selectedReference.locked &&
+    selectedReference.visible &&
+    selectedReference.id !== studioSnapshot.presentation.reference?.id;
   const pr = useRef(project);
   useLayoutEffect(() => {
     pr.current = project;
@@ -446,6 +493,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     setSelectedPaths(valid);
   };
   const chooseTool = (next: string) => {
+    setSelectedReferenceId(null);
+    setReferenceDraft(null);
     studioDrag.cancel();
     if (['trace', 'edit', 'move'].includes(next)) setCreationView('flat');
     if (drag.current) cancelGesture();
@@ -477,9 +526,13 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               : next === 'height'
                 ? '选择局部或整个部件 · 拖动高度柄或输入毫米数值'
                 : next === 'move'
-                  ? '变换对象 · 在工具属性选择移动、旋转或缩放 · 右键平移视图'
+                  ? '变换 · G 移动 / R 旋转 / S 缩放 · 右键平移视图'
                   : '右键、空格或中键拖动平移视图',
     );
+  };
+  const chooseTransformMode = (mode: ObjectTransformMode) => {
+    setTransformMode(mode);
+    chooseTool('move');
   };
   const clearSelection = () => {
     creationApi.current?.clear();
@@ -962,6 +1015,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     setStatus('路径已结束 · 可编辑节点，或新建下一条路径');
   };
   const begin = () => {
+    setSelectedReferenceId(null);
+    setReferenceDraft(null);
     const target = creationApi.current?.trace_target() || null;
     finish();
     traceTarget.current = target;
@@ -1738,6 +1793,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       if (creationViewRef.current === '3d') return;
+      if ((e.target as HTMLElement).closest('.reference-panel')) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       zoom(Math.exp(-e.deltaY * 0.0015), {
@@ -1755,7 +1811,24 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         !((e.ctrlKey || e.metaKey) && ['z', 's'].includes(e.key.toLowerCase()))
       )
         return;
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented || e.isComposing) return;
+      if (
+        ((referencePanelOpen && selectedReference) ||
+          (e.target as HTMLElement).closest('.reference-panel')) &&
+        !(e.target as HTMLElement).closest('input,textarea')
+      ) {
+        if (e.key === 'Escape') {
+          setReferenceDraft(null);
+          setSelectedReferenceId(null);
+          e.preventDefault();
+          return;
+        }
+        if (!(e.ctrlKey || e.metaKey) && e.code !== 'Space') return;
+        if (referenceDraft) {
+          e.preventDefault();
+          return;
+        }
+      }
       studioDrag.onKeyDown(e);
       if (e.defaultPrevented) return;
       updateModifiers(e);
@@ -1782,7 +1855,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         cancelGesture();
         return;
       }
-      if (drag.current) return;
+      if (drag.current || studioDrag.isActive()) return;
       if (e.code === 'Space') {
         // Remember the modifier even when a toolbar button still has focus.
         // A subsequent canvas press can pan; keyboard button activation remains native.
@@ -1841,8 +1914,17 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       } else if (e.key.toLowerCase() === 'p') chooseTool('trace');
       else if (e.key.toLowerCase() === 'v') chooseTool('select');
       else if (e.key.toLowerCase() === 'a') chooseTool('edit');
-      else if (e.key.toLowerCase() === 'h') chooseTool('move');
-      else if (e.key.toLowerCase() === 'e' && tool === 'edit') {
+      else if (
+        objectTransformModes.some(
+          ({ key }) => key.toLowerCase() === e.key.toLowerCase(),
+        )
+      ) {
+        e.preventDefault();
+        const mode = objectTransformModes.find(
+          ({ key }) => key.toLowerCase() === e.key.toLowerCase(),
+        )!;
+        chooseTransformMode(mode.mode);
+      } else if (e.key.toLowerCase() === 'e' && tool === 'edit') {
         const path = pr.current.paths.find((p) => p.id === ar.current);
         const index =
           nodesRef.current.length === 1 ? nodesRef.current[0] : null;
@@ -1964,6 +2046,93 @@ export default function StudioApp({ host }: { host: StudioHost }) {
       setStatus('正在分析新底图…');
       return;
     }
+  };
+  const addReferenceImages = async (files: File[]) => {
+    if (busyRef.current || fileBusyRef.current || referenceBusy)
+      throw Error('请等待当前操作完成');
+    if (!files.length) return;
+    if (referenceImages.length + files.length > 32)
+      throw Error('最多放置 32 张参考图');
+    const identity = host.getSnapshot().editorState;
+    if (identity.previewId || drag.current) throw Error('请先完成当前拖动');
+    setReferenceBusy(true);
+    try {
+      const images = [];
+      let decodedBytes = 0;
+      let decodedPixels = referenceImages.reduce(
+        (sum, ref) => sum + ref.pixelWidth * ref.pixelHeight,
+        0,
+      );
+      for (const file of files) {
+        const image = await readReferenceImage(file);
+        decodedBytes += image.bytes.length;
+        decodedPixels += image.width * image.height;
+        if (decodedBytes > 48 * 1024 * 1024 || decodedPixels > 48 * 1024 * 1024)
+          throw Error('本批参考图超过容量，请缩小图片后再添加');
+        images.push(image);
+      }
+      const result = host.addReferenceImages(images, identity);
+      pr.current = result.project as Project;
+      finish();
+      setReferencePanelOpen(true);
+      setSelectedReferenceId(null);
+      setReferenceDraft(null);
+      setStatus('参考图已添加；选择“调整”摆放图片。自动描线仍分析基准底图。');
+    } finally {
+      setReferenceBusy(false);
+    }
+  };
+  const referenceCommand = (request: ReferenceRequest) => {
+    try {
+      if (
+        busyRef.current ||
+        fileBusyRef.current ||
+        referenceBusy ||
+        drag.current
+      )
+        throw Error('请先完成当前操作');
+      host.dispatch(createReferenceCommand(request));
+      pr.current = host.getSnapshot().project as Project;
+      setReferenceDraft(null);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+  const locateReference = (id: string) => {
+    const ref = referenceImages.find((item) => item.id === id);
+    const element = stage.current;
+    if (!ref || !element) return;
+    const matrix = multiplyTransforms(
+      referenceFrame.worldToPixel,
+      ref.pixelToWorld,
+    );
+    const corners = [
+      [0, 0],
+      [ref.pixelWidth, 0],
+      [ref.pixelWidth, ref.pixelHeight],
+      [0, ref.pixelHeight],
+    ].map((point) => transformPoint(matrix, point));
+    const xs = corners.map((p) => p[0]),
+      ys = corners.map((p) => p[1]);
+    const minX = Math.min(...xs),
+      maxX = Math.max(...xs),
+      minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    const width = Math.max(100, element.clientWidth - 310),
+      height = element.clientHeight;
+    const s = Math.max(
+      0.01,
+      Math.min(
+        20,
+        (width - 60) / Math.max(1, maxX - minX),
+        (height - 120) / Math.max(1, maxY - minY),
+      ),
+    );
+    setView({
+      s,
+      x: width / 2 - ((minX + maxX) / 2) * s,
+      y: height / 2 - ((minY + maxY) / 2) * s,
+    });
   };
   const exportFile = async (format: 'svg' | 'blender' | 'json') => {
     const p = pr.current;
@@ -3063,7 +3232,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           report(
             /\.svg$/i.test(e.dataTransfer.files[0].name)
               ? importVector(e.dataTransfer.files[0])
-              : importImage(e.dataTransfer.files[0]),
+              : addReferenceImages(Array.from(e.dataTransfer.files)),
           );
       }}
     >
@@ -3100,6 +3269,18 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           </i>
         </span>
         <div className="header-actions">
+          <button
+            aria-label="参考图面板"
+            aria-pressed={referencePanelOpen}
+            onClick={() => {
+              setReferencePanelOpen(!referencePanelOpen);
+              setSelectedReferenceId(null);
+              setReferenceDraft(null);
+            }}
+          >
+            <Plus size={16} />
+            参考图
+          </button>
           <button
             className="header-save"
             aria-label="保存工程"
@@ -3202,7 +3383,6 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               [PenTool, 'trace', '描线', 'P'],
               [PaintBucket, 'paint', '上色', ''],
               [ArrowUpFromLine, 'height', '高低', ''],
-              [Move, 'move', '变换对象', 'H'],
             ] as Array<[typeof MousePointer2, string, string, string]>
           ).map(([Icon, value, label, key]) => (
             <button
@@ -3217,6 +3397,25 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               <small>{label}</small>
             </button>
           ))}
+          <div className="object-transform-tool">
+            <button
+              title="变换 · G 移动 / R 旋转 / S 缩放"
+              aria-label="变换"
+              className={tool === 'move' ? 'selected' : ''}
+              aria-pressed={tool === 'move'}
+              onClick={() => chooseTransformMode('translate')}
+            >
+              <SquareDashed size={20} aria-hidden="true" />
+              <small>变换</small>
+            </button>
+            {tool === 'move' && (
+              <ObjectTransformModes
+                compact
+                mode={transformMode}
+                onMode={chooseTransformMode}
+              />
+            )}
+          </div>
           <hr />
           <button
             title="撤销 Ctrl Z"
@@ -3239,6 +3438,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           role="application"
           ref={setStage}
           aria-label="编辑画布"
+          data-reference-adjusting={adjustingReference ? 'true' : undefined}
           className={`stage tool-${tool} creation-stage ${creationView === '3d' ? 'creation-is-3d' : ''}`}
           onPointerMove={(e) => {
             if (studioDrag.isActive()) studioDrag.onPointerMove(e);
@@ -3257,6 +3457,29 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             if (drag.current?.pointerId === e.pointerId) cancelGesture();
           }}
         >
+          {referencePanelOpen && creationView === 'flat' && (
+            <ReferencePanel
+              references={referenceImages}
+              baseId={studioSnapshot.presentation.reference?.id || null}
+              selectedId={selectedReferenceId}
+              disabled={
+                referenceBusy ||
+                busy ||
+                fileBusy ||
+                Boolean(studioSnapshot.editorState.previewId) ||
+                Boolean(referenceDraft)
+              }
+              onSelect={(id) => {
+                finish();
+                setSelectedReferenceId(id);
+                setReferenceDraft(null);
+                setVectorsOnly(false);
+              }}
+              onAdd={(files) => report(addReferenceImages(files))}
+              onCommand={referenceCommand}
+              onLocate={locateReference}
+            />
+          )}
           <div className="stage-top">
             <span>
               <span className="live-dot" />
@@ -3281,6 +3504,17 @@ export default function StudioApp({ host }: { host: StudioHost }) {
           <svg
             className="drawing-canvas"
             aria-label="贝塞尔绘图画布"
+            onPointerDownCapture={(event) => {
+              if (
+                adjustingReference &&
+                event.button === 0 &&
+                !space.current &&
+                !(event.target as Element).closest('[data-reference-handles]')
+              ) {
+                event.stopPropagation();
+                event.preventDefault();
+              }
+            }}
             onPointerDown={pointerDown}
             onPointerLeave={() => {
               if (!drag.current) {
@@ -3302,10 +3536,9 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                 strokeWidth={1 / view.s}
               />
               {!vectorsOnly && (
-                <image
-                  href={project.image}
-                  width={project.width}
-                  height={project.height}
+                <ReferenceLayer
+                  references={shownReferences}
+                  worldToPixel={referenceFrame.worldToPixel}
                   opacity={opacity / 100}
                 />
               )}
@@ -3530,6 +3763,42 @@ export default function StudioApp({ host }: { host: StudioHost }) {
                   </g>
                 ))}
             </g>
+            {adjustingReference && creationView === 'flat' && (
+              <g transform={`translate(${view.x},${view.y}) scale(${view.s})`}>
+                <ReferenceHandles
+                  key={
+                    selectedReference.id +
+                    ':' +
+                    studioSnapshot.editorState.epoch +
+                    ':' +
+                    studioSnapshot.editorState.revision
+                  }
+                  reference={selectedReference}
+                  worldToPixel={referenceFrame.worldToPixel}
+                  scale={view.s}
+                  pan={isSpaceDown}
+                  onPreview={(matrix) =>
+                    setReferenceDraft(
+                      matrix
+                        ? {
+                            id: selectedReference.id,
+                            matrix,
+                            epoch: studioSnapshot.editorState.epoch,
+                            revision: studioSnapshot.editorState.revision,
+                          }
+                        : null,
+                    )
+                  }
+                  onCommit={(matrix) =>
+                    referenceCommand({
+                      kind: 'reference-update',
+                      id: selectedReference.id,
+                      patch: { pixelToWorld: matrix },
+                    })
+                  }
+                />
+              </g>
+            )}
             {marquee && (
               <rect
                 data-selection-box="true"
@@ -3686,10 +3955,7 @@ export default function StudioApp({ host }: { host: StudioHost }) {
             onMoveObject={startObjectDrag}
             objectMoveCommit={objectMoveCommit}
             transformMode={transformMode}
-            onTransformMode={(mode) => {
-              studioDrag.cancel();
-              setTransformMode(mode);
-            }}
+            onTransformMode={chooseTransformMode}
             objectMoving={studioDrag.isObjectActive()}
             sourceInspector={sourceInspector}
             onSourceExport={() => {
@@ -3734,6 +4000,10 @@ export default function StudioApp({ host }: { host: StudioHost }) {
         </>
       </div>
       <ModelWorkspace
+        referenceLayer={{
+          references: referenceImages,
+          worldToPixel: referenceFrame.worldToPixel,
+        }}
         project={project}
         runtime={studioSnapshot.runtime}
         mode={workspace}
@@ -4043,8 +4313,8 @@ export default function StudioApp({ host }: { host: StudioHost }) {
               </p>
               <p>
                 <b>视图与保存</b>
-                　H
-                移动整个部件；滚轮缩放；右键、空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
+                　G 移动、R 旋转、S
+                等比缩放整个部件或对象组；滚轮缩放视图；右键、空格拖动或中键平移；右侧边界调整宽度，不重置缩放。自动保存仅用于恢复草稿，Ctrl+S
                 才保存工程文件，Ctrl+Shift+S 另存为。导出面板提供分色 SVG、3MF
                 和 Blender 实体与源线；精确贝塞尔 SVG 在“工程 → 导出 → 源曲线
                 SVG”导出。

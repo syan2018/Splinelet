@@ -274,10 +274,13 @@ manyReferences.document.references['reference:second'] = {
   id: 'reference:second',
   name: 'second.png',
 };
-assert.throws(
-  () => createStudioPresentation(manyReferences, presentation()),
-  /多个参考图需要明确选择/,
+const implicitBase = createStudioPresentation(manyReferences, presentation());
+assert.equal(
+  implicitBase.presentation.reference.name,
+  'reference.png',
+  'multiple references retain the calibrated base image by default',
 );
+implicitBase.dispose();
 const selectedUrls = fakeUrls();
 const selected = createStudioPresentation(
   manyReferences,

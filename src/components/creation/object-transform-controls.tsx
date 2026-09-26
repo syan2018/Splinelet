@@ -1,17 +1,59 @@
 'use client';
 import { useState } from 'react';
+import { ArrowRight, Crosshair, Move, RotateCw, Scaling } from 'lucide-react';
 
 export type ObjectTransformMode = 'translate' | 'rotate' | 'scale';
+
+export const objectTransformModes = [
+  { mode: 'translate', label: '移动', key: 'G', icon: Move },
+  { mode: 'rotate', label: '旋转', key: 'R', icon: RotateCw },
+  { mode: 'scale', label: '缩放', key: 'S', icon: Scaling },
+] as const;
+
+export function ObjectTransformModes({
+  mode,
+  onMode,
+  compact = false,
+}: {
+  mode: ObjectTransformMode;
+  onMode: (mode: ObjectTransformMode) => void;
+  compact?: boolean;
+}) {
+  return (
+    <fieldset
+      className={`object-transform-modes${compact ? ' is-compact' : ''}`}
+      aria-label="变换模式"
+    >
+      {objectTransformModes.map(({ mode: value, label, key, icon: Icon }) => (
+        <button
+          type="button"
+          key={value}
+          title={`${label} (${key})`}
+          aria-label={compact ? `变换：${label}` : label}
+          aria-keyshortcuts={key}
+          aria-pressed={mode === value}
+          onClick={() => onMode(value)}
+        >
+          <Icon size={compact ? 16 : 20} aria-hidden="true" />
+          <span>{label}</span>
+          <kbd>{key}</kbd>
+        </button>
+      ))}
+    </fieldset>
+  );
+}
 
 export default function ObjectTransformControls({
   mode,
   onMode,
   disabled,
+  selectionLabel,
   onApply,
 }: {
   mode: ObjectTransformMode;
   onMode: (mode: ObjectTransformMode) => void;
   disabled: boolean;
+  selectionLabel: string | null;
   onApply: (args: Record<string, unknown>) => void;
 }) {
   const [x, setX] = useState('0'),
@@ -20,24 +62,20 @@ export default function ObjectTransformControls({
     [factor, setFactor] = useState('100');
   return (
     <section className="object-transform-controls" aria-label="对象变换">
-      <div className="creation-actions">
-        {(['translate', 'rotate', 'scale'] as const).map((item) => (
-          <button
-            key={item}
-            aria-pressed={mode === item}
-            onClick={() => onMode(item)}
-          >
-            {{ translate: '移动', rotate: '旋转', scale: '缩放' }[item]}
-          </button>
-        ))}
+      <ObjectTransformModes mode={mode} onMode={onMode} />
+      <div className="object-transform-target" aria-live="polite">
+        <Crosshair size={16} aria-hidden="true" />
+        <div>
+          <small>{selectionLabel ? '当前选区' : '先选择要变换的对象'}</small>
+          <strong title={selectionLabel || undefined}>
+            {selectionLabel || '点击画布上的部件，或在大纲中选择'}
+          </strong>
+        </div>
       </div>
-      <p>
-        在大纲选择部件或对象组，再拖动面或源线。旋转与等比缩放以选区中心为基点；Shift
-        约束方向、15° 或 10% 步进。
-      </p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (disabled) return;
           onApply(
             mode === 'translate'
               ? { mode, deltaMM: [Number(x), Number(y)] }
@@ -47,61 +85,110 @@ export default function ObjectTransformControls({
           );
         }}
       >
-        {mode === 'translate' ? (
-          <>
-            <label>
-              X 位移 (mm)
+        <fieldset disabled={disabled} className="object-transform-fields">
+          <legend>
+            {
+              { translate: '位移距离', rotate: '旋转角度', scale: '等比缩放' }[
+                mode
+              ]
+            }
+          </legend>
+          <p className="object-transform-caption">
+            {mode === 'translate' ? '相对于当前位置' : '以选区中心为基点'}
+          </p>
+          {mode === 'translate' ? (
+            <div className="object-transform-axes">
+              <label className="object-transform-value">
+                <span className="object-transform-axis-x">X</span>
+                <input
+                  aria-label="X 位移 (mm)"
+                  type="number"
+                  step="any"
+                  required
+                  value={x}
+                  onChange={(e) => setX(e.target.value)}
+                />
+                <small>mm</small>
+              </label>
+              <label className="object-transform-value">
+                <span className="object-transform-axis-y">Y</span>
+                <input
+                  aria-label="Y 位移 (mm)"
+                  type="number"
+                  step="any"
+                  required
+                  value={y}
+                  onChange={(e) => setY(e.target.value)}
+                />
+                <small>mm</small>
+              </label>
+            </div>
+          ) : mode === 'rotate' ? (
+            <label className="object-transform-value">
+              <RotateCw size={16} aria-hidden="true" />
               <input
-                aria-label="X 位移 (mm)"
+                aria-label="旋转角度"
                 type="number"
                 step="any"
                 required
-                value={x}
-                onChange={(e) => setX(e.target.value)}
+                value={angle}
+                onChange={(e) => setAngle(e.target.value)}
               />
+              <small>°</small>
             </label>
-            <label>
-              Y 位移 (mm)
+          ) : (
+            <label className="object-transform-value">
+              <Scaling size={16} aria-hidden="true" />
               <input
-                aria-label="Y 位移 (mm)"
+                aria-label="等比缩放"
                 type="number"
+                min="0.01"
                 step="any"
                 required
-                value={y}
-                onChange={(e) => setY(e.target.value)}
+                value={factor}
+                onChange={(e) => setFactor(e.target.value)}
               />
+              <small>%</small>
             </label>
-          </>
-        ) : mode === 'rotate' ? (
-          <label>
-            旋转角度 (°)
-            <input
-              aria-label="旋转角度"
-              type="number"
-              step="any"
-              required
-              value={angle}
-              onChange={(e) => setAngle(e.target.value)}
-            />
-          </label>
-        ) : (
-          <label>
-            等比缩放 (%)
-            <input
-              aria-label="等比缩放"
-              type="number"
-              min="0.01"
-              step="any"
-              required
-              value={factor}
-              onChange={(e) => setFactor(e.target.value)}
-            />
-          </label>
-        )}
-        <button disabled={disabled} type="submit">
-          应用到选中对象
-        </button>
+          )}
+          <button
+            className="object-transform-apply"
+            aria-label="应用到选中对象"
+            type="submit"
+          >
+            {
+              { translate: '应用位移', rotate: '应用旋转', scale: '应用缩放' }[
+                mode
+              ]
+            }
+            <ArrowRight size={15} aria-hidden="true" />
+          </button>
+        </fieldset>
       </form>
+      <div className="object-transform-guide">
+        <b>也可以直接拖动</b>
+        <p>
+          {mode === 'translate'
+            ? '按住选中对象的面或线，拖到目标位置。'
+            : mode === 'rotate'
+              ? '按住选中对象的面或线，围绕选区中心拖动。'
+              : '按住选中对象的面或线，向外放大、向内缩小。'}
+        </p>
+        <span>
+          <kbd>Shift</kbd>
+          {
+            {
+              translate: '限制水平 / 垂直',
+              rotate: '每 15° 对齐',
+              scale: '每 10% 对齐',
+            }[mode]
+          }
+        </span>
+        <span>
+          <kbd>Esc</kbd>取消拖动
+        </span>
+        {mode === 'scale' && <p>保持宽高比，不改变浮雕厚度。</p>}
+      </div>
     </section>
   );
 }

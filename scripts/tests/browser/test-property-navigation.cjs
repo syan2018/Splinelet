@@ -18,13 +18,19 @@ module.exports = async (page, fixture) => {
   const original = await call('get_project');
   const header = page.getByRole('banner');
   const mainMenu = header.getByRole('button', { name: 'Splinelet 主菜单' });
-  assert.equal(await header.getByRole('button').count(), 3);
+  assert.equal(await header.getByRole('button').count(), 4);
+  assert(await header.getByRole('button', { name: '参考图面板' }).isVisible());
   const tools = page.getByRole('navigation', { name: '绘图工具' });
   assert.equal(await tools.getByRole('button').count(), 8);
   await mainMenu.click();
   const menu = page.getByRole('menu', { name: 'Splinelet 主菜单' });
   await menu.getByRole('menuitem').first().waitFor({ state: 'visible' });
-  assert.equal(await menu.getByRole('menuitem').count(), 7);
+  assert.equal(await menu.getByRole('menuitem').count(), 8);
+  assert(
+    await menu
+      .getByRole('menuitem', { name: '导入 SVG／笔迹…', exact: true })
+      .isVisible(),
+  );
   await page.keyboard.press('ArrowDown');
   assert.equal(await menu.locator('[data-highlighted]').count(), 1);
   await page.keyboard.press('Escape');
@@ -212,7 +218,7 @@ module.exports = async (page, fixture) => {
   await page.locator('.creation-report').waitFor({ state: 'visible' });
   await page
     .getByRole('combobox', { name: '实体输出零件', exact: true })
-    .selectOption('property-test-empty');
+    .selectOption({ label: '空零件' });
   assert.equal(await page.locator('.creation-report').count(), 0);
   checks.push(
     'changing output parts cannot display another part’s solid validation report',

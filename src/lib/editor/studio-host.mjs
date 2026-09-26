@@ -1,3 +1,4 @@
+import { prepareReferenceImages } from './reference-images.mjs';
 import { openProject } from '../persistence/open-project.mjs';
 import { createStudioSession } from './studio-session.mjs';
 import { createStudioPresentation } from './studio-presentation.mjs';
@@ -64,6 +65,32 @@ export function createStudioHost({ opened, presentation, urls, ...options }) {
     setSelectionReader(read) {
       alive();
       session.setSelectionReader(read);
+    },
+    addReferenceImages(images, identity) {
+      alive();
+      const state = session.getSnapshot();
+      if (
+        state.editorState.epoch !== identity.epoch ||
+        state.editorState.revision !== identity.revision ||
+        state.editorState.previewId
+      )
+        throw Error('读取图片期间工程已改变，请重新添加');
+      const bundle = prepareReferenceImages(
+        state.editorState.document,
+        state.presentation.frame,
+        images,
+      );
+      const added = lease.addAssets(
+        bundle.assets,
+        bundle.bytes,
+        bundle.references,
+      );
+      try {
+        return session.addReferences(bundle, added.assetUrls);
+      } catch (error) {
+        added.rollback();
+        throw error;
+      }
     },
     dispatch(command) {
       alive();

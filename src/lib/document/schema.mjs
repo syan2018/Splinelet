@@ -787,6 +787,7 @@ const validateReference = (key, reference, seen) => {
       'opacity',
     ],
     'Reference',
+    ['role', 'order'],
   );
   id(reference.assetId, 'Reference.assetId');
   text(reference.name, 'Reference.name');
@@ -806,6 +807,13 @@ const validateReference = (key, reference, seen) => {
     reference.opacity > 1
   )
     fail('Reference.opacity 无效');
+  if (
+    reference.role !== undefined &&
+    !['base', 'overlay'].includes(reference.role)
+  )
+    fail('Reference.role 无效');
+  if (reference.order !== undefined && !finite(reference.order))
+    fail('Reference.order 无效');
 };
 const validateCollection = (key, collection, seen) => {
   recordId(key, collection, 'Collection', seen);
@@ -1002,6 +1010,8 @@ const assertStrongOwnership = (document) => {
   }
 };
 const assertExistingReferenceTypes = (document) => {
+  for (const reference of Object.values(document.references))
+    if (!document.assets[reference.assetId]) fail('Reference.assetId 必须存在');
   for (const program of Object.values(document.programs)) {
     for (const operator of Object.values(program.operators))
       for (const inputs of Object.values(operator.inputs))

@@ -24,7 +24,7 @@ pnpm desktop:check
 - `pnpm test:browser:studio`：Studio 子门禁。它为每个已注册的 Vite fixture 建立临时 localhost 端口与全新 Playwright browser/context，并把 manifest、截图和结果写入独立的 `outputs/v4-qa/<run>/`。当前覆盖默认最终面，以及完整原 Studio 的 Sandrone 打开、编辑、保存和重开旅程；最终面用例还通过原 GUI 覆盖 Mirror/Array、Join/Fill 与嵌套场景组交互。
 - `pnpm test:browser --suite studio --case outliner-delete`：大纲 Delete / Backspace 的多选、场景组后代、锁定整批拒绝、源线删除及撤销/重做回归。
 - `pnpm test:browser -- --suite studio --case final-preview`：只运行默认最终面、Join/Fill 和 Group 交互；`--case original-studio` 只运行完整原 Studio 旅程。两个原 smoke 文件仍可直接运行，并会委托给同一注册 runner。
-- `pnpm test:browser --suite legacy --case vector-transform --target desktop-frontend --port 52189`：SVG 签名导入、大纲连续输入与取消、整组数值旋转／缩放、三种拖动模式取消和单步撤销；使用已提交的签名 SVG 与公开样例。先执行 `pnpm desktop:build`。
+- `pnpm test:browser --suite legacy --case vector-transform --target desktop-frontend --port 52189`：SVG 拖入与取消、签名文件导入、大纲连续输入与取消、G / R / S 切换与 H 解绑、左右模式同步、输入保护、选区切换保留变换面板、三种数值变换与拖动取消和单步撤销；使用已提交的签名 SVG 与公开样例，并保存宽窄窗口截图。先执行 `pnpm desktop:build`。
 - `test-svg-import.mjs`、`test-v4-vector-import.mjs`：精确曲线、填充孔洞、笔画宽度、毫米定位、颜色／浮雕／贴附与整批失败回滚。
 - `test-v4-object-transform.mjs`：父组旋转、组内空间尺寸等比缩放、锁定和跨选区引用拒绝、撤销与保存往返。
 - `test-project-format.mjs`：验证 `.spl` 确定性往返、旧 JSON 导入、资源哈希与损坏包拒绝。
@@ -177,3 +177,10 @@ studio suite 的 `original-studio` case 在临时端口和全新浏览器 contex
 `tests/unit/test-v4-planar-stage-cache.mjs` 用最小构造工程逐项对照冷求值，覆盖局部平面结果复用及世界坐标引用、祖先变换、请求域和设置的失效边界，随 `pnpm test` 执行。
 
 `node scripts/examples/add-sandrone-signature.mjs <input.spl> <output.spl>` 在独立服务和隔离浏览器中给 Sandrone 杯身导入已提交的手写签名，另存工程和 PNG 预览。输入工程需包含「杯子」；输出必须另命名。参数和本次产物见 [签名验收](../docs/qa/vector-objects-2026-09-22.md)。
+
+## 参考图叠放回归
+
+- `tests/unit/test-reference-commands.mjs`：图层命令、锁定、顺序、共享资源与单步撤销。
+- `tests/unit/test-reference-host.mjs`：批量添加、文件绑定、保存重开、草稿恢复、删除后撤销与资源 URL 生命周期。
+- `tests/unit/test-reference-evaluation.mjs`：图片修改复用几何结果，几何变化重新求值。
+- `pnpm test:browser:studio --case reference-images --port 4187 --inspector-port 9247`：批量图片拖入、单步撤销、文件选择、隔离画布交互和文件重开；证据由测试框架写入 `outputs/v4-qa/`。

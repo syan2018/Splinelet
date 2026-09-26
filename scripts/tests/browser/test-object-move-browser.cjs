@@ -206,7 +206,7 @@ module.exports = async (page) => {
     ['source', 300, 130],
   ]) {
     await choose([other]);
-    await page.keyboard.press('h');
+    await page.keyboard.press('g');
     await drag(await at(x, y));
     assert.equal((await call('state')).gesturing, false);
     assert.deepEqual((await call('state')).creation.selection, {
@@ -227,7 +227,7 @@ module.exports = async (page) => {
 
   for (const modifier of ['Shift', 'Control', 'Meta']) {
     await choose([pair]);
-    await page.keyboard.press('h');
+    await page.keyboard.press('g');
     await page.keyboard.down(modifier);
     await drag(await at(440, 210));
     await page.mouse.up();
@@ -246,7 +246,7 @@ module.exports = async (page) => {
     ['source', 300, 130],
   ]) {
     await choose([pair]);
-    await page.keyboard.press('h');
+    await page.keyboard.press('g');
     assert.equal((await call('state')).tool, 'move');
     const visualBefore = await visualPositions();
     const projectBefore = await call('get_project');
@@ -266,11 +266,11 @@ module.exports = async (page) => {
     });
     await undo();
     checks.push(
-      `H moves every source in the group from its ${kind}, in one undo`,
+      `G moves every source in the group from its ${kind}, in one undo`,
     );
   }
   await choose([pair, other]);
-  await page.keyboard.press('h');
+  await page.keyboard.press('g');
   const multiVisualBefore = await visualPositions();
   await drag(await at(170, 210));
   await verifyPreview(multiVisualBefore, [
@@ -286,10 +286,10 @@ module.exports = async (page) => {
     ids: [pair, other],
   });
   await undo();
-  checks.push('H preserves and moves the complete multi-object selection');
+  checks.push('G preserves and moves the complete multi-object selection');
 
   await choose([pair]);
-  await page.keyboard.press('h');
+  await page.keyboard.press('g');
   const center = await at(170, 210);
   await drag(center, 2, 1);
   await page.mouse.up();
@@ -304,7 +304,7 @@ module.exports = async (page) => {
     'blur',
   ]) {
     await choose([pair]);
-    await page.keyboard.press('h');
+    await page.keyboard.press('g');
     const visualBefore = await visualPositions();
     await page.evaluate(() => {
       document.querySelector('.stage').addEventListener(
@@ -347,7 +347,7 @@ module.exports = async (page) => {
   }
 
   await choose([pair]);
-  await page.keyboard.press('h');
+  await page.keyboard.press('g');
   await drag(await at(170, 210));
   const stage = await page.locator('.stage').boundingBox();
   assert(stage && stage.x > 1);
@@ -438,7 +438,7 @@ module.exports = async (page) => {
   await choose([
     loadProject.creation.objects.find((o) => o.name === 'Load 0').id,
   ]);
-  await page.keyboard.press('h');
+  await page.keyboard.press('g');
   const loadStart = await at(29, 65);
   await page.mouse.move(loadStart.x, loadStart.y);
   await page.mouse.down();

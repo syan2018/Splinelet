@@ -169,7 +169,7 @@ module.exports = async (page, output) => {
     .click();
   await call('creation_inspect');
   await call('creation_focus', { objectId: outer });
-  await page.getByRole('button', { name: '移动对象 (H)', exact: true }).click();
+  await page.getByRole('button', { name: '变换', exact: true }).click();
   await call('creation_inspect');
   const before = (await call('document.get')).document;
   const sourceId = (await call('creation_inspect')).creation.objects.find(
