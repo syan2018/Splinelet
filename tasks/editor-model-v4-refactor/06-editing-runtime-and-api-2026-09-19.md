@@ -7,7 +7,7 @@
 - 执行状态：T12/T14 模块已实现；T13 与 T20 的纯命令/API 有验证，简化候选 UI 入口已撤销，原工作区接线尚未完成
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
-- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 设计依据：[架构方案](../../docs/history/designs/editor-model-review-and-refactor.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
 
 2026-09-19 接入进展：`editing/commands/resources.mjs` 提供色卡增改删、部件默认色、打印层/零件创建重命名删除及切片模板更新，统一经 authoring 与 API 5.0 的 `authoring.run` 分派。删除仍被引用的资源必须给出明确替代 ID；引用替换与删除在同一撤销中完成，不凭列表顺序挑替代项。`editor/creation-intents.mjs` 将原创作面板的颜色、厚度、清除上色、色卡、基本对象动作翻译为这些命令，使用显示视图的 epoch/revision 验证，既不接收可写旧 Project，也不重跑旧工程导入。验证入口是 `test-v4-resource-commands.mjs`、`test-v4-creation-intents.mjs` 与 `test-v4-workspace-view.mjs`；未覆盖的角色、构造编辑与原工作区接线仍待完成。
@@ -64,7 +64,7 @@ Worker 入口、HTTP/WebMCP 和根组件由 P00 装配；本包不维护 React �
 
 - [src/components/studio/studio-app.tsx](../../src/components/studio/studio-app.tsx)
 - [src/lib/source-editor/spline-edit.mjs](../../src/lib/source-editor/spline-edit.mjs)
-- [src/lib/creation-commands.mjs](../../src/lib/creation-commands.mjs)
+- [src/lib/creation-commands.mjs](../../scripts/tests/legacy/creation-commands.mjs)
 
 ### 可写范围
 
@@ -74,7 +74,7 @@ Worker 入口、HTTP/WebMCP 和根组件由 P00 装配；本包不维护 React �
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -130,9 +130,9 @@ node scripts/tests/unit/test-v4-transactions.mjs
 
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
-- [src/lib/creation-commands.mjs](../../src/lib/creation-commands.mjs)
-- [src/lib/modifier-commands.mjs](../../src/lib/modifier-commands.mjs)
-- [src/lib/creation-path-transfer.mjs](../../src/lib/creation-path-transfer.mjs)
+- [src/lib/creation-commands.mjs](../../scripts/tests/legacy/creation-commands.mjs)
+- [src/lib/modifier-commands.mjs](../../scripts/tests/legacy/modifier-commands.mjs)
+- [src/lib/creation-path-transfer.mjs](../../scripts/tests/legacy/creation-path-transfer.mjs)
 - [src/lib/spline-api.ts](../../src/lib/spline-api.ts)
 
 ### 可写范围
@@ -141,7 +141,7 @@ node scripts/tests/unit/test-v4-transactions.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -197,7 +197,7 @@ node scripts/tests/unit/test-v4-authoring.mjs
 
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
-- [src/lib/model-worker.ts](../../src/lib/model-worker.ts)
+- [src/lib/model-worker.ts](../../scripts/tests/legacy/model-worker.ts.retired)
 - [src/components/creation/creation-workspace.tsx](../../src/components/creation/creation-workspace.tsx)
 - [src/types/worker.d.ts](../../src/types/worker.d.ts)
 - [vite.desktop.config.ts](../../vite.desktop.config.ts)
@@ -210,7 +210,7 @@ node scripts/tests/unit/test-v4-authoring.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -280,7 +280,7 @@ API 与 GUI 调用同一命令和同一结果快照；兼容层只转换协议�
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 

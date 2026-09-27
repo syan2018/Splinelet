@@ -7,7 +7,7 @@
 - 执行状态：见下面各检查点；准备阶段实施中
 - 起始提交 / 合同版本：1fc9902 / v1
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
-- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 设计依据：[架构方案](../../docs/history/designs/editor-model-review-and-refactor.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
 
 ## 背景与要交付的改变
@@ -53,7 +53,7 @@
 
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
-- [docs/architecture/editor-model-review-and-refactor-2026-09-19.md](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- [docs/history/designs/editor-model-review-and-refactor.md](../../docs/history/designs/editor-model-review-and-refactor.md)
 - [src/lib/project.ts](../../src/lib/project.ts)
 - [src/lib/modifier-types.ts](../../src/lib/modifier-types.ts)
 - [src/lib/modifier-stages.mjs](../../src/lib/modifier-stages.mjs)
@@ -62,7 +62,7 @@
 
 - tasks/editor-model-v4-refactor/contracts-2026-09-19.md（新增）
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -116,7 +116,7 @@
 - [README.md](../../README.md)
 - [docs/README.md](../../docs/README.md)
 - [docs/project-format.md](../../docs/project-format.md)
-- [docs/creation-2026-09-19.md](../../docs/creation-2026-09-19.md)
+- [docs/creation.md](../../docs/creation.md)
 
 ### 可写范围
 
@@ -124,7 +124,7 @@
 - README.md、docs/ 当前指南与 scripts/README.md
 - tasks/editor-model-v4-refactor/acceptance-2026-09-19.md 的最终签收
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 

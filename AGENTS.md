@@ -7,7 +7,7 @@
 - `app/page.tsx` 与 `src/desktop/main.tsx` 共同引用 `src/components/studio/studio-entry.tsx`，统一加载原有 `studio-app.tsx`；数据模型重构必须保持原有布局、样式和交互，禁止通过候选参数替换整套前端；桌面入口不依赖 Web 路由组件。`src/lib/platform/` 放浏览器与 Tauri 能力适配，`src-tauri/src/` 放原生命令、文件权限与应用装配。
 - `src/lib/source-editor/` 放编辑算法，`src/lib/persistence/` 放恢复草稿与文件写入队列。根目录主要保留 `app/`、`src/`、`public/`、`src-tauri/`、`scripts/`、`docs/` 和 `tasks/`；`dist/` 是不纳入版本控制的 Web 构建生成目录，桌面前端输出位于 `src-tauri/target/frontend/`，避免 Web 构建清理 `dist/` 时波及桌面产物。`public/` 只保留静态资源及有兼容 URL 的 `trace-worker.js` / `geometry.mjs`；后者仍被应用与 Node 测试导入。改动时同时检查页面、Worker 和 Node 测试。
 - `scripts/` 包含测试、样例、维护和外部验证工具；fixture 必须是可进入版本控制的最小复现数据。具体分类见 `scripts/README.md`。
-- `docs/` 放当前指南与架构说明；`docs/qa/` 仅存历史验收快照。产品事实以 README 和当前专题文档为准。
+- `docs/` 与 `docs/architecture/` 放持续维护的指南和架构约定；`docs/history/` 隔离历史方案、实验和验收快照。产品事实以 README 和当前专题文档为准。
 - 根目录 `tasks/` 管理复杂工程任务；每个任务独立目录，按模块工作包分发，包内检查点逐项交付与验收。架构语义仍以 `docs/architecture/` 为准，任务状态不能冒充当前产品能力。
 
 ## 常用验证
@@ -42,8 +42,12 @@ pnpm desktop:check
 
 ## 文档维护
 
+- README 只保留产品定位、主要功能、运行方式、简要上手与文档入口；详细操作放用户指南，实现细节放架构文档。不要把修复过程、测试清单、任务状态或 QA 结果追加到产品介绍与用户指南中。
+- 当前文档描述现行行为和必要限制；历史方案必须明确标注并指向当前说明。脚本手册说明如何运行及适用范围，不逐次追加测试通过记录；运行证据归入带日期的 QA 快照。
 - 行为、命令、公开 API、目录或导出格式变化时，同步更新 README、最贴近主题的当前文档及 `scripts/README.md`。
-- 新文档使用小写 kebab-case；架构约定放 `docs/architecture/`，可重复说明放 `docs/`，历史验收放 `docs/qa/`。文件名包含已知日期，无法确认日期时使用 `-undated`，不要猜测日期。
+- 持续维护的文档使用不带日期的小写 kebab-case 文件名，在原文件内更新，不按日期复制新版本。架构约定放 `docs/architecture/`，使用和接口说明放 `docs/`。
+- 历史方案放 `docs/history/designs/`，测试、实验和性能日志放 `docs/history/qa/`；只有这些快照可用日期区分独立记录。记录应注明发生日期、验证范围和限制，不把旧结论改写为最新状态。
+- 任务计划与进度放 `tasks/`，新增任务目录和工作包按主题命名，不要求日期后缀。任务交付时把需要长期维护的行为、接口和架构约定整理到当前文档，日志和证据只留历史入口。
 - 一次性的本地路径、产物、数字或结论只能作为带日期的 QA 快照，不能写成当前产品承诺。
 - 修改 Markdown 后检查仓库内链接和命令，避免为同一主题建立互相漂移的平行说明。
 

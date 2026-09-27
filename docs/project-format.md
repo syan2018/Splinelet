@@ -1,6 +1,6 @@
 # Splinelet 工程格式
 
-V5 保存明确的作者选择与修改器输入；其边界见[修改器链设计](architecture/region-identity-redesign-2026-09-26.md)。
+V5 保存明确的作者选择与修改器输入；其边界见[修改器链设计](architecture/modifier-chain-recovery.md)。
 
 `.spl` 是 Splinelet 的原生可编辑工程文件，MIME 为 `application/vnd.splinelet.project+zip`。它是一个自包含 ZIP 容器，不是 3MF 制造输出的别名。
 
@@ -34,6 +34,6 @@ assets/<asset-id>.png | <asset-id>.jpg | <asset-id>.webp
 
 ## 写入安全
 
-保存只编码当前作者 Document，不等待区域或实体求值。区域定义暂时缺失或存在歧义不会阻止保存，但制造导出需要完整、有效的求值结果。区域定义及路径基准的语义见[构造链](architecture/construction-pipeline.md)和[区域定义决策](architecture/region-identity-redesign-2026-09-26.md)。
+保存只编码当前作者 Document，不等待区域或实体求值。区域定义暂时缺失或存在歧义不会阻止保存，但制造导出需要完整、有效的求值结果。区域定义及路径基准的语义见[构造链](architecture/construction-pipeline.md)和[区域定义决策](architecture/modifier-chain-recovery.md)。
 
 桌面版先在目标目录写入临时文件，刷新后再原子替换目标文件。桌面后端只允许读写用户通过对话框或启动参数（包括手动文件关联）显式选择的路径；免安装程序不会自动注册文件关联。

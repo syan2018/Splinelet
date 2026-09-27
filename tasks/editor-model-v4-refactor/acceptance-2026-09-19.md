@@ -1,6 +1,6 @@
 # V4 重构验收索引
 
-建档：2026-09-19。**默认 V4 与原工作区接入已完成，最终结果见[2026-09-20 收尾快照](../../docs/qa/v4-default-cutover-2026-09-20.md)。** 规范设计标准引用[架构方案第 10 节](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md#10-最终验收矩阵)。用户明确指定以原界面内嵌 Sandrone 正常打开/编辑和 gold 补充工程验收，并允许本机原生验证；本次依据该范围、全库检查和专项回归签收，不冒称原 U/A 全矩阵的每条真实 UI 旅程都已经重跑。
+建档：2026-09-19。**默认 V4 与原工作区接入已完成，最终结果见[2026-09-20 收尾快照](../../docs/history/qa/v4-default-cutover-2026-09-20.md)。** 规范设计标准引用[架构方案第 10 节](../../docs/history/designs/editor-model-review-and-refactor.md#10-最终验收矩阵)。用户明确指定以原界面内嵌 Sandrone 正常打开/编辑和 gold 补充工程验收，并允许本机原生验证；本次依据该范围、全库检查和专项回归签收，不冒称原 U/A 全矩阵的每条真实 UI 旅程都已经重跑。
 
 下方门槛、覆盖映射和逐日记录是实施历史；其中“未开始/未验收”保留表示原完整矩阵没有逐项独立签收，不代表仍在运行旧入口。当前事实与最新失败修复以收尾快照为准。
 
@@ -74,7 +74,7 @@
 - 失败 / 未执行 / 阻塞项与对应问题：
 - 本地产物路径 / 正式 QA 报告：
 
-本地产物使用 `outputs/v4-qa/<run-id>/`，可重复 fixture 提交到 `scripts/tests/fixtures/`。完成验收时新建使用实际日期的 `docs/qa/editor-model-v4-acceptance-<日期>.md` 并链接，不能预先伪造通过记录。
+本地产物使用 `outputs/v4-qa/<run-id>/`，可重复 fixture 提交到 `scripts/tests/fixtures/`。完成验收时新建使用实际日期的 `docs/history/qa/editor-model-v4-acceptance-<日期>.md` 并链接，不能预先伪造通过记录。
 
 ## 最终签收
 
@@ -101,19 +101,19 @@
 
 ## 实施检查记录 · 2026-09-19
 
-原工作区适配阶段后续复验：67 单元测试与 `check:all` 通过，两份 Sandrone 初始区域及容器往返通过；共享源、路径组、smooth 编辑语义及原 UI 后端接线仍未签收。具体边界见[阶段快照](../../docs/qa/v4-original-workspace-adapters-2026-09-19.md)，不能沿用候选简化界面的历史通过结果代替。
+原工作区适配阶段后续复验：67 单元测试与 `check:all` 通过，两份 Sandrone 初始区域及容器往返通过；共享源、路径组、smooth 编辑语义及原 UI 后端接线仍未签收。具体边界见[阶段快照](../../docs/history/qa/v4-original-workspace-adapters-2026-09-19.md)，不能沿用候选简化界面的历史通过结果代替。
 
 当前模块证据：`test-v4-program-interop.mjs` 使用真实 Document 的 Source → Mirror → Array → Join → Fill，覆盖开放母线、中心孔、pose 移动、重设原点、断缝与空输入；`test-v4-full-pipeline.mjs` 接通区域 → 浮雕 → 制造放置 → Manifold 实体及 SVG/STL/3MF。`test-v4-authoring.mjs` 覆盖普通绘制、显式闭合、首次上色、厚度与重着色、一次撤销、失效区域拒绝和高级程序保护。
 
-本轮 `pnpm check:all` 通过：51 个隔离单元测试、全库类型/lint/格式、Rust format/check、Web 与桌面前端生产构建。此后增量修改仍须按当前提交复验。浏览器旧产品基线仍有 5 项失败，见[基线快照](../../docs/qa/v4-foundation-baseline-2026-09-19.md)；不能把模块测试通过当作 U/A 全部通过。
+本轮 `pnpm check:all` 通过：51 个隔离单元测试、全库类型/lint/格式、Rust format/check、Web 与桌面前端生产构建。此后增量修改仍须按当前提交复验。浏览器旧产品基线仍有 5 项失败，见[基线快照](../../docs/history/qa/v4-foundation-baseline-2026-09-19.md)；不能把模块测试通过当作 U/A 全部通过。
 
 尚未签收：实际 Worker/UI 装配、完整任务命令与属性界面、真实旧工程导入等价比较、文件/Agent API 接线、双端用户旅程与默认切换。因此 G1 标记实施中，G2–G5 不签收，不以骨架组件或模拟界面测试替代真实旅程。
 
 ## 候选基本旅程 · 2026-09-19
 
-方向校正：以下候选界面已撤出生产入口，其历史通过结果不作为原 UI 保持或 V4 默认切换的签收依据。当前进展与原界面复验见[原工作区恢复快照](../../docs/qa/studio-ui-restoration-2026-09-19.md)和 [P07 接入合同](07-editor-experience-2026-09-19.md#当前接入合同)。
+方向校正：以下候选界面已撤出生产入口，其历史通过结果不作为原 UI 保持或 V4 默认切换的签收依据。当前进展与原界面复验见[原工作区恢复快照](../../docs/history/qa/studio-ui-restoration-2026-09-19.md)和 [P07 接入合同](07-editor-experience-2026-09-19.md#当前接入合同)。
 
-I00 已接通 `document-worker.ts?worker` 与 Manifold wasm、T12/T13 命令、T15 投影、独立恢复草稿和候选 API 5.0。Web/桌面前端四项真实浏览器旅程通过，见[带日期 QA 快照](../../docs/qa/v4-candidate-basic-journeys-2026-09-19.md)。这不是原生宿主验收，不签收全部 G2/G3/G4/G5；未完成项在快照中逐项列明。
+I00 已接通 `document-worker.ts?worker` 与 Manifold wasm、T12/T13 命令、T15 投影、独立恢复草稿和候选 API 5.0。Web/桌面前端四项真实浏览器旅程通过，见[带日期 QA 快照](../../docs/history/qa/v4-candidate-basic-journeys-2026-09-19.md)。这不是原生宿主验收，不签收全部 G2/G3/G4/G5；未完成项在快照中逐项列明。
 
 ## 默认入口和旧路径切断 · 2026-09-20
 

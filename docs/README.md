@@ -1,50 +1,49 @@
-# Splinelet 文档索引
+# Splinelet 文档
 
-这里按用途区分当前说明、架构约定与历史验收记录。产品现状以用户指南和专题说明为准；`qa/` 中的数字、文件路径与结论只代表对应日期的测试快照。
+这里的指南和架构说明持续维护，描述当前行为；文件名按主题固定，不按日期创建副本。
 
-## 入门与工作流
+| 内容                     | 位置                 | 维护方式                                   |
+| ------------------------ | -------------------- | ------------------------------------------ |
+| 产品介绍与启动入口       | 根目录 `README.md`   | 保持简短，与当前功能一致                   |
+| 使用、格式与 API         | `docs/`              | 在同一专题中更新操作、契约和限制           |
+| 架构与设计约束           | `docs/architecture/` | 更新现行边界，保留仍适用的设计理由         |
+| 可重复运行的开发工具     | `scripts/README.md`  | 维护命令、前提和参数，不堆积运行结果       |
+| 任务计划与进度           | `tasks/`             | 跟踪工作包；交付后将长期知识整理进当前文档 |
+| 历史方案、实验与验收日志 | `docs/history/`      | 保留当时的范围和结论，不作为当前产品承诺   |
 
-- [项目首页与完整工作流](../README.md)
-- [统一创作与 Agent API](creation-2026-09-19.md)
-- [源线编辑器与兼容 API](source-editor.md)
-- [高级构面与实体操作](modeling-2026-09-19.md)
+## 使用指南
 
-## 专题说明
+- [项目首页](../README.md)：功能、运行方式与适用范围。
+- [上手指南](getting-started.md)：从参考图描线到保存、打印导出的完整工作流。
+- [参考图](reference-images.md)：图层、变换与保存。
+- [源线编辑器](source-editor.md)：节点、路径、快捷键和兼容 API。
+- [面修改器](modifiers.md)：分区、布尔、偏移与构造链编辑。
+- [打印分层](print-stack.md)：堆叠位置、打印层高与厚度。
+- [高级构面与实体操作](modeling.md)。
 
-- [工程结构与平台边界](architecture/project-structure-2026-09-19.md)
-- [面修改器](modifiers.md)
-- [构造链与失效处理](architecture/construction-pipeline.md)
-- [修改器链、输出快照与断链修复（设计与实施中）](architecture/region-identity-redesign-2026-09-26.md)
-- [打印分层](print-stack.md)
-- [3MF 打印导出](3mf-export.md)
-- [Splinelet `.spl` 工程格式](project-format.md)
+## 格式与自动化
 
-## 设计评审
+- [Splinelet `.spl` 工程格式](project-format.md)。
+- [3MF 打印导出](3mf-export.md)：通用 3MF 与 Bambu 工程。
+- [统一创作 API](creation.md)：创作命令与示例。
+- [Agent API](agent-api.md)：身份、修订、二进制传输与兼容写入。
 
-- [编辑模型评审与重构计划（2026-09-19）](architecture/editor-model-review-and-refactor-2026-09-19.md)：对象组织、源定义到曲线/区域/浮雕/实体的管线、默认简单与按需展开的交互，以及 V4 迁移和体验验收；V4 已接入双端默认工作区，剩余问题见本次复审。
-- [V4 重构复审与默认预览修复（2026-09-20）](qa/v4-refactor-review-2026-09-20.md)：故障隔离、完整构造入口、Z 位移和场景树的待修复项，以及本次预览修复的验证范围。
-- [交互设计稿（2026-09-19）](interaction-design-2026-09-19.md)：目标交互、当前修正范围与待实现项。
+## 开发与架构
 
-## 执行任务
+- [脚本与验证](../scripts/README.md)：检查命令、浏览器隔离与测量工具。
+- [工程结构](architecture/project-structure.md)：目录职责与平台边界。
+- [交互约定](interaction-design.md)：工具、选择与属性面板行为。
+- [构造链与失效处理](architecture/construction-pipeline.md)。
+- [修改器链与断链修复](architecture/modifier-chain-recovery.md)。
+- [编辑交互管线](architecture/editor-interaction-pipeline.md)。
+- [选区属性贡献](architecture/property-contributions.md)。
+- [参考图架构](architecture/reference-images.md)。
 
-- [复杂任务目录](../tasks/README.md)：分发、依赖、交付与验收管理。
-- [V4 编辑模型重构](../tasks/editor-model-v4-refactor/README.md)：模块工作包、包内检查点及验收记录；历史分发状态不代表当前产品能力。
+## 历史设计与工程记录
 
-## 历史 QA 快照
+以下内容用于追溯设计和实施，不作为当前功能说明：
 
-- [区域选择器、源线响应与示例实验（2026-09-26，非最终验收）](qa/region-repair-2026-09-26.md)
-- [已撤回的 V5 区域选择器设计快照](qa/region-selector-experiment-2026-09-26.md)
+- [历史记录索引](history/README.md)：旧设计、实验和验收快照。
+- [工程任务](../tasks/README.md)：工作包、依赖和交付记录。
 
-- [统一创作验收（2026-09-12）](qa/creation-acceptance-2026-09-12.md)
-- [Crown closure repair（2026-09-12）](qa/crown-closures-2026-09-12.md)
-- [Object holes and named regions（2026-09-12）](qa/frame-hole-2026-09-12.md)
-- [Hair partition repair（2026-09-12）](qa/hair-partition-2026-09-12.md)
-- [修改器 QA（2026-09-12）](qa/modifiers-2026-09-12.md)
-- [路径跨集合移动回归（日期未记录）](qa/path-transfer-undated.md)
-- [Region selection and crown repair（2026-09-12）](qa/region-repair-2026-09-12.md)
-- [Selection and local region editing（2026-09-12）](qa/selection-scope-2026-09-12.md)
-- [Endpoint continuation and spline inspectors（2026-09-12）](qa/spline-endpoints-2026-09-12.md)
-
-历史记录中引用的 `outputs/`、`backups/` 或工作区外路径通常是未纳入仓库的本地证据。可重复回归应以 `scripts/tests/fixtures/` 和当前测试脚本为准。
-
-- [Agent API 5](agent-api-2026-09-20.md)：原宿主接线、稳定引用、修订、重复纹样、二进制传输与兼容写入。
+历史记录中的 `outputs/`、`backups/` 和工作区外路径可能是未提交的本地证据。可重复验证使用当前脚本和 `scripts/tests/fixtures/`。

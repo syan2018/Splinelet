@@ -1,6 +1,6 @@
 # 曲线与面修改器
 
-工作区以明确输入、选择条件和结果快照修复构造链；约定见[修改器链设计](architecture/region-identity-redesign-2026-09-26.md)。
+工作区以明确输入、选择条件和结果快照修复构造链；约定见[修改器链设计](architecture/modifier-chain-recovery.md)。
 
 日常流程仍为描线 → 颜色与高低 → 立体预览。单选一个部件或其区域后，右侧「选区 → 构造」页提供按需展开的修改器卡片；修改名称、启用状态和参数参与同一撤销与保存。默认工作区不要求用户装配节点或选择数据端口。
 
@@ -79,9 +79,9 @@ await traceStudio.call('creation_command', {
 ```
 
 - `modifier_add`：镜像/阵列使用 `curve_mirror` / `curve_array`，`objectId`、`targets:{kind:'all'}`、`name?`、`angleDeg?`、`centerMM?`，阵列另有 `count?`。
-- `modifier_add` 还支持 `join` + `connections`（端点选项来自 `modifierAdd.endpoints`），以及 `fill` + `rule`。API 5 的 `repeat-pattern` 可一次建立整条重复构造，见 [Agent API 5](agent-api-2026-09-20.md)。
+- `modifier_add` 还支持 `join` + `connections`（端点选项来自 `modifierAdd.endpoints`），以及 `fill` + `rule`。API 5 的 `repeat-pattern` 可一次建立整条重复构造，见 [Agent API 5](agent-api.md)。
 - `modifier_update`：`objectId`、`modifierId`、`changes`；按类型支持名称、启用、角度、中心、数量、偏移距离、笔画宽度 `widthMM`（有限正数）、布尔运算、接合 connections、构面 rule、区域选择的局部 `anchors` 或独立接边的 `toleranceMM`。笔画宽度独立于浮雕厚度；参数或表达式驱动时只读，不由普通输入解除绑定。`input`、`targets`、`joinMM` 不作为普通参数写入。
 - `modifier_move`：`objectId`、`modifierId`、`direction:-1|1`；不支持旧 `beforeId` 语义。
 - `modifier_remove`：`objectId`、`modifierId`。
 
-以上动作经同一编辑会话、版本检查与事务执行。旧名称仅作为调用兼容，不恢复旧模型写回。高级构面及体块操作见[构面与浮雕](modeling-2026-09-19.md)。
+以上动作经同一编辑会话、版本检查与事务执行。旧名称仅作为调用兼容，不恢复旧模型写回。高级构面及体块操作见[构面与浮雕](modeling.md)。

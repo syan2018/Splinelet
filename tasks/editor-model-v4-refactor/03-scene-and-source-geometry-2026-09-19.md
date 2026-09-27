@@ -8,7 +8,7 @@
 - 2026-09-19 增量：原工作区源意图适配已支持双向光滑/对称拖柄与模式切换，Path 按稳定 Vertex ID 保存编辑规则；拆边、反向、删边、复制维护规则和软引用诊断。`test-v4-path-handle-modes.mjs` 与 `test-v4-source-intents.mjs` 覆盖数学行为、锁定、Relation 冲突、撤销及像素到对象局部坐标转换。原根组件的全量命令接线仍待完成，不能据此签收 GUI 旅程。
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
-- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 设计依据：[架构方案](../../docs/history/designs/editor-model-review-and-refactor.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
 
 ## 背景与要交付的改变
@@ -66,7 +66,7 @@ T03 和 T04 目录不重叠，可由两个执行者并行，T05 等两者接口�
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -135,7 +135,7 @@ node scripts/tests/unit/test-v4-scene.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -202,7 +202,7 @@ node scripts/tests/unit/test-v4-sketch.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 

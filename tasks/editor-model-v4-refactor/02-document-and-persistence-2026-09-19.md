@@ -7,7 +7,7 @@
 - 执行状态：T02/T18/T19 模块已实现；导入等价性、平台文件恢复装配待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
-- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 设计依据：[架构方案](../../docs/history/designs/editor-model-review-and-refactor.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
 
 ## 背景与要交付的改变
@@ -85,7 +85,7 @@ T02 先提供 DocumentV4/schema/codec 给其他包；待 P04/P05 管线可比较
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -157,7 +157,7 @@ node scripts/tests/unit/test-v4-codec.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -211,7 +211,7 @@ node scripts/tests/unit/test-v4-migration.mjs
 
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
-- [src/lib/persistence/workspace.mjs](../../src/lib/persistence/workspace.mjs)
+- [src/lib/persistence/workspace.mjs](../../scripts/tests/legacy/workspace.mjs.retired)
 - [src/lib/platform/index.mjs](../../src/lib/platform/index.mjs)
 - [src/lib/platform/browser.mjs](../../src/lib/platform/browser.mjs)
 - [src/lib/platform/desktop.mjs](../../src/lib/platform/desktop.mjs)
@@ -228,7 +228,7 @@ node scripts/tests/unit/test-v4-migration.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 

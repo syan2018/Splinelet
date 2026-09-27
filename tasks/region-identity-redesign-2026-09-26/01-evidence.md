@@ -9,4 +9,4 @@
 - [x] 自动接边出现/消失的最小回归，复现用户头发的切割用途连续性问题。
 - [x] 修复用户编辑副本并检查全部区域、浮雕、实体、分色导出和源数据保留。
 
-回归入口：`test-tagged-arrangement.mjs`、`test-v5-path-basis.mjs`、`test-v5-region-definitions.mjs`、`test-v5-region-topology.mjs`、`test-v5-partition-continuation.mjs`；均由 `pnpm test` 自动发现。最终浏览器证据与测量口径见[验收](../../docs/qa/modifier-chain-recovery-2026-09-26.md)。不能用区域数量或总面积替代逐定义的实际几何核对。
+回归入口：`test-tagged-arrangement.mjs`、`test-v5-path-basis.mjs`、`test-v5-region-definitions.mjs`、`test-v5-region-topology.mjs`、`test-v5-partition-continuation.mjs`；均由 `pnpm test` 自动发现。最终浏览器证据与测量口径见[验收](../../docs/history/qa/modifier-chain-recovery-2026-09-26.md)。不能用区域数量或总面积替代逐定义的实际几何核对。

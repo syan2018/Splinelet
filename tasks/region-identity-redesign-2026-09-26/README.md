@@ -1,8 +1,8 @@
 # 修改器链、源编辑与断链修复
 
-日期：2026-09-26。状态：完成。源编辑、明确选择、修改器快照与重绑、后段执行图及头发示例已交付；全库门禁、双端构建和真实工程交互通过，具体边界见[验收记录](../../docs/qa/modifier-chain-recovery-2026-09-26.md)。早期选择器实验保留为[历史记录](../../docs/qa/region-repair-2026-09-26.md)，不再作为当前修复结论。
+日期：2026-09-26。状态：完成。源编辑、明确选择、修改器快照与重绑、后段执行图及头发示例已交付；全库门禁、双端构建和真实工程交互通过，具体边界见[验收记录](../../docs/history/qa/modifier-chain-recovery-2026-09-26.md)。早期选择器实验保留为[历史记录](../../docs/history/qa/region-repair-2026-09-26.md)，不再作为当前修复结论。
 
-设计依据是[修改器链、输出快照与断链修复](../../docs/architecture/region-identity-redesign-2026-09-26.md)。采用现有 Program/Operator 图统一表达作者操作；共享边界只作为可选源输入。工作包 1–4、6 已验收，工作包 5 作为未接入的独立实验归档。初期审计见[故障复审](../../docs/qa/spline-edit-failure-2026-09-26.md)与[设计核查](../../docs/qa/region-design-2026-09-26.md)。
+设计依据是[修改器链、输出快照与断链修复](../../docs/architecture/modifier-chain-recovery.md)。采用现有 Program/Operator 图统一表达作者操作；共享边界只作为可选源输入。工作包 1–4、6 已验收，工作包 5 作为未接入的独立实验归档。初期审计见[故障复审](../../docs/history/qa/spline-edit-failure-2026-09-26.md)与[设计核查](../../docs/history/qa/region-design-2026-09-26.md)。
 
 1. [基线与反例](01-evidence.md)：来源图、物理赋值不变量及真实示例。
 2. [源线交互与调度](02-interaction.md)：源预览、原子批量提交与最新请求调度。

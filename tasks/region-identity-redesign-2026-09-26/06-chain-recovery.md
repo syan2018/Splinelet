@@ -1,6 +1,6 @@
 # 工作包 6：修改器链与修复协议
 
-日期：2026-09-26。状态：完成。架构以[修改器链设计](../../docs/architecture/region-identity-redesign-2026-09-26.md)为准。
+日期：2026-09-26。状态：完成。架构以[修改器链设计](../../docs/architecture/modifier-chain-recovery.md)为准。
 
 ## 第一切片
 
@@ -27,4 +27,4 @@
 
 旧格式 reader/导入核对和已有明确边界选择保留兼容，不为删除代码而破坏旧文件。它们不能在 V5 中回写 outputContract 或猜测新的属性目标。任意拓扑变化仍可能需要用户修复；本轮交付的是明确选择、可编辑的条件和可撤销的修复流程，不承诺替用户猜对每次几何改变的意图。
 
-具体通过范围、发现并修复的问题和测量边界见[验收记录](../../docs/qa/modifier-chain-recovery-2026-09-26.md)。
+具体通过范围、发现并修复的问题和测量边界见[验收记录](../../docs/history/qa/modifier-chain-recovery-2026-09-26.md)。

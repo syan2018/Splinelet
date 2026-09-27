@@ -1,12 +1,12 @@
 # 源线编辑器与兼容 API
 
-源线编辑是统一创作中的工具能力，不再作为“更多”中的独立工作台。日常构面、分色与分层流程请先阅读 [项目首页](../README.md)。
+源线编辑在创作工作区中完成。日常构面、分色与分层流程请先阅读 [上手指南](getting-started.md)。
 
-当前 Web/Desktop 共享 V5 作者文档。下文兼容 API 中保留的 V4 宿名不意味着新建文件仍为 V4；文件打开和旧草稿恢复会完整迁移为 V5，保存语义见[工程格式](project-format.md)。点、柄与已选路径拖动直接显示源线增量，松手提交一次、Esc 取消；派生区域和派生样条在后台更新，不阻塞继续编辑源线。真正改变拓扑导致区域定义失效时保留作者赋值并报告原因，不自动换面。
+Web 与桌面端共享 V5 作者文档。下文兼容 API 保留的 V4 action 名称不改变新建工程的 V5 格式；打开旧工程或恢复旧草稿会迁移为 V5，保存语义见[工程格式](project-format.md)。点、柄与已选路径拖动直接显示源线增量，松手提交一次、Esc 取消；派生区域和派生样条在后台更新，不阻塞继续编辑源线。拓扑变化导致区域定义失效时，应用保留作者赋值并报告原因，不自动换面。
 
 ## 编辑器的层级
 
-以下说明适用于选择源线，或切换到描线、节点工具时显示的工具属性。统一创作的作品树、工程设置、选区属性与制作导出见 [统一创作指南](creation-2026-09-19.md)。
+以下说明适用于选择源线，或切换到描线、节点工具时显示的工具属性。统一创作的作品树、工程设置、选区属性与制作导出见 [统一创作指南](creation.md)。
 
 右侧工具区显示路径树、当前路径和节点所需的操作。属性栏竖排按“工具 / 工程 / 选区”分组，当前按钮向右与内容区连成一个面板；没有选择时“选区”整组隐藏。工程设置、项目色卡、打印方案与制作导出位于独立的“工程”分类，不再嵌套在源线属性中。选择源线时只有“选区 → 源线”，不会显示作用于所属部件的颜色、浮雕、叠放、构造、承托或输出页；场景组则只显示层级页。只有工具决定画布操作；查看属性不会偷偷改变工具。
 
@@ -72,7 +72,7 @@
 
 ## 描线与节点
 
-通过文件菜单“从图片新建”设置基准底图；已有工程内拖入图片或点击顶栏“参考图 → 添加”会增加独立参考图，不清空曲线或解除文件绑定。支持 PNG、JPG、WebP，单张最大 30 MB；最长边超过 4096 像素时缩小。算法仅分析基准底图，分析最长边 900 像素；附加图片用于手动描线，详细操作见[参考图指南](reference-images-2026-09-22.md)。
+通过文件菜单“从图片新建”设置基准底图；已有工程内拖入图片或点击顶栏“参考图 → 添加”会增加独立参考图，不清空曲线或解除文件绑定。支持 PNG、JPG、WebP，单张最大 30 MB；最长边超过 4096 像素时缩小。算法仅分析基准底图，分析最长边 900 像素；附加图片用于手动描线，详细操作见[参考图指南](reference-images.md)。
 
 P 描线，深色线条跟随描边，颜色边缘跟随色块边界。每两个落点只生成一段三次贝塞尔，两个控制柄负责弯曲，不添加中间锚点。开放路径 N 个落点对应 N−1 段，闭合对应 N 段。旧工程已有的多段拟合结果不会被自动重写。
 
@@ -90,11 +90,11 @@ Ctrl+S 或“保存工程”首次选择并绑定工程文件，之后每次按�
 
 浏览器草稿约 200ms 提交，事务完成后才显示成功，并始终显示为“未保存工程文件”或提示按 Ctrl+S。文件写入串行，失败中止，不将旧写入覆盖新内容。刷新后恢复工程和文件关联；恢复的工程也须由用户再次按 Ctrl+S 才会写文件。导入新底图 / API 载入工程解除旧文件绑定，避免覆盖旧工程文件。
 
-“工程 → 导出”导出通用 3MF、分色 SVG、精确源曲线 SVG，以及包含最终实体和源贝塞尔的 Blender 脚本；先选择需要输出的零件。STL 保留在兼容 API 中。源曲线 SVG 保留所有可见路径及分组。毫米尺寸按整张底图计算；Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景。具体差别见 [统一创作指南](creation-2026-09-19.md)。
+“工程 → 导出”导出通用 3MF、分色 SVG、精确源曲线 SVG，以及包含最终实体和源贝塞尔的 Blender 脚本；先选择需要输出的零件。STL 保留在兼容 API 中。源曲线 SVG 保留所有可见路径及分组。毫米尺寸按整张底图计算；Blender Python 在 Scripting 打开并运行，创建新的集合，不删除已有场景。具体差别见 [统一创作指南](creation.md)。
 
 ## 原图像素兼容 API
 
-默认入口为 [Agent API 5](agent-api-2026-09-20.md)。下列兼容源命令仍使用原图像素，写入必须携带 document.get 读取到的 expectedRevision；不能在提交时补取当前修订来覆盖原读版本。HTTP 配套接口为 POST /command，body 为 `{action,args}`；WebMCP 使用同一动作和修订约束。
+默认入口为 [Agent API 5](agent-api.md)。下列兼容源命令仍使用原图像素，写入必须携带 document.get 读取到的 expectedRevision；不能在提交时补取当前修订来覆盖原读版本。HTTP 配套接口为 POST /command，body 为 `{action,args}`；WebMCP 使用同一动作和修订约束。
 
 ```javascript
 const call = window.traceStudio.call;
@@ -130,7 +130,7 @@ V4 原源线列表的编组快捷键、`manage_group` 与 `move_paths` 使用纯
 
 `spline_apply` 用于自主设计，使用类似 [Blender BezierSplinePoint](https://docs.blender.org/api/current/bpy.types.BezierSplinePoint.html) 的锚点和双控制柄数据，不调用描图、吸附或拟合。原有 `create_path` 继续用于沿底图描线。
 
-V4 会话中的原 API 先从只读源视图解析精确提案，再在一次规范事务内执行全部曲线命令。已有路径保留 Path 身份与构造引用；辅助线不会隐式参与填充，洞作用于指定部件的当前区域。共享或关系驱动的源几何不能被整条替换，失败回滚整批。默认入口切换仍以重构任务验收为准。
+兼容 API 先从只读源视图解析精确提案，再在一次规范事务内执行曲线命令。已有路径保留 Path 身份与构造引用；辅助线不会隐式参与填充，洞作用于指定部件的当前区域。共享或关系驱动的源几何不能被整条替换，失败时整批回滚。
 
 ```js
 const call = (action, args = {}) => window.traceStudio.call(action, args);
@@ -170,26 +170,8 @@ await call('creation_inspect');
 - 每批 1–200 条，每条最多 1000 个节点；开放至少 2 个、闭合至少 3 个。返回 `{pathIds}` 与输入顺序一致。整批验证后一次提交，任意错误均不产生部分修改；`undo` 撤销整批。
 - 两个入口通过浏览器、WebMCP `bezier_spline_*` 和本机 HTTP 共同暴露；WebMCP 也提供 `bezier_undo`。后续步骤见[曲线与面流水线](modifiers.md#添加排序与删除)。
 
-## 验证
+## 派生轮廓预览
 
-```powershell
-node scripts/tests/unit/test-selection.mjs
-node scripts/tests/unit/test-continuity.mjs
-node scripts/tests/unit/test-node-edit.mjs
-node scripts/tests/unit/test-connect.mjs
-node scripts/tests/unit/test-extend.mjs
-node scripts/tests/unit/test-swatch-delete.mjs
-node scripts/tests/unit/test-single-curve.mjs
-node scripts/tests/unit/test-persistence.mjs
-node scripts/tests/unit/test-model.mjs
-pnpm exec tsc --noEmit
-pnpm build
-```
+`create_path` 的 `preview:true` 不写工程，返回临时候选标识；`commit_preview` 返回实际已提交路径 ID。直接创建返回实际路径 ID。候选过期后不能接受；重新拟合需确认，并保持源拓扑身份。
 
-浏览器注入脚本必须在隔离测试浏览器中运行，并自行建立工程或使用 `scripts/tests/fixtures/` 中已提交的最小 fixture。当前源编辑器保留 `test-spline-endpoints.cjs` 的端点续画/闭合覆盖，以及 `test-restore-race.cjs` 的恢复竞争覆盖。依赖当前页面、前序脚本状态或 OS 私有文件选择器的旧调试脚本已删除。
-
-### V4 后端接线进度（2026-09-20）
-
-原界面注入 V4 host 时，批量 `create_path` 已通过捕获版本的 `draw-path` 意图保存原始贝塞尔。`preview:true` 不写工程；返回 id 是临时候选标识，`commit_preview` 返回实际已提交路径 id。直接创建返回实际路径 id。候选过期不能接受，重新拟合使用原确认框并保持源拓扑身份。此项为后端接线说明，默认入口与全部 API 的 V4 切换尚未完成；当前验收见[原界面 QA](qa/v4-original-modifier-dom-2026-09-20.md)。
-
-修改器后的完整轮廓默认可见，不依赖选择。选中一个部件或仅属于它的源线、区域时才显示该部件的派生曲线预览选项；取消选择后恢复完整结果。对于只发布 Fill 区域的部件，预览菜单默认使用“构面输入 · 完整轮廓”；“最终曲线”仍只代表显式曲线输出。变换的显示预览不创建模型 preview，松手才发布一次工程修改；A 的节点编辑仍保留实时源预览。详见 [编辑管线](architecture/editor-interaction-pipeline-2026-09-21.md)。
+修改器后的完整轮廓默认可见，不依赖选择。选中一个部件或仅属于它的源线、区域时才显示该部件的派生曲线预览选项；取消选择后恢复完整结果。对于只发布 Fill 区域的部件，预览菜单默认使用“构面输入 · 完整轮廓”；“最终曲线”仍只代表显式曲线输出。变换的显示预览不创建模型 preview，松手才发布一次工程修改；A 的节点编辑仍保留实时源预览。详见 [编辑管线](architecture/editor-interaction-pipeline.md)。

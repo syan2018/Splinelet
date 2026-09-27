@@ -7,7 +7,7 @@
 - 执行状态：求值与算子模块已实现，真实 C03 联合链通过；完整业务覆盖待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
-- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 设计依据：[架构方案](../../docs/history/designs/editor-model-review-and-refactor.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
 
 ## 背景与要交付的改变
@@ -60,7 +60,7 @@ T06 交付后 T07 与 T08 可以并行；T08 独占 Fill/Path 构面语义，T07
 - [src/lib/modifier-stages.mjs](../../src/lib/modifier-stages.mjs)
 - [src/lib/modifier-engine.mjs](../../src/lib/modifier-engine.mjs)
 - [src/lib/creation-engine.mjs](../../src/lib/creation-engine.mjs)
-- [src/lib/model-worker.ts](../../src/lib/model-worker.ts)
+- [src/lib/model-worker.ts](../../scripts/tests/legacy/model-worker.ts.retired)
 
 ### 可写范围
 
@@ -72,7 +72,7 @@ T06 交付后 T07 与 T08 可以并行；T08 独占 Fill/Path 构面语义，T07
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -137,7 +137,7 @@ node scripts/tests/unit/test-v4-evaluation.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -204,7 +204,7 @@ node scripts/tests/unit/test-v4-curve-operators.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 

@@ -7,7 +7,7 @@
 - 执行状态：三个模块已接通真实 Manifold 与导出，用户制造旅程待验收
 - 起始提交 / 合同版本：分发时填写
 - 总控：[范围、合同、最快可行调度与门槛](README.md)
-- 设计依据：[架构方案](../../docs/architecture/editor-model-review-and-refactor-2026-09-19.md)
+- 设计依据：[架构方案](../../docs/history/designs/editor-model-review-and-refactor.md)
 - 仓库约定：[AGENTS.md](../../AGENTS.md)
 
 ## 背景与要交付的改变
@@ -54,9 +54,9 @@
 现有代码入口（用于理解与复用，不自动获得写权限）：
 
 - [src/lib/creation-engine.mjs](../../src/lib/creation-engine.mjs)
-- [src/lib/creation-colors.mjs](../../src/lib/creation-colors.mjs)
+- [src/lib/creation-colors.mjs](../../scripts/tests/legacy/creation-colors.mjs)
 - [src/lib/creation-styles.mjs](../../src/lib/creation-styles.mjs)
-- [src/lib/creation-commands.mjs](../../src/lib/creation-commands.mjs)
+- [src/lib/creation-commands.mjs](../../scripts/tests/legacy/creation-commands.mjs)
 
 ### 可写范围
 
@@ -64,7 +64,7 @@
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -128,7 +128,7 @@ node scripts/tests/unit/test-v4-relief.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 
@@ -196,7 +196,7 @@ node scripts/tests/unit/test-v4-manufacturing.mjs
 
 另含下列命令对应的新单测文件。
 
-上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](./00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
+上述未存在模块均为拟新增路径。本检查点只修改此范围及执行记录；公共接线交 [P00](00-architecture-and-integration-2026-09-19.md) 的 I00 处理。
 
 ### 分步交付
 

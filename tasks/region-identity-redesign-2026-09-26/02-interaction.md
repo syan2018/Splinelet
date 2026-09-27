@@ -9,4 +9,4 @@
 - [x] 显式检查/导出按捕获修订单独调度；过期结果不覆盖当前工程。
 - [x] 共享 Web/Desktop 接线，pending 时源编辑可继续；区域赋值等待当前有效区域。
 
-验收覆盖 source-runtime、point/path gesture、Worker protocol/session 与隔离浏览器。输入到 SVG DOM 更新、到下一帧回调、提交到区域完成分别记录；下一帧回调也不等同于实际屏幕呈现。原 p95 33 ms 是性能目标，未达目标时不能用后台不卡源编辑来冒充达标，实际结果见[验收](../../docs/qa/modifier-chain-recovery-2026-09-26.md)。
+验收覆盖 source-runtime、point/path gesture、Worker protocol/session 与隔离浏览器。输入到 SVG DOM 更新、到下一帧回调、提交到区域完成分别记录；下一帧回调也不等同于实际屏幕呈现。原 p95 33 ms 是性能目标，未达目标时不能用后台不卡源编辑来冒充达标，实际结果见[验收](../../docs/history/qa/modifier-chain-recovery-2026-09-26.md)。
